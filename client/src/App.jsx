@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -16,39 +18,118 @@ import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
 
+function NavDropdown({ icon, label, items }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const location = useLocation();
+  const nav = useNavigate();
+
+  const isActive = items.some(c => location.pathname.startsWith(c.to));
+
+  function toggle() {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen(o => !o);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e) {
+      if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [open]);
+
+  // Close on route change
+  useEffect(() => { setOpen(false); }, [location.pathname]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        className={`nav-tab${isActive ? ' active' : ''}`}
+        onClick={toggle}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+      >
+        {icon} {label} <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 1 }}>▾</span>
+      </button>
+
+      {open && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            minWidth: 160,
+            background: 'white',
+            border: '1px solid #e5e7eb',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            zIndex: 9999,
+            overflow: 'hidden',
+          }}
+        >
+          {items.map(item => (
+            <button
+              key={item.to}
+              onClick={() => { nav(item.to); setOpen(false); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                padding: '11px 16px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 14,
+                fontFamily: 'inherit',
+                color: location.pathname.startsWith(item.to) ? '#2D5016' : '#374151',
+                fontWeight: location.pathname.startsWith(item.to) ? 700 : 400,
+                borderLeft: location.pathname.startsWith(item.to) ? '3px solid #2D5016' : '3px solid transparent',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            >
+              {item.icon} {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 function TopNav() {
   const { user, logout } = useAuth();
-
-  const tabs = [
-    { to: '/',            icon: '📊', label: 'Dashboard' },
-    { to: '/reservations',icon: '📅', label: 'Reservations' },
-    { to: '/checkin',     icon: '✅', label: 'Check-in/out' },
-    { to: '/allotment',   icon: '🏠', label: 'Allotment' },
-    { to: '/operations',  icon: '🔧', label: 'Operations' },
-    { to: '/guests',      icon: '👤', label: 'Guests' },
-    { to: '/loyalty',     icon: '⭐', label: 'Loyalty' },
-    ...(user?.role === 'owner' ? [
-      { to: '/sales',   icon: '🛍', label: 'Sales' },
-      { to: '/units',   icon: '⚙️', label: 'Units' },
-      { to: '/pricing', icon: '💰', label: 'Pricing' },
-      { to: '/users',   icon: '👥', label: 'Users' },
-    ] : []),
-  ];
 
   return (
     <nav className="nav-bar">
       <div className="nav-logo">Bird<span>nest</span></div>
       <div className="nav-tabs">
-        {tabs.map(t => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            end={t.to === '/'}
-            className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}
-          >
-            {t.icon} {t.label}
-          </NavLink>
-        ))}
+        <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>
+        <NavLink to="/reservations" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>
+        <NavLink to="/checkin" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>✅ Check-in/out</NavLink>
+        <NavLink to="/operations" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🔧 Operations</NavLink>
+        <NavLink to="/guests" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>👤 Guests</NavLink>
+        {user?.role === 'owner' && (
+          <NavLink to="/sales" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🛍 Sales</NavLink>
+        )}
+        <NavLink to="/loyalty" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⭐ Loyalty</NavLink>
+        <NavDropdown icon="🏠" label="Allotments" items={[
+          { to: '/allotment', icon: '📡', label: 'Channel' },
+          { to: '/pricing',   icon: '💰', label: 'Pricing' },
+        ]} />
+        {user?.role === 'owner' && (
+          <NavDropdown icon="⚙️" label="Settings" items={[
+            { to: '/units', icon: '🏕', label: 'Units' },
+            { to: '/users', icon: '👥', label: 'Users' },
+          ]} />
+        )}
       </div>
       <div className="nav-end">
         <div
@@ -92,20 +173,20 @@ export default function App() {
             <RequireAuth>
               <Layout>
                 <Routes>
-                  <Route path="/"               element={<Dashboard />} />
-                  <Route path="/reservations"   element={<Reservations />} />
+                  <Route path="/"                 element={<Dashboard />} />
+                  <Route path="/reservations"     element={<Reservations />} />
                   <Route path="/reservations/new" element={<NewBooking />} />
                   <Route path="/reservations/:id" element={<BookingDetail />} />
-                  <Route path="/checkin"        element={<CheckIn />} />
-                  <Route path="/guests"         element={<Guests />} />
-                  <Route path="/guests/:id"     element={<GuestProfile />} />
-                  <Route path="/operations"     element={<Operations />} />
-                  <Route path="/allotment"      element={<Allotment />} />
-                  <Route path="/loyalty"        element={<Loyalty />} />
-                  <Route path="/sales"          element={<Sales />} />
-                  <Route path="/units"          element={<UnitSettings />} />
-                  <Route path="/pricing"        element={<Pricing />} />
-                  <Route path="/users"          element={<Users />} />
+                  <Route path="/checkin"          element={<CheckIn />} />
+                  <Route path="/guests"           element={<Guests />} />
+                  <Route path="/guests/:id"       element={<GuestProfile />} />
+                  <Route path="/operations"       element={<Operations />} />
+                  <Route path="/allotment"        element={<Allotment />} />
+                  <Route path="/loyalty"          element={<Loyalty />} />
+                  <Route path="/sales"            element={<Sales />} />
+                  <Route path="/units"            element={<UnitSettings />} />
+                  <Route path="/pricing"          element={<Pricing />} />
+                  <Route path="/users"            element={<Users />} />
                 </Routes>
               </Layout>
             </RequireAuth>
