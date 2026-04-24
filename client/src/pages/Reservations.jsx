@@ -221,12 +221,15 @@ export default function Reservations() {
           <div className="page-title">Reservations</div>
           <div className="page-subtitle">{monthName} {year} · {units.length} units · {view === 'calendar' ? 'Timeline view' : 'List view'}</div>
         </div>
-        <div className="flex gap-2" style={{ alignItems: 'center' }}>
-          <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
-          <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
+        <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
+      </div>
+
+      <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
+        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button className={`btn btn-sm ${view === 'calendar' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('calendar')}>Calendar</button>
           <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('list')}>List</button>
-          <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
         </div>
       </div>
 
