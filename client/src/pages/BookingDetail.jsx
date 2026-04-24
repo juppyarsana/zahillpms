@@ -54,6 +54,15 @@ export default function BookingDetail() {
     }
   }
 
+  async function confirmBooking() {
+    try {
+      await api.put(`/api/bookings/${id}`, { status: 'confirmed' });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed');
+    }
+  }
+
   async function cancel() {
     if (!confirm('Cancel this booking?')) return;
     await api.delete(`/api/bookings/${id}`);
@@ -88,6 +97,9 @@ export default function BookingDetail() {
         <div className="flex gap-2">
           {booking.guest_whatsapp && (
             <button className="btn btn-secondary" onClick={waLink}>💬 WhatsApp</button>
+          )}
+          {booking.status === 'pending' && (
+            <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
           )}
           {booking.status === 'confirmed' || booking.status === 'pending' ? (
             <button className="btn btn-danger" onClick={cancel}>Cancel</button>

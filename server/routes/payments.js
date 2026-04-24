@@ -57,13 +57,21 @@ router.put('/:id', auth, async (req, res) => {
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
 
-    // Auto-confirm booking when deposit is marked received
-    if (status === 'received' && rows[0].type === 'deposit') {
-      await client.query(
-        `UPDATE bookings SET status = 'confirmed', updated_at = NOW()
-         WHERE id = $1 AND status = 'pending'`,
-        [rows[0].booking_id]
-      );
+    // Auto-confirm booking when deposit is received, or when balance is received with no deposit required
+    if (status === 'received') {
+      if (rows[0].type === 'deposit') {
+        await client.query(
+          `UPDATE bookings SET status = 'confirmed', updated_at = NOW()
+           WHERE id = $1 AND status = 'pending'`,
+          [rows[0].booking_id]
+        );
+      } else if (rows[0].type === 'balance') {
+        await client.query(
+          `UPDATE bookings SET status = 'confirmed', updated_at = NOW()
+           WHERE id = $1 AND status = 'pending' AND (deposit_amount = 0 OR deposit_amount IS NULL)`,
+          [rows[0].booking_id]
+        );
+      }
     }
 
     await client.query('COMMIT');
