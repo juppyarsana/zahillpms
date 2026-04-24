@@ -156,19 +156,18 @@ router.post('/', auth, async (req, res) => {
       return res.status(409).json({ error: 'Unit is not available for the selected dates' });
     }
 
+    const total = parseFloat(total_amount || 0);
+    const depositAmount = deposit_amount !== undefined
+      ? Math.min(parseFloat(deposit_amount), total)
+      : Math.round(total * 0.3);
+    const balanceAmount = total - depositAmount;
+
     const { rows } = await client.query(
       `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', total_amount || 0, depositAmount, special_requests, internal_notes, status || 'pending', req.user.id]
     );
     const booking = rows[0];
-
-    // Auto-create deposit and balance payment records
-    const total = parseFloat(total_amount || 0);
-    const depositAmount = deposit_amount !== undefined
-      ? Math.min(parseFloat(deposit_amount), total)
-      : Math.round(total * 0.3);
-    const balanceAmount = total - depositAmount;
     await client.query(
       'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3),($1,$4,$5)',
       [booking.id, 'deposit', depositAmount, 'balance', balanceAmount]
