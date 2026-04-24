@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Units (glamping nests)
 CREATE TABLE IF NOT EXISTS units (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL UNIQUE,
   type VARCHAR(100),
   description TEXT,
   base_rate NUMERIC(12,2) NOT NULL DEFAULT 0,
