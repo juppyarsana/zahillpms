@@ -7,6 +7,7 @@ const path = require('path');
 
 const app = express();
 
+app.set('trust proxy', 1); // Trust Nginx reverse proxy
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
 app.use(express.json());
