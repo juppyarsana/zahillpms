@@ -14,6 +14,7 @@ import Loyalty from './pages/Loyalty';
 import Sales from './pages/Sales';
 import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
+import Users from './pages/Users';
 
 function TopNav() {
   const { user, logout } = useAuth();
@@ -30,6 +31,7 @@ function TopNav() {
       { to: '/sales',   icon: '🛍', label: 'Sales' },
       { to: '/units',   icon: '⚙️', label: 'Units' },
       { to: '/pricing', icon: '💰', label: 'Pricing' },
+      { to: '/users',   icon: '👥', label: 'Users' },
     ] : []),
   ];
 
@@ -103,6 +105,7 @@ export default function App() {
                   <Route path="/sales"          element={<Sales />} />
                   <Route path="/units"          element={<UnitSettings />} />
                   <Route path="/pricing"        element={<Pricing />} />
+                  <Route path="/users"          element={<Users />} />
                 </Routes>
               </Layout>
             </RequireAuth>
