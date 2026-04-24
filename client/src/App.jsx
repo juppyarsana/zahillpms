@@ -22,6 +22,7 @@ function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
+  const menuRef = useRef(null);
   const location = useLocation();
   const nav = useNavigate();
 
@@ -38,7 +39,9 @@ function NavDropdown({ icon, label, items }) {
   useEffect(() => {
     if (!open) return;
     function onMouseDown(e) {
-      if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false);
+      const inBtn = btnRef.current && btnRef.current.contains(e.target);
+      const inMenu = menuRef.current && menuRef.current.contains(e.target);
+      if (!inBtn && !inMenu) setOpen(false);
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
@@ -60,6 +63,7 @@ function NavDropdown({ icon, label, items }) {
 
       {open && createPortal(
         <div
+          ref={menuRef}
           style={{
             position: 'fixed',
             top: pos.top,
