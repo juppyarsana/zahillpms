@@ -145,6 +145,98 @@ function TopNav() {
   );
 }
 
+function BottomNav() {
+  const { user, logout } = useAuth();
+  const location = useLocation();
+  const nav = useNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const mainItems = [
+    { to: '/', icon: '📊', label: 'Dashboard', end: true },
+    { to: '/reservations', icon: '📅', label: 'Bookings' },
+    { to: '/checkin', icon: '✅', label: 'Check-in' },
+    { to: '/guests', icon: '👤', label: 'Guests' },
+  ];
+
+  const moreItems = [
+    { to: '/operations', icon: '🔧', label: 'Operations' },
+    ...(user?.role === 'owner' ? [{ to: '/sales', icon: '🛍', label: 'Sales' }] : []),
+    { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
+    { to: '/allotment', icon: '📡', label: 'Channel' },
+    { to: '/pricing', icon: '💰', label: 'Pricing' },
+    ...(user?.role === 'owner' ? [
+      { to: '/units', icon: '🏕', label: 'Units' },
+      { to: '/users', icon: '👥', label: 'Users' },
+    ] : []),
+  ];
+
+  function isActive(to, end) {
+    return end ? location.pathname === to : location.pathname.startsWith(to);
+  }
+
+  const moreActive = moreItems.some(item => location.pathname.startsWith(item.to));
+
+  // Close drawer on route change
+  useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
+
+  return (
+    <>
+      <nav className="bottom-nav">
+        {mainItems.map(item => (
+          <button
+            key={item.to}
+            className={`bottom-nav-item${isActive(item.to, item.end) ? ' active' : ''}`}
+            onClick={() => nav(item.to)}
+          >
+            <span className="bottom-nav-icon">{item.icon}</span>
+            <span className="bottom-nav-label">{item.label}</span>
+          </button>
+        ))}
+        <button
+          className={`bottom-nav-item${moreActive || drawerOpen ? ' active' : ''}`}
+          onClick={() => setDrawerOpen(true)}
+        >
+          <span className="bottom-nav-icon">☰</span>
+          <span className="bottom-nav-label">More</span>
+        </button>
+      </nav>
+
+      {drawerOpen && (
+        <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)}>
+          <div className="drawer" onClick={e => e.stopPropagation()}>
+            <div className="drawer-header">
+              <span style={{ fontWeight: 700, fontSize: 15 }}>Menu</span>
+              <button className="btn btn-icon" onClick={() => setDrawerOpen(false)}>✕</button>
+            </div>
+            {moreItems.map(item => (
+              <button
+                key={item.to}
+                className="drawer-item"
+                onClick={() => { nav(item.to); setDrawerOpen(false); }}
+              >
+                <span style={{ fontSize: 20 }}>{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+            <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 4, padding: '12px 20px 4px' }}>
+              <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 10 }}>
+                {user?.name} · {user?.role}
+              </div>
+              <button
+                className="btn btn-secondary"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={logout}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Layout({ children }) {
   return (
     <div className="app-shell">
@@ -152,6 +244,7 @@ function Layout({ children }) {
       <main className="main-content">
         <div className="page-wrap">{children}</div>
       </main>
+      <BottomNav />
     </div>
   );
 }
