@@ -170,10 +170,18 @@ router.post('/', auth, async (req, res) => {
       [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', total_amount || 0, depositAmount, special_requests, internal_notes, status || 'pending', req.user.id]
     );
     const booking = rows[0];
-    await client.query(
-      'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3),($1,$4,$5)',
-      [booking.id, 'deposit', depositAmount, 'balance', balanceAmount]
-    );
+    if (depositAmount > 0) {
+      await client.query(
+        'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)',
+        [booking.id, 'deposit', depositAmount]
+      );
+    }
+    if (balanceAmount > 0) {
+      await client.query(
+        'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)',
+        [booking.id, 'balance', balanceAmount]
+      );
+    }
 
     await client.query('COMMIT');
     res.status(201).json(booking);

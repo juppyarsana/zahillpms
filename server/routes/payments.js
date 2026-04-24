@@ -13,6 +13,7 @@ router.get('/pending', auth, async (req, res) => {
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
       WHERE p.status = 'pending'
+        AND p.amount > 0
         AND b.status NOT IN ('cancelled','no_show')
       ORDER BY b.check_in_date, p.type
     `);

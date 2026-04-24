@@ -51,7 +51,7 @@ router.get('/summary', auth, async (req, res) => {
       db.query(`
         SELECT COUNT(*) as count FROM payments p
         JOIN bookings b ON p.booking_id = b.id
-        WHERE p.status = 'pending' AND b.status NOT IN ('cancelled','no_show')
+        WHERE p.status = 'pending' AND p.amount > 0 AND b.status NOT IN ('cancelled','no_show')
       `),
       db.query(`SELECT COUNT(*) as count FROM tasks WHERE status != 'done'`),
       db.query(`
