@@ -132,4 +132,22 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
+// DELETE /api/guests/:id
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { rows: bookings } = await db.query(
+      "SELECT id FROM bookings WHERE guest_id = $1 AND status NOT IN ('cancelled','no_show') LIMIT 1",
+      [req.params.id]
+    );
+    if (bookings.length > 0) {
+      return res.status(409).json({ error: 'Cannot delete guest with existing bookings' });
+    }
+    const { rows } = await db.query('DELETE FROM guests WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Guest not found' });
+    res.json({ message: 'Guest deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
