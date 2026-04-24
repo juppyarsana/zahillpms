@@ -291,7 +291,7 @@ export default function Dashboard() {
       )}
 
       {/* ── 4 Stat Cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+      <div className="dashboard-stats">
 
         <div className="stat-card">
           <div className="stat-label">Tonight's Occupancy</div>
@@ -337,7 +337,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Two-column section ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="grid-2" style={{ gap: 16 }}>
 
         {/* ── LEFT: Live Unit Status ── */}
         <div className="card">
