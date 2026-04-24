@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Birdnest PMS — Screen Mockups</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --green-dark: #2D5016;
+      --green-mid: #4A7C2A;
+      --green-light: #E8F0E0;
+      --gold: #B8860B;
+      --cream: #FAF7F2;
+      --sand: #E8D5B0;
+      --white: #FFFFFF;
+      --text: #1A1A1A;
+      --text-muted: #6B7280;
+      --border: #E5E7EB;
+    }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #EEEBE5; color: var(--text); min-height: 100vh; }
+
+    /* NAV */
+    .nav-bar { background: var(--green-dark); display: flex; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
+    .nav-logo { padding: 14px 20px; color: white; font-size: 18px; font-weight: 700; letter-spacing: -0.5px; border-right: 1px solid rgba(255,255,255,0.12); white-space: nowrap; }
+    .nav-logo span { color: var(--sand); }
+    .nav-tabs { display: flex; overflow-x: auto; scrollbar-width: none; }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .nav-tab { padding: 16px 18px; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; border-bottom: 3px solid transparent; transition: all 0.2s; }
+    .nav-tab:hover { color: white; background: rgba(255,255,255,0.06); }
+    .nav-tab.active { color: var(--sand); border-bottom-color: var(--sand); }
+
+    /* SCREENS */
+    .screen { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .screen.active { display: block; }
+
+    /* CARDS */
+    .card { background: var(--white); border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid var(--border); }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; }
+
+    /* GRIDS */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+    /* STAT CARDS */
+    .stat-card { background: var(--white); border-radius: 12px; padding: 20px; border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 30px; font-weight: 800; color: var(--text); }
+    .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    /* BADGES */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .badge-green { background: #D1FAE5; color: #065F46; }
+    .badge-amber { background: #FEF3C7; color: #92400E; }
+    .badge-red { background: #FEE2E2; color: #991B1B; }
+    .badge-blue { background: #DBEAFE; color: #1E40AF; }
+    .badge-purple { background: #EDE9FE; color: #5B21B6; }
+
+    /* CHANNEL BADGES */
+    .ch { display: inline-block; padding: 2px 9px; border-radius: 4px; font-size: 10px; font-weight: 800; color: white; letter-spacing: 0.3px; }
+    .ch-direct { background: var(--green-dark); }
+    .ch-airbnb { background: #FF5A5F; }
+    .ch-booking { background: #003580; }
+    .ch-traveloka { background: #038CFC; }
+    .ch-buffer { background: #6B7280; }
+
+    /* UNIT CARDS */
+    .unit-card { border-radius: 10px; padding: 16px; }
+    .unit-card.occupied { background: #FFF7ED; border: 1.5px solid #F97316; }
+    .unit-card.available { background: #F0FDF4; border: 1.5px solid #22C55E; }
+    .unit-card.arriving { background: #EFF6FF; border: 1.5px solid #3B82F6; }
+    .unit-card.blocked { background: #F9FAFB; border: 1.5px solid #D1D5DB; }
+
+    /* BUTTONS */
+    .btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--green-dark); color: white; }
+    .btn-primary:hover { background: var(--green-mid); }
+    .btn-outline { background: transparent; color: var(--green-dark); border: 1.5px solid var(--green-dark); }
+    .btn-outline:hover { background: var(--green-light); }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1.5px solid var(--border); }
+
+    /* PAGE HEADER */
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+    .page-title { font-size: 24px; font-weight: 800; color: var(--text); }
+    .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+
+    /* TIMELINE */
+    .timeline-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .timeline-item:last-child { border-bottom: none; }
+    .t-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+
+    /* CALENDAR */
+    .cal-wrap { overflow-x: auto; }
+    .cal-grid { min-width: 760px; }
+    .cal-header-row { display: grid; grid-template-columns: 130px repeat(15, 1fr); gap: 2px; margin-bottom: 3px; }
+    .cal-row { display: grid; grid-template-columns: 130px repeat(15, 1fr); gap: 2px; margin-bottom: 3px; }
+    .cal-unit-label { display: flex; align-items: center; padding: 8px 12px; background: var(--white); border-radius: 8px; font-size: 12px; font-weight: 700; border: 1px solid var(--border); }
+    .cal-day-hdr { text-align: center; padding: 8px 2px; font-size: 10px; font-weight: 700; color: var(--text-muted); }
+    .cal-day-hdr.today { color: var(--green-dark); font-size: 11px; }
+    .cal-cell { height: 46px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+    .cal-cell:hover { opacity: 0.8; }
+    .cal-cell.avail { background: #F3F4F6; color: #9CA3AF; border: 1px dashed #D1D5DB; }
+    .cal-cell.c-direct { background: #BBF7D0; color: #14532D; }
+    .cal-cell.c-airbnb { background: #FECDD3; color: #881337; }
+    .cal-cell.c-booking { background: #BFDBFE; color: #1E3A8A; }
+    .cal-cell.c-out { background: #FED7AA; color: #9A3412; }
+    .cal-cell.c-blocked { background: #E5E7EB; color: #6B7280; }
+    .cal-cell.today-col { outline: 2px solid var(--green-dark); outline-offset: -2px; }
+
+    /* GUEST ROW */
+    .guest-row { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); margin-bottom: 10px; cursor: pointer; transition: all 0.15s; }
+    .guest-row:hover { border-color: var(--green-dark); box-shadow: 0 2px 8px rgba(45,80,22,0.1); transform: translateY(-1px); }
+
+    /* ALLOTMENT */
+    .allot-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .allot-row:last-child { border-bottom: none; }
+    .allot-label { width: 110px; font-size: 13px; font-weight: 700; }
+    .allot-bar-bg { flex: 1; height: 12px; background: #F3F4F6; border-radius: 6px; overflow: hidden; }
+    .allot-bar { height: 100%; border-radius: 6px; transition: width 0.3s; }
+    .allot-count { width: 55px; text-align: right; font-size: 13px; font-weight: 700; color: var(--text-muted); }
+
+    /* CHECK-IN STEPS */
+    .steps { display: flex; margin-bottom: 24px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+    .step { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: 600; color: var(--text-muted); background: #F9FAFB; border-right: 1px solid var(--border); }
+    .step:last-child { border-right: none; }
+    .step.done { color: var(--green-mid); background: #F0FDF4; }
+    .step.active { color: var(--green-dark); background: var(--green-light); font-weight: 800; }
+
+    /* CHECKLIST */
+    .check-item { display: flex; align-items: flex-start; gap: 12px; padding: 13px; border-radius: 8px; margin-bottom: 8px; background: #F9FAFB; cursor: pointer; transition: background 0.15s; border: 1px solid transparent; }
+    .check-item.checked { background: #F0FDF4; border-color: #BBF7D0; }
+    .check-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid #D1D5DB; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; font-weight: 800; transition: all 0.15s; }
+    .check-item.checked .check-box { background: #22C55E; border-color: #22C55E; color: white; }
+
+    /* KANBAN */
+    .kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .k-col { background: #F3F4F6; border-radius: 12px; padding: 16px; }
+    .k-col-hdr { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+    .k-card { background: var(--white); border-radius: 8px; padding: 13px; margin-bottom: 8px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05); cursor: pointer; }
+    .k-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.1); transform: translateY(-1px); }
+    .k-card-title { font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+    .k-card-meta { font-size: 11px; color: var(--text-muted); }
+    .k-card.p-high { border-left: 3px solid #EF4444; }
+    .k-card.p-med { border-left: 3px solid #F59E0B; }
+    .k-card.p-low { border-left: 3px solid #22C55E; }
+
+    /* FORM */
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-control { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text); background: var(--white); }
+    .form-control:focus { outline: none; border-color: var(--green-dark); }
+
+    /* AVATAR */
+    .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: white; flex-shrink: 0; }
+
+    /* ALERT */
+    .alert { padding: 13px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+    .alert-warn { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .alert-info { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
+    .alert-success { background: #D1FAE5; color: #065F46; border: 1px solid #A7F3D0; }
+
+    /* REVENUE BARS */
+    .rev-bars { display: flex; align-items: flex-end; gap: 8px; height: 80px; }
+    .rev-bar { flex: 1; border-radius: 4px 4px 0 0; background: var(--green-light); }
+    .rev-bar.hi { background: var(--green-dark); }
+
+    /* BANNER */
+    .mockup-banner { background: linear-gradient(135deg, var(--green-dark), #4A7C2A); color: rgba(255,255,255,0.85); text-align: center; padding: 9px; font-size: 11px; letter-spacing: 1.5px; font-weight: 700; }
+
+    /* UTILS */
+    .section { margin-bottom: 20px; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .gap-8 { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .gap-16 { gap: 16px; }
+    .mt-4 { margin-top: 4px; }
+    .mt-8 { margin-top: 8px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-8 { margin-bottom: 8px; }
+    .mb-16 { margin-bottom: 16px; }
+    .text-sm { font-size: 13px; }
+    .text-xs { font-size: 11px; }
+    .text-muted { color: var(--text-muted); }
+    .font-bold { font-weight: 800; }
+    .font-semi { font-weight: 600; }
+    hr.div { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+    @media (max-width: 768px) {
+      .grid-4 { grid-template-columns: 1fr 1fr; }
+      .grid-3 { grid-template-columns: 1fr 1fr; }
+      .kanban { grid-template-columns: 1fr; }
+    }
+
+    /* GUEST SCREENS */
+    .guest-card { background: var(--white); border-radius: 12px; padding: 16px; border: 1px solid var(--border); display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; }
+    .guest-card:hover { border-color: var(--green-dark); box-shadow: 0 3px 10px rgba(45,80,22,0.1); transform: translateY(-1px); }
+    .guest-card .avatar-lg { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: white; flex-shrink: 0; }
+
+    /* Tier badges */
+    .tier-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; }
+    .tier-wanderer { background: #FEF3C7; color: #92400E; }
+    .tier-explorer { background: #D1FAE5; color: #065F46; }
+    .tier-adventurer { background: #DBEAFE; color: #1E40AF; }
+    .tier-member { background: #EDE9FE; color: #5B21B6; }
+
+    /* Pref tags */
+    .pref-tag { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin: 3px; cursor: pointer; }
+    .pref-tag.pref-food { background: #FEE2E2; color: #991B1B; }
+    .pref-tag.pref-room { background: #D1FAE5; color: #065F46; }
+    .pref-tag.pref-habit { background: #DBEAFE; color: #1E40AF; }
+    .pref-tag.pref-special { background: #FEF3C7; color: #92400E; }
+    .pref-tag.pref-note { background: #F3E8FF; color: #6B21A8; }
+    .pref-tag-add { background: #F3F4F6; color: #6B7280; border: 1px dashed #D1D5DB; }
+
+    /* Stay history */
+    .stay-row { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .stay-row:last-child { border-bottom: none; }
+    .stay-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green-dark); flex-shrink: 0; margin-top: 5px; }
+    .stay-dot.ota { background: #FF5A5F; }
+    .stay-dot.booking { background: #003580; }
+
+    /* Loyalty builder */
+    .tier-card { background: var(--white); border-radius: 12px; padding: 18px; border: 2px solid; margin-bottom: 14px; transition: box-shadow 0.15s; }
+    .tier-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .perk-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin: 3px; }
+
+    /* Birthday card */
+    .birthday-card { background: linear-gradient(135deg, #FEF3C7, #FDE68A); border-radius: 10px; padding: 14px; display: flex; align-items: center; gap: 12px; border: 1px solid #FCD34D; margin-bottom: 10px; }
+
+    /* Stat mini */
+    .mini-stat { text-align: center; padding: 14px; background: #F9FAFB; border-radius: 10px; border: 1px solid var(--border); }
+    .mini-stat-val { font-size: 22px; font-weight: 800; color: var(--text); }
+    .mini-stat-lbl { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+    /* Profile header */
+    .profile-header { background: linear-gradient(135deg, var(--green-dark) 0%, #4A7C2A 100%); border-radius: 16px; padding: 28px; color: white; margin-bottom: 20px; display: flex; align-items: center; gap: 20px; }
+    .profile-avatar { width: 72px; height: 72px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; flex-shrink: 0; border: 3px solid rgba(255,255,255,0.3); }
+    .profile-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .profile-meta { font-size: 13px; opacity: 0.8; }
+
+    /* Loyalty distribution */
+    .dist-bar { height: 28px; border-radius: 6px; display: flex; align-items: center; padding: 0 10px; font-size: 11px; font-weight: 700; color: white; margin-bottom: 6px; transition: width 0.4s; }
+  </style>
+</head>
+<body>
+
+<div class="mockup-banner">🏕 BIRDNEST PMS · KINTAMANI, BALI · UI DESIGN MOCKUP — Click tabs to explore screens</div>
+
+<!-- NAVBAR -->
+<nav class="nav-bar">
+  <div class="nav-logo">Bird<span>nest</span></div>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="go('dashboard')">📊 Dashboard</div>
+    <div class="nav-tab" onclick="go('calendar')">📅 Reservations</div>
+    <div class="nav-tab" onclick="go('allotment')">🏠 Allotment</div>
+    <div class="nav-tab" onclick="go('checkin')">✅ Check-in/out</div>
+    <div class="nav-tab" onclick="go('operations')">🔧 Operations</div>
+    <div class="nav-tab" onclick="go('guests')">👤 Guests</div>
+    <div class="nav-tab" onclick="go('loyalty')">⭐ Loyalty</div>
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 1 · DASHBOARD (Owner View)
+══════════════════════════════════════════════════ -->
+<div id="screen-dashboard" class="screen active">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Good morning, Juppy 👋</div>
+      <div class="page-subtitle">Monday, 20 April 2026 · Kintamani, Bali · ⛅ 22°C · Mount Batur visible</div>
+    </div>
+    <div class="flex gap-8 items-center">
+      <span class="badge badge-green" style="padding:6px 14px;font-size:12px">🟢 All Systems Normal</span>
+      <div class="avatar" style="background:var(--green-dark)">J</div>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    📌 <strong>2 arrivals today</strong> — Tanaka Family arriving at 14:00 (Nest 2) · Sarah Chen at 15:00 (Nest 4). Housekeeping confirmed for both units.
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid-4 section">
+    <div class="stat-card">
+      <div class="stat-label">Tonight's Occupancy</div>
+      <div class="stat-value">3<span style="font-size:16px;color:var(--text-muted)">/5</span></div>
+      <div class="mt-4"><span class="badge badge-green">60%</span> <span class="text-xs text-muted">2 units free</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Arrivals Today</div>
+      <div class="stat-value">2</div>
+      <div class="stat-sub mt-4">↑ Check-in from 14:00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Departures Today</div>
+      <div class="stat-value">1</div>
+      <div class="stat-sub mt-4">Nest 3 · Checked out ✓ 11:05</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Revenue This Month</div>
+      <div class="stat-value" style="font-size:22px;">Rp 34.2M</div>
+      <div class="mt-4"><span class="badge badge-green">+18%</span> <span class="text-xs text-muted">vs last month</span></div>
+    </div>
+  </div>
+
+  <div class="grid-2 section">
+
+    <!-- Unit Status -->
+    <div class="card">
+      <div class="card-title">Live Unit Status</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+
+        <div class="unit-card occupied">
+          <div class="flex justify-between items-center mb-8">
+            <strong style="font-size:13px">🏕 Nest 1</strong>
+            <span class="ch ch-airbnb">Airbnb</span>
+          </div>
+          <div class="text-xs" style="color:#C2410C;font-weight:700">● Occupied · 3 nights left</div>
+          <div class="text-xs text-muted mt-4">Yamada Kenji · JP · 2 pax</div>
+        </div>
+
+        <div class="unit-card arriving">
+          <div class="flex justify-between items-center mb-8">
+            <strong style="font-size:13px">🏕 Nest 2</strong>
+            <span class="ch ch-direct">Direct</span>
+          </div>
+          <div class="text-xs" style="color:#1D4ED8;font-weight:700">🔄 Arriving 14:00 today</div>
+          <div class="text-xs text-muted mt-4">Tanaka Family · JP · 2 pax</div>
+        </div>
+
+        <div class="unit-card occupied">
+          <div class="flex justify-between items-center mb-8">
+            <strong style="font-size:13px">🏕 Nest 3</strong>
+            <span class="ch ch-booking">Booking.com</span>
+          </div>
+          <div class="text-xs" style="color:#C2410C;font-weight:700">● Occupied · last night</div>
+          <div class="text-xs text-muted mt-4">Lim Sohyun · KR · Checked out ✓</div>
+        </div>
+
+        <div class="unit-card arriving">
+          <div class="flex justify-between items-center mb-8">
+            <strong style="font-size:13px">🏕 Nest 4</strong>
+            <span class="ch ch-direct">Direct</span>
+          </div>
+          <div class="text-xs" style="color:#1D4ED8;font-weight:700">🔄 Arriving 15:00 today</div>
+          <div class="text-xs text-muted mt-4">Sarah Chen · SG · 2 pax</div>
+        </div>
+
+        <div class="unit-card available" style="grid-column:span 2;">
+          <div class="flex justify-between items-center mb-8">
+            <strong style="font-size:13px">🏕 Nest 5</strong>
+            <span class="badge badge-green">Available</span>
+          </div>
+          <div class="text-xs" style="color:#15803D;font-weight:700">✓ Empty & ready · Next booking Apr 23</div>
+          <div class="text-xs text-muted mt-4">2-night gap · Open for last-minute direct booking</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div class="card">
+        <div class="card-title">Today's Activity</div>
+
+        <div class="timeline-item">
+          <div class="t-icon" style="background:#FEF3C7">🧹</div>
+          <div style="flex:1">
+            <div class="text-sm font-semi">Housekeeping — Nest 2 & 4</div>
+            <div class="text-xs text-muted">Completed 11:30 · Wayan</div>
+          </div>
+          <span class="badge badge-green">Done</span>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-icon" style="background:#D1FAE5">📦</div>
+          <div style="flex:1">
+            <div class="text-sm font-semi">Welcome packs restocked</div>
+            <div class="text-xs text-muted">Nest 2 & 4 · By Ketut · 10:45</div>
+          </div>
+          <span class="badge badge-green">Done</span>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-icon" style="background:#FEE2E2">⚠️</div>
+          <div style="flex:1">
+            <div class="text-sm font-semi">Water heater issue — Nest 1</div>
+            <div class="text-xs text-muted">Reported by Wayan · 09:15 · Guest in unit</div>
+          </div>
+          <span class="badge badge-amber">Pending</span>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-icon" style="background:#EDE9FE">💬</div>
+          <div style="flex:1">
+            <div class="text-sm font-semi">Guest message — Tanaka Family</div>
+            <div class="text-xs text-muted">"Can we request extra blankets?" · WhatsApp</div>
+          </div>
+          <span class="badge badge-amber" style="cursor:pointer" onclick="alert('Opens WhatsApp chat')">Reply</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">Revenue — Last 7 Days</div>
+        <div class="rev-bars">
+          <div class="rev-bar" style="height:40%"></div>
+          <div class="rev-bar" style="height:62%"></div>
+          <div class="rev-bar" style="height:30%"></div>
+          <div class="rev-bar" style="height:78%"></div>
+          <div class="rev-bar" style="height:55%"></div>
+          <div class="rev-bar" style="height:88%"></div>
+          <div class="rev-bar hi" style="height:65%"></div>
+        </div>
+        <div class="flex justify-between mt-8">
+          <span class="text-xs text-muted">Mon</span><span class="text-xs text-muted">Tue</span><span class="text-xs text-muted">Wed</span><span class="text-xs text-muted">Thu</span><span class="text-xs text-muted">Fri</span><span class="text-xs text-muted">Sat</span><span class="text-xs font-bold" style="color:var(--green-dark)">Today</span>
+        </div>
+        <hr class="div">
+        <div class="flex justify-between">
+          <div>
+            <div class="text-xs text-muted">Channel Mix</div>
+            <div class="flex gap-8 mt-4">
+              <span class="ch ch-direct">42% Direct</span>
+              <span class="ch ch-airbnb">35% Airbnb</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="text-xs text-muted">Pending Payments</div>
+            <div class="text-sm font-bold mt-4" style="color:#D97706">Rp 3.5M · 2 bookings</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 2 · RESERVATIONS / CALENDAR
+══════════════════════════════════════════════════ -->
+<div id="screen-calendar" class="screen">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Reservations</div>
+      <div class="page-subtitle">April 2026 · 5 units · Timeline view</div>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-ghost btn-sm">← Apr</button>
+      <button class="btn btn-ghost btn-sm">May →</button>
+      <button class="btn btn-primary" onclick="go('newbooking')">+ New Booking</button>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="flex gap-12 mb-16" style="flex-wrap:wrap">
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#BBF7D0;border-radius:3px"></div><span class="text-xs font-semi">Direct</span></div>
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#FECDD3;border-radius:3px"></div><span class="text-xs font-semi">Airbnb</span></div>
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#BFDBFE;border-radius:3px"></div><span class="text-xs font-semi">Booking.com</span></div>
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#FED7AA;border-radius:3px"></div><span class="text-xs font-semi">Check-out Day</span></div>
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#E5E7EB;border-radius:3px"></div><span class="text-xs font-semi">Blocked/Maint.</span></div>
+    <div class="flex items-center gap-8"><div style="width:14px;height:14px;background:#F3F4F6;border-radius:3px;border:1px dashed #9CA3AF"></div><span class="text-xs font-semi">Available</span></div>
+  </div>
+
+  <div class="card section">
+    <div class="cal-wrap">
+      <div class="cal-grid">
+
+        <!-- Header -->
+        <div class="cal-header-row">
+          <div></div>
+          <div class="cal-day-hdr">17</div>
+          <div class="cal-day-hdr">18</div>
+          <div class="cal-day-hdr">19</div>
+          <div class="cal-day-hdr today">20 ◀ Today</div>
+          <div class="cal-day-hdr">21</div>
+          <div class="cal-day-hdr">22</div>
+          <div class="cal-day-hdr">23</div>
+          <div class="cal-day-hdr">24</div>
+          <div class="cal-day-hdr">25</div>
+          <div class="cal-day-hdr">26</div>
+          <div class="cal-day-hdr">27</div>
+          <div class="cal-day-hdr">28</div>
+          <div class="cal-day-hdr">29</div>
+          <div class="cal-day-hdr">30</div>
+          <div class="cal-day-hdr" style="color:#aaa">1/5</div>
+        </div>
+
+        <!-- Nest 1 -->
+        <div class="cal-row">
+          <div class="cal-unit-label">🏕 Nest 1</div>
+          <div class="cal-cell c-airbnb">Yamada</div>
+          <div class="cal-cell c-airbnb">Yamada</div>
+          <div class="cal-cell c-airbnb">Yamada</div>
+          <div class="cal-cell c-airbnb today-col">Yamada</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell c-direct">Park J.</div>
+          <div class="cal-cell c-direct">Park J.</div>
+          <div class="cal-cell c-direct">Park J.</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-booking">Müller</div>
+          <div class="cal-cell c-booking">Müller</div>
+          <div class="cal-cell c-booking">Müller</div>
+          <div class="cal-cell c-out">→ out</div>
+        </div>
+
+        <!-- Nest 2 -->
+        <div class="cal-row">
+          <div class="cal-unit-label">🏕 Nest 2</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-direct today-col">▶ Tanaka</div>
+          <div class="cal-cell c-direct">Tanaka</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-airbnb">Jones</div>
+          <div class="cal-cell c-airbnb">Jones</div>
+          <div class="cal-cell c-airbnb">Jones</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+        </div>
+
+        <!-- Nest 3 -->
+        <div class="cal-row">
+          <div class="cal-unit-label">🏕 Nest 3</div>
+          <div class="cal-cell c-booking">Lim S.</div>
+          <div class="cal-cell c-booking">Lim S.</div>
+          <div class="cal-cell c-booking">Lim S.</div>
+          <div class="cal-cell c-out today-col">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-direct">Wongso</div>
+          <div class="cal-cell c-direct">Wongso</div>
+          <div class="cal-cell c-direct">Wongso</div>
+          <div class="cal-cell c-direct">Wongso</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+        </div>
+
+        <!-- Nest 4 -->
+        <div class="cal-row">
+          <div class="cal-unit-label">🏕 Nest 4</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-direct today-col">▶ S.Chen</div>
+          <div class="cal-cell c-direct">S.Chen</div>
+          <div class="cal-cell c-direct">S.Chen</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell c-blocked">Maint.</div>
+          <div class="cal-cell c-blocked">Maint.</div>
+          <div class="cal-cell c-airbnb">Gupta</div>
+          <div class="cal-cell c-airbnb">Gupta</div>
+          <div class="cal-cell c-airbnb">Gupta</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+        </div>
+
+        <!-- Nest 5 -->
+        <div class="cal-row">
+          <div class="cal-unit-label">🏕 Nest 5</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail today-col"></div>
+          <div class="cal-cell c-direct">Sari H.</div>
+          <div class="cal-cell c-direct">Sari H.</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell avail"></div>
+          <div class="cal-cell c-booking">Zhang W.</div>
+          <div class="cal-cell c-booking">Zhang W.</div>
+          <div class="cal-cell c-booking">Zhang W.</div>
+          <div class="cal-cell c-out">→ out</div>
+          <div class="cal-cell avail"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Upcoming bookings -->
+  <div class="card">
+    <div class="flex justify-between items-center mb-16">
+      <div class="card-title" style="margin:0">Upcoming Arrivals This Week</div>
+      <button class="btn btn-ghost btn-sm">View All →</button>
+    </div>
+
+    <div class="guest-row" onclick="go('checkin')">
+      <div class="avatar" style="background:#6366F1">T</div>
+      <div style="flex:1">
+        <div class="text-sm font-semi">Tanaka Family</div>
+        <div class="text-xs text-muted">Nest 2 · Apr 20–22 · 2 guests · 2 nights</div>
+      </div>
+      <div style="text-align:right">
+        <span class="ch ch-direct">Direct</span>
+        <div class="text-xs text-muted mt-4">Rp 2,400,000 · Dep. ✓</div>
+      </div>
+    </div>
+
+    <div class="guest-row" onclick="go('checkin')">
+      <div class="avatar" style="background:#EC4899">S</div>
+      <div style="flex:1">
+        <div class="text-sm font-semi">Sarah Chen</div>
+        <div class="text-xs text-muted">Nest 4 · Apr 20–23 · 2 guests · 3 nights</div>
+      </div>
+      <div style="text-align:right">
+        <span class="ch ch-direct">Direct</span>
+        <div class="text-xs text-muted mt-4">Rp 3,600,000 · Dep. ✓</div>
+      </div>
+    </div>
+
+    <div class="guest-row">
+      <div class="avatar" style="background:#F97316">P</div>
+      <div style="flex:1">
+        <div class="text-sm font-semi">Park Jisoo</div>
+        <div class="text-xs text-muted">Nest 1 · Apr 22–25 · 1 guest · 3 nights</div>
+      </div>
+      <div style="text-align:right">
+        <span class="ch ch-direct">Direct</span>
+        <div class="text-xs text-muted mt-4 font-bold" style="color:#D97706">Dep. pending</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 2b · NEW BOOKING FORM
+══════════════════════════════════════════════════ -->
+<div id="screen-newbooking" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-title">New Reservation</div>
+      <div class="page-subtitle">Create a direct or manual OTA booking</div>
+    </div>
+    <button class="btn btn-ghost" onclick="go('calendar')">← Back to Calendar</button>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Guest Information</div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input class="form-control" value="Tanaka Hiroshi" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">WhatsApp / Phone</label>
+        <input class="form-control" value="+62 812 3456 7890" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-control" value="tanaka.h@gmail.com" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nationality</label>
+        <input class="form-control" value="Japanese" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Number of Guests</label>
+        <input class="form-control" value="2 adults" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Special Requests</label>
+        <input class="form-control" value="Extra blankets, early check-in if possible" readonly>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="card">
+        <div class="card-title">Booking Details</div>
+        <div class="form-group">
+          <label class="form-label">Unit</label>
+          <select class="form-control"><option>🏕 Nest 2 — Available</option><option>🏕 Nest 5 — Available</option></select>
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Check-in</label>
+            <input class="form-control" value="2026-04-20" type="date" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Check-out</label>
+            <input class="form-control" value="2026-04-22" type="date" readonly>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Booking Source</label>
+          <select class="form-control">
+            <option>📲 Direct (WhatsApp / Website)</option>
+            <option>✈ Airbnb</option>
+            <option>🏨 Booking.com</option>
+            <option>🟦 Traveloka</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Payment Summary</div>
+        <div class="flex justify-between mb-8">
+          <span class="text-sm text-muted">Rate per night</span>
+          <span class="text-sm font-semi">Rp 1,200,000</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-sm text-muted">Duration</span>
+          <span class="text-sm font-semi">2 nights</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-sm text-muted">Total</span>
+          <span class="text-sm font-bold">Rp 2,400,000</span>
+        </div>
+        <hr class="div">
+        <div class="flex justify-between mb-16">
+          <span class="text-sm text-muted">Deposit Required (30%)</span>
+          <span class="text-sm font-bold" style="color:var(--gold)">Rp 720,000</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Deposit Status</label>
+          <select class="form-control">
+            <option>✓ Deposit Received (Bank Transfer)</option>
+            <option>⏳ Awaiting Payment</option>
+            <option>💵 Paid in Full</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:13px;margin-top:8px">✅ Create Reservation</button>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:8px">📲 Send Confirmation via WhatsApp</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 3 · ROOM ALLOTMENT
+══════════════════════════════════════════════════ -->
+<div id="screen-allotment" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Room Allotment</div>
+      <div class="page-subtitle">Manage channel distribution across your 5 units</div>
+    </div>
+    <button class="btn btn-primary">Save Changes</button>
+  </div>
+
+  <div class="grid-2 section">
+    <div class="card">
+      <div class="card-title">Channel Allocation — May 2026</div>
+
+      <div class="allot-row">
+        <div class="allot-label"><span class="ch ch-direct">Direct</span></div>
+        <div class="allot-bar-bg"><div class="allot-bar" style="width:40%;background:var(--green-dark)"></div></div>
+        <div class="allot-count">2 units</div>
+      </div>
+      <div class="allot-row">
+        <div class="allot-label"><span class="ch ch-airbnb">Airbnb</span></div>
+        <div class="allot-bar-bg"><div class="allot-bar" style="width:20%;background:#FF5A5F"></div></div>
+        <div class="allot-count">1 unit</div>
+      </div>
+      <div class="allot-row">
+        <div class="allot-label"><span class="ch ch-booking">Booking.com</span></div>
+        <div class="allot-bar-bg"><div class="allot-bar" style="width:20%;background:#003580"></div></div>
+        <div class="allot-count">1 unit</div>
+      </div>
+      <div class="allot-row">
+        <div class="allot-label"><span class="ch ch-buffer">Buffer</span></div>
+        <div class="allot-bar-bg"><div class="allot-bar" style="width:20%;background:#9CA3AF"></div></div>
+        <div class="allot-count">1 unit</div>
+      </div>
+
+      <hr class="div">
+      <div class="text-xs text-muted">💡 Buffer unit is kept unallocated to protect against double-booking during OTA sync. Released to open channels at T–3 days if still empty.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Unit Assignments</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="color:var(--text-muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">
+            <th style="padding:8px 0;text-align:left">Unit</th>
+            <th style="text-align:left">Channel</th>
+            <th style="text-align:left">Tonight</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:12px 0;font-weight:700">Nest 1</td>
+            <td><span class="ch ch-airbnb">Airbnb</span></td>
+            <td><span class="badge badge-amber">Occupied</span></td>
+            <td><button class="btn btn-ghost btn-sm">Edit</button></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:12px 0;font-weight:700">Nest 2</td>
+            <td><span class="ch ch-direct">Direct</span></td>
+            <td><span class="badge badge-blue">Arriving</span></td>
+            <td><button class="btn btn-ghost btn-sm">Edit</button></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:12px 0;font-weight:700">Nest 3</td>
+            <td><span class="ch ch-booking">Booking.com</span></td>
+            <td><span class="badge badge-green">Available</span></td>
+            <td><button class="btn btn-ghost btn-sm">Edit</button></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:12px 0;font-weight:700">Nest 4</td>
+            <td><span class="ch ch-direct">Direct</span></td>
+            <td><span class="badge badge-blue">Arriving</span></td>
+            <td><button class="btn btn-ghost btn-sm">Edit</button></td>
+          </tr>
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:12px 0;font-weight:700">Nest 5</td>
+            <td><span class="ch ch-buffer">Buffer</span></td>
+            <td><span class="badge badge-green">Available</span></td>
+            <td><button class="btn btn-ghost btn-sm">Edit</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Strategy notes -->
+  <div class="card">
+    <div class="card-title">Channel Strategy</div>
+    <div class="grid-3 mt-8">
+      <div style="background:#F0FDF4;padding:16px;border-radius:10px;border:1px solid #BBF7D0">
+        <div class="text-sm font-bold mb-8" style="color:#15803D">📲 Direct Booking Goal</div>
+        <div class="text-xs" style="color:#166534;line-height:1.6">Grow direct from 40% → 60% over 6 months. Offer 10% discount vs OTA rate for guests booking via WhatsApp or website. No commission = more margin.</div>
+      </div>
+      <div style="background:#FFF7ED;padding:16px;border-radius:10px;border:1px solid #FED7AA">
+        <div class="text-sm font-bold mb-8" style="color:#C2410C">📢 OTA Exposure Phase</div>
+        <div class="text-xs" style="color:#9A3412;line-height:1.6">Keep 2 units on OTA (Airbnb + Booking.com) for visibility and reviews. Plan: reduce to 1 OTA unit after reaching 50+ reviews and strong direct booking demand.</div>
+      </div>
+      <div style="background:#EFF6FF;padding:16px;border-radius:10px;border:1px solid #BFDBFE">
+        <div class="text-sm font-bold mb-8" style="color:#1E40AF">🛡 Buffer Rule</div>
+        <div class="text-xs" style="color:#1E3A8A;line-height:1.6">Always hold 1 unit as buffer to prevent double-booking during OTA sync lag. Auto-release it to best available channel at T–3 days if still empty.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 4 · CHECK-IN / CHECK-OUT
+══════════════════════════════════════════════════ -->
+<div id="screen-checkin" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Check-in / Check-out</div>
+      <div class="page-subtitle">Monday, 20 April 2026</div>
+    </div>
+  </div>
+
+  <div class="grid-2 section">
+    <div class="card">
+      <div class="card-title">Arriving Today (2)</div>
+
+      <div class="guest-row" style="border-color:#3B82F6;background:#EFF6FF" onclick="document.getElementById('checkin-flow').scrollIntoView({behavior:'smooth'})">
+        <div class="avatar" style="background:#6366F1">T</div>
+        <div style="flex:1">
+          <div class="text-sm font-semi">Tanaka Family</div>
+          <div class="text-xs text-muted">Nest 2 · ETA 14:00 · 2 pax · 2 nights</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge badge-blue" style="cursor:pointer">Check In →</span>
+          <div class="text-xs text-muted mt-4">Dep. ✓ Paid</div>
+        </div>
+      </div>
+
+      <div class="guest-row">
+        <div class="avatar" style="background:#EC4899">S</div>
+        <div style="flex:1">
+          <div class="text-sm font-semi">Sarah Chen</div>
+          <div class="text-xs text-muted">Nest 4 · ETA 15:00 · 2 pax · 3 nights</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge badge-amber">Waiting</span>
+          <div class="text-xs text-muted mt-4">Dep. ✓ Paid</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Departing Today (1)</div>
+      <div class="guest-row" style="background:#F0FDF4;border-color:#BBF7D0">
+        <div class="avatar" style="background:#9CA3AF">L</div>
+        <div style="flex:1">
+          <div class="text-sm font-semi">Lim Sohyun</div>
+          <div class="text-xs text-muted">Nest 3 · Checked out 11:05 ✓</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge badge-green">Completed</span>
+          <div class="text-xs text-muted mt-4">Full paid ✓</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Check-in flow -->
+  <div class="card" id="checkin-flow">
+    <div class="flex justify-between items-center mb-16">
+      <div>
+        <div class="text-sm font-bold">Processing Check-in · Tanaka Family — 🏕 Nest 2</div>
+        <div class="text-xs text-muted">2 guests · Apr 20 → Apr 22 · Direct booking</div>
+      </div>
+      <span class="ch ch-direct">Direct</span>
+    </div>
+
+    <div class="steps">
+      <div class="step done">1. Guest Info ✓</div>
+      <div class="step done">2. ID Verified ✓</div>
+      <div class="step active">3. Unit Handover</div>
+      <div class="step">4. Complete</div>
+    </div>
+
+    <div class="card-title" style="margin-bottom:12px">Nest 2 Handover Checklist</div>
+
+    <div class="check-item checked" onclick="toggle(this)">
+      <div class="check-box">✓</div>
+      <div>
+        <div class="text-sm font-semi">Unit clean & ready</div>
+        <div class="text-xs text-muted">Housekeeping confirmed 11:30 · Wayan</div>
+      </div>
+    </div>
+
+    <div class="check-item checked" onclick="toggle(this)">
+      <div class="check-box">✓</div>
+      <div>
+        <div class="text-sm font-semi">Welcome amenities in place</div>
+        <div class="text-xs text-muted">Water, local snacks, welcome card, fresh flowers</div>
+      </div>
+    </div>
+
+    <div class="check-item checked" onclick="toggle(this)">
+      <div class="check-box">✓</div>
+      <div>
+        <div class="text-sm font-semi">WiFi details provided</div>
+        <div class="text-xs text-muted">Network: BirdnestGuest · Pass: volcano2026</div>
+      </div>
+    </div>
+
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-box"></div>
+      <div>
+        <div class="text-sm font-semi">Guest briefed on check-out time</div>
+        <div class="text-xs text-muted">Remind: 11:00 AM on Apr 22</div>
+      </div>
+    </div>
+
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-box"></div>
+      <div>
+        <div class="text-sm font-semi">House rules explained</div>
+        <div class="text-xs text-muted">No campfire outside zone · Quiet hours 22:00 · No outside guests</div>
+      </div>
+    </div>
+
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-box"></div>
+      <div>
+        <div class="text-sm font-semi">ID / Passport captured</div>
+        <div class="text-xs text-muted">Required by Indonesian immigration regulation</div>
+      </div>
+    </div>
+
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-box"></div>
+      <div>
+        <div class="text-sm font-semi">Emergency contact shared with guest</div>
+        <div class="text-xs text-muted">Staff WhatsApp: +62 812 XXXX XXXX</div>
+      </div>
+    </div>
+
+    <div class="mt-16 flex gap-8" style="flex-wrap:wrap">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;padding:13px" onclick="alert('Check-in completed! Unit status updated.')">✅ Complete Check-in</button>
+      <button class="btn btn-ghost" onclick="alert('Opens WhatsApp with welcome message template')">📲 Send Welcome Message</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 5 · OPERATIONS BOARD
+══════════════════════════════════════════════════ -->
+<div id="screen-operations" class="screen">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Operations Board</div>
+      <div class="page-subtitle">Daily tasks, housekeeping & maintenance · Monday 20 Apr</div>
+    </div>
+    <button class="btn btn-primary">+ Add Task</button>
+  </div>
+
+  <div class="alert alert-warn">
+    ⚠️ <strong>Open maintenance issue</strong> — Water heater in Nest 1 reported at 09:15. Guest currently in unit. Assign a technician before 16:00.
+  </div>
+
+  <div class="kanban section">
+
+    <!-- To Do -->
+    <div class="k-col">
+      <div class="k-col-hdr">
+        <span>📋 To Do</span>
+        <span class="badge badge-amber">3</span>
+      </div>
+
+      <div class="k-card p-high">
+        <div class="k-card-title">🔧 Fix water heater — Nest 1</div>
+        <div class="k-card-meta">Priority: High · Assign: Ketut</div>
+        <div class="k-card-meta mt-4">Guest in unit — coordinate timing with guest</div>
+        <div class="mt-8"><span class="badge badge-red">Maintenance</span></div>
+      </div>
+
+      <div class="k-card p-med">
+        <div class="k-card-title">🧹 Deep clean — Nest 3 post-checkout</div>
+        <div class="k-card-meta">Lim checkout at 11:05 · Must be done by 14:00</div>
+        <div class="mt-8"><span class="badge badge-amber">Housekeeping</span></div>
+      </div>
+
+      <div class="k-card p-low">
+        <div class="k-card-title">🛍 Restock minibar — Nest 5</div>
+        <div class="k-card-meta">Assigned: Wayan · No urgency</div>
+        <div class="mt-8"><span class="badge badge-blue">Supplies</span></div>
+      </div>
+    </div>
+
+    <!-- In Progress -->
+    <div class="k-col">
+      <div class="k-col-hdr">
+        <span>🔄 In Progress</span>
+        <span class="badge badge-blue">2</span>
+      </div>
+
+      <div class="k-card p-high">
+        <div class="k-card-title">🧹 Prep Nest 2 for Tanaka arrival</div>
+        <div class="k-card-meta">Assigned: Wayan · ETA done: 13:00</div>
+        <div class="k-card-meta mt-4">✓ Bed made &nbsp; ✓ Bathroom &nbsp; ⏳ Amenities</div>
+        <div class="mt-8"><span class="badge badge-amber">Housekeeping</span></div>
+      </div>
+
+      <div class="k-card p-med">
+        <div class="k-card-title">🌿 Garden trim — Nest 4 path area</div>
+        <div class="k-card-meta">Assigned: Made · Today</div>
+        <div class="mt-8"><span class="badge badge-green">Grounds</span></div>
+      </div>
+    </div>
+
+    <!-- Done -->
+    <div class="k-col">
+      <div class="k-col-hdr">
+        <span>✅ Done Today</span>
+        <span class="badge badge-green">4</span>
+      </div>
+
+      <div class="k-card" style="opacity:0.65">
+        <div class="k-card-title">✅ Nest 4 prepped for Sarah Chen</div>
+        <div class="k-card-meta">Done 11:30 · Wayan</div>
+      </div>
+
+      <div class="k-card" style="opacity:0.65">
+        <div class="k-card-title">✅ Check-out — Lim Sohyun (Nest 3)</div>
+        <div class="k-card-meta">Done 11:05 · Ketut</div>
+      </div>
+
+      <div class="k-card" style="opacity:0.65">
+        <div class="k-card-title">✅ Welcome packs — Nest 2 & 4</div>
+        <div class="k-card-meta">Done 10:45 · Ketut</div>
+      </div>
+
+      <div class="k-card" style="opacity:0.65">
+        <div class="k-card-title">✅ Morning inspection — all 5 units</div>
+        <div class="k-card-meta">Done 09:00 · Wayan</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Staff on duty -->
+  <div class="card">
+    <div class="card-title">Staff On Duty Today</div>
+    <div class="grid-3 mt-8">
+      <div class="flex items-center gap-12">
+        <div class="avatar" style="background:#7C3AED">W</div>
+        <div>
+          <div class="text-sm font-semi">Wayan</div>
+          <div class="text-xs text-muted">Housekeeping · 3 tasks assigned</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-12">
+        <div class="avatar" style="background:#0891B2">K</div>
+        <div>
+          <div class="text-sm font-semi">Ketut</div>
+          <div class="text-xs text-muted">Front desk & ops · 2 tasks</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-12">
+        <div class="avatar" style="background:#059669">M</div>
+        <div>
+          <div class="text-sm font-semi">Made</div>
+          <div class="text-xs text-muted">Grounds & maintenance · 1 task</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 6 · GUEST LIST & PROFILE
+══════════════════════════════════════════════════ -->
+<div id="screen-guests" class="screen">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Guest Intelligence</div>
+      <div class="page-subtitle">Full history, preferences & relationship data for every guest</div>
+    </div>
+    <button class="btn btn-primary">+ Add Guest</button>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid-4 section">
+    <div class="mini-stat">
+      <div class="mini-stat-val">38</div>
+      <div class="mini-stat-lbl">Total Guests</div>
+    </div>
+    <div class="mini-stat">
+      <div class="mini-stat-val">61%</div>
+      <div class="mini-stat-lbl">Returning Guests</div>
+    </div>
+    <div class="mini-stat">
+      <div class="mini-stat-val">Rp 4.2M</div>
+      <div class="mini-stat-lbl">Avg. Lifetime Value</div>
+    </div>
+    <div class="mini-stat">
+      <div class="mini-stat-val" style="color:#F59E0B">🎂 3</div>
+      <div class="mini-stat-lbl">Birthdays This Month</div>
+    </div>
+  </div>
+
+  <!-- Upcoming birthdays alert -->
+  <div class="card section">
+    <div class="card-title" style="margin-bottom:12px">🎂 Upcoming Birthdays — Opportunity to Invite Back</div>
+
+    <div class="birthday-card">
+      <div style="font-size:28px">🎂</div>
+      <div style="flex:1">
+        <div class="text-sm font-bold">Tanaka Hiroshi</div>
+        <div class="text-xs text-muted">Birthday in <strong style="color:#D97706">12 days</strong> · May 2 · 🇯🇵 Japanese · 3 stays</div>
+      </div>
+      <button class="btn btn-sm" style="background:#D97706;color:white">📲 Send Birthday Invite</button>
+    </div>
+
+    <div class="birthday-card" style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);border-color:#C4B5FD">
+      <div style="font-size:28px">🎂</div>
+      <div style="flex:1">
+        <div class="text-sm font-bold">Sarah Chen</div>
+        <div class="text-xs text-muted">Birthday in <strong style="color:#7C3AED">18 days</strong> · May 8 · 🇸🇬 Singaporean · 1 stay</div>
+      </div>
+      <button class="btn btn-sm" style="background:#7C3AED;color:white">📲 Send Birthday Invite</button>
+    </div>
+
+    <div class="birthday-card" style="background:linear-gradient(135deg,#D1FAE5,#A7F3D0);border-color:#6EE7B7">
+      <div style="font-size:28px">🎂</div>
+      <div style="flex:1">
+        <div class="text-sm font-bold">Wongso Budi</div>
+        <div class="text-xs text-muted">Birthday in <strong style="color:#065F46">24 days</strong> · May 14 · 🇮🇩 Indonesian · 2 stays</div>
+      </div>
+      <button class="btn btn-sm" style="background:#059669;color:white">📲 Send Birthday Invite</button>
+    </div>
+  </div>
+
+  <!-- Guest list -->
+  <div class="card">
+    <div class="flex justify-between items-center mb-16">
+      <div class="card-title" style="margin:0">All Guests</div>
+      <div class="flex gap-8">
+        <input class="form-control" placeholder="Search guests..." style="width:200px;padding:7px 12px">
+        <select class="form-control" style="width:140px;padding:7px 12px"><option>All Tiers</option><option>🌿 Wanderer</option><option>🏔 Explorer</option><option>🦅 Adventurer</option><option>🪺 Member</option></select>
+      </div>
+    </div>
+
+    <div class="guest-card" onclick="go('profile')">
+      <div class="avatar-lg" style="background:#6366F1">T</div>
+      <div style="flex:1">
+        <div class="flex items-center gap-8 mb-4">
+          <span class="text-sm font-bold">Tanaka Hiroshi</span>
+          <span class="tier-badge tier-adventurer">🦅 Adventurer</span>
+        </div>
+        <div class="text-xs text-muted">🇯🇵 Japanese · +81 90 1234 5678 · 3 stays · 7 nights · 🎂 May 2</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm font-bold" style="color:var(--green-dark)">Rp 8,400,000</div>
+        <div class="text-xs text-muted">lifetime value</div>
+        <div class="text-xs text-muted mt-4">Last stay: Apr 15</div>
+      </div>
+    </div>
+
+    <div class="guest-card">
+      <div class="avatar-lg" style="background:#EC4899">S</div>
+      <div style="flex:1">
+        <div class="flex items-center gap-8 mb-4">
+          <span class="text-sm font-bold">Sarah Chen</span>
+          <span class="tier-badge tier-wanderer">🌿 Wanderer</span>
+        </div>
+        <div class="text-xs text-muted">🇸🇬 Singaporean · +65 9123 4567 · 1 stay · 3 nights · 🎂 May 8</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm font-bold" style="color:var(--green-dark)">Rp 3,600,000</div>
+        <div class="text-xs text-muted">lifetime value</div>
+        <div class="text-xs text-muted mt-4">Last stay: Ongoing</div>
+      </div>
+    </div>
+
+    <div class="guest-card">
+      <div class="avatar-lg" style="background:#F97316">Y</div>
+      <div style="flex:1">
+        <div class="flex items-center gap-8 mb-4">
+          <span class="text-sm font-bold">Yamada Kenji</span>
+          <span class="tier-badge tier-explorer">🏔 Explorer</span>
+        </div>
+        <div class="text-xs text-muted">🇯🇵 Japanese · +81 80 9876 5432 · 2 stays · 5 nights</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm font-bold" style="color:var(--green-dark)">Rp 6,000,000</div>
+        <div class="text-xs text-muted">lifetime value</div>
+        <div class="text-xs text-muted mt-4">Last stay: Apr 18</div>
+      </div>
+    </div>
+
+    <div class="guest-card">
+      <div class="avatar-lg" style="background:#059669">W</div>
+      <div style="flex:1">
+        <div class="flex items-center gap-8 mb-4">
+          <span class="text-sm font-bold">Wongso Budi</span>
+          <span class="tier-badge tier-explorer">🏔 Explorer</span>
+        </div>
+        <div class="text-xs text-muted">🇮🇩 Indonesian · +62 813 5555 6666 · 2 stays · 4 nights · 🎂 May 14</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm font-bold" style="color:var(--green-dark)">Rp 4,800,000</div>
+        <div class="text-xs text-muted">lifetime value</div>
+        <div class="text-xs text-muted mt-4">Last stay: Mar 30</div>
+      </div>
+    </div>
+
+    <div class="guest-card">
+      <div class="avatar-lg" style="background:#7C3AED">L</div>
+      <div style="flex:1">
+        <div class="flex items-center gap-8 mb-4">
+          <span class="text-sm font-bold">Lim Sohyun</span>
+          <span class="tier-badge tier-wanderer">🌿 Wanderer</span>
+        </div>
+        <div class="text-xs text-muted">🇰🇷 Korean · +82 10 2345 6789 · 1 stay · 3 nights</div>
+      </div>
+      <div style="text-align:right">
+        <div class="text-sm font-bold" style="color:var(--green-dark)">Rp 3,600,000</div>
+        <div class="text-xs text-muted">lifetime value</div>
+        <div class="text-xs text-muted mt-4">Checked out today</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 6b · INDIVIDUAL GUEST PROFILE
+══════════════════════════════════════════════════ -->
+<div id="screen-profile" class="screen">
+
+  <div class="flex justify-between items-center mb-16">
+    <button class="btn btn-ghost" onclick="go('guests')">← Back to Guests</button>
+    <div class="flex gap-8">
+      <button class="btn btn-outline btn-sm">📲 WhatsApp</button>
+      <button class="btn btn-primary btn-sm" onclick="go('newbooking')">+ New Booking</button>
+    </div>
+  </div>
+
+  <!-- Profile header -->
+  <div class="profile-header section">
+    <div class="profile-avatar">T</div>
+    <div style="flex:1">
+      <div class="profile-name">Tanaka Hiroshi</div>
+      <div class="profile-meta">🇯🇵 Japanese · +81 90 1234 5678 · tanaka.h@gmail.com</div>
+      <div class="flex gap-8 mt-8" style="flex-wrap:wrap">
+        <span class="tier-badge" style="background:rgba(255,255,255,0.2);color:white">🦅 Adventurer</span>
+        <span style="font-size:12px;opacity:0.8">3 stays · 7 nights · Rp 8,400,000 lifetime</span>
+        <span style="font-size:12px;opacity:0.8">🎂 Birthday May 2 — in 12 days</span>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:11px;opacity:0.7;margin-bottom:4px">NEXT PERK UNLOCK</div>
+      <div style="font-size:13px;font-weight:700">3 more nights → 🪺 Member</div>
+      <div style="background:rgba(255,255,255,0.15);border-radius:6px;height:6px;margin-top:8px;overflow:hidden">
+        <div style="width:70%;height:100%;background:var(--sand);border-radius:6px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2 section">
+
+    <!-- Left column -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Personal info -->
+      <div class="card">
+        <div class="card-title">Personal Details</div>
+        <div class="flex justify-between mb-8">
+          <span class="text-xs text-muted">Nationality</span>
+          <span class="text-sm font-semi">🇯🇵 Japanese</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-xs text-muted">WhatsApp</span>
+          <span class="text-sm font-semi">+81 90 1234 5678</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-xs text-muted">Email</span>
+          <span class="text-sm font-semi">tanaka.h@gmail.com</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-xs text-muted">Birthday</span>
+          <span class="text-sm font-semi">🎂 May 2, 1985</span>
+        </div>
+        <div class="flex justify-between mb-8">
+          <span class="text-xs text-muted">Anniversary</span>
+          <span class="text-sm font-semi">💍 August 15</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-xs text-muted">ID on file</span>
+          <span class="text-sm font-semi" style="color:var(--green-dark)">✓ Passport captured</span>
+        </div>
+      </div>
+
+      <!-- Guest preferences -->
+      <div class="card">
+        <div class="card-title">Preferences & Notes</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Tap a tag to remove · Click + to add new</div>
+
+        <div>
+          <div class="text-xs text-muted mb-4" style="margin-top:8px">🍽 Dietary / Allergies</div>
+          <span class="pref-tag pref-food">⚠ Son: peanut allergy</span>
+          <span class="pref-tag pref-food">No spicy food</span>
+        </div>
+
+        <div>
+          <div class="text-xs text-muted mb-4" style="margin-top:10px">🏕 Room Preferences</div>
+          <span class="pref-tag pref-room">Prefers Nest 1 or 2</span>
+          <span class="pref-tag pref-room">Extra blankets (always)</span>
+          <span class="pref-tag pref-room">King bed</span>
+        </div>
+
+        <div>
+          <div class="text-xs text-muted mb-4" style="margin-top:10px">🕐 Habits</div>
+          <span class="pref-tag pref-habit">Always arrives late (17:00+)</span>
+          <span class="pref-tag pref-habit">Early checkout</span>
+        </div>
+
+        <div>
+          <div class="text-xs text-muted mb-4" style="margin-top:10px">✨ Special</div>
+          <span class="pref-tag pref-special">Honeymoon anniversary trip</span>
+          <span class="pref-tag pref-special">Loves stargazing</span>
+        </div>
+
+        <div style="margin-top:12px">
+          <input class="form-control" placeholder="+ Add preference or note..." style="font-size:12px;padding:7px 12px">
+        </div>
+      </div>
+
+      <!-- Staff notes -->
+      <div class="card">
+        <div class="card-title">Staff Notes</div>
+
+        <div style="background:#FFFBEB;border-radius:8px;padding:12px;border:1px solid #FDE68A;margin-bottom:10px">
+          <div class="text-xs text-muted mb-4">Wayan · Apr 15, 2026</div>
+          <div class="text-sm">Guest was very happy with the volcano view from Nest 2. Requested the campfire experience. Son (age 8) loved the fireflies at night. Will definitely return — mentioned bringing family next time.</div>
+        </div>
+
+        <div style="background:#F0FDF4;border-radius:8px;padding:12px;border:1px solid #BBF7D0;margin-bottom:10px">
+          <div class="text-xs text-muted mb-4">Ketut · Jan 10, 2026</div>
+          <div class="text-sm">First stay. Couple. Very polite. Asked lots of questions about local culture. Left a 5-star review on Airbnb. Tipped staff Rp 200k. Good guests — prioritise if they book again.</div>
+        </div>
+
+        <textarea class="form-control" placeholder="Add a note from this stay..." style="margin-top:8px;height:70px;resize:none;font-size:13px"></textarea>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px">Save Note</button>
+      </div>
+
+    </div>
+
+    <!-- Right column: Stay history -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div class="card">
+        <div class="card-title">Stay History</div>
+
+        <div class="stay-row">
+          <div class="stay-dot" style="background:#3B82F6"></div>
+          <div style="flex:1">
+            <div class="text-sm font-bold">Ongoing stay · Nest 1</div>
+            <div class="text-xs text-muted">Apr 18 – Apr 21 · 3 nights · Direct</div>
+            <div class="text-xs text-muted">2 guests · Rp 3,600,000 · Paid ✓</div>
+          </div>
+          <span class="badge badge-blue">Active</span>
+        </div>
+
+        <div class="stay-row">
+          <div class="stay-dot"></div>
+          <div style="flex:1">
+            <div class="text-sm font-bold">Nest 2</div>
+            <div class="text-xs text-muted">Jan 8 – Jan 10 · 2 nights · Airbnb</div>
+            <div class="text-xs text-muted">2 guests · Rp 2,400,000 · Paid ✓</div>
+            <div class="text-xs mt-4" style="color:var(--green-dark)">⭐⭐⭐⭐⭐ "Best glamping in Bali!"</div>
+          </div>
+          <span class="badge badge-green">Completed</span>
+        </div>
+
+        <div class="stay-row">
+          <div class="stay-dot"></div>
+          <div style="flex:1">
+            <div class="text-sm font-bold">Nest 1 · First stay</div>
+            <div class="text-xs text-muted">Sep 22 – Sep 24 2025 · 2 nights · Airbnb</div>
+            <div class="text-xs text-muted">2 guests · Rp 2,400,000 · Paid ✓</div>
+            <div class="text-xs mt-4" style="color:var(--green-dark)">⭐⭐⭐⭐⭐ "Magical experience"</div>
+          </div>
+          <span class="badge badge-green">Completed</span>
+        </div>
+
+      </div>
+
+      <div class="card">
+        <div class="card-title">Lifetime Summary</div>
+        <div class="grid-2" style="gap:10px">
+          <div class="mini-stat">
+            <div class="mini-stat-val">3</div>
+            <div class="mini-stat-lbl">Stays</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val">7</div>
+            <div class="mini-stat-lbl">Nights</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" style="font-size:16px">Rp 8.4M</div>
+            <div class="mini-stat-lbl">Total Spend</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val">5.0 ⭐</div>
+            <div class="mini-stat-lbl">Avg. Rating</div>
+          </div>
+        </div>
+        <hr class="div">
+        <div class="flex justify-between">
+          <span class="text-xs text-muted">Current tier</span>
+          <span class="tier-badge tier-adventurer">🦅 Adventurer</span>
+        </div>
+        <div class="flex justify-between mt-8">
+          <span class="text-xs text-muted">Next tier</span>
+          <span class="text-xs font-semi" style="color:#7C3AED">🪺 Birdnest Member — needs 3 more nights</span>
+        </div>
+        <div style="background:#F3F4F6;border-radius:6px;height:8px;margin-top:8px;overflow:hidden">
+          <div style="width:70%;height:100%;background:var(--green-dark);border-radius:6px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Quick Actions</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-outline" style="justify-content:flex-start">📲 Send Birthday Invitation via WhatsApp</button>
+          <button class="btn btn-outline" style="justify-content:flex-start">🎁 Manually Apply Perk or Upgrade</button>
+          <button class="btn btn-outline" style="justify-content:flex-start">📅 View All Bookings</button>
+          <button class="btn btn-ghost" style="justify-content:flex-start;color:#EF4444;border-color:#FEE2E2">🚩 Flag Guest (internal note)</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════
+     SCREEN 7 · LOYALTY PROGRAM BUILDER
+══════════════════════════════════════════════════ -->
+<div id="screen-loyalty" class="screen">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Loyalty Program</div>
+      <div class="page-subtitle">Design your own tiers and perks — fully customizable</div>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-outline" onclick="addTier()">+ Add Tier</button>
+      <button class="btn btn-primary" onclick="alert('Loyalty program saved!')">Save Program</button>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    💡 <strong>How it works:</strong> You define the tiers, set the thresholds (nights, spend, or visits), and write your own perks. The system automatically assigns every guest to the right tier based on their stay data. You can change anything anytime.
+  </div>
+
+  <div class="grid-2 section">
+
+    <!-- Tier builder -->
+    <div>
+      <div class="text-sm font-bold mb-16" style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;font-size:11px">Your Tiers (drag to reorder)</div>
+
+      <div id="tier-list">
+
+        <!-- Tier 1 -->
+        <div class="tier-card" style="border-color:#F59E0B">
+          <div class="flex justify-between items-center mb-12">
+            <div class="flex items-center gap-8">
+              <span style="font-size:20px">🌿</span>
+              <input value="Wanderer" style="font-size:16px;font-weight:800;border:none;background:transparent;color:#B45309;width:120px" />
+            </div>
+            <span class="text-xs text-muted" style="background:#FEF3C7;padding:3px 10px;border-radius:20px;font-weight:700;color:#92400E">ENTRY TIER</span>
+          </div>
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <div style="flex:1">
+              <label class="form-label">Threshold Type</label>
+              <select class="form-control" style="padding:7px 10px"><option selected>First stay (automatic)</option></select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Minimum</label>
+              <input class="form-control" value="1 stay" style="padding:7px 10px" readonly>
+            </div>
+          </div>
+          <div class="card-title" style="margin-bottom:8px">Perks</div>
+          <div id="perk-list-1">
+            <span class="perk-tag" style="background:#FEF3C7;color:#92400E">🍹 Welcome drink on arrival <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#FEF3C7;color:#92400E">📖 Local activity guide booklet <span style="cursor:pointer;opacity:0.6">×</span></span>
+          </div>
+          <div class="flex gap-8 mt-8">
+            <input id="perk-input-1" class="form-control" placeholder="Add a perk..." style="padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addPerk(1)">
+            <button class="btn btn-sm" style="background:#F59E0B;color:white;white-space:nowrap" onclick="addPerk(1)">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="tier-card" style="border-color:#10B981">
+          <div class="flex justify-between items-center mb-12">
+            <div class="flex items-center gap-8">
+              <span style="font-size:20px">🏔</span>
+              <input value="Explorer" style="font-size:16px;font-weight:800;border:none;background:transparent;color:#065F46;width:120px" />
+            </div>
+            <span class="badge badge-green">3+ nights total</span>
+          </div>
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <div style="flex:1">
+              <label class="form-label">Threshold Type</label>
+              <select class="form-control" style="padding:7px 10px"><option selected>Total nights stayed</option><option>Total spend (Rp)</option><option>Number of visits</option></select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Minimum Value</label>
+              <input class="form-control" value="3" style="padding:7px 10px">
+            </div>
+          </div>
+          <div class="card-title" style="margin-bottom:8px">Perks</div>
+          <div id="perk-list-2">
+            <span class="perk-tag" style="background:#D1FAE5;color:#065F46">⏰ Early check-in (subject to availability) <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#D1FAE5;color:#065F46">🏕 Priority unit selection <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#D1FAE5;color:#065F46">☕ Complimentary Kintamani coffee set <span style="cursor:pointer;opacity:0.6">×</span></span>
+          </div>
+          <div class="flex gap-8 mt-8">
+            <input id="perk-input-2" class="form-control" placeholder="Add a perk..." style="padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addPerk(2)">
+            <button class="btn btn-sm" style="background:#10B981;color:white;white-space:nowrap" onclick="addPerk(2)">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Tier 3 -->
+        <div class="tier-card" style="border-color:#3B82F6">
+          <div class="flex justify-between items-center mb-12">
+            <div class="flex items-center gap-8">
+              <span style="font-size:20px">🦅</span>
+              <input value="Adventurer" style="font-size:16px;font-weight:800;border:none;background:transparent;color:#1E40AF;width:120px" />
+            </div>
+            <span class="badge badge-blue">7+ nights total</span>
+          </div>
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <div style="flex:1">
+              <label class="form-label">Threshold Type</label>
+              <select class="form-control" style="padding:7px 10px"><option selected>Total nights stayed</option><option>Total spend (Rp)</option><option>Number of visits</option></select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Minimum Value</label>
+              <input class="form-control" value="7" style="padding:7px 10px">
+            </div>
+          </div>
+          <div class="card-title" style="margin-bottom:8px">Perks</div>
+          <div id="perk-list-3">
+            <span class="perk-tag" style="background:#DBEAFE;color:#1E40AF">🌋 Free sunrise Mount Batur trip (1 pax) <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#DBEAFE;color:#1E40AF">⬆ Free unit upgrade if available <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#DBEAFE;color:#1E40AF">🔑 Late checkout until 13:00 <span style="cursor:pointer;opacity:0.6">×</span></span>
+          </div>
+          <div class="flex gap-8 mt-8">
+            <input id="perk-input-3" class="form-control" placeholder="Add a perk..." style="padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addPerk(3)">
+            <button class="btn btn-sm" style="background:#3B82F6;color:white;white-space:nowrap" onclick="addPerk(3)">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Tier 4 -->
+        <div class="tier-card" style="border-color:#8B5CF6">
+          <div class="flex justify-between items-center mb-12">
+            <div class="flex items-center gap-8">
+              <span style="font-size:20px">🪺</span>
+              <input value="Birdnest Member" style="font-size:16px;font-weight:800;border:none;background:transparent;color:#5B21B6;width:160px" />
+            </div>
+            <span class="tier-badge tier-member">VIP · 15+ nights</span>
+          </div>
+          <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+            <div style="flex:1">
+              <label class="form-label">Threshold Type</label>
+              <select class="form-control" style="padding:7px 10px"><option selected>Total nights stayed</option><option>Total spend (Rp)</option><option>Number of visits</option></select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Minimum Value</label>
+              <input class="form-control" value="15" style="padding:7px 10px">
+            </div>
+          </div>
+          <div class="card-title" style="margin-bottom:8px">Perks</div>
+          <div id="perk-list-4">
+            <span class="perk-tag" style="background:#EDE9FE;color:#5B21B6">🎯 Private campfire experience <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#EDE9FE;color:#5B21B6">📱 Direct line to property owner (Juppy) <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#EDE9FE;color:#5B21B6">🏕 Dedicated "your unit" preference honored <span style="cursor:pointer;opacity:0.6">×</span></span>
+            <span class="perk-tag" style="background:#EDE9FE;color:#5B21B6">🎁 Surprise welcome gift every stay <span style="cursor:pointer;opacity:0.6">×</span></span>
+          </div>
+          <div class="flex gap-8 mt-8">
+            <input id="perk-input-4" class="form-control" placeholder="Add a perk..." style="padding:6px 10px;font-size:12px" onkeydown="if(event.key==='Enter')addPerk(4)">
+            <button class="btn btn-sm" style="background:#8B5CF6;color:white;white-space:nowrap" onclick="addPerk(4)">+ Add</button>
+          </div>
+        </div>
+
+      </div>
+      <!-- Add tier button -->
+      <button class="btn btn-ghost" style="width:100%;justify-content:center;padding:14px;border-style:dashed" onclick="addTier()">+ Add New Tier</button>
+    </div>
+
+    <!-- Right: Distribution + Preview -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div class="card">
+        <div class="card-title">Guest Distribution</div>
+        <div class="text-xs text-muted mb-16">How your 38 guests currently fall across tiers</div>
+
+        <div>
+          <div class="flex justify-between mb-4">
+            <span class="text-xs font-semi" style="color:#B45309">🌿 Wanderer</span>
+            <span class="text-xs text-muted">22 guests · 58%</span>
+          </div>
+          <div class="dist-bar" style="width:58%;background:#F59E0B">22</div>
+        </div>
+        <div>
+          <div class="flex justify-between mb-4">
+            <span class="text-xs font-semi" style="color:#065F46">🏔 Explorer</span>
+            <span class="text-xs text-muted">11 guests · 29%</span>
+          </div>
+          <div class="dist-bar" style="width:29%;background:#10B981">11</div>
+        </div>
+        <div>
+          <div class="flex justify-between mb-4">
+            <span class="text-xs font-semi" style="color:#1E40AF">🦅 Adventurer</span>
+            <span class="text-xs text-muted">4 guests · 10%</span>
+          </div>
+          <div class="dist-bar" style="width:10%;background:#3B82F6">4</div>
+        </div>
+        <div>
+          <div class="flex justify-between mb-4">
+            <span class="text-xs font-semi" style="color:#5B21B6">🪺 Member</span>
+            <span class="text-xs text-muted">1 guest · 3%</span>
+          </div>
+          <div class="dist-bar" style="width:3%;background:#8B5CF6;min-width:30px">1</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">How the System Works</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:28px;height:28px;border-radius:8px;background:#D1FAE5;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">🔄</div>
+            <div>
+              <div class="text-sm font-semi">Automatic tier assignment</div>
+              <div class="text-xs text-muted">Every time a guest checks out, their tier is recalculated. No manual work needed.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:28px;height:28px;border-radius:8px;background:#DBEAFE;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">📲</div>
+            <div>
+              <div class="text-sm font-semi">Staff sees tier at check-in</div>
+              <div class="text-xs text-muted">Tier badge and applicable perks appear on the check-in screen so staff knows exactly what to offer.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:28px;height:28px;border-radius:8px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">✏️</div>
+            <div>
+              <div class="text-sm font-semi">Change anything, anytime</div>
+              <div class="text-xs text-muted">Add tiers, rename them, change thresholds, swap perks — the system re-assigns all guests instantly.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:28px;height:28px;border-radius:8px;background:#EDE9FE;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">🎁</div>
+            <div>
+              <div class="text-sm font-semi">Manual override anytime</div>
+              <div class="text-xs text-muted">You can manually bump a guest to a higher tier — useful for VIPs, special guests, or gifting a perk.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Tier Preview — What Guest Sees</div>
+        <div style="background:linear-gradient(135deg,#1E3A8A,#3B82F6);border-radius:12px;padding:18px;color:white">
+          <div style="font-size:11px;opacity:0.7;letter-spacing:1px;margin-bottom:4px">BIRDNEST LOYALTY</div>
+          <div style="font-size:20px;font-weight:800;margin-bottom:2px">🦅 Adventurer</div>
+          <div style="font-size:12px;opacity:0.8;margin-bottom:14px">Tanaka Hiroshi · 7 nights stayed</div>
+          <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:12px">
+            <div style="font-size:11px;font-weight:700;margin-bottom:8px;opacity:0.8">YOUR PERKS</div>
+            <div style="font-size:12px;margin-bottom:4px">🌋 Free sunrise Mount Batur trip</div>
+            <div style="font-size:12px;margin-bottom:4px">⬆ Free unit upgrade if available</div>
+            <div style="font-size:12px">🔑 Late checkout until 13:00</div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;opacity:0.7">3 more nights to reach 🪺 Birdnest Member</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  function go(screen) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+    const el = document.getElementById('screen-' + screen);
+    if (el) el.classList.add('active');
+
+    const map = { dashboard: 0, calendar: 1, newbooking: 1, allotment: 2, checkin: 3, operations: 4, guests: 5, profile: 5, loyalty: 6 };
+    const idx = map[screen];
+    if (idx !== undefined) document.querySelectorAll('.nav-tab')[idx]?.classList.add('active');
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Loyalty builder logic
+  let tierCount = 3;
+  function addTier() {
+    tierCount++;
+    const container = document.getElementById('tier-list');
+    const colors = ['#8B5CF6','#EC4899','#F97316','#06B6D4','#84CC16'];
+    const color = colors[tierCount % colors.length];
+    const div = document.createElement('div');
+    div.className = 'tier-card';
+    div.style.borderColor = color;
+    div.innerHTML = `
+      <div class="flex justify-between items-center mb-8">
+        <input value="New Tier ${tierCount}" style="font-size:15px;font-weight:800;border:none;background:transparent;color:${color};width:160px" />
+        <button onclick="this.closest('.tier-card').remove()" style="background:none;border:none;cursor:pointer;color:#9CA3AF;font-size:18px">×</button>
+      </div>
+      <div class="flex gap-8 mb-8" style="flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label">Threshold type</label>
+          <select class="form-control" style="padding:6px 10px">
+            <option>Total nights stayed</option>
+            <option>Total spend (Rp)</option>
+            <option>Number of visits</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label">Minimum value</label>
+          <input class="form-control" value="1" style="padding:6px 10px">
+        </div>
+      </div>
+      <div class="text-xs text-muted">Perks: <span style="color:${color};font-weight:600">Add perks after saving this tier</span></div>`;
+    container.appendChild(div);
+  }
+
+  function addPerk(tierId) {
+    const input = document.getElementById('perk-input-' + tierId);
+    const list = document.getElementById('perk-list-' + tierId);
+    if (!input || !input.value.trim()) return;
+    const li = document.createElement('div');
+    li.className = 'perk-tag';
+    li.innerHTML = input.value.trim() + ' <span onclick="this.parentElement.remove()" style="cursor:pointer;opacity:0.6">×</span>';
+    list.appendChild(li);
+    input.value = '';
+  }
+
+  function toggle(item) {
+    item.classList.toggle('checked');
+    item.querySelector('.check-box').textContent = item.classList.contains('checked') ? '✓' : '';
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,165 @@
+const router = require('express').Router();
+const db = require('../db');
+const auth = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, '../uploads'),
+  filename: (req, file, cb) => {
+    cb(null, `${req.params.bookingId}-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
+
+// POST /api/checkin/:bookingId/start
+router.post('/:bookingId/start', auth, async (req, res) => {
+  try {
+    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1', [req.params.bookingId]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.status !== 'confirmed' && booking.status !== 'pending') {
+      return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
+    }
+
+    // Block check-in if deposit is not fully received. OTA bookings are exempt.
+    if (!OTA_SOURCES.includes(booking.source)) {
+      const { rows: [deposit] } = await db.query(
+        "SELECT status, amount FROM payments WHERE booking_id = $1 AND type = 'deposit'",
+        [booking.id]
+      );
+      const required = parseFloat(booking.deposit_amount || 0);
+      const received = deposit?.status === 'received' ? parseFloat(deposit.amount || 0) : 0;
+      if (required > 0 && received < required) {
+        return res.status(409).json({
+          error: `Deposit not fully received. Required: Rp ${required.toLocaleString('id-ID')}, received: Rp ${received.toLocaleString('id-ID')}.`,
+          code: 'DEPOSIT_UNPAID',
+        });
+      }
+    }
+
+    await db.query("UPDATE bookings SET status = 'checked_in', updated_at = NOW() WHERE id = $1", [req.params.bookingId]);
+    await db.query("UPDATE units SET status = 'occupied' WHERE id = $1", [booking.unit_id]);
+
+    const { rows } = await db.query(
+      `INSERT INTO checkin_records (booking_id, checkin_time, processed_by)
+       VALUES ($1, NOW(), $2) ON CONFLICT (booking_id) DO UPDATE SET checkin_time = NOW(), processed_by = $2 RETURNING *`,
+      [req.params.bookingId, req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/checkin/:bookingId/complete
+router.put('/:bookingId/complete', auth, upload.single('id_document'), async (req, res) => {
+  const { checklist_data, condition_notes } = req.body;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    let id_document_url = null;
+    if (req.file) {
+      id_document_url = `/uploads/${req.file.filename}`;
+      const { rows: [booking] } = await client.query('SELECT guest_id FROM bookings WHERE id = $1', [req.params.bookingId]);
+      if (booking) {
+        await client.query('UPDATE guests SET id_document_url = $1 WHERE id = $2', [id_document_url, booking.guest_id]);
+      }
+    }
+
+    const { rows } = await client.query(
+      `UPDATE checkin_records SET
+        id_captured = $1,
+        checklist_data = $2,
+        condition_notes = $3,
+        processed_by = $4
+       WHERE booking_id = $5 RETURNING *`,
+      [
+        !!req.file,
+        checklist_data ? JSON.parse(checklist_data) : {},
+        condition_notes,
+        req.user.id,
+        req.params.bookingId,
+      ]
+    );
+    await client.query('COMMIT');
+    res.json(rows[0] || { booking_id: req.params.bookingId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/checkout/:bookingId/complete
+router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
+  const { condition_notes } = req.body;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1', [req.params.bookingId]);
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1", [req.params.bookingId]);
+    await client.query("UPDATE units SET status = 'available' WHERE id = $1", [booking.unit_id]);
+    await client.query(
+      'UPDATE checkin_records SET checkout_time = NOW(), condition_notes = COALESCE($1, condition_notes) WHERE booking_id = $2',
+      [condition_notes, req.params.bookingId]
+    );
+
+    // Auto-generate housekeeping task
+    await client.query(
+      `INSERT INTO tasks (title, type, priority, unit_id, booking_id)
+       VALUES ($1, 'housekeeping', 'high', $2, $3)`,
+      [`Clean & prepare unit after checkout`, booking.unit_id, booking.id]
+    );
+
+    // Recalculate guest loyalty tier
+    await recalcGuestTier(client, booking.guest_id);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Check-out complete', booking_id: req.params.bookingId });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+async function recalcGuestTier(client, guestId) {
+  const { rows: stats } = await client.query(`
+    SELECT
+      COALESCE(SUM(nights), 0) as total_nights,
+      COALESCE(SUM(total_amount), 0) as total_spend,
+      COUNT(*) as total_visits
+    FROM bookings
+    WHERE guest_id = $1 AND status = 'checked_out'
+  `, [guestId]);
+
+  const { total_nights, total_spend, total_visits } = stats[0];
+  const { rows: tiers } = await client.query(
+    'SELECT * FROM loyalty_tiers ORDER BY threshold_value DESC'
+  );
+
+  let assignedTier = null;
+  for (const tier of tiers) {
+    const val = tier.threshold_type === 'nights' ? total_nights
+      : tier.threshold_type === 'spend' ? total_spend
+      : total_visits;
+    if (parseFloat(val) >= parseFloat(tier.threshold_value)) {
+      assignedTier = tier.id;
+      break;
+    }
+  }
+
+  const { rows: [guest] } = await client.query('SELECT tier_override FROM guests WHERE id = $1', [guestId]);
+  if (guest && !guest.tier_override) {
+    await client.query('UPDATE guests SET loyalty_tier_id = $1 WHERE id = $2', [assignedTier, guestId]);
+  }
+}
+
+module.exports = router;
