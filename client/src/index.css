@@ -367,8 +367,9 @@ tr:hover td { background: #FAFAF8; }
   .nav-logo { border-right: none; }
   .nav-bar  { padding: 0 4px; }
 
-  /* App shell becomes full-height; main content scrolls inside it */
-  .app-shell    { height: 100vh; height: 100dvh; overflow: hidden; }
+  /* Lock layout to actual rendered frame height (not 100vh which ignores browser chrome) */
+  html, body, #root { height: 100%; }
+  .app-shell    { height: 100%; overflow: hidden; }
   .main-content { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
   /* Content */
