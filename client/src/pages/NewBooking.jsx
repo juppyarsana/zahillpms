@@ -1,11 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../services/api';
-
-const CH_LABEL = {
-  direct: 'Direct', airbnb: 'Airbnb', booking_com: 'Booking.com',
-  traveloka: 'Traveloka', buffer: 'Buffer',
-};
+import { useSettings } from '../context/SettingsContext';
 
 function sourceMatchesAllotment(source, allotmentChannel) {
   if (allotmentChannel === 'buffer') return false;
@@ -13,10 +9,14 @@ function sourceMatchesAllotment(source, allotmentChannel) {
   return source === allotmentChannel;
 }
 
-function AllotmentNote({ allotment, source, checkIn }) {
+function AllotmentNote({ allotment, source, checkIn, sources }) {
   const monthLabel = new Date(checkIn + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' });
   const ch = allotment.channel;
   const matches = sourceMatchesAllotment(source, ch);
+  function chLabel(id) {
+    if (id === 'buffer') return 'Buffer';
+    return sources.find(s => s.id === id)?.label || id;
+  }
 
   if (ch === 'buffer') {
     return (
@@ -31,10 +31,10 @@ function AllotmentNote({ allotment, source, checkIn }) {
     return (
       <div style={{ marginTop: 0, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '10px 12px', color: '#92400e' }}>
         <div style={{ fontWeight: 700, fontSize: 13 }}>
-          ⚠ Channel mismatch: {CH_LABEL[ch]} allotment · {CH_LABEL[source] || source} booking
+          ⚠ Channel mismatch: {chLabel(ch)} allotment · {chLabel(source) || source} booking
         </div>
         <div style={{ fontSize: 12, marginTop: 3 }}>
-          This unit is allocated to {CH_LABEL[ch]} for {monthLabel}. Close it on {CH_LABEL[ch]} first to avoid double-booking.
+          This unit is allocated to {chLabel(ch)} for {monthLabel}. Close it on {chLabel(ch)} first to avoid double-booking.
         </div>
       </div>
     );
@@ -42,7 +42,7 @@ function AllotmentNote({ allotment, source, checkIn }) {
 
   return (
     <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
-      ✓ Allotment for {monthLabel}: <strong>{CH_LABEL[ch]}</strong>
+      ✓ Allotment for {monthLabel}: <strong>{chLabel(ch)}</strong>
       {allotment.notes && <span> · {allotment.notes}</span>}
     </div>
   );
@@ -51,6 +51,7 @@ function AllotmentNote({ allotment, source, checkIn }) {
 export default function NewBooking() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
+  const { sources } = useSettings();
   const [units, setUnits] = useState([]);
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
@@ -235,7 +236,7 @@ export default function NewBooking() {
                 </div>
               )}
               {availability.allotment ? (
-                <AllotmentNote allotment={availability.allotment} source={form.source} checkIn={form.check_in_date} />
+                <AllotmentNote allotment={availability.allotment} source={form.source} checkIn={form.check_in_date} sources={sources} />
               ) : form.unit_id && form.check_in_date ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
                   No allotment set for {new Date(form.check_in_date + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -247,11 +248,9 @@ export default function NewBooking() {
             <div className="form-group">
               <label className="form-label">Source</label>
               <select className="form-select" value={form.source} onChange={e => set('source', e.target.value)}>
-                <option value="direct">Direct</option>
-                <option value="airbnb">Airbnb</option>
-                <option value="booking_com">Booking.com</option>
-                <option value="traveloka">Traveloka</option>
-                <option value="walkin">Walk-in</option>
+                {sources.filter(s => s.is_active).map(s => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                ))}
               </select>
             </div>
           </div>

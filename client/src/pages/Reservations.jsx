@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { SourceBadge, useSettings } from '../context/SettingsContext';
 
 const PALETTE = ['#2D5016','#4A7C2A','#B8860B','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
@@ -13,17 +14,20 @@ function initials(name = '') {
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
 
-const STATUS_LABELS = { confirmed: 'Confirmed', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
-const STATUS_BADGE  = { confirmed: 'badge-green', pending: 'badge-amber', checked_in: 'badge-blue', checked_out: 'badge-gray', cancelled: 'badge-red', no_show: 'badge-red' };
-const SOURCE_CH     = { direct: 'ch-direct', airbnb: 'ch-airbnb', booking_com: 'ch-booking', traveloka: 'ch-traveloka', walkin: 'ch-direct' };
-const SOURCE_LABEL  = { direct: 'Direct', airbnb: 'Airbnb', booking_com: 'Booking.com', traveloka: 'Traveloka', walkin: 'Walk-in' };
+const STATUS_LABELS = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
+const STATUS_BADGE  = { confirmed: 'badge-green', deposit_paid: 'badge-amber', pending: 'badge-amber', checked_in: 'badge-blue', checked_out: 'badge-gray', cancelled: 'badge-red', no_show: 'badge-red' };
 
-const LEGEND = [
-  { bg: '#BBF7D0', label: 'Direct' },
-  { bg: '#FECDD3', label: 'Airbnb' },
-  { bg: '#BFDBFE', label: 'Booking.com' },
-  { bg: '#FED7AA', label: 'Check-out Day' },
-  { bg: '#E5E7EB', label: 'Blocked/Maint.' },
+const PENDING_STRIPE = 'repeating-linear-gradient(45deg, #FEF08A, #FEF08A 4px, #FEFCE8 4px, #FEFCE8 10px)';
+
+const STATUS_BG   = { pending: PENDING_STRIPE, deposit_paid: '#FDBA74', confirmed: '#86EFAC', checked_in: '#93C5FD', checked_out: '#E5E7EB' };
+const STATUS_TEXT = { pending: '#713F12',      deposit_paid: '#7C2D12', confirmed: '#14532D', checked_in: '#1E3A8A', checked_out: '#6B7280' };
+
+const STATUS_LEGEND = [
+  { bg: PENDING_STRIPE, label: 'Pending' },
+  { bg: '#FDBA74', label: 'Deposit Paid' },
+  { bg: '#86EFAC', label: 'Confirmed' },
+  { bg: '#93C5FD', label: 'Checked In' },
+  { bg: '#FED7AA', label: 'Check-out Day', diagonal: true },
   { bg: '#F3F4F6', label: 'Available', dashed: true },
 ];
 
@@ -38,6 +42,7 @@ function toDate(str) {
 
 export default function Reservations() {
   const nav = useNavigate();
+  const { sources } = useSettings();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -82,15 +87,9 @@ export default function Reservations() {
     return bookings.filter(b => b.status !== 'cancelled' && b.status !== 'no_show');
   }
 
-  function srcClass(src) {
-    if (src === 'airbnb')      return 'c-airbnb';
-    if (src === 'booking_com') return 'c-booking';
-    if (src === 'traveloka')   return 'c-traveloka';
-    return 'c-direct';
+  function srcColor(sourceId) {
+    return sources.find(s => s.id === sourceId)?.color || '#9CA3AF';
   }
-
-  const SRC_BG   = { direct: '#BBF7D0', airbnb: '#FECDD3', booking_com: '#BFDBFE', traveloka: '#BAE6FD', walkin: '#BBF7D0' };
-  const SRC_TEXT = { direct: '#14532D', airbnb: '#881337', booking_com: '#1E3A8A', traveloka: '#0C4A6E', walkin: '#14532D' };
 
   function getCellInfo(unitId, day) {
     const date = new Date(year, month - 1, day);
@@ -121,11 +120,11 @@ export default function Reservations() {
   function renderCell(info, unitId, d) {
     const isT = isToday(d);
     const todayCls = isT ? ' today-col' : '';
-    const base = 'cal-cell';
 
     if (info.type === 'split') {
-      const arrBg   = SRC_BG[info.arrival.source]   || SRC_BG.direct;
-      const arrText = SRC_TEXT[info.arrival.source]  || SRC_TEXT.direct;
+      const arrBg   = STATUS_BG[info.arrival.status]   || '#F3F4F6';
+      const arrText = STATUS_TEXT[info.arrival.status]  || '#6B7280';
+      const arrDot  = srcColor(info.arrival.source);
       const arrName = (isT ? '▶ ' : '') + (info.arrival.guest_name?.split(' ')[0] || '');
       return (
         <div
@@ -134,33 +133,19 @@ export default function Reservations() {
           style={{ position: 'relative', width: 72, flexShrink: 0, padding: 0, overflow: 'hidden', background: 'transparent' }}
           title={`↑ Out: ${info.checkout.guest_name}  |  ↓ In: ${info.arrival.guest_name}`}
         >
-          {/* Diagonal gradient background */}
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: `linear-gradient(135deg, #FED7AA 50%, ${arrBg} 50%)`,
-            borderRadius: 6,
-          }} />
-          {/* White dividing line */}
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'linear-gradient(135deg, transparent calc(50% - 1.5px), white calc(50% - 1.5px), white calc(50% + 1.5px), transparent calc(50% + 1.5px))',
-            borderRadius: 6,
-          }} />
-          {/* Checkout label — top-left */}
-          <div
-            style={{ position: 'absolute', top: 5, left: 5, fontSize: 9, fontWeight: 800, color: '#9A3412', lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
-            onClick={() => nav(`/reservations/${info.checkout.id}`)}
-          >→ out</div>
-          {/* Arrival label — bottom-right */}
-          <div
-            style={{ position: 'absolute', bottom: 5, right: 5, fontSize: 9, fontWeight: 800, color: arrText, lineHeight: 1, cursor: 'pointer', zIndex: 1, textAlign: 'right' }}
-            onClick={() => nav(`/reservations/${info.arrival.id}`)}
-          >{arrName}</div>
+          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg, #FED7AA 50%, ${arrBg} 50%)`, borderRadius: 6 }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, transparent calc(50% - 1.5px), white calc(50% - 1.5px), white calc(50% + 1.5px), transparent calc(50% + 1.5px))', borderRadius: 6 }} />
+          <div style={{ position: 'absolute', top: 5, left: 5, fontSize: 9, fontWeight: 800, color: '#9A3412', lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
+            onClick={() => nav(`/reservations/${info.checkout.id}`)}>→ out</div>
+          <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: 9, fontWeight: 800, color: arrText, lineHeight: 1, cursor: 'pointer', zIndex: 1, textAlign: 'right' }}
+            onClick={() => nav(`/reservations/${info.arrival.id}`)}>
+            {arrName}
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: arrDot, marginLeft: 'auto', marginTop: 2, border: '2px solid rgba(255,255,255,0.9)' }} />
+          </div>
         </div>
       );
     }
 
-    // Checkout-only cell: always diagonal (orange top-left, available bottom-right)
     if (info.type === 'out') {
       const dd = String(d).padStart(2,'0'), mm = String(month).padStart(2,'0');
       const outDone = info.booking.status === 'checked_out';
@@ -168,39 +153,49 @@ export default function Reservations() {
         <div
           key={d}
           className={`cal-cell${todayCls}`}
-          style={{ position: 'relative', width: 72, flexShrink: 0, padding: 0, overflow: 'hidden', background: 'transparent', opacity: outDone ? 0.4 : 1, filter: outDone ? 'grayscale(0.6)' : 'none' }}
+          style={{ position: 'relative', width: 72, flexShrink: 0, padding: 0, overflow: 'hidden', background: 'transparent' }}
           title={`↑ Out: ${info.booking.guest_name}  |  Available from this date`}
         >
-          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(135deg, #FED7AA 50%, #F3F4F6 50%)`, borderRadius: 6 }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #FED7AA 50%, #F3F4F6 50%)', borderRadius: 6 }} />
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, transparent calc(50% - 1.5px), white calc(50% - 1.5px), white calc(50% + 1.5px), transparent calc(50% + 1.5px))', borderRadius: 6 }} />
-          <div style={{ position: 'absolute', top: 5, left: 5, fontSize: 9, fontWeight: 800, color: '#9A3412', lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
+          <div style={{ position: 'absolute', top: 5, left: 5, fontSize: 9, fontWeight: 800, color: '#9A3412', lineHeight: 1, cursor: 'pointer', zIndex: 1, opacity: outDone ? 0.4 : 1 }}
             onClick={() => nav(`/reservations/${info.booking.id}`)}>→ out</div>
-          <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: 9, fontWeight: 600, color: '#9CA3AF', lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
-            onClick={() => { nav(`/reservations/new?unit=${unitId}&date=${year}-${mm}-${dd}`); }}>+ new</div>
+          <div style={{ position: 'absolute', bottom: 5, right: 5, fontSize: 9, fontWeight: 700, color: '#6B7280', lineHeight: 1, cursor: 'pointer', zIndex: 1 }}
+            onClick={e => { e.stopPropagation(); nav(`/reservations/new?unit=${unitId}&date=${year}-${mm}-${dd}`); }}>+ new</div>
         </div>
       );
     }
 
-    const cls = info.type === 'stay' ? `${base} ${srcClass(info.booking.source)}${todayCls}` : `${base} avail${todayCls}`;
-    const text = (info.type === 'stay' && info.isCI) ? (isT ? '▶ ' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
-    const onClick = info.type === 'stay'
-      ? () => nav(`/reservations/${info.booking.id}`)
-      : () => { const dd = String(d).padStart(2,'0'); const mm = String(month).padStart(2,'0'); nav(`/reservations/new?unit=${unitId}&date=${year}-${mm}-${dd}`); };
+    if (info.type === 'stay') {
+      const bg   = STATUS_BG[info.booking.status]   || '#F3F4F6';
+      const tc   = STATUS_TEXT[info.booking.status]  || '#6B7280';
+      const dot  = srcColor(info.booking.source);
+      const text = info.isCI ? (isT ? '▶ ' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
+      const doneStyle = info.booking.status === 'checked_out' ? { opacity: 0.4, filter: 'grayscale(0.6)' } : {};
+      return (
+        <div
+          key={d}
+          className={`cal-cell${todayCls}`}
+          style={{ width: 72, flexShrink: 0, background: bg, color: tc, position: 'relative', ...doneStyle }}
+          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}`}
+          onClick={() => nav(`/reservations/${info.booking.id}`)}
+        >
+          <div style={{ position: 'absolute', top: 4, right: 4, width: 11, height: 11, borderRadius: '50%', background: dot, border: '2px solid rgba(255,255,255,0.9)', flexShrink: 0 }} />
+          {text}
+        </div>
+      );
+    }
 
-    const doneStyle = (info.type === 'stay' && info.booking.status === 'checked_out')
-      ? { opacity: 0.4, filter: 'grayscale(0.6)' }
-      : {};
-
+    // Available
+    const dd2 = String(d).padStart(2,'0'), mm2 = String(month).padStart(2,'0');
     return (
       <div
         key={d}
-        className={cls}
-        style={{ width: 72, flexShrink: 0, ...doneStyle }}
-        title={info.type === 'stay' ? `${info.booking.guest_name} · ${info.booking.check_in_date?.slice(0,10)} → ${info.booking.check_out_date?.slice(0,10)}` : 'Available — click to book'}
-        onClick={onClick}
-      >
-        {text}
-      </div>
+        className={`cal-cell avail${todayCls}`}
+        style={{ width: 72, flexShrink: 0 }}
+        title="Available — click to book"
+        onClick={() => nav(`/reservations/new?unit=${unitId}&date=${year}-${mm2}-${dd2}`)}
+      />
     );
   }
 
@@ -236,16 +231,26 @@ export default function Reservations() {
       {view === 'calendar' ? (
         <>
           {/* Legend */}
-          <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-            {LEGEND.map(l => (
+          <div className="flex gap-3 mb-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status:</span>
+            {STATUS_LEGEND.map(l => (
               <div key={l.label} className="flex gap-2" style={{ alignItems: 'center' }}>
                 <div style={{
                   width: 14, height: 14, borderRadius: 3,
-                  background: l.bg,
-                  border: l.dashed ? '1px dashed #9CA3AF' : 'none',
+                  background: l.diagonal ? 'linear-gradient(135deg, #FED7AA 50%, #F3F4F6 50%)' : l.bg,
+                  border: l.dashed ? '1px dashed #9CA3AF' : '1px solid rgba(0,0,0,0.08)',
                   flexShrink: 0,
                 }} />
                 <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{l.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Source:</span>
+            {sources.filter(s => s.is_active).map(s => (
+              <div key={s.id} className="flex gap-2" style={{ alignItems: 'center' }}>
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color || '#9CA3AF', border: '1.5px solid rgba(0,0,0,0.12)', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{s.label}</span>
               </div>
             ))}
           </div>
@@ -304,7 +309,7 @@ export default function Reservations() {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span className={`ch ${SOURCE_CH[b.source] || 'ch-direct'}`}>{SOURCE_LABEL[b.source] || b.source}</span>
+                  <SourceBadge sourceId={b.source} />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     Rp {Number(b.total_amount).toLocaleString('id-ID')}
                   </div>
@@ -343,7 +348,7 @@ export default function Reservations() {
                       <td>{b.check_in_date?.slice(0, 10)}</td>
                       <td>{b.check_out_date?.slice(0, 10)}</td>
                       <td>{b.nights}</td>
-                      <td><span className={`ch ${SOURCE_CH[b.source] || 'ch-direct'}`}>{SOURCE_LABEL[b.source] || b.source}</span></td>
+                      <td><SourceBadge sourceId={b.source} /></td>
                       <td><span className={`badge ${STATUS_BADGE[b.status] || 'badge-gray'}`}>{STATUS_LABELS[b.status] || b.status}</span></td>
                       <td style={{ fontWeight: 600 }}>Rp {Number(b.total_amount).toLocaleString('id-ID')}</td>
                     </tr>

@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useSettings, SourceBadge } from '../context/SettingsContext';
 
-const SOURCE_BADGE = { direct: 'green', airbnb: 'pink', booking_com: 'blue', traveloka: 'badge-gray', walkin: 'blue' };
-const STATUS_BADGE = { confirmed: 'green', pending: 'yellow', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
+const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
+const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
+
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
 export default function BookingDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const { paymentMethods, sources } = useSettings();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
@@ -17,6 +20,9 @@ export default function BookingDetail() {
   const [payForm, setPayForm] = useState({ method: 'bank_transfer', received_at: new Date().toISOString().slice(0,10), notes: '' });
   const [editingAmount, setEditingAmount] = useState(null);
   const [newAmount, setNewAmount] = useState('');
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutNotes, setCheckoutNotes] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   async function load() {
     try {
@@ -54,12 +60,16 @@ export default function BookingDetail() {
     }
   }
 
-  async function confirmBooking() {
+  async function doCheckout() {
+    setCheckoutLoading(true);
     try {
-      await api.put(`/api/bookings/${id}`, { status: 'confirmed' });
+      await api.put(`/api/checkin/checkout/${id}/complete`, { condition_notes: checkoutNotes });
+      setCheckingOut(false);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed');
+      alert(err.response?.data?.error || 'Checkout failed');
+    } finally {
+      setCheckoutLoading(false);
     }
   }
 
@@ -98,10 +108,19 @@ export default function BookingDetail() {
           {booking.guest_whatsapp && (
             <button className="btn btn-secondary" onClick={waLink}>💬 WhatsApp</button>
           )}
-          {booking.status === 'pending' && (
-            <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
+          {(() => {
+            const isOTA = sources.find(s => s.id === booking.source)?.is_ota;
+            const canCheckin = isOTA
+              ? ['pending','deposit_paid','confirmed'].includes(booking.status)
+              : booking.status === 'confirmed';
+            return canCheckin && (
+              <button className="btn btn-primary" onClick={() => nav(`/checkin?checkin=${id}`)}>Check In</button>
+            );
+          })()}
+          {booking.status === 'checked_in' && (
+            <button className="btn btn-primary" onClick={() => { setCheckingOut(true); setCheckoutNotes(''); }}>Check Out</button>
           )}
-          {booking.status === 'confirmed' || booking.status === 'pending' ? (
+          {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) ? (
             <button className="btn btn-danger" onClick={cancel}>Cancel</button>
           ) : null}
         </div>
@@ -138,11 +157,11 @@ export default function BookingDetail() {
           </div>
           <div className="flex-between" style={{ marginBottom: 6 }}>
             <span className="text-muted">Source</span>
-            <span className={`badge badge-${SOURCE_BADGE[booking.source]||'gray'}`}>{booking.source}</span>
+            <SourceBadge sourceId={booking.source} />
           </div>
           <div className="flex-between">
             <span className="text-muted">Status</span>
-            <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{booking.status}</span>
+            <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
           </div>
         </div>
       </div>
@@ -212,6 +231,45 @@ export default function BookingDetail() {
         </div>
       </div>
 
+      {checkingOut && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Check Out: {booking.guest_name}</div>
+              <button className="btn btn-icon" onClick={() => setCheckingOut(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, marginBottom: 12 }}>
+                <strong>{booking.unit_name}</strong> · Check-out {booking.check_out_date?.slice(0,10)}
+              </div>
+              {balance && !balance.status === 'received' && parseFloat(balance.amount) > 0 && (
+                <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                  ⚠ Balance of <strong>{fmtIDR(balance.amount)}</strong> not received. Collect before completing check-out.
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Unit Condition Notes</label>
+                <textarea
+                  className="form-textarea"
+                  placeholder="Any damage, issues, or items left behind…"
+                  value={checkoutNotes}
+                  onChange={e => setCheckoutNotes(e.target.value)}
+                />
+              </div>
+              <div className="alert alert-success" style={{ marginTop: 0 }}>
+                Completing check-out will free the unit and auto-generate a housekeeping task.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setCheckingOut(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={doCheckout} disabled={checkoutLoading}>
+                {checkoutLoading ? 'Processing…' : 'Complete Check-out ✓'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {paying && (
         <div className="modal-backdrop">
           <div className="modal">
@@ -224,11 +282,9 @@ export default function BookingDetail() {
               <div className="form-group">
                 <label className="form-label">Method</label>
                 <select className="form-select" value={payForm.method} onChange={e => setPayForm(f=>({...f,method:e.target.value}))}>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="qris">QRIS</option>
-                  <option value="cash">Cash</option>
-                  <option value="ota_managed">OTA Managed</option>
-                  <option value="wise">Wise</option>
+                  {paymentMethods.filter(m => m.is_active).map(m => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="form-group">

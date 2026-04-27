@@ -19,23 +19,29 @@ router.post('/:bookingId/start', auth, async (req, res) => {
   try {
     const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1', [req.params.bookingId]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    if (booking.status !== 'confirmed' && booking.status !== 'pending') {
-      return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
-    }
+    const isOTA = OTA_SOURCES.includes(booking.source);
 
-    // Block check-in if deposit is not fully received. OTA bookings are exempt.
-    if (!OTA_SOURCES.includes(booking.source)) {
-      const { rows: [deposit] } = await db.query(
-        "SELECT status, amount FROM payments WHERE booking_id = $1 AND type = 'deposit'",
-        [booking.id]
-      );
-      const required = parseFloat(booking.deposit_amount || 0);
-      const received = deposit?.status === 'received' ? parseFloat(deposit.amount || 0) : 0;
-      if (required > 0 && received < required) {
+    if (isOTA) {
+      // OTA manages payment externally — allow from any pre-checkin status
+      if (!['confirmed', 'deposit_paid', 'pending'].includes(booking.status)) {
+        return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
+      }
+    } else {
+      // Direct / walk-in: full payment required before check-in
+      if (booking.status === 'deposit_paid') {
         return res.status(409).json({
-          error: `Deposit not fully received. Required: Rp ${required.toLocaleString('id-ID')}, received: Rp ${received.toLocaleString('id-ID')}.`,
+          error: 'Balance payment has not been received. Full payment is required before check-in.',
+          code: 'BALANCE_UNPAID',
+        });
+      }
+      if (booking.status === 'pending') {
+        return res.status(409).json({
+          error: 'Payment has not been received. Full payment is required before check-in.',
           code: 'DEPOSIT_UNPAID',
         });
+      }
+      if (booking.status !== 'confirmed') {
+        return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
       }
     }
 

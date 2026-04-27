@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -22,25 +23,16 @@ function greeting() {
 const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ─── channel badge ────────────────────────────────────── */
-const CH_STYLE = {
-  direct:      { background: '#2D5016', color: 'white' },
-  airbnb:      { background: '#FF5A5F', color: 'white' },
-  booking_com: { background: '#003580', color: 'white' },
-  traveloka:   { background: '#038CFC', color: 'white' },
-  walkin:      { background: '#0891B2', color: 'white' },
-  buffer:      { background: '#6B7280', color: 'white' },
-};
-const CH_LABEL = {
-  direct:'Direct', airbnb:'Airbnb', booking_com:'Booking.com',
-  traveloka:'Traveloka', walkin:'Walk-in', buffer:'Buffer',
-};
-
 function ChBadge({ source }) {
+  const { sources } = useSettings();
   if (!source) return null;
-  const s = CH_STYLE[source] || { background: '#6B7280', color: 'white' };
+  if (source === 'buffer') {
+    return <span style={{ background: '#6B7280', color: 'white', padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800, letterSpacing: 0.3 }}>Buffer</span>;
+  }
+  const s = sources.find(src => src.id === source);
   return (
-    <span style={{ ...s, padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800, letterSpacing: 0.3 }}>
-      {CH_LABEL[source] || source}
+    <span style={{ background: s?.color || '#6B7280', color: 'white', padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800, letterSpacing: 0.3 }}>
+      {s?.label || source}
     </span>
   );
 }
@@ -135,7 +127,10 @@ function taskIcon(type) {
 
 /* ─── revenue bar chart ────────────────────────────────── */
 function RevenueChart({ bookings, pendingCount, pendingTotal }) {
-  // Build last-7-days daily revenue from this-month bookings
+  const { sources } = useSettings();
+  function chLabel(id) { return sources.find(s => s.id === id)?.label || id; }
+  function chColor(id) { return sources.find(s => s.id === id)?.color || '#6B7280'; }
+
   const today = new Date();
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
@@ -203,8 +198,8 @@ function RevenueChart({ bookings, pendingCount, pendingTotal }) {
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             {topChannels.length > 0
               ? topChannels.map(({ ch, pct }) => (
-                  <span key={ch} style={{ ...CH_STYLE[ch], padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
-                    {pct}% {CH_LABEL[ch] || ch}
+                  <span key={ch} style={{ background: chColor(ch), color: 'white', padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+                    {pct}% {chLabel(ch)}
                   </span>
                 ))
               : <span style={{ fontSize: 11, color: '#6B7280' }}>No data</span>

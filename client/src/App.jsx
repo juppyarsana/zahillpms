@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SettingsProvider } from './context/SettingsContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
@@ -17,6 +18,7 @@ import Sales from './pages/Sales';
 import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
+import Settings from './pages/Settings';
 
 function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
@@ -130,8 +132,9 @@ function TopNav() {
         ]} />
         {user?.role === 'owner' && (
           <NavDropdown icon="⚙️" label="Settings" items={[
-            { to: '/units', icon: '🏕', label: 'Units' },
-            { to: '/users', icon: '👥', label: 'Users' },
+            { to: '/units',    icon: '🏕', label: 'Units' },
+            { to: '/users',    icon: '👥', label: 'Users' },
+            { to: '/settings', icon: '🔧', label: 'Sources & Methods' },
           ]} />
         )}
       </div>
@@ -169,8 +172,9 @@ function BottomNav() {
     { to: '/allotment', icon: '📡', label: 'Channel' },
     { to: '/pricing', icon: '💰', label: 'Pricing' },
     ...(user?.role === 'owner' ? [
-      { to: '/units', icon: '🏕', label: 'Units' },
-      { to: '/users', icon: '👥', label: 'Users' },
+      { to: '/units',    icon: '🏕', label: 'Units' },
+      { to: '/users',    icon: '👥', label: 'Users' },
+      { to: '/settings', icon: '🔧', label: 'Sources & Methods' },
     ] : []),
   ];
 
@@ -268,6 +272,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/*" element={
             <RequireAuth>
+            <SettingsProvider>
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<Dashboard />} />
@@ -284,8 +289,10 @@ export default function App() {
                   <Route path="/units"            element={<UnitSettings />} />
                   <Route path="/pricing"          element={<Pricing />} />
                   <Route path="/users"            element={<Users />} />
+                  <Route path="/settings"         element={<Settings />} />
                 </Routes>
               </Layout>
+            </SettingsProvider>
             </RequireAuth>
           } />
         </Routes>

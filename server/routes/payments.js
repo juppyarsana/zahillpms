@@ -58,19 +58,32 @@ router.put('/:id', auth, async (req, res) => {
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
 
-    // Auto-confirm booking when deposit is received, or when balance is received with no deposit required
     if (status === 'received') {
-      if (rows[0].type === 'deposit') {
+      // Recompute booking status from actual payment records (order-independent)
+      const { rows: allPmts } = await client.query(
+        "SELECT type, status FROM payments WHERE booking_id = $1 AND amount > 0",
+        [rows[0].booking_id]
+      );
+      const { rows: [bkg] } = await client.query(
+        "SELECT status, deposit_amount FROM bookings WHERE id = $1",
+        [rows[0].booking_id]
+      );
+
+      if (bkg && ['pending', 'deposit_paid', 'confirmed'].includes(bkg.status)) {
+        const noDeposit = !bkg.deposit_amount || parseFloat(bkg.deposit_amount) === 0;
+        const depositPmt = allPmts.find(p => p.type === 'deposit');
+        const balancePmt = allPmts.find(p => p.type === 'balance');
+
+        const depositOk = noDeposit || depositPmt?.status === 'received';
+        const balanceOk = !balancePmt || balancePmt.status === 'received';
+
+        const newStatus = (depositOk && balanceOk) ? 'confirmed'
+          : depositOk ? 'deposit_paid'
+          : 'pending';
+
         await client.query(
-          `UPDATE bookings SET status = 'confirmed', updated_at = NOW()
-           WHERE id = $1 AND status = 'pending'`,
-          [rows[0].booking_id]
-        );
-      } else if (rows[0].type === 'balance') {
-        await client.query(
-          `UPDATE bookings SET status = 'confirmed', updated_at = NOW()
-           WHERE id = $1 AND status = 'pending' AND (deposit_amount = 0 OR deposit_amount IS NULL)`,
-          [rows[0].booking_id]
+          "UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2",
+          [newStatus, rows[0].booking_id]
         );
       }
     }

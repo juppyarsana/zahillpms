@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 const PALETTE = ['#2D5016','#4A7C2A','#B8860B','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
@@ -14,12 +15,6 @@ function initials(name = '') {
 }
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
-const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
-
-const SOURCE_LABEL = {
-  direct: 'Direct', airbnb: 'Airbnb', booking_com: 'Booking.com',
-  traveloka: 'Traveloka', walkin: 'Walk-in',
-};
 
 function Row({ label, value, bold }) {
   return (
@@ -41,8 +36,14 @@ const CHECKLIST = [
 ];
 
 export default function CheckIn() {
+  const { sources } = useSettings();
+  const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
+  function srcLabel(id) { return sources.find(s => s.id === id)?.label || id; }
+  const [searchParams] = useSearchParams();
+
   const [arrivals, setArrivals]     = useState([]);
   const [departures, setDepartures] = useState([]);
+  const [inHouse, setInHouse]       = useState([]);
   const [selected, setSelected]     = useState(null);
   const [mode, setMode]             = useState(null);
   const [checklist, setChecklist]   = useState({});
@@ -56,25 +57,45 @@ export default function CheckIn() {
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   async function load() {
-    const [a, d] = await Promise.all([
+    const [a, d, h] = await Promise.all([
       api.get('/api/bookings/today/arrivals'),
       api.get('/api/bookings/today/departures'),
+      api.get('/api/bookings/in-house'),
     ]);
     setArrivals(a.data);
     setDepartures(d.data);
+    setInHouse(h.data);
   }
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    const bookingId = searchParams.get('checkin');
+    if (!bookingId) return;
+    api.get(`/api/bookings/${bookingId}`).then(r => startCheckin(r.data)).catch(() => {});
+  }, [searchParams]);
+
   function startCheckin(b) {
-    const depositOk = b.deposit_paid || OTA_SOURCES.includes(b.source);
     setSelected(b);
     setMode('checkin');
     setStep(1);
     setChecklist({});
     setIdFile(null);
-    setDepositBlockId(depositOk ? null : b.id);
-    setMsg(depositOk ? '' : 'deposit_unpaid');
+
+    if (!otaSources.includes(b.source)) {
+      if (b.status === 'deposit_paid') {
+        setDepositBlockId(b.id);
+        setMsg('balance_unpaid');
+        return;
+      }
+      if (!b.deposit_paid) {
+        setDepositBlockId(b.id);
+        setMsg('deposit_unpaid');
+        return;
+      }
+    }
+    setDepositBlockId(null);
+    setMsg('');
   }
 
   function startCheckout(b) {
@@ -98,7 +119,10 @@ export default function CheckIn() {
       setTimeout(() => { setSelected(null); setMode(null); setMsg(''); }, 2000);
     } catch (err) {
       const data = err.response?.data;
-      if (data?.code === 'DEPOSIT_UNPAID') {
+      if (data?.code === 'BALANCE_UNPAID') {
+        setDepositBlockId(selected.id);
+        setMsg('balance_unpaid');
+      } else if (data?.code === 'DEPOSIT_UNPAID') {
         setDepositBlockId(selected.id);
         setMsg('deposit_unpaid');
       } else {
@@ -128,7 +152,7 @@ export default function CheckIn() {
     window.open(`https://wa.me/${b.guest_whatsapp?.replace(/\D/g, '')}?text=${text}`, '_blank');
   }
 
-  const isOTA = (b) => OTA_SOURCES.includes(b.source);
+  const isOTA = (b) => otaSources.includes(b.source);
 
   return (
     <div>
@@ -146,11 +170,16 @@ export default function CheckIn() {
           {arrivals.length === 0 && <p className="text-muted">No arrivals today</p>}
           {arrivals.map(b => {
             const depositOk = b.deposit_paid || isOTA(b);
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const isOverdue = b.check_in_date < todayStr;
             return (
               <div
                 key={b.id}
                 className="guest-row"
-                style={{ marginBottom: 8, cursor: 'default' }}
+                style={{
+                  marginBottom: 8, cursor: 'default',
+                  ...(isOverdue ? { background: '#FFF7ED', borderColor: '#FED7AA' } : {}),
+                }}
               >
                 <div className="avatar avatar-md" style={{ background: avatarColor(b.guest_name), flexShrink: 0 }}>
                   {initials(b.guest_name)}
@@ -159,7 +188,13 @@ export default function CheckIn() {
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
                   <div className="text-muted" style={{ fontSize: 11 }}>
                     {b.unit_name} · {b.num_guests} pax · {b.nationality}
+                    {isOverdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
                   </div>
+                  {isOverdue && (
+                    <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                      Was due: {b.check_in_date}
+                    </div>
+                  )}
                   {b.guest_whatsapp && (
                     <button
                       className="btn btn-ghost btn-sm"
@@ -234,6 +269,53 @@ export default function CheckIn() {
         </div>
       </div>
 
+      {/* ── Currently In-House ── */}
+      {inHouse.length > 0 && (
+        <div className="card mb-3">
+          <div className="card-title">Currently In-House ({inHouse.length})</div>
+          {inHouse.map(b => {
+            const balanceOk = b.balance_paid || isOTA(b) || parseFloat(b.balance_amount || 0) === 0;
+            return (
+              <div
+                key={b.id}
+                className="guest-row"
+                style={{ marginBottom: 8, background: b.overdue ? '#FFF7ED' : undefined, borderColor: b.overdue ? '#FED7AA' : undefined, cursor: 'default' }}
+              >
+                <div className="avatar avatar-md" style={{ background: avatarColor(b.guest_name), flexShrink: 0 }}>
+                  {initials(b.guest_name)}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                  <div className="text-muted" style={{ fontSize: 11 }}>{b.unit_name}</div>
+                  <div className="text-muted" style={{ fontSize: 11 }}>
+                    Check-out: {b.check_out_date?.slice(0, 10)}
+                    {b.overdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <span
+                    className="badge badge-amber"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => startCheckout(b)}
+                  >
+                    Check Out →
+                  </span>
+                  <div style={{ fontSize: 11, marginTop: 4, color: balanceOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
+                    {isOTA(b)
+                      ? '🏷 OTA managed'
+                      : b.balance_paid
+                        ? '✓ Balance paid'
+                        : parseFloat(b.balance_amount || 0) === 0
+                          ? '✓ No balance due'
+                          : `⚠ Balance pending ${fmtIDR(b.balance_amount)}`}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── Check-in modal ── */}
       {selected && mode === 'checkin' && (
         <div className="modal-backdrop">
@@ -252,11 +334,21 @@ export default function CheckIn() {
               {/* ── result states ── */}
               {msg === 'success' ? (
                 <div className="alert alert-success">Check-in complete! ✓ Unit status updated.</div>
+              ) : msg === 'balance_unpaid' ? (
+                <div>
+                  <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                    <strong>Balance payment not received.</strong><br />
+                    Full payment is required before check-in. Please collect the outstanding balance first.
+                  </div>
+                  <Link to={`/reservations/${depositBlockId}`} className="btn btn-primary" onClick={() => setSelected(null)}>
+                    → Go to Booking &amp; Record Payment
+                  </Link>
+                </div>
               ) : msg === 'deposit_unpaid' ? (
                 <div>
                   <div className="alert alert-error" style={{ marginBottom: 12 }}>
-                    <strong>Deposit not received.</strong><br />
-                    Record the deposit payment in the booking before checking in.
+                    <strong>Payment not received.</strong><br />
+                    Full payment is required before check-in. Please record the payment first.
                   </div>
                   <Link to={`/reservations/${depositBlockId}`} className="btn btn-primary" onClick={() => setSelected(null)}>
                     → Go to Booking &amp; Record Payment
@@ -291,7 +383,7 @@ export default function CheckIn() {
                         <Row label="Check-out"  value={selected.check_out_date?.slice(0, 10)} />
                         <Row label="Nights"     value={selected.nights} />
                         <Row label="Guests"     value={`${selected.num_guests} pax`} />
-                        <Row label="Channel"    value={SOURCE_LABEL[selected.source] || selected.source} />
+                        <Row label="Channel"    value={srcLabel(selected.source) || selected.source} />
                         {selected.special_requests && (
                           <>
                             <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />

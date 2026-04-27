@@ -41,9 +41,9 @@ router.get('/today/arrivals', auth, async (req, res) => {
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
-      WHERE b.check_in_date = CURRENT_DATE
-        AND b.status IN ('confirmed','pending')
-      ORDER BY g.name
+      WHERE b.check_in_date <= CURRENT_DATE
+        AND b.status IN ('confirmed','deposit_paid','pending')
+      ORDER BY b.check_in_date DESC, g.name
     `);
     res.json(rows);
   } catch (err) {
@@ -65,6 +65,27 @@ router.get('/today/departures', auth, async (req, res) => {
       WHERE b.check_out_date = CURRENT_DATE
         AND b.status = 'checked_in'
       ORDER BY g.name
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/in-house  (all currently checked-in guests)
+router.get('/in-house', auth, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp,
+             u.name as unit_name,
+             b.check_out_date < CURRENT_DATE as overdue,
+             EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received') as balance_paid,
+             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount
+      FROM bookings b
+      JOIN guests g ON b.guest_id = g.id
+      JOIN units u ON b.unit_id = u.id
+      WHERE b.status = 'checked_in'
+      ORDER BY b.check_out_date, g.name
     `);
     res.json(rows);
   } catch (err) {
@@ -118,7 +139,10 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const bookingQ = db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.email as guest_email,
-             u.name as unit_name
+             u.name as unit_name,
+             (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
+               SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
+             )) as deposit_paid
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       WHERE b.id = $1`, [req.params.id]);
     const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [req.params.id]);

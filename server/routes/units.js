@@ -24,6 +24,22 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// POST /api/units  (owner only)
+router.post('/', auth, requireRole('owner'), async (req, res) => {
+  const { name, type, description, base_rate, max_guests } = req.body;
+  if (!name) return res.status(400).json({ error: 'Unit name is required' });
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO units (name, type, description, base_rate, max_guests)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [name, type || '', description || '', base_rate || 0, max_guests || 2]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/units/:id  (owner only)
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
   const { name, type, description, base_rate, max_guests, status } = req.body;
@@ -41,6 +57,27 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/units/:id  (owner only — blocked if active bookings exist)
+router.delete('/:id', auth, requireRole('owner'), async (req, res) => {
+  try {
+    const { rows: active } = await db.query(
+      `SELECT id FROM bookings
+       WHERE unit_id = $1
+         AND status IN ('pending','deposit_paid','confirmed','checked_in')
+       LIMIT 1`,
+      [req.params.id]
+    );
+    if (active.length > 0) {
+      return res.status(409).json({ error: 'Cannot delete — this unit has active or upcoming bookings' });
+    }
+    const { rows } = await db.query('DELETE FROM units WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
+    res.json({ message: 'Unit deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

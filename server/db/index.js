@@ -1,5 +1,6 @@
 const { Pool, types } = require('pg');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // Return DATE as plain 'YYYY-MM-DD' string instead of a JavaScript Date object.
 // Without this, pg applies a local timezone offset which shifts dates by one day
@@ -9,6 +10,7 @@ types.setTypeParser(1082, val => val);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  options: '-c timezone=Asia/Makassar',
 });
 
 pool.on('error', (err) => {

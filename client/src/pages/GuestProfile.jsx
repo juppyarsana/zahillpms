@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import { SourceBadge } from '../context/SettingsContext';
 
-const PREF_ICONS = { dietary: '🍽', room: '🛏', habit: '💡', special: '⭐' };
+const PREF_ICONS  = { dietary: '🍽', room: '🛏', habit: '💡', special: '⭐' };
+const PREF_CLASS  = { dietary: 'pref-food', room: 'pref-room', habit: 'pref-habit', special: 'pref-special' };
+
+
+const STATUS_CLASS = { confirmed: 'badge-blue', deposit_paid: 'badge-amber', pending: 'badge-amber', checked_in: 'badge-green', checked_out: 'badge-gray', cancelled: 'badge-red', no_show: 'badge-red' };
+const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
@@ -109,24 +115,29 @@ export default function GuestProfile() {
 
       <div className="card mb-3">
         <div className="card-title">Preferences & Habits</div>
-        {(guest.preferences||[]).map((p,i) => (
-          <div key={i} className="flex-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-            <span>{PREF_ICONS[p.category]} {p.value}</span>
-            <div className="flex gap-2">
-              <span className="badge badge-gray">{p.category}</span>
-              <button className="btn btn-sm btn-danger" onClick={() => removePref(i)}>✕</button>
-            </div>
-          </div>
-        ))}
-        <div className="flex gap-2 mt-2">
+        {(guest.preferences||[]).length === 0 && (
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>No preferences recorded yet.</p>
+        )}
+        <div className="flex flex-wrap" style={{ gap: 6, marginBottom: 12 }}>
+          {(guest.preferences||[]).map((p, i) => (
+            <span key={p.id || i} className={`pref-tag ${PREF_CLASS[p.category] || 'pref-habit'}`}>
+              {PREF_ICONS[p.category]} {p.value}
+              <button
+                onClick={() => removePref(i)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', fontSize: 12, opacity: 0.6, lineHeight: 1 }}
+              >✕</button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
           <select className="form-select" style={{ width: 130 }} value={newPref.category} onChange={e=>setNewPref(p=>({...p,category:e.target.value}))}>
             <option value="dietary">Dietary</option>
             <option value="room">Room</option>
             <option value="habit">Habit</option>
             <option value="special">Special</option>
           </select>
-          <input className="form-input" placeholder="e.g. Peanut allergy, Prefers Nest 2…" value={newPref.value} onChange={e=>setNewPref(p=>({...p,value:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&addPref()} />
-          <button className="btn btn-secondary" onClick={addPref}>Add</button>
+          <input className="form-input" placeholder="e.g. Peanut allergy, Prefers Nest 2…" value={newPref.value} onChange={e=>setNewPref(p=>({...p,value:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&addPref()} style={{ flex: 1 }} />
+          <button className="btn btn-secondary" onClick={addPref}>+ Add</button>
         </div>
       </div>
 
@@ -134,20 +145,29 @@ export default function GuestProfile() {
         <div className="card-title">Stay History</div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Unit</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Source</th><th>Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>Unit</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Source</th><th>Total</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {(guest.stay_history||[]).map(s => (
                 <tr key={s.id}>
-                  <td>{s.unit_name}</td>
+                  <td style={{ fontWeight: 600 }}>{s.unit_name}</td>
                   <td>{s.check_in_date?.slice(0,10)}</td>
                   <td>{s.check_out_date?.slice(0,10)}</td>
                   <td>{s.nights}</td>
-                  <td><span className="badge badge-gray">{s.source}</span></td>
-                  <td>{fmtIDR(s.total_amount)}</td>
-                  <td><span className="badge badge-gray">{s.status}</span></td>
+                  <td>
+                    <SourceBadge sourceId={s.source} />
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{fmtIDR(s.total_amount)}</td>
+                  <td>
+                    <span className={`badge ${STATUS_CLASS[s.status] || 'badge-gray'}`}>
+                      {STATUS_LABEL[s.status] || s.status}
+                    </span>
+                  </td>
+                  <td>
+                    <Link to={`/reservations/${s.id}`} className="btn btn-sm btn-secondary">View</Link>
+                  </td>
                 </tr>
               ))}
-              {(!guest.stay_history?.length) && <tr><td colSpan={7} style={{ textAlign:'center', color:'var(--text-muted)', padding: 20 }}>No stays yet</td></tr>}
+              {(!guest.stay_history?.length) && <tr><td colSpan={8} style={{ textAlign:'center', color:'var(--text-muted)', padding: 20 }}>No stays yet</td></tr>}
             </tbody>
           </table>
         </div>

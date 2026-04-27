@@ -179,6 +179,7 @@ body {
 .badge-amber   { background: var(--warning-bg);  color: var(--warning-text); }
 .badge-red     { background: var(--danger-bg);   color: var(--danger-text); }
 .badge-blue    { background: var(--info-bg);     color: var(--info-text); }
+.badge-gray    { background: #F3F4F6; color: #6B7280; }
 
 /* ── Channel Badges ── */
 .ch {
