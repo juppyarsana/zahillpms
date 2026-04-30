@@ -19,14 +19,14 @@ export default function StayPanel({ unit, booking, relays, controller }) {
       className="w-[420px] shrink-0 flex flex-col border-r border-white/5 p-10"
       style={{ background: 'rgba(14,17,23,0.5)' }}
     >
-      <header className="mb-8">
-        <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2" style={{ color: '#c5a358' }}>Reservation</p>
-        <h2 className="text-4xl font-extralight text-white leading-tight">Your Stay</h2>
-        <p className="text-slate-400 mt-2 text-sm">Welcome, {booking.guest_name}</p>
+      <header className="mb-5">
+        <p className="text-xs font-bold uppercase tracking-[0.3em] mb-1" style={{ color: '#c5a358' }}>Reservation</p>
+        <h2 className="text-3xl font-extralight text-white leading-tight">Your Stay</h2>
+        <p className="text-slate-400 mt-1 text-sm">Welcome, {booking.guest_name}</p>
       </header>
 
       {/* Unit card */}
-      <div className="relative h-48 rounded-3xl overflow-hidden mb-8 flex items-end" style={{ background: 'rgba(255,255,255,0.03)' }}>
+      <div className="relative h-40 rounded-3xl overflow-hidden mb-5 flex items-end" style={{ background: 'rgba(255,255,255,0.03)' }}>
         <div className="absolute inset-0 flex items-center justify-center opacity-10">
           <span className="material-symbols-outlined" style={{ fontSize: '9rem', color: '#c5a358' }}>home</span>
         </div>
@@ -46,7 +46,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
       </div>
 
       {/* Check-in / Check-out */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="glass-card p-5 rounded-2xl">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-4">Check-in</p>
           <p className="text-3xl font-light text-white">{fmt(booking.check_in_date)}</p>
@@ -60,7 +60,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
       </div>
 
       {/* Stay duration */}
-      <div className="glass-card rounded-2xl px-5 py-4 flex items-center justify-between mb-4">
+      <div className="glass-card rounded-2xl px-5 py-3 flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-xl" style={{ color: '#c5a358' }}>nights_stay</span>
           <div>

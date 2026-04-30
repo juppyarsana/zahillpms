@@ -24,7 +24,7 @@ export default function RelayControls({ relays, onToggle, large }) {
         <button
           key={relay.relay_num}
           onClick={() => onToggle(relay.relay_num, !relay.state)}
-          className={`flex flex-col items-center justify-center gap-3 rounded-3xl transition-all duration-250 select-none active:scale-95 ${large ? 'py-8' : 'py-6'}`}
+          className={`flex flex-col items-center justify-center gap-3 rounded-3xl transition-all duration-250 select-none active:scale-95 ${large ? 'h-44' : 'h-36'}`}
           style={relay.state ? {
             background: 'rgba(197,163,88,0.12)',
             border: '1px solid rgba(197,163,88,0.4)',
