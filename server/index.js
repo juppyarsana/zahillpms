@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const mqttClient = require('./mqtt');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -9,7 +10,17 @@ const app = express();
 
 app.set('trust proxy', 1); // Trust Nginx reverse proxy
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
+const allowedOrigins = [
+  process.env.CLIENT_URL || 'http://localhost:5173',
+  process.env.DISPLAY_URL || 'http://localhost:5174',
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+    else cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -37,8 +48,17 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/pricing', require('./routes/pricing'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/iot', require('./routes/iot'));
+app.use('/api/display', require('./routes/display'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Birdnest PMS server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Birdnest PMS server running on port ${PORT}`);
+  if (process.env.MQTT_BROKER) {
+    mqttClient.connect();
+  } else {
+    console.log('[MQTT] MQTT_BROKER not set — skipping MQTT connection');
+  }
+});
