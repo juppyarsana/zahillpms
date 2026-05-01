@@ -15,7 +15,7 @@ router.get('/units', auth, async (req, res) => {
     );
 
     const { rows: relays } = await db.query(
-      `SELECT ur.unit_id, ur.relay_num, ur.label, ur.state, ur.updated_at
+      `SELECT ur.unit_id, ur.relay_num, ur.label, ur.icon, ur.state, ur.enabled, ur.updated_at
        FROM unit_relays ur
        ORDER BY ur.unit_id, ur.relay_num`
     );
@@ -47,7 +47,7 @@ router.get('/units/:unitId', auth, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
 
     const { rows: relays } = await db.query(
-      `SELECT relay_num, label, state, updated_at
+      `SELECT relay_num, label, icon, state, enabled, updated_at
        FROM unit_relays WHERE unit_id = $1 ORDER BY relay_num`,
       [req.params.unitId]
     );
@@ -181,6 +181,30 @@ router.put('/units/:unitId/relay/:relayNum/label', auth, async (req, res) => {
        ON CONFLICT (unit_id, relay_num) DO UPDATE SET label = $3
        RETURNING *`,
       [req.params.unitId, req.params.relayNum, label]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/iot/units/:unitId/relays/:relayNum
+// Body: { label, icon, enabled }
+router.patch('/units/:unitId/relays/:relayNum', auth, async (req, res) => {
+  const { label, icon, enabled } = req.body;
+  if (label == null || icon == null || enabled == null) {
+    return res.status(400).json({ error: 'label, icon, and enabled are required' });
+  }
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO unit_relays (unit_id, relay_num, label, icon, enabled)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (unit_id, relay_num) DO UPDATE
+         SET label = EXCLUDED.label,
+             icon = EXCLUDED.icon,
+             enabled = EXCLUDED.enabled
+       RETURNING *`,
+      [req.params.unitId, req.params.relayNum, label, icon, enabled]
     );
     res.json(rows[0]);
   } catch (err) {

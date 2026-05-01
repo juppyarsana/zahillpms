@@ -1,25 +1,15 @@
-const RELAY_DEFAULTS = {
-  1: { label: 'Main Light',     icon: 'lightbulb'           },
-  2: { label: 'Bedside Light',  icon: 'bed'                 },
-  3: { label: 'Bathroom Light', icon: 'shower'              },
-  4: { label: 'Outdoor Light',  icon: 'park'                },
-  5: { label: 'Spare',          icon: 'electrical_services' },
-};
-
 export default function RelayControls({ relays, onToggle, large }) {
-  const displayRelays = [1, 2, 3, 4, 5].map(num => {
-    const db   = relays.find(r => r.relay_num === num);
-    const def  = RELAY_DEFAULTS[num];
-    return {
-      relay_num: num,
-      label: db?.label || def.label,
-      icon:  def.icon,
-      state: db?.state === true,
-    };
-  });
+  const displayRelays = relays
+    .filter(relay => relay.enabled !== false)
+    .map(relay => ({
+      relay_num: relay.relay_num,
+      label: relay.label || 'Relay ' + relay.relay_num,
+      icon: relay.icon || 'electrical_services',
+      state: relay.state === true,
+    }));
 
   return (
-    <div className="grid grid-cols-5 gap-3">
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, Math.min(displayRelays.length, 4))}, minmax(0, 1fr))`, gap: '0.75rem' }}>
       {displayRelays.map(relay => (
         <button
           key={relay.relay_num}

@@ -3,14 +3,47 @@ import api from './api';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
+import DebugMenu from './components/DebugMenu';
 
 const POLL_MS = 10_000;
+const DEBUG_CLICK_THRESHOLD = 5;
+const DEBUG_CLICK_TIMEOUT = 3000;
 
 export default function App() {
   const [roomId, setRoomId] = useState(() => localStorage.getItem('roomId'));
   const [displayToken, setDisplayToken] = useState(() => localStorage.getItem('displayToken'));
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
+  const [debugClicks, setDebugClicks] = useState(0);
+  const [showDebugMenu, setShowDebugMenu] = useState(false);
+  const debugTimeoutRef = useCallback(() => setDebugClicks(0), []);
+
+  const handleDebugClick = useCallback(() => {
+    setDebugClicks(prev => {
+      const newCount = prev + 1;
+      if (newCount >= DEBUG_CLICK_THRESHOLD) {
+        setShowDebugMenu(true);
+        return 0;
+      }
+      // Auto-reset after timeout
+      setTimeout(() => setDebugClicks(0), DEBUG_CLICK_TIMEOUT);
+      return newCount;
+    });
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('roomId');
+    localStorage.removeItem('displayToken');
+    setRoomId(null);
+    setDisplayToken(null);
+    setShowDebugMenu(false);
+  }, []);
+
+  const handleChangeRoom = useCallback((newRoomId) => {
+    localStorage.setItem('roomId', newRoomId);
+    setRoomId(newRoomId);
+    setShowDebugMenu(false);
+  }, []);
 
   const handleSetup = useCallback((id, token) => {
     localStorage.setItem('roomId', id);
@@ -54,24 +87,44 @@ export default function App() {
 
   if (!state.booking) {
     return (
-      <IdleScreen
-        unit={state.unit}
-        controller={state.controller}
-        relays={state.relays}
-        roomId={roomId}
-        onRefresh={fetchState}
-      />
+      <>
+        <IdleScreen
+          unit={state.unit}
+          controller={state.controller}
+          relays={state.relays}
+          roomId={roomId}
+          onRefresh={fetchState}
+          onDebugClick={handleDebugClick}
+        />
+        {showDebugMenu && (
+          <DebugMenu
+            onLogout={handleLogout}
+            onChangeRoom={handleChangeRoom}
+            onClose={() => setShowDebugMenu(false)}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <GuestScreen
-      unit={state.unit}
-      booking={state.booking}
-      relays={state.relays}
-      controller={state.controller}
-      roomId={roomId}
-      onRefresh={fetchState}
-    />
+    <>
+      <GuestScreen
+        unit={state.unit}
+        booking={state.booking}
+        relays={state.relays}
+        controller={state.controller}
+        roomId={roomId}
+        onRefresh={fetchState}
+        onDebugClick={handleDebugClick}
+      />
+      {showDebugMenu && (
+        <DebugMenu
+          onLogout={handleLogout}
+          onChangeRoom={handleChangeRoom}
+          onClose={() => setShowDebugMenu(false)}
+        />
+      )}
+    </>
   );
 }

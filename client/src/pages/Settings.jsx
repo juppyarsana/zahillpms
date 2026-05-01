@@ -20,37 +20,6 @@ export default function Settings() {
   const [addForm, setAddForm] = useState({});
   const [error, setError] = useState('');
 
-  const [iotUnits, setIotUnits] = useState([]);
-  const [iotEditing, setIotEditing] = useState(null); // unit id
-  const [iotValue, setIotValue] = useState('');
-  const [iotError, setIotError] = useState('');
-
-  useEffect(() => {
-    api.get('/api/iot/units').then(r => setIotUnits(r.data)).catch(() => {});
-  }, []);
-
-  function startIotEdit(unit) {
-    setIotEditing(unit.id);
-    setIotValue(unit.controller_id || '');
-    setIotError('');
-  }
-
-  function cancelIotEdit() {
-    setIotEditing(null);
-    setIotValue('');
-    setIotError('');
-  }
-
-  async function saveIotEdit(unitId) {
-    try {
-      const { data } = await api.put(`/api/iot/units/${unitId}/controller`, { controller_id: iotValue });
-      setIotUnits(prev => prev.map(u => u.id === unitId ? { ...u, controller_id: data.controller_id } : u));
-      cancelIotEdit();
-    } catch (err) {
-      setIotError(err.response?.data?.error || 'Save failed');
-    }
-  }
-
   if (user?.role !== 'owner') {
     return <div className="alert alert-error">Owner access required to manage settings.</div>;
   }
@@ -133,8 +102,8 @@ export default function Settings() {
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <div className="page-title">Settings</div>
-          <div className="page-subtitle">Booking sources and payment methods</div>
+          <div className="page-title">Booking Sources & Methods</div>
+          <div className="page-subtitle">Configure payment channels and payment methods</div>
         </div>
       </div>
 
@@ -233,62 +202,6 @@ export default function Settings() {
         ) : (
           <button className="btn btn-secondary btn-sm mt-3" onClick={() => startAdd('source')}>+ Add Source</button>
         )}
-      </div>
-
-      {/* ── Room Controllers ─────────────────────────────────────── */}
-      <div className="card mb-3">
-        <div className="card-title">Room Controllers</div>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Assign each nest to its ESP32 controller ID. This ID must match what the device uses in its MQTT topics (e.g. <code>birdnest/room/<strong>1</strong>/connected</code>).
-        </p>
-
-        {iotUnits.map(unit => (
-          <div key={unit.id}>
-            {iotEditing === unit.id ? (
-              <div style={formBoxStyle}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">{unit.name} — Controller ID</label>
-                    <input
-                      className="form-input"
-                      placeholder="e.g. 1, NEST2 (max 10 chars)"
-                      value={iotValue}
-                      maxLength={10}
-                      onChange={e => setIotValue(e.target.value)}
-                      style={{ maxWidth: 200 }}
-                    />
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                      Leave blank to unassign.
-                    </div>
-                  </div>
-                </div>
-                {iotError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{iotError}</div>}
-                <div className="flex gap-2">
-                  <button className="btn btn-primary btn-sm" onClick={() => saveIotEdit(unit.id)}>Save</button>
-                  <button className="btn btn-secondary btn-sm" onClick={cancelIotEdit}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <div style={rowStyle}>
-                <div className="flex gap-2 items-center">
-                  <span style={{ fontWeight: 600 }}>{unit.name}</span>
-                  {unit.controller_id ? (
-                    <>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID: <strong>{unit.controller_id}</strong></span>
-                      {unit.connected === true && <span className="badge badge-green" style={{ fontSize: 10, padding: '2px 6px' }}>Online</span>}
-                      {unit.connected === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Offline</span>}
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No controller assigned</span>
-                  )}
-                </div>
-                <button className="btn btn-sm btn-secondary" onClick={() => startIotEdit(unit)}>
-                  {unit.controller_id ? 'Edit' : 'Assign'}
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
       </div>
 
       {/* ── Payment Methods ──────────────────────────────────────── */}

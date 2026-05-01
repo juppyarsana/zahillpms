@@ -6,7 +6,7 @@ import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 
-export default function GuestScreen({ unit, booking, relays, controller, roomId, onRefresh }) {
+export default function GuestScreen({ unit, booking, relays, controller, roomId, onRefresh, onDebugClick }) {
   const [activeTab, setActiveTab] = useState('stay');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -42,7 +42,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
 
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
-        <div className="mb-10">
+        <div className="mb-10" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
           <span className="material-symbols-outlined text-3xl" style={{ color: '#c5a358' }}>token</span>
         </div>
         <nav className="flex flex-col gap-8 flex-1">

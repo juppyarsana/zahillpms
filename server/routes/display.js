@@ -33,7 +33,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     const { rows: relayRows } = await db.query(
-      `SELECT relay_num, label, state
+      `SELECT relay_num, label, icon, state, enabled
        FROM unit_relays
        WHERE unit_id = $1
        ORDER BY relay_num`,

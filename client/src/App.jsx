@@ -19,6 +19,7 @@ import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
+import SettingsRoomControllers from './pages/SettingsRoomControllers';
 
 function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
@@ -132,9 +133,10 @@ function TopNav() {
         ]} />
         {user?.role === 'owner' && (
           <NavDropdown icon="⚙️" label="Settings" items={[
-            { to: '/units',    icon: '🏕', label: 'Units' },
-            { to: '/users',    icon: '👥', label: 'Users' },
-            { to: '/settings', icon: '🔧', label: 'Sources & Methods' },
+            { to: '/units',                    icon: '🏕', label: 'Units' },
+            { to: '/users',                    icon: '👥', label: 'Users' },
+            { to: '/settings',                 icon: '🔧', label: 'Sources & Methods' },
+            { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
           ]} />
         )}
       </div>
@@ -290,6 +292,7 @@ export default function App() {
                   <Route path="/pricing"          element={<Pricing />} />
                   <Route path="/users"            element={<Users />} />
                   <Route path="/settings"         element={<Settings />} />
+                  <Route path="/settings/room-controllers" element={<SettingsRoomControllers />} />
                 </Routes>
               </Layout>
             </SettingsProvider>
