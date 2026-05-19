@@ -128,23 +128,43 @@ These names are final. Do not use alternatives.
 
 ---
 
-## Room Display — To Be Built
+## In-Room Display Hardware — Decided
 
-**What it is:** A PWA designed specifically for the Samsung Galaxy Tab A9 (8.7" screen) mounted in each glamping unit. It runs in kiosk/fullscreen mode and shows:
-- Guest name, check-in/out dates, and stay details when the room is occupied
-- Room device controls (relay toggles, RGB LED, AC via IR)
-- A welcome/idle screen when the room is vacant
+Each glamping unit has **two displays** with distinct, complementary roles:
+
+### 1. Room Display (Samsung Galaxy Tab A9, 8.7") — ✅ COMPLETE
+**Primary purpose:** Device control — relay toggles, RGB LED, AC via IR blaster  
+**Secondary:** Shows guest name and stay dates at a glance
+
+**Status:** Built and working. Lives in `room-display/`.
+- Calls `GET /api/display/room/:roomId/state` (via `authDisplay` middleware)
+- Three screens: `SetupScreen` (first-time config), `IdleScreen` (vacant), `GuestScreen` (occupied)
+- Room ID and display token stored in localStorage
+- Debug menu triggered by 5 rapid taps
+- Stack: React/Vite PWA, served from `display.birdneststay.id`
+
+### 2. TV Welcome Display (Xiaomi 32" Android TV) — 🔨 TO BE BUILT
+**Only purpose:** Welcome guests and show their stay details when TV is idle  
+**No device controls** — this is purely a guest-facing ambient display
 
 **Key decisions:**
-- Separate PWA app (`room-display/` folder in this monorepo)
-- Served from subdomain: `display.birdneststay.id`
-- Talks to the same backend (`server/`) via REST and WebSocket
-- Does NOT go through MQTT directly — backend is the bridge
-- Touch-optimized UI, large tap targets, no keyboard input needed
-- Kiosk mode: no browser chrome, no navigation away from the app
-- Each tablet is configured with its Room ID (e.g. `?room=1` or stored in localStorage)
+- Guests also use this TV for regular entertainment (Netflix, YouTube, etc.)
+- Built as an **Android TV screensaver (DreamService APK)** that wraps a WebView
+- Screensaver launches after TV is idle; pressing any remote button exits back to normal TV
+- APK is sideloaded onto each Xiaomi TV (no Play Store required)
+- Room ID configured once during installation (stored in app SharedPreferences)
+- The WebView loads a dedicated page from `tv-display/` in this monorepo
+- UI: landscape only, large text, beautiful/branded — Birdnest aesthetic, guest-facing
+- No touch interaction — passive display only
+- Calls the **same backend endpoint** as the Room Display: `GET /api/display/room/:roomId/state`
+  - Returns: `unit.name`, `booking.guest_name`, `booking.check_in_date`, `booking.check_out_date`, `booking.num_guests`
+  - Returns `booking: null` when room is vacant → show a branded idle screen
 
-**Stack:** React/Vite PWA (same as `client/`) — keeps the tech consistent.
+**Two parts to build:**
+1. `tv-display/` — simple React/Vite app (or plain HTML) served at `tv.birdneststay.id`. Landscape-only, no controls, large beautiful UI. Two states: occupied (show guest welcome) and vacant (show Birdnest branding).
+2. `tv-screensaver/` — tiny Kotlin Android TV app (DreamService). Opens `tv.birdneststay.id?room={roomId}` in a fullscreen WebView. Room ID set once via a simple settings screen, stored in SharedPreferences.
+
+**Stack:** Kotlin DreamService APK + React/Vite page served from subdomain
 
 ---
 
