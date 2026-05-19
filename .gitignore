@@ -1,22 +1,39 @@
 # Dependencies
 node_modules/
-client/node_modules/
-server/node_modules/
 
 # Build output
 client/dist/
+room-display/dist/
+tv-display/dist/
 
 # Environment variables (NEVER commit these)
-server/.env
 .env
+.env.local
+.env.*.local
+server/.env
 
-# Uploads (user-generated content, not code)
+# Android build and local config
+tv-screensaver/.gradle/
+tv-screensaver/build/
+tv-screensaver/app/build/
+tv-screensaver/local.properties
+tv-screensaver/*.zip
+tv-screensaver/gradle/wrapper/tmp*/
+tv-screensaver/keystore.properties
+tv-screensaver/*.jks
+tv-screensaver/*.keystore
+*.iml
+.idea/
+
+# Uploads (user-generated content)
 server/uploads/*
 !server/uploads/.gitkeep
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS files
 .DS_Store
@@ -24,7 +41,6 @@ Thumbs.db
 
 # Editor
 .vscode/
-.idea/
 
 # Claude AI internal
 .claude/
