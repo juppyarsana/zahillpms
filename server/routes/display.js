@@ -26,7 +26,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
        WHERE b.unit_id = $1
          AND b.status IN ('confirmed', 'checked_in')
          AND b.check_in_date <= CURRENT_DATE
-         AND b.check_out_date > CURRENT_DATE
+         AND b.check_out_date >= CURRENT_DATE
        ORDER BY b.check_in_date DESC
        LIMIT 1`,
       [unit.id]
