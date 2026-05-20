@@ -9,7 +9,12 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
   try {
-    const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    const { rows } = await db.query(
+      `SELECT u.*, r.allowed_menus
+       FROM users u LEFT JOIN roles r ON u.role = r.id
+       WHERE u.email = $1`,
+      [email.toLowerCase()]
+    );
     const user = rows[0];
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -22,7 +27,11 @@ router.post('/login', async (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    const userPayload = {
+      id: user.id, name: user.name, email: user.email, role: user.role,
+      allowed_menus: user.allowed_menus || [],
+    };
+    res.json({ token, user: userPayload });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

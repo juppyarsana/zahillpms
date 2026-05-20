@@ -24,9 +24,8 @@ router.post('/', ownerOnly, async (req, res) => {
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: 'name, email, password, role required' });
   }
-  if (!['owner', 'staff'].includes(role)) {
-    return res.status(400).json({ error: 'role must be owner or staff' });
-  }
+  const { rows: roleCheck } = await db.query('SELECT id FROM roles WHERE id = $1', [role]);
+  if (!roleCheck[0]) return res.status(400).json({ error: 'Invalid role' });
   try {
     const hash = await bcrypt.hash(password, 12);
     const { rows } = await db.query(

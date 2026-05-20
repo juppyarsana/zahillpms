@@ -3,6 +3,26 @@ import api from '../services/api';
 
 const AuthContext = createContext(null);
 
+const ORDERED_PATHS = [
+  { key: 'dashboard',     path: '/' },
+  { key: 'quick_checkin', path: '/quick-checkin' },
+  { key: 'reservations',  path: '/reservations' },
+  { key: 'checkin_full',  path: '/checkin' },
+  { key: 'guests',        path: '/guests' },
+  { key: 'operations',    path: '/operations' },
+  { key: 'sales',         path: '/sales' },
+  { key: 'loyalty',       path: '/loyalty' },
+  { key: 'allotments',    path: '/allotment' },
+];
+
+export function firstAllowedPath(user) {
+  if (!user) return '/login';
+  if (user.role === 'owner') return '/';
+  const menus = user.allowed_menus || [];
+  const found = ORDERED_PATHS.find(p => menus.includes(p.key));
+  return found ? found.path : '/';
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +53,15 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
+  // Owner always has full access; others check allowed_menus from login response
+  function can(menuKey) {
+    if (!user) return false;
+    if (user.role === 'owner') return true;
+    return Array.isArray(user.allowed_menus) && user.allowed_menus.includes(menuKey);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, can, firstAllowedPath }}>
       {children}
     </AuthContext.Provider>
   );

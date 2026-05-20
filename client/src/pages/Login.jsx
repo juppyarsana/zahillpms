@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, firstAllowedPath } from '../context/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
@@ -14,8 +14,8 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(form.email, form.password);
-      nav('/');
+      const user = await login(form.email, form.password);
+      nav(firstAllowedPath(user));
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

@@ -1,6 +1,9 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const requireRole = require('../middleware/role');
+
+const ownerOnly = [auth, requireRole('owner')];
 
 // ── Booking Sources ──────────────────────────────────────────────────────────
 
@@ -91,6 +94,65 @@ router.put('/payment-methods/:id', auth, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Method not found' });
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Roles & Permissions ──────────────────────────────────────────────────────
+
+router.get('/roles', ownerOnly, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM roles ORDER BY id');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/roles', ownerOnly, async (req, res) => {
+  const { id, label, allowed_menus } = req.body;
+  if (!id || !label) return res.status(400).json({ error: 'id and label are required' });
+  if (id === 'owner') return res.status(400).json({ error: 'Cannot create a role named owner' });
+  try {
+    const { rows } = await db.query(
+      'INSERT INTO roles (id, label, allowed_menus) VALUES ($1, $2, $3) RETURNING *',
+      [id.toLowerCase().replace(/\s+/g, '_'), label, allowed_menus || []]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(err.code === '23505' ? 409 : 500).json({
+      error: err.code === '23505' ? 'A role with this ID already exists' : err.message,
+    });
+  }
+});
+
+router.put('/roles/:id', ownerOnly, async (req, res) => {
+  if (req.params.id === 'owner') return res.status(400).json({ error: 'Cannot modify the owner role' });
+  const { label, allowed_menus } = req.body;
+  try {
+    const { rows } = await db.query(
+      `UPDATE roles SET
+        label         = COALESCE($1, label),
+        allowed_menus = COALESCE($2, allowed_menus)
+       WHERE id = $3 RETURNING *`,
+      [label, allowed_menus || null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/roles/:id', ownerOnly, async (req, res) => {
+  if (req.params.id === 'owner') return res.status(400).json({ error: 'Cannot delete the owner role' });
+  try {
+    const { rows: users } = await db.query('SELECT id FROM users WHERE role = $1 LIMIT 1', [req.params.id]);
+    if (users.length) return res.status(409).json({ error: 'Cannot delete a role that is assigned to users' });
+    const { rows } = await db.query('DELETE FROM roles WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
+    res.json({ message: 'Role deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

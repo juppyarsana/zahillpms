@@ -7,6 +7,7 @@ const EMPTY_FORM = { name: '', email: '', password: '', role: 'staff' };
 
 export default function Users() {
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
   const [modal, setModal] = useState(null); // null | 'add' | user object (edit)
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
@@ -14,8 +15,12 @@ export default function Users() {
 
   async function load() {
     try {
-      const r = await api.get('/api/users');
-      setUsers(r.data);
+      const [u, r] = await Promise.all([
+        api.get('/api/users'),
+        api.get('/api/settings/roles'),
+      ]);
+      setUsers(u.data);
+      setRoles(r.data);
     } catch {}
   }
 
@@ -125,8 +130,9 @@ export default function Users() {
               <div className="form-group">
                 <label className="form-label">Role</label>
                 <select className="form-select" value={form.role} onChange={e => set('role', e.target.value)}>
-                  <option value="staff">Staff</option>
-                  <option value="owner">Owner</option>
+                  {roles.map(r => (
+                    <option key={r.id} value={r.id}>{r.label}</option>
+                  ))}
                 </select>
               </div>
             </div>
