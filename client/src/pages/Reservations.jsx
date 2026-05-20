@@ -343,7 +343,12 @@ export default function Reservations() {
                       }}
                       onClick={() => nav(`/reservations/${b.id}`)}
                     >
-                      <td style={{ fontWeight: 600 }}>{b.guest_name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {b.guest_name}
+                        {b.has_condition_notes && (
+                          <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
+                        )}
+                      </td>
                       <td>{b.unit_name}</td>
                       <td>{b.check_in_date?.slice(0, 10)}</td>
                       <td>{b.check_out_date?.slice(0, 10)}</td>

@@ -9,6 +9,7 @@ import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import BookingDetail from './pages/BookingDetail';
 import CheckIn from './pages/CheckIn';
+import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
 import GuestProfile from './pages/GuestProfile';
 import Operations from './pages/Operations';
@@ -120,6 +121,7 @@ function TopNav() {
       <div className="nav-tabs">
         <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>
         <NavLink to="/reservations" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>
+        <NavLink to="/quick-checkin" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⚡ Quick CI</NavLink>
         <NavLink to="/checkin" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>✅ Check-in/out</NavLink>
         <NavLink to="/operations" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🔧 Operations</NavLink>
         <NavLink to="/guests" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>👤 Guests</NavLink>
@@ -163,11 +165,12 @@ function BottomNav() {
   const mainItems = [
     { to: '/', icon: '📊', label: 'Dashboard', end: true },
     { to: '/reservations', icon: '📅', label: 'Bookings' },
-    { to: '/checkin', icon: '✅', label: 'Check-in' },
+    { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
     { to: '/guests', icon: '👤', label: 'Guests' },
   ];
 
   const moreItems = [
+    { to: '/checkin',    icon: '✅', label: 'Check-in/out (Full)' },
     { to: '/operations', icon: '🔧', label: 'Operations' },
     ...(user?.role === 'owner' ? [{ to: '/sales', icon: '🛍', label: 'Sales' }] : []),
     { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
@@ -282,6 +285,7 @@ export default function App() {
                   <Route path="/reservations/new" element={<NewBooking />} />
                   <Route path="/reservations/:id" element={<BookingDetail />} />
                   <Route path="/checkin"          element={<CheckIn />} />
+                  <Route path="/quick-checkin"   element={<QuickCheckIn />} />
                   <Route path="/guests"           element={<Guests />} />
                   <Route path="/guests/:id"       element={<GuestProfile />} />
                   <Route path="/operations"       element={<Operations />} />

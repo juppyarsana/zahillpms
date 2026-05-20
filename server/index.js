@@ -1,5 +1,8 @@
 require('dotenv').config();
 const express = require('express');
+
+process.on('uncaughtException',      err => console.error('[CRASH] Uncaught exception:',       err));
+process.on('unhandledRejection', (reason) => console.error('[CRASH] Unhandled rejection:', reason));
 const mqttClient = require('./mqtt');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -11,8 +14,9 @@ const app = express();
 app.set('trust proxy', 1); // Trust Nginx reverse proxy
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  process.env.DISPLAY_URL || 'http://localhost:5174',
+  process.env.CLIENT_URL   || 'http://localhost:5173',
+  process.env.DISPLAY_URL  || 'http://localhost:5174',
+  process.env.TV_URL       || 'http://localhost:5176',
 ];
 app.use(cors({
   origin: (origin, cb) => {

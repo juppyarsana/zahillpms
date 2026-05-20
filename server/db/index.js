@@ -14,8 +14,8 @@ const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected DB error', err);
-  process.exit(-1);
+  console.error('[DB] Idle client error:', err.message);
+  // Pool automatically creates a new connection on the next query — no restart needed
 });
 
 module.exports = {

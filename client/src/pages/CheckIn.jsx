@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 
@@ -36,6 +36,7 @@ const CHECKLIST = [
 ];
 
 export default function CheckIn() {
+  const navigate = useNavigate();
   const { sources } = useSettings();
   const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
   function srcLabel(id) { return sources.find(s => s.id === id)?.label || id; }
@@ -161,6 +162,9 @@ export default function CheckIn() {
           <div className="page-title">Check-in / Check-out</div>
           <div className="page-subtitle">{today}</div>
         </div>
+        <button className="btn btn-primary btn-sm" onClick={() => navigate('/quick-checkin')}>
+          ⚡ Quick Mode
+        </button>
       </div>
 
       <div className="grid-2 mb-3">

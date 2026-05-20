@@ -216,6 +216,40 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {booking.checkin_record && (
+        <div className="card mt-3">
+          <div className="card-title">Check-in / Check-out Record</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {booking.checkin_record.checkin_time && (
+              <div className="flex-between" style={{ fontSize: 13 }}>
+                <span className="text-muted">Checked in</span>
+                <span>{new Date(booking.checkin_record.checkin_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+              </div>
+            )}
+            {booking.checkin_record.checkout_time && (
+              <div className="flex-between" style={{ fontSize: 13 }}>
+                <span className="text-muted">Checked out</span>
+                <span>{new Date(booking.checkin_record.checkout_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+              </div>
+            )}
+            <div className="flex-between" style={{ fontSize: 13 }}>
+              <span className="text-muted">ID captured</span>
+              <span>{booking.checkin_record.id_captured ? '✓ Yes' : '— No'}</span>
+            </div>
+            {booking.checkin_record.condition_notes && (
+              <>
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 10 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Unit condition notes</div>
+                  <div style={{ fontSize: 13, background: '#fefce8', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px' }}>
+                    {booking.checkin_record.condition_notes}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="card mt-3">
         <div className="card-title">Staff Notes</div>
         {booking.notes?.map(n => (

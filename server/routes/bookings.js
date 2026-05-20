@@ -6,7 +6,13 @@ const auth = require('../middleware/auth');
 router.get('/', auth, async (req, res) => {
   const { month, year, unit_id, status } = req.query;
   let query = `
-    SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, u.name as unit_name
+    SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, u.name as unit_name,
+           EXISTS(
+             SELECT 1 FROM checkin_records cr
+             WHERE cr.booking_id = b.id
+               AND cr.condition_notes IS NOT NULL
+               AND cr.condition_notes <> ''
+           ) AS has_condition_notes
     FROM bookings b
     JOIN guests g ON b.guest_id = g.id
     JOIN units u ON b.unit_id = u.id
@@ -150,10 +156,15 @@ router.get('/:id', auth, async (req, res) => {
       SELECT bn.*, u.name as author_name FROM booking_notes bn
       LEFT JOIN users u ON bn.author_id = u.id
       WHERE bn.booking_id = $1 ORDER BY bn.created_at`, [req.params.id]);
+    const checkinQ = db.query(
+      `SELECT checkin_time, checkout_time, condition_notes, id_captured
+       FROM checkin_records WHERE booking_id = $1`,
+      [req.params.id]);
 
-    const [{ rows: [booking] }, { rows: payments }, { rows: notes }] = await Promise.all([bookingQ, paymentsQ, notesQ]);
+    const [{ rows: [booking] }, { rows: payments }, { rows: notes }, { rows: [checkin_record] }] =
+      await Promise.all([bookingQ, paymentsQ, notesQ, checkinQ]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    res.json({ ...booking, payments, notes });
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
