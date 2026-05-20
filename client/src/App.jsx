@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
+import UpdatePrompt from './components/UpdatePrompt';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
@@ -258,6 +259,7 @@ function Layout({ children }) {
         <div className="page-wrap">{children}</div>
       </main>
       <BottomNav />
+      <UpdatePrompt />
     </div>
   );
 }
