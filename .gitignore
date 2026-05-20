@@ -44,3 +44,7 @@ Thumbs.db
 
 # Claude AI internal
 .claude/
+
+# Non-code design assets
+stickers/
+designs/
