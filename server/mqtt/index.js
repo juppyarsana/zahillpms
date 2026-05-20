@@ -123,7 +123,7 @@ function connect() {
 }
 
 function publish(topic, payload, opts = {}) {
-  if (!client || !client.connected) throw new Error('MQTT client not connected');
+  if (!client || !client.connected) return Promise.reject(new Error('MQTT client not connected'));
   return new Promise((resolve, reject) => {
     client.publish(topic, payload, { qos: 1, ...opts }, err => {
       if (err) reject(err); else resolve();
