@@ -161,8 +161,8 @@ Each glamping unit has **two displays** with distinct, complementary roles:
   - Returns `booking: null` when room is vacant → show a branded idle screen
 
 **Two parts to build:**
-1. `tv-display/` — simple React/Vite app (or plain HTML) served at `tv.birdneststay.id`. Landscape-only, no controls, large beautiful UI. Two states: occupied (show guest welcome) and vacant (show Birdnest branding).
-2. `tv-screensaver/` — tiny Kotlin Android TV app (DreamService). Opens `tv.birdneststay.id?room={roomId}` in a fullscreen WebView. Room ID set once via a simple settings screen, stored in SharedPreferences.
+1. `tv-display/` — simple React/Vite app (or plain HTML) served at `tv.birdnestay.id`. Landscape-only, no controls, large beautiful UI. Two states: occupied (show guest welcome) and vacant (show Birdnest branding).
+2. `tv-screensaver/` — tiny Kotlin Android TV app (DreamService). Opens `tv.birdnestay.id?room={roomId}` in a fullscreen WebView. Room ID set once via a simple settings screen, stored in SharedPreferences.
 
 **Stack:** Kotlin DreamService APK + React/Vite page served from subdomain
 
