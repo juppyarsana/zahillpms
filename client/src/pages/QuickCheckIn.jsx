@@ -15,6 +15,29 @@ function initials(name = '') {
 }
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
+function compressImage(file, maxPx = 1280, quality = 0.75) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        if (width > height) { height = Math.round(height * maxPx / width); width = maxPx; }
+        else { width = Math.round(width * maxPx / height); height = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })),
+        'image/jpeg', quality
+      );
+    };
+    img.src = url;
+  });
+}
+
 function GuestCard({ booking, borderColor, rightLabel, rightColor, onClick }) {
   return (
     <button
@@ -106,23 +129,26 @@ export default function QuickCheckIn() {
 
   async function doCheckin() {
     setCiLoading(true);
+    // /start commits the check-in; treat errors here as the real failure
     try {
       await api.post(`/api/checkin/${ciSelected.id}/start`);
-      const fd = new FormData();
-      fd.append('checklist_data', JSON.stringify({ id_captured: !!idFile }));
-      if (idFile) fd.append('id_document', idFile);
-      await api.put(`/api/checkin/${ciSelected.id}/complete`, fd);
-      setCiMsg('success');
-      load();
-      setTimeout(closeCiModal, 2500);
     } catch (err) {
       const data = err.response?.data;
       if (data?.code === 'BALANCE_UNPAID')      { setDepositBlockId(ciSelected.id); setCiMsg('balance_unpaid'); }
       else if (data?.code === 'DEPOSIT_UNPAID') { setDepositBlockId(ciSelected.id); setCiMsg('deposit_unpaid'); }
       else setCiMsg(data?.error || 'Something went wrong');
-    } finally {
       setCiLoading(false);
+      return;
     }
+    // Booking is now checked_in — /complete only saves the ID photo and checklist
+    const fd = new FormData();
+    fd.append('checklist_data', JSON.stringify({ id_captured: !!idFile }));
+    if (idFile) fd.append('id_document', await compressImage(idFile));
+    try { await api.put(`/api/checkin/${ciSelected.id}/complete`, fd); } catch (_) {}
+    setCiMsg('success');
+    load();
+    setTimeout(closeCiModal, 2500);
+    setCiLoading(false);
   }
 
   // ── Check-out helpers ──

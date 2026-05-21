@@ -99,6 +99,22 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Preview in browser"
+            android:textAllCaps="false"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/setScreensaverButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Set as screensaver"
             android:textAllCaps="false" />
+
+        <TextView
+            android:id="@+id/screensaverStatusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@android:color/darker_gray"
+            android:textSize="12sp"
+            android:paddingTop="8dp" />
     </LinearLayout>
 </ScrollView>

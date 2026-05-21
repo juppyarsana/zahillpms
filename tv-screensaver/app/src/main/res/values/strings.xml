@@ -5,4 +5,9 @@
     <string name="saved_message">Configuration saved</string>
     <string name="validation_error">Room and token are required</string>
     <string name="current_configuration">Room %1$s · URL %2$s</string>
+    <string name="screensaver_set_success">Screensaver set successfully</string>
+    <string name="screensaver_already_set">Already set as screensaver</string>
+    <string name="screensaver_permission_missing">Permission not granted. Run via ADB:\nadb shell pm grant %1$s android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="screensaver_status_active">Active screensaver: this app</string>
+    <string name="screensaver_status_inactive">Screensaver: not set to this app</string>
 </resources>
