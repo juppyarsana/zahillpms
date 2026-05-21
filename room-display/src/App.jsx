@@ -88,7 +88,7 @@ export default function App() {
   if (error && !state) {
     return (
       <div className="w-screen h-screen flex flex-col items-center justify-center bg-bg-dark gap-4">
-        <span className="material-symbols-outlined text-6xl" style={{ color: 'rgba(197,163,88,0.3)' }}>wifi_off</span>
+        <img src="/logo.png" alt="Birdnest" style={{ width: 64, height: 64, objectFit: 'contain', opacity: 0.3 }} />
         <p className="text-xs uppercase tracking-[0.3em] text-slate-600">{error}</p>
         <p className="text-[10px] text-slate-700 uppercase tracking-widest">Room {roomId}</p>
       </div>
@@ -128,6 +128,8 @@ export default function App() {
         relays={state.relays}
         controller={state.controller}
         roomId={roomId}
+        weather={state.weather}
+        cards={state.cards || []}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
       />

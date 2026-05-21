@@ -17,7 +17,7 @@ export default function SetupScreen({ onSetup }) {
       <form onSubmit={handleSubmit} className="glass-card rounded-3xl p-12 w-96 flex flex-col gap-6 z-10">
         <div className="text-center mb-2">
           <div className="flex justify-center mb-4">
-            <span className="material-symbols-outlined text-5xl" style={{ color: '#c5a358' }}>token</span>
+            <img src="/logo.png" alt="Birdnest" style={{ width: 120, height: 120, objectFit: 'contain' }} />
           </div>
           <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2" style={{ color: '#c5a358' }}>Room Display</p>
           <h1 className="text-2xl font-extralight text-white">First-Time Setup</h1>

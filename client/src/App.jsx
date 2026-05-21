@@ -23,6 +23,7 @@ import Users from './pages/Users';
 import Settings from './pages/Settings';
 import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
+import SettingsBoardCards from './pages/SettingsBoardCards';
 
 function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
@@ -121,12 +122,13 @@ function TopNav() {
     can('users')            && { to: '/users',                     icon: '👥', label: 'Users' },
     can('settings')         && { to: '/settings',                  icon: '🔧', label: 'Sources & Methods' },
     can('room_controllers') && { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
+    user?.role === 'owner'  && { to: '/settings/board',            icon: '📋', label: 'Guest Board' },
     user?.role === 'owner'  && { to: '/settings/roles',            icon: '🔑', label: 'Roles & Permissions' },
   ].filter(Boolean);
 
   return (
     <nav className="nav-bar">
-      <div className="nav-logo">Bird<span>nest</span></div>
+      <div className="nav-logo"><img src="/logo.png" alt="Birdnest" style={{ height: 44, objectFit: 'contain' }} /></div>
       <div className="nav-tabs">
         {can('dashboard') && <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>}
         {can('reservations')  && <NavLink to="/reservations"  className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>}
@@ -308,6 +310,7 @@ export default function App() {
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
                   <Route path="/settings"         element={<RequireMenu menuKey="settings"><Settings /></RequireMenu>} />
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><SettingsRoomControllers /></RequireMenu>} />
+                  <Route path="/settings/board"   element={<SettingsBoardCards />} />
                   <Route path="/settings/roles"   element={<SettingsRoles />} />
                 </Routes>
               </Layout>

@@ -1,4 +1,3 @@
-const RELAY_ICONS = { 1: 'lightbulb', 2: 'bed', 3: 'shower', 4: 'park', 5: 'electrical_services' };
 
 function fmt(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -12,7 +11,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
   const totalNights   = Math.round((checkOut - checkIn)  / 86_400_000);
   const nightsLeft    = Math.round((checkOut - today)    / 86_400_000);
 
-  const activeRelays = relays.filter(r => r.state === true);
+  const activeRelays = relays.filter(r => r.state === true && r.enabled !== false);
 
   return (
     <section
@@ -98,7 +97,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
                 title={r.label || `Relay ${r.relay_num}`}
               >
                 <span className="material-symbols-outlined text-lg">
-                  {RELAY_ICONS[r.relay_num] || 'power'}
+                  {r.icon || 'power'}
                 </span>
               </div>
             ))
