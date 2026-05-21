@@ -4,6 +4,7 @@ import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
 import DebugMenu from './components/DebugMenu';
+import UpdatePrompt from './components/UpdatePrompt';
 
 const POLL_MS = 10_000;
 const DEBUG_CLICK_THRESHOLD = 5;
@@ -103,6 +104,7 @@ export default function App() {
             onClose={() => setShowDebugMenu(false)}
           />
         )}
+        <UpdatePrompt />
       </>
     );
   }
@@ -125,6 +127,7 @@ export default function App() {
           onClose={() => setShowDebugMenu(false)}
         />
       )}
+      <UpdatePrompt />
     </>
   );
 }
