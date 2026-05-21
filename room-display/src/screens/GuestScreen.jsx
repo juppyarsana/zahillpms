@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api';
 import StayPanel from '../components/StayPanel';
 import RelayControls from '../components/RelayControls';
@@ -9,15 +9,24 @@ import Clock from '../components/Clock';
 export default function GuestScreen({ unit, booking, relays, controller, roomId, onRefresh, onDebugClick }) {
   const [activeTab, setActiveTab] = useState('stay');
   const [localRelays, setLocalRelays] = useState(relays);
+  const [pendingRelays, setPendingRelays] = useState(new Set());
+
+  // Sync with each fresh poll — clears pending for all relays since the DB now reflects ESP32 state
+  useEffect(() => {
+    setLocalRelays(relays);
+    setPendingRelays(new Set());
+  }, [relays]);
 
   const handleRelayToggle = async (relayNum, newState) => {
     setLocalRelays(prev =>
       prev.map(r => r.relay_num === relayNum ? { ...r, state: newState } : r)
     );
+    setPendingRelays(prev => new Set([...prev, relayNum]));
     try {
       await api.post(`/room/${roomId}/relay`, { relay_num: relayNum, state: newState });
     } catch {
       setLocalRelays(relays);
+      setPendingRelays(prev => { const next = new Set(prev); next.delete(relayNum); return next; });
     }
   };
 
@@ -93,7 +102,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
                   <Clock large />
                 </div>
               </div>
-              <RelayControls relays={localRelays} onToggle={handleRelayToggle} />
+              <RelayControls relays={localRelays} onToggle={handleRelayToggle} pendingNums={pendingRelays} />
               <IRControls onSend={handleIR} />
             </div>
           ) : (
@@ -102,7 +111,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
                 <h2 className="text-3xl font-extralight text-white mb-1">All Controls</h2>
                 <p className="text-slate-500 text-sm">Full room control — lighting, ambiance, climate.</p>
               </div>
-              <RelayControls relays={localRelays} onToggle={handleRelayToggle} large />
+              <RelayControls relays={localRelays} onToggle={handleRelayToggle} large pendingNums={pendingRelays} />
               <div className="grid grid-cols-2 gap-5">
                 <RGBPicker onSet={handleRGB} currentRgb={controller?.rgb} />
                 <IRControls onSend={handleIR} large />
