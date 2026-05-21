@@ -28,12 +28,15 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false });
 app.use('/api/', limiter);
 
 // Protected uploads (served only to authenticated users via separate route)
 const auth = require('./middleware/auth');
 app.use('/uploads', auth, express.static(path.join(__dirname, 'uploads')));
+
+// Board card images are guest-facing — served without auth
+app.use('/board-images', express.static(path.join(__dirname, 'uploads/board')));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -53,6 +56,7 @@ app.use('/api/pricing', require('./routes/pricing'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/iot', require('./routes/iot'));
+app.use('/api/board', require('./routes/board'));
 app.use('/api/display', require('./routes/display'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));

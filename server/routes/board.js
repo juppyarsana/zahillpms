@@ -1,0 +1,119 @@
+const router = require('express').Router();
+const db = require('../db');
+const auth = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const UPLOAD_DIR = path.join(__dirname, '../uploads/board');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: UPLOAD_DIR,
+  filename: (req, file, cb) => {
+    cb(null, `board-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// GET /api/board — all cards ordered by category priority then sort_order
+router.get('/', auth, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT * FROM guest_board_cards
+      ORDER BY
+        CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
+        sort_order, id
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/board — create card
+router.post('/', auth, upload.single('image'), async (req, res) => {
+  const { title, body, category, meta, active, sort_order } = req.body;
+  if (!title || !body || !category) {
+    return res.status(400).json({ error: 'title, body, and category are required' });
+  }
+  const imageUrl = req.file ? `/board-images/${req.file.filename}` : null;
+  try {
+    const { rows: [card] } = await db.query(
+      `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [title, body, category, meta || null, imageUrl, active !== 'false', parseInt(sort_order) || 0]
+    );
+    res.status(201).json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/board/:id — update card (with optional new image)
+router.put('/:id', auth, upload.single('image'), async (req, res) => {
+  const { title, body, category, meta, active, sort_order } = req.body;
+  try {
+    const { rows: [existing] } = await db.query('SELECT * FROM guest_board_cards WHERE id = $1', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Card not found' });
+
+    let imageUrl = existing.image_url;
+    if (req.file) {
+      // Delete old image file if it exists
+      if (existing.image_url) {
+        const oldFile = path.join(UPLOAD_DIR, path.basename(existing.image_url));
+        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+      }
+      imageUrl = `/board-images/${req.file.filename}`;
+    }
+
+    const { rows: [card] } = await db.query(
+      `UPDATE guest_board_cards SET title=$1, body=$2, category=$3, meta=$4, image_url=$5,
+       active=$6, sort_order=$7, updated_at=NOW() WHERE id=$8 RETURNING *`,
+      [
+        title ?? existing.title,
+        body ?? existing.body,
+        category ?? existing.category,
+        meta !== undefined ? (meta || null) : existing.meta,
+        imageUrl,
+        active !== undefined ? active !== 'false' : existing.active,
+        sort_order !== undefined ? parseInt(sort_order) : existing.sort_order,
+        req.params.id,
+      ]
+    );
+    res.json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/board/:id/toggle — quick active toggle
+router.patch('/:id/toggle', auth, async (req, res) => {
+  try {
+    const { rows: [card] } = await db.query(
+      'UPDATE guest_board_cards SET active = NOT active, updated_at = NOW() WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    if (!card) return res.status(404).json({ error: 'Card not found' });
+    res.json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/board/:id
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { rows: [card] } = await db.query('DELETE FROM guest_board_cards WHERE id=$1 RETURNING *', [req.params.id]);
+    if (!card) return res.status(404).json({ error: 'Card not found' });
+    if (card.image_url) {
+      const file = path.join(UPLOAD_DIR, path.basename(card.image_url));
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

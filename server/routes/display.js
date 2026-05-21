@@ -3,6 +3,7 @@ const db = require('../db');
 const authDisplay = require('../middleware/authDisplay');
 const mqttClient = require('../mqtt');
 const sse = require('../sse');
+const { getWeather } = require('../weather');
 
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
@@ -41,11 +42,24 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       [unit.id]
     );
 
+    const { rows: cardRows } = await db.query(
+      `SELECT id, title, body, category, meta, image_url
+       FROM guest_board_cards
+       WHERE active = true
+       ORDER BY
+         CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
+         sort_order, id`
+    );
+
+    const weather = await getWeather();
+
     res.json({
       unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
       booking: bookingRows[0] || null,
       relays: relayRows,
+      cards: cardRows,
+      weather,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
