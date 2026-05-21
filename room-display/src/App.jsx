@@ -67,7 +67,18 @@ export default function App() {
   useEffect(() => {
     fetchState();
     const id = setInterval(fetchState, POLL_MS);
-    return () => clearInterval(id);
+
+    // SSE for instant updates — falls back to polling silently on error
+    const evtSource = new EventSource(
+      `/api/display/room/${roomId}/stream?token=${encodeURIComponent(displayToken)}`
+    );
+    evtSource.onmessage = () => fetchState();
+    evtSource.onerror = () => {};
+
+    return () => {
+      clearInterval(id);
+      evtSource.close();
+    };
   }, [fetchState]);
 
   if (!roomId || !displayToken) {

@@ -1,5 +1,6 @@
 const mqtt = require('mqtt');
 const db = require('../db');
+const sse = require('../sse');
 
 const BROKER = process.env.MQTT_BROKER || 'mqtt://mqtt.birdnestay.id:1883';
 const USERNAME = process.env.MQTT_USERNAME || '';
@@ -104,15 +105,21 @@ function connect() {
       if (topic.endsWith('/connected')) {
         const controllerId = topic.split('/')[2];
         await handleConnected(controllerId, payload);
+        sse.notify(controllerId);
       } else if (topic.includes('/relay/') && topic.endsWith('/state')) {
         const parsed = parseRelayTopic(topic);
-        if (parsed) await handleRelayState(parsed.controllerId, parsed.relayNum, payload);
+        if (parsed) {
+          await handleRelayState(parsed.controllerId, parsed.relayNum, payload);
+          sse.notify(parsed.controllerId);
+        }
       } else if (topic.endsWith('/rgb/state')) {
         const controllerId = topic.split('/')[2];
         await handleRgbState(controllerId, payload);
+        sse.notify(controllerId);
       } else if (topic.endsWith('/status')) {
         const controllerId = topic.split('/')[2];
         await handleStatus(controllerId, payload);
+        sse.notify(controllerId);
       }
     } catch (err) {
       console.error('[MQTT] DB error processing', topic, err.message);

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const authDisplay = require('../middleware/authDisplay');
 const mqttClient = require('../mqtt');
+const sse = require('../sse');
 
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
@@ -49,6 +50,30 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/display/room/:roomId/stream — SSE for real-time state updates
+// Auth via ?token= query param (EventSource can't send Authorization header)
+router.get('/room/:roomId/stream', authDisplay, (req, res) => {
+  const { roomId } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable Nginx response buffering
+  res.flushHeaders();
+
+  sse.addClient(roomId, res);
+
+  // Keep-alive comment every 25s to survive Nginx / proxy idle timeouts
+  const heartbeat = setInterval(() => {
+    try { res.write(': heartbeat\n\n'); } catch {}
+  }, 25_000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sse.removeClient(roomId, res);
+  });
 });
 
 // POST /api/display/room/:roomId/relay
