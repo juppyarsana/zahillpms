@@ -267,7 +267,130 @@ Fully configurable by owner. No hardcoded tiers.
 
 ---
 
-### Phase 3 — Ancillary Sales (Mini POS)
+### Phase 2b — Night Audit
+
+#### 3.11 Night Audit
+End-of-day process that closes the business date, catches discrepancies, and produces the daily summary. Runs automatically at 23:55 each night via a scheduled backend job (node-cron). Owner or staff can also trigger it manually from the PMS.
+
+---
+
+**What the audit does (in order):**
+
+1. **Guard — duplicate run check**
+   Before doing anything, check if an audit has already been run for today's business date. If yes, abort and return early. This prevents accidental double-posting.
+
+2. **No-show detection**
+   Query all bookings where `status = 'confirmed'` AND `check_in_date = today`. These guests were expected but never checked in. Flag each one as `status = 'no_show'` and include them in the audit report. Owner can reverse a no-show manually if the guest arrives late.
+
+3. **In-house revenue tally**
+   Count all bookings with `status = 'checked_in'` and sum up their nightly rate (derived from `total_amount / nights`). This becomes the "room revenue today" figure in the daily summary. No new charge rows are written — Birdnest uses a fixed booking total, not a live folio — but the tally feeds the daily report.
+
+4. **Ancillary revenue tally**
+   Sum all `sales` records created today (both room-charge and walk-in) for the "ancillary revenue today" figure.
+
+5. **Pending balance alert**
+   Find all bookings with `check_out_date = tomorrow` whose balance payment is still `status = 'pending'`. Include them in the audit report so staff see them at the top of tomorrow's departures list.
+
+6. **Housekeeping task auto-generation**
+   For every booking with `check_out_date = tomorrow`, auto-create a housekeeping task (type: `housekeeping`, title: "Prep [unit name] for checkout", due: check-out time) if one doesn't already exist for that booking/unit on that date.
+
+7. **Business date rollover**
+   Update `business_date` in `property_settings` to tomorrow. This is the canonical "what day is it in the PMS" value — used for daily revenue grouping, arrivals/departures lists, and report queries.
+
+8. **Write audit log**
+   Insert a row into `night_audit_runs` with the closed business date, counts, revenue figures, list of flagged no-shows, list of pending balances due tomorrow, and the run timestamp.
+
+9. **Owner notification**
+   Send a summary email (via nodemailer) to the owner's configured email address. Subject: `[Birdnest] Night Audit — {date}`. Body includes: occupied units, no-shows flagged, revenue for the day, payments due tomorrow.
+
+---
+
+**Database additions:**
+
+```sql
+-- Tracks current business date and last audit run time
+-- Add columns to property_settings:
+ALTER TABLE property_settings ADD COLUMN business_date DATE NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE property_settings ADD COLUMN last_audit_at TIMESTAMPTZ;
+
+-- Night audit run log
+night_audit_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_date       DATE NOT NULL UNIQUE,   -- the date being closed
+  run_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  triggered_by        TEXT NOT NULL,          -- 'auto' | 'manual:{user_id}'
+  units_occupied      INTEGER,
+  no_shows            JSONB,                  -- [{booking_id, guest_name, unit_name}]
+  room_revenue        NUMERIC(12,2),
+  ancillary_revenue   NUMERIC(12,2),
+  pending_balances    JSONB,                  -- [{booking_id, guest_name, amount, unit_name}]
+  tasks_created       INTEGER,
+  summary             TEXT                    -- human-readable one-line summary
+)
+```
+
+**Migration file:** `server/db/migrations/007_night_audit.sql`
+
+---
+
+**Backend job:**
+
+File: `server/jobs/nightAudit.js`
+
+```js
+// Scheduled via node-cron: '55 23 * * *'
+// Also callable directly (for manual trigger from API)
+async function runNightAudit(triggeredBy = 'auto') { ... }
+module.exports = { runNightAudit };
+```
+
+Registered in `server/index.js` alongside the MQTT client startup.
+
+---
+
+**API routes** (add to `/api/night-audit`):
+
+```
+POST   /api/night-audit/run           — manually trigger audit (owner only)
+GET    /api/night-audit/history       — list past audit runs (owner only)
+GET    /api/night-audit/latest        — most recent audit summary
+GET    /api/night-audit/:date         — audit report for a specific date (YYYY-MM-DD)
+```
+
+---
+
+**PMS Frontend — Night Audit UI:**
+
+**Owner Dashboard widget:**
+- Shows last audit time (e.g. "Last audit: Today 23:55") with a green checkmark
+- If audit hasn't run today: shows an amber warning badge "Audit not run today"
+- "Run Audit Now" button → calls `POST /api/night-audit/run`, shows spinner, then refreshes widget
+
+**Night Audit History page** (`/night-audit`, owner only):
+- Table of past audit runs: date, occupied units, no-shows, room revenue, ancillary revenue, payments flagged
+- Click any row → expand to show full details (no-show list, pending balances list)
+
+**Folder additions:**
+```
+server/
+  jobs/
+    nightAudit.js     ← audit logic
+    index.js          ← registers all scheduled jobs (cron setup)
+client/src/pages/
+  NightAudit.jsx      ← history + manual trigger page
+```
+
+---
+
+**Key design decisions:**
+
+- **No live folio posting** — Birdnest uses fixed booking totals, so there's no need to post individual nightly charge rows. The audit tallies revenue from existing booking data rather than building a running folio.
+- **Idempotent guard** — the `UNIQUE` constraint on `night_audit_runs.business_date` prevents double-runs at the database level, in addition to the application-level check.
+- **No-show is reversible** — `no_show` is a booking status, not a deletion. Owner can manually flip it back to `confirmed` or `checked_in` if a guest arrives after midnight.
+- **Email is best-effort** — audit runs even if the email send fails. Email errors are logged but do not roll back the audit.
+- **node-cron** — add as a dependency (`npm install node-cron`). Does not require a separate worker process; runs inside the existing PM2-managed Express process.
+
+---
 
 #### 3.10 Ancillary Sales / Mini POS
 Simple sales module for non-room revenue. NOT a full POS (that's Separuh). Just enough to track extras sold on-property.
@@ -474,6 +597,11 @@ POST   /api/sales
 
 GET    /api/dashboard/summary
 GET    /api/reports/revenue?month=&year=
+
+POST   /api/night-audit/run
+GET    /api/night-audit/history
+GET    /api/night-audit/latest
+GET    /api/night-audit/:date
 ```
 
 ---
@@ -523,7 +651,11 @@ birdnest-pms/
 │   │   ├── products.js
 │   │   ├── sales.js
 │   │   ├── dashboard.js
-│   │   └── reports.js
+│   │   ├── reports.js
+│   │   └── nightAudit.js
+│   ├── jobs/
+│   │   ├── index.js           # registers all cron jobs
+│   │   └── nightAudit.js      # audit logic (also called by route)
 │   ├── middleware/
 │   │   ├── auth.js            # JWT verification
 │   │   └── role.js            # Owner vs staff guard
@@ -566,14 +698,15 @@ birdnest-pms/
 17. Loyalty tier builder (dynamic)
 18. Auto tier assignment on checkout
 19. Staff notes per booking
+20. Night Audit — scheduled job, manual trigger, history page, owner email summary (migration 007)
 
 ### Phase 3 — Ancillary + Growth
-20. Product catalog management
-21. Ancillary Sales mini-POS (charge to room + walk-in)
-22. Revenue reports (room vs. ancillary)
-23. Direct booking page (public-facing)
-24. WhatsApp message templates (wa.me links)
-25. OTA channel sync (manual → automated)
+21. Product catalog management
+22. Ancillary Sales mini-POS (charge to room + walk-in)
+23. Revenue reports (room vs. ancillary)
+24. Direct booking page (public-facing)
+25. WhatsApp message templates (wa.me links)
+26. OTA channel sync (manual → automated)
 
 ---
 

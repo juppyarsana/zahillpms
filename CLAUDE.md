@@ -143,7 +143,7 @@ Each glamping unit has **two displays** with distinct, complementary roles:
 - Debug menu triggered by 5 rapid taps
 - Stack: React/Vite PWA, served from `display.birdneststay.id`
 
-### 2. TV Welcome Display (Xiaomi 32" Android TV) — 🔨 TO BE BUILT
+### 2. TV Welcome Display (Xiaomi 32" Android TV) — ✅ COMPLETE
 **Only purpose:** Welcome guests and show their stay details when TV is idle  
 **No device controls** — this is purely a guest-facing ambient display
 
