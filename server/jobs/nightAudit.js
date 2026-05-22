@@ -50,10 +50,10 @@ async function sendAuditEmail(businessDate, data) {
 
   function statCard(label, value, color) {
     return `
-      <td style="width:25%;padding:0 8px;">
-        <div style="background:#f9fafb;border-radius:8px;padding:16px 12px;text-align:center;">
-          <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">${label}</div>
-          <div style="font-size:18px;font-weight:700;color:${color || '#111827'};">${value}</div>
+      <td style="width:50%;padding:6px;">
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:18px 16px;">
+          <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">${label}</div>
+          <div style="font-size:20px;font-weight:700;color:${color || '#111827'};white-space:nowrap;">${value}</div>
         </div>
       </td>`;
   }
@@ -98,11 +98,13 @@ async function sendAuditEmail(businessDate, data) {
         <tr>
           <td style="background:#ffffff;padding:28px 32px;">
 
-            <!-- Stat row -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;margin-left:-8px;margin-right:-8px;">
+            <!-- Stat grid (2x2) -->
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
               <tr>
                 ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
                 ${statCard('Room Revenue', fmtIDR(roomRevenue), '#111827')}
+              </tr>
+              <tr>
                 ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
                 ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
               </tr>
