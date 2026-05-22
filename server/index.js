@@ -58,6 +58,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/iot', require('./routes/iot'));
 app.use('/api/board', require('./routes/board'));
 app.use('/api/display', require('./routes/display'));
+app.use('/api/night-audit', require('./routes/nightAudit'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
@@ -69,4 +70,5 @@ app.listen(PORT, () => {
   } else {
     console.log('[MQTT] MQTT_BROKER not set — skipping MQTT connection');
   }
+  require('./jobs').registerJobs();
 });

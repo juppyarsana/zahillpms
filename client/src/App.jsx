@@ -24,6 +24,7 @@ import Settings from './pages/Settings';
 import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsBoardCards from './pages/SettingsBoardCards';
+import NightAudit from './pages/NightAudit';
 
 function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
@@ -124,6 +125,7 @@ function TopNav() {
     can('room_controllers') && { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
     user?.role === 'owner'  && { to: '/settings/board',            icon: '📋', label: 'Guest Board' },
     user?.role === 'owner'  && { to: '/settings/roles',            icon: '🔑', label: 'Roles & Permissions' },
+    user?.role === 'owner'  && { to: '/night-audit',               icon: '🌙', label: 'Night Audit' },
   ].filter(Boolean);
 
   return (
@@ -312,6 +314,7 @@ export default function App() {
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><SettingsRoomControllers /></RequireMenu>} />
                   <Route path="/settings/board"   element={<SettingsBoardCards />} />
                   <Route path="/settings/roles"   element={<SettingsRoles />} />
+                  <Route path="/night-audit"      element={<NightAudit />} />
                 </Routes>
               </Layout>
             </SettingsProvider>

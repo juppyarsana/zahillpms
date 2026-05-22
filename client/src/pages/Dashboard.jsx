@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
@@ -217,6 +217,82 @@ function RevenueChart({ bookings, pendingCount, pendingTotal }) {
   );
 }
 
+/* ─── night audit widget ───────────────────────────────── */
+function NightAuditWidget() {
+  const nav = useNavigate();
+  const [info, setInfo]       = useState(null);
+  const [running, setRunning] = useState(false);
+
+  async function load() {
+    try {
+      const { data } = await api.get('/api/night-audit/latest');
+      setInfo(data);
+    } catch {}
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleRun(e) {
+    e.stopPropagation();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const auditDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    if (!confirm(`Run night audit for ${auditDate} (yesterday)?`)) return;
+    setRunning(true);
+    try {
+      await api.post('/api/night-audit/run');
+      await load();
+    } catch {}
+    setRunning(false);
+  }
+
+  const lastAuditAt = info?.last_audit_at;
+  const ranToday = lastAuditAt
+    ? new Date(lastAuditAt).toDateString() === new Date().toDateString()
+    : false;
+
+  return (
+    <div className="card" style={{ cursor: 'pointer' }} onClick={() => nav('/night-audit')}>
+      <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Night Audit</span>
+        <button
+          className="btn btn-secondary"
+          style={{ fontSize: 11, padding: '4px 10px' }}
+          onClick={handleRun}
+          disabled={running}
+        >
+          {running ? '…' : 'Run Now'}
+        </button>
+      </div>
+
+      {ranToday ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>✅</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#15803D' }}>Audit complete</div>
+            <div style={{ fontSize: 11, color: '#6B7280' }}>
+              {new Date(lastAuditAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {info?.latest?.summary ? ` · ${info.latest.summary}` : ''}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#B45309' }}>Audit not run today</div>
+            <div style={{ fontSize: 11, color: '#6B7280' }}>
+              {lastAuditAt
+                ? `Last run: ${new Date(lastAuditAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                : 'No audits yet'}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── main component ───────────────────────────────────── */
 export default function Dashboard() {
   const { user } = useAuth();
@@ -429,6 +505,9 @@ export default function Dashboard() {
               pendingTotal={pendingTotal}
             />
           </div>
+
+          {/* Night Audit — owner only */}
+          {user?.role === 'owner' && <NightAuditWidget />}
 
         </div>
       </div>
