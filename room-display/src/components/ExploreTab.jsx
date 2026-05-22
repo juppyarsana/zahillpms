@@ -153,7 +153,7 @@ function CardSlideshow({ cards, category }) {
     );
   }
 
-  const card = items[current];
+  const card = items[Math.min(current, items.length - 1)];
   const TAG_COLORS = { activity: '#4ade80', dining: '#fb923c', property: '#c5a358', notice: '#818cf8' };
   const tagColor = TAG_COLORS[category] || '#c5a358';
 
