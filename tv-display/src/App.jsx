@@ -285,7 +285,30 @@ export default function App() {
   if (error && !state) return <ErrorScreen message={error} onRetry={fetchState} />;
   if (!state) return null;
 
-  if (!state.booking) return <VacantScreen unitName={state.unit?.name} />;
+  if (!state.booking) return (
+    <>
+      <VacantScreen unitName={state.unit?.name} />
+      <BuildBadge />
+    </>
+  );
 
-  return <GuestScreen unit={state.unit} booking={state.booking} />;
+  return (
+    <>
+      <GuestScreen unit={state.unit} booking={state.booking} />
+      <BuildBadge />
+    </>
+  );
+}
+
+function BuildBadge() {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 8, right: 12,
+      fontSize: 9, fontFamily: 'monospace',
+      color: 'rgba(255,255,255,0.15)',
+      pointerEvents: 'none', zIndex: 9999,
+    }}>
+      {__APP_COMMIT__}
+    </div>
+  );
 }

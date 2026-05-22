@@ -58,6 +58,9 @@ export default function DebugMenu({ onLogout, onChangeRoom, onClose }) {
         <p className="text-[10px] text-slate-500 mt-4 text-center">
           (Click 5 times on logo to access again)
         </p>
+        <p className="text-[10px] text-slate-600 mt-1 text-center font-mono">
+          build {__APP_COMMIT__}
+        </p>
       </div>
     </div>
   );
