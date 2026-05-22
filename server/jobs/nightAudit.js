@@ -23,7 +23,7 @@ async function getBusinessDate() {
 }
 
 async function sendAuditEmail(businessDate, data) {
-  const { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, tasksCreated } = data;
+  const { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated } = data;
 
   const gmailUser = process.env.GMAIL_USER;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
@@ -48,6 +48,13 @@ async function sendAuditEmail(businessDate, data) {
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   };
 
+  const fmtDateShort = str => {
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+
+  const tomorrow = nextDate(businessDate);
+
   function statCard(label, value, color) {
     return `
       <td style="width:50%;padding:6px;">
@@ -68,6 +75,16 @@ async function sendAuditEmail(businessDate, data) {
           ? `<td style="padding:10px 12px;font-size:13px;font-weight:700;color:#d97706;text-align:right;">${fmtIDR(item.amount)}</td>`
           : `<td style="padding:10px 12px;font-size:13px;color:#ef4444;">No-show</td>`
         }
+      </tr>`).join('');
+  }
+
+  function arrivalRows(items) {
+    if (!items.length) return `<tr><td colspan="3" style="padding:12px;color:#9ca3af;font-size:13px;">No arrivals scheduled for today.</td></tr>`;
+    return items.map(item => `
+      <tr style="border-bottom:1px solid #f3f4f6;">
+        <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#111827;">${item.guest_name}</td>
+        <td style="padding:10px 12px;font-size:13px;color:#6b7280;">${item.unit_name}</td>
+        <td style="padding:10px 12px;font-size:13px;color:#6b7280;text-align:right;">${item.num_guests} guest${item.num_guests !== 1 ? 's' : ''}</td>
       </tr>`).join('');
   }
 
@@ -132,12 +149,36 @@ async function sendAuditEmail(businessDate, data) {
               </table>
             </div>
 
+            <!-- Arriving tomorrow -->
+            <div style="margin-bottom:24px;">
+              <div style="display:flex;align-items:center;margin-bottom:12px;">
+                <span style="font-size:13px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:0.05em;">
+                  Arriving Tomorrow
+                </span>
+                <span style="margin-left:8px;font-size:11px;color:#6b7280;">${fmtDateShort(tomorrow)}</span>
+                <span style="margin-left:8px;background:${arrivingToday.length ? '#dbeafe' : '#d1fae5'};color:${arrivingToday.length ? '#1e40af' : '#065f46'};font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">
+                  ${arrivingToday.length}
+                </span>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                <thead>
+                  <tr style="background:#f9fafb;">
+                    <th style="padding:10px 12px;font-size:11px;font-weight:700;color:#6b7280;text-align:left;text-transform:uppercase;letter-spacing:0.05em;">Guest</th>
+                    <th style="padding:10px 12px;font-size:11px;font-weight:700;color:#6b7280;text-align:left;text-transform:uppercase;letter-spacing:0.05em;">Unit</th>
+                    <th style="padding:10px 12px;font-size:11px;font-weight:700;color:#6b7280;text-align:right;text-transform:uppercase;letter-spacing:0.05em;">Guests</th>
+                  </tr>
+                </thead>
+                <tbody>${arrivalRows(arrivingToday)}</tbody>
+              </table>
+            </div>
+
             <!-- Pending balances -->
             <div style="margin-bottom:24px;">
               <div style="display:flex;align-items:center;margin-bottom:12px;">
                 <span style="font-size:13px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:0.05em;">
                   Payments Due Tomorrow
                 </span>
+                <span style="margin-left:8px;font-size:11px;color:#6b7280;">${fmtDateShort(tomorrow)}</span>
                 <span style="margin-left:8px;background:${pendingBalances.length ? '#fef3c7' : '#d1fae5'};color:${pendingBalances.length ? '#92400e' : '#065f46'};font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">
                   ${pendingBalances.length}
                 </span>
@@ -242,7 +283,18 @@ async function runNightAudit(triggeredBy = 'auto') {
     [tomorrow]
   );
 
-  // 6. Housekeeping task auto-generation for tomorrow's checkouts
+  // 6. Arriving guests (check-in = tomorrow)
+  const { rows: arrivingToday } = await db.query(
+    `SELECT g.name AS guest_name, u.name AS unit_name, b.num_guests
+     FROM bookings b
+     JOIN guests g ON g.id = b.guest_id
+     JOIN units u  ON u.id = b.unit_id
+     WHERE b.check_in_date = $1 AND b.status = 'confirmed'
+     ORDER BY u.name`,
+    [tomorrow]
+  );
+
+  // 8. Housekeeping task auto-generation for tomorrow's checkouts
   const { rows: checkouts } = await db.query(
     `SELECT b.id AS booking_id, u.id AS unit_id, u.name AS unit_name
      FROM bookings b
@@ -270,7 +322,7 @@ async function runNightAudit(triggeredBy = 'auto') {
     }
   }
 
-  // 7. Record last audit time
+  // 9. Record last audit time
   await db.query(
     `UPDATE property_settings SET business_date = $1, last_audit_at = NOW() WHERE id = 1`,
     [businessDate]
@@ -282,26 +334,26 @@ async function runNightAudit(triggeredBy = 'auto') {
   );
   const unitsOccupied = parseInt(occRows[0].count);
 
-  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${pendingBalances.length} payment(s) due tomorrow`;
+  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow`;
 
-  // 8. Write audit log
+  // 10. Write audit log
   await db.query(
     `INSERT INTO night_audit_runs
        (id, business_date, triggered_by, units_occupied, no_shows,
-        room_revenue, ancillary_revenue, pending_balances, tasks_created, summary)
-     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        room_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary)
+     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       businessDate, triggeredBy, unitsOccupied,
       JSON.stringify(noShows), roomRevenue, ancillaryRevenue,
-      JSON.stringify(pendingBalances), tasksCreated, summary,
+      JSON.stringify(pendingBalances), JSON.stringify(arrivingToday), tasksCreated, summary,
     ]
   );
 
   console.log(`[Night Audit] Done for ${businessDate}: ${summary}`);
 
-  // 9. Owner email — best-effort, never blocks or fails the audit
+  // 11. Owner email — best-effort, never blocks or fails the audit
   try {
-    await sendAuditEmail(businessDate, { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, tasksCreated });
+    await sendAuditEmail(businessDate, { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
   } catch (err) {
     console.error('[Night Audit] Email failed (audit still complete):', err.message);
   }

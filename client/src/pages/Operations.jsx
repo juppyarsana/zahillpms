@@ -65,7 +65,7 @@ export default function Operations() {
                   <span className={`badge badge-${PRIORITY_BADGE[t.priority]}`}>{t.priority}</span>
                   {t.unit_name && <span>📍 {t.unit_name}</span>}
                   {t.assignee_name && <span>👤 {t.assignee_name}</span>}
-                  {t.due_time && <span>⏰ {t.due_time?.slice(0,16)}</span>}
+                  {t.due_time && <span>⏰ {new Date(t.due_time).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</span>}
                 </div>
                 <div className="flex gap-2 mt-2">
                   {col !== 'todo' && <button className="btn btn-sm btn-secondary" onClick={() => moveTask(t, COLS[COLS.indexOf(col)-1])}>← Back</button>}
@@ -116,7 +116,7 @@ export default function Operations() {
               </div>
               <div className="form-group">
                 <label className="form-label">Due Time</label>
-                <input className="form-input" type="datetime-local" value={form.due_time} onChange={e => setForm(f=>({...f,due_time:e.target.value}))} />
+                <input className="form-input" type="date" value={form.due_time} onChange={e => setForm(f=>({...f,due_time:e.target.value}))} />
               </div>
             </div>
             <div className="modal-footer">

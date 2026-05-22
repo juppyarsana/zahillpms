@@ -118,8 +118,8 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
 
     // Auto-generate housekeeping task
     await client.query(
-      `INSERT INTO tasks (title, type, priority, unit_id, booking_id)
-       VALUES ($1, 'housekeeping', 'high', $2, $3)`,
+      `INSERT INTO tasks (title, type, priority, unit_id, booking_id, due_time)
+       VALUES ($1, 'housekeeping', 'high', $2, $3, NOW())`,
       [`Clean & prepare unit after checkout`, booking.unit_id, booking.id]
     );
 

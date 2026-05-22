@@ -151,6 +151,9 @@ function TopNav() {
         )}
       </div>
       <div className="nav-end">
+        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+          {__APP_COMMIT__}
+        </span>
         <div
           className="avatar avatar-md"
           style={{ background: 'rgba(255,255,255,0.15)', cursor: 'pointer', fontSize: 13 }}
@@ -250,6 +253,9 @@ function BottomNav() {
               >
                 Sign out
               </button>
+              <div style={{ fontSize: 10, color: '#d1d5db', fontFamily: 'monospace', textAlign: 'center', marginTop: 12 }}>
+                build {__APP_COMMIT__}
+              </div>
             </div>
           </div>
         </div>

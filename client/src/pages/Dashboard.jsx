@@ -311,7 +311,12 @@ export default function Dashboard() {
         api.get(`/api/bookings?month=${now.getMonth() + 1}&year=${now.getFullYear()}`),
       ]);
       setData(summaryRes.data);
-      setTasks(tasksRes.data.slice(0, 5)); // top 5 by priority
+      const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+      const todayTasks = tasksRes.data.filter(t => {
+        if (!t.due_time) return false;
+        return new Date(t.due_time).toLocaleDateString('en-CA') === todayStr;
+      });
+      setTasks(todayTasks.slice(0, 5));
       setMonthBookings(bookingsRes.data);
 
       // estimate pending total from confirmed bookings with no received deposit
@@ -473,8 +478,9 @@ export default function Dashboard() {
                           {t.title}{t.unit_name ? ` — ${t.unit_name}` : ''}
                         </div>
                         <div style={{ fontSize: 11, color: '#6B7280' }}>
-                          {t.assignee_name ? `Assigned to ${t.assignee_name}` : 'Unassigned'}
-                          {t.due_time ? ` · ${t.due_time}` : ''}
+                          {t.due_time ? `Due ${new Date(t.due_time).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}` : ''}
+                          {t.assignee_name && t.due_time ? ' · ' : ''}
+                          {t.assignee_name ? `${t.assignee_name}` : ''}
                         </div>
                       </div>
                       {t.status === 'done'
