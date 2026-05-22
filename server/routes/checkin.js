@@ -2,15 +2,23 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const sharp = require('sharp');
 const path = require('path');
+const fs = require('fs');
 
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../uploads'),
-  filename: (req, file, cb) => {
-    cb(null, `${req.params.bookingId}-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const UPLOAD_DIR = path.join(__dirname, '../uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+async function saveResized(buffer, filename) {
+  const outPath = path.join(UPLOAD_DIR, filename);
+  await sharp(buffer)
+    .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toFile(outPath);
+  return `/uploads/${filename}`;
+}
 
 const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 
@@ -68,7 +76,8 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
 
     let id_document_url = null;
     if (req.file) {
-      id_document_url = `/uploads/${req.file.filename}`;
+      const filename = `${req.params.bookingId}-${Date.now()}.jpg`;
+      id_document_url = await saveResized(req.file.buffer, filename);
       const { rows: [booking] } = await client.query('SELECT guest_id FROM bookings WHERE id = $1', [req.params.bookingId]);
       if (booking) {
         await client.query('UPDATE guests SET id_document_url = $1 WHERE id = $2', [id_document_url, booking.guest_id]);

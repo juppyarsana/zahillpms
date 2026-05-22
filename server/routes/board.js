@@ -2,19 +2,23 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const multer = require('multer');
+const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
 
 const UPLOAD_DIR = path.join(__dirname, '../uploads/board');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: UPLOAD_DIR,
-  filename: (req, file, cb) => {
-    cb(null, `board-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+async function saveResized(buffer, filename) {
+  const outPath = path.join(UPLOAD_DIR, filename);
+  await sharp(buffer)
+    .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toFile(outPath);
+  return `/board-images/${filename}`;
+}
 
 // GET /api/board — all cards ordered by category priority then sort_order
 router.get('/', auth, async (req, res) => {
@@ -37,8 +41,9 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
   if (!title || !body || !category) {
     return res.status(400).json({ error: 'title, body, and category are required' });
   }
-  const imageUrl = req.file ? `/board-images/${req.file.filename}` : null;
   try {
+    const filename = req.file ? `board-${Date.now()}.jpg` : null;
+    const imageUrl = req.file ? await saveResized(req.file.buffer, filename) : null;
     const { rows: [card] } = await db.query(
       `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
@@ -59,12 +64,12 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
 
     let imageUrl = existing.image_url;
     if (req.file) {
-      // Delete old image file if it exists
       if (existing.image_url) {
         const oldFile = path.join(UPLOAD_DIR, path.basename(existing.image_url));
         if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
       }
-      imageUrl = `/board-images/${req.file.filename}`;
+      const filename = `board-${Date.now()}.jpg`;
+      imageUrl = await saveResized(req.file.buffer, filename);
     }
 
     const { rows: [card] } = await db.query(
