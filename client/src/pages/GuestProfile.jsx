@@ -11,6 +11,7 @@ const STATUS_CLASS = { confirmed: 'badge-blue', deposit_paid: 'badge-amber', pen
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function toWaNum(raw) { const s = (raw || '').trim(); let n = s.replace(/\D/g, ''); if (!s.startsWith('+')) { if (n.startsWith('0')) n = '62' + n.slice(1); else if (!n.startsWith('62')) n = '62' + n; } return n; }
 
 export default function GuestProfile() {
   const { id } = useParams();
@@ -59,7 +60,7 @@ export default function GuestProfile() {
         </div>
         <div className="flex gap-2">
           {guest.whatsapp && (
-            <a href={`https://wa.me/${guest.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="btn btn-secondary">💬 WhatsApp</a>
+            <a href={`https://wa.me/${toWaNum(guest.whatsapp)}`} target="_blank" rel="noreferrer" className="btn btn-secondary">💬 WhatsApp</a>
           )}
           <button className="btn btn-primary" onClick={() => setEditing(!editing)}>{editing ? 'Cancel' : 'Edit'}</button>
         </div>

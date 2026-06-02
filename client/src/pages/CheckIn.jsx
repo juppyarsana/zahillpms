@@ -150,7 +150,13 @@ export default function CheckIn() {
 
   function waWelcome(b) {
     const text = encodeURIComponent(`Welcome to Birdnest Glamping, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.\n\n🌄 Kintamani, Bali`);
-    window.open(`https://wa.me/${b.guest_whatsapp?.replace(/\D/g, '')}?text=${text}`, '_blank');
+    const rawWa = (b.guest_whatsapp || '').trim();
+    let waNum = rawWa.replace(/\D/g, '');
+    if (!rawWa.startsWith('+')) {
+      if (waNum.startsWith('0')) waNum = '62' + waNum.slice(1);
+      else if (!waNum.startsWith('62')) waNum = '62' + waNum;
+    }
+    window.open(`https://wa.me/${waNum}?text=${text}`, '_blank');
   }
 
   const isOTA = (b) => otaSources.includes(b.source);

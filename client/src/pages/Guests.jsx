@@ -88,7 +88,13 @@ export default function Guests() {
 
   function waInvite(g) {
     const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at Birdnest Glamping, Kintamani.\n\nAs a special birthday gift, we'd love to invite you back for a complimentary upgrade on your next stay! 🎁\n\nWith warmth, Birdnest Team 🪺`);
-    window.open(`https://wa.me/${g.whatsapp?.replace(/\D/g, '')}?text=${msg}`, '_blank');
+    const rawWa = (g.whatsapp || '').trim();
+    let waNum = rawWa.replace(/\D/g, '');
+    if (!rawWa.startsWith('+')) {
+      if (waNum.startsWith('0')) waNum = '62' + waNum.slice(1);
+      else if (!waNum.startsWith('62')) waNum = '62' + waNum;
+    }
+    window.open(`https://wa.me/${waNum}?text=${msg}`, '_blank');
   }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
