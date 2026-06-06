@@ -59,6 +59,7 @@ export default function NewBooking() {
     guest_id: '', unit_id: sp.get('unit') || '',
     check_in_date: sp.get('date') || '', check_out_date: '',
     num_guests: 1, source: 'direct', total_amount: '', deposit_pct: 30, special_requests: '', status: 'pending',
+    discount_type: '', discount_value: '',
   });
   const [newGuest, setNewGuest] = useState({ name: '', whatsapp: '', nationality: '', email: '' });
   const [mode, setMode] = useState('search');
@@ -106,6 +107,13 @@ export default function NewBooking() {
   const nights = priceSuggestion?.nights || 0;
   const suggestedTotal = priceSuggestion?.suggested_total || 0;
 
+  const totalAmt   = parseFloat(form.total_amount || 0);
+  const dValue     = parseFloat(form.discount_value || 0);
+  const discountAmt = !form.discount_type || !dValue ? 0
+    : form.discount_type === 'fixed' ? Math.min(dValue, totalAmt)
+    : Math.round(totalAmt * dValue / 100);
+  const netAmt = totalAmt - discountAmt;
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
@@ -119,8 +127,19 @@ export default function NewBooking() {
       if (!guestId) { setError('Select or create a guest'); setLoading(false); return; }
       const total = parseFloat(form.total_amount || 0);
       if (!total) { setError('Please enter the total amount before saving'); setLoading(false); return; }
-      const deposit_amount = Math.round(total * (form.deposit_pct / 100));
-      const res = await api.post('/api/bookings', { ...form, guest_id: guestId, deposit_amount });
+      const dValue = parseFloat(form.discount_value || 0);
+      const discountAmt = !form.discount_type || !dValue ? 0
+        : form.discount_type === 'fixed' ? Math.min(dValue, total)
+        : Math.round(total * dValue / 100);
+      const net = total - discountAmt;
+      const deposit_amount = Math.round(net * (form.deposit_pct / 100));
+      const res = await api.post('/api/bookings', {
+        ...form,
+        guest_id: guestId,
+        deposit_amount,
+        discount_type: form.discount_type || null,
+        discount_value: dValue,
+      });
       nav(`/reservations/${res.data.id}`);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create booking');
@@ -276,6 +295,34 @@ export default function NewBooking() {
             )}
           </div>
           <div className="form-group">
+            <label className="form-label">Discount</label>
+            <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
+              {[{ v: '', label: 'None' }, { v: 'fixed', label: 'Fixed (IDR)' }, { v: 'percentage', label: 'Percentage (%)' }].map(opt => (
+                <button key={opt.v} type="button"
+                  className={`btn btn-sm ${form.discount_type === opt.v ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => { set('discount_type', opt.v); set('discount_value', ''); }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {form.discount_type && (
+              <div className="flex gap-2 flex-center">
+                <input className="form-input" type="number" min={0}
+                  placeholder={form.discount_type === 'fixed' ? 'Amount in IDR' : '0 – 100'}
+                  value={form.discount_value}
+                  onChange={e => set('discount_value', e.target.value)}
+                  style={{ maxWidth: 200 }} />
+                <span style={{ color: 'var(--text-muted)' }}>{form.discount_type === 'percentage' ? '%' : 'IDR'}</span>
+              </div>
+            )}
+            {discountAmt > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-success, green)', marginTop: 4 }}>
+                Discount: − Rp {discountAmt.toLocaleString('id-ID')} · Net: Rp {netAmt.toLocaleString('id-ID')}
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Deposit Required</label>
             <div className="flex gap-2 flex-center">
               <input className="form-input" type="number" min={0} max={100} value={form.deposit_pct}
@@ -292,10 +339,10 @@ export default function NewBooking() {
                 ))}
               </div>
             </div>
-            {form.total_amount > 0 && (
+            {netAmt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                Deposit: Rp {Math.round(parseFloat(form.total_amount) * form.deposit_pct / 100).toLocaleString('id-ID')}
-                {' · '}Balance: Rp {Math.round(parseFloat(form.total_amount) * (1 - form.deposit_pct / 100)).toLocaleString('id-ID')}
+                Deposit: Rp {Math.round(netAmt * form.deposit_pct / 100).toLocaleString('id-ID')}
+                {' · '}Balance: Rp {Math.round(netAmt * (1 - form.deposit_pct / 100)).toLocaleString('id-ID')}
               </div>
             )}
           </div>

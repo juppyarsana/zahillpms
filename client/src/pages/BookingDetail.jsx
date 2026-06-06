@@ -77,6 +77,16 @@ export default function BookingDetail() {
     }
   }
 
+  async function confirmBooking() {
+    if (!confirm('Confirm this booking? No payment is required.')) return;
+    try {
+      await api.put(`/api/bookings/${id}/confirm`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to confirm booking');
+    }
+  }
+
   async function cancel() {
     if (!confirm('Cancel this booking?')) return;
     await api.delete(`/api/bookings/${id}`);
@@ -165,6 +175,10 @@ export default function BookingDetail() {
           {booking.status === 'checked_in' && (
             <button className="btn btn-primary" onClick={() => { setCheckingOut(true); setCheckoutNotes(''); }}>Check Out</button>
           )}
+          {booking.status === 'pending' &&
+            parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
+            <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
+          )}
           {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) ? (
             <button className="btn btn-danger" onClick={cancel}>Cancel</button>
           ) : null}
@@ -213,6 +227,24 @@ export default function BookingDetail() {
 
       <div className="card mt-3">
         <div className="card-title">Payment Tracking</div>
+        {parseFloat(booking.discount_amount) > 0 && (
+          <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--cream, #fffbeb)', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+              <span className="text-muted">Rack Rate</span>
+              <span>{fmtIDR(booking.total_amount)}</span>
+            </div>
+            <div className="flex-between" style={{ fontSize: 13, marginBottom: 4, color: 'var(--color-success, #16a34a)' }}>
+              <span>
+                Discount{booking.discount_type === 'percentage' ? ` (${booking.discount_value}%)` : ' (fixed)'}
+              </span>
+              <span>− {fmtIDR(booking.discount_amount)}</span>
+            </div>
+            <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+              <span>Net Total</span>
+              <span>{fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount))}</span>
+            </div>
+          </div>
+        )}
         <div className="grid-2">
           {[deposit, balance].filter(p => p && parseFloat(p.amount) > 0).map(p => (
             <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 12 }}>
@@ -250,7 +282,8 @@ export default function BookingDetail() {
         </div>
         <div className="divider" />
         <div className="flex-between" style={{ fontWeight: 700 }}>
-          <span>Total</span><span>{fmtIDR(booking.total_amount)}</span>
+          <span>Total</span>
+          <span>{fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0))}</span>
         </div>
       </div>
 
