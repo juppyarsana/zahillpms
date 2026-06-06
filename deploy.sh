@@ -33,7 +33,7 @@ cd ..
 echo ""
 echo "▸ Installing client dependencies..."
 cd client
-npm install
+npm install --legacy-peer-deps
 echo ""
 echo "▸ Building client..."
 npm run build
@@ -44,7 +44,7 @@ if [ -d "room-display" ]; then
   echo ""
   echo "▸ Installing room-display dependencies..."
   cd room-display
-  npm install
+  npm install --legacy-peer-deps
   echo ""
   echo "▸ Building room-display..."
   npm run build
