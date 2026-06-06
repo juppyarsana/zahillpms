@@ -140,6 +140,37 @@ router.get('/availability', auth, async (req, res) => {
   }
 });
 
+// GET /api/bookings/transfer-availability?check_in=&check_out=&exclude_booking_id=
+// Returns all units with availability status for the given dates
+router.get('/transfer-availability', auth, async (req, res) => {
+  const { check_in, check_out, exclude_booking_id } = req.query;
+  if (!check_in || !check_out) return res.status(400).json({ error: 'check_in, check_out required' });
+  try {
+    const { rows: units } = await db.query('SELECT id, name, type, status FROM units ORDER BY name');
+    const params = [check_in, check_out];
+    let excludeClause = '';
+    if (exclude_booking_id) { params.push(exclude_booking_id); excludeClause = `AND b.id != $${params.length}`; }
+    const { rows: conflicts } = await db.query(`
+      SELECT b.unit_id, g.name as guest_name, b.check_in_date, b.check_out_date
+      FROM bookings b
+      JOIN guests g ON b.guest_id = g.id
+      WHERE b.status NOT IN ('cancelled','no_show')
+        AND b.check_in_date < $2
+        AND b.check_out_date > $1
+        ${excludeClause}
+    `, params);
+    const conflictMap = {};
+    conflicts.forEach(c => { conflictMap[c.unit_id] = c; });
+    res.json(units.map(u => ({
+      ...u,
+      available: !conflictMap[u.id],
+      conflict: conflictMap[u.id] || null,
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/bookings/:id
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -220,6 +251,66 @@ router.post('/', auth, async (req, res) => {
 
     await client.query('COMMIT');
     res.status(201).json(booking);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/bookings/:id/transfer
+router.put('/:id/transfer', auth, async (req, res) => {
+  const { unit_id } = req.body;
+  if (!unit_id) return res.status(400).json({ error: 'unit_id required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1', [req.params.id]);
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    const transferable = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+    if (!transferable.includes(booking.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot transfer — booking status is ${booking.status}` });
+    }
+    if (booking.unit_id === unit_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Booking is already assigned to this unit' });
+    }
+
+    const { rows: [targetUnit] } = await client.query('SELECT id FROM units WHERE id = $1', [unit_id]);
+    if (!targetUnit) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Target unit not found' }); }
+
+    const { rows: conflicts } = await client.query(`
+      SELECT id FROM bookings
+      WHERE unit_id = $1
+        AND id != $2
+        AND status NOT IN ('cancelled','no_show')
+        AND check_in_date < $4
+        AND check_out_date > $3
+    `, [unit_id, req.params.id, booking.check_in_date, booking.check_out_date]);
+    if (conflicts.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Target unit is not available for these booking dates' });
+    }
+
+    const oldUnitId = booking.unit_id;
+    await client.query('UPDATE bookings SET unit_id = $1, updated_at = NOW() WHERE id = $2', [unit_id, req.params.id]);
+
+    if (booking.status === 'checked_in') {
+      await client.query("UPDATE units SET status = 'available' WHERE id = $1", [oldUnitId]);
+      await client.query("UPDATE units SET status = 'occupied' WHERE id = $1", [unit_id]);
+    }
+
+    await client.query('COMMIT');
+    const { rows: [updated] } = await db.query(`
+      SELECT b.*, g.name as guest_name, u.name as unit_name
+      FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
+      WHERE b.id = $1
+    `, [req.params.id]);
+    res.json(updated);
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

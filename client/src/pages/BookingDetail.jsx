@@ -23,6 +23,10 @@ export default function BookingDetail() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [transferUnits, setTransferUnits] = useState([]);
+  const [transferTarget, setTransferTarget] = useState(null);
+  const [transferLoading, setTransferLoading] = useState(false);
 
   async function load() {
     try {
@@ -86,6 +90,38 @@ export default function BookingDetail() {
     load();
   }
 
+  async function openTransfer() {
+    setTransferTarget(null);
+    setTransferring(true);
+    try {
+      const r = await api.get('/api/bookings/transfer-availability', {
+        params: {
+          check_in: booking.check_in_date?.slice(0, 10),
+          check_out: booking.check_out_date?.slice(0, 10),
+          exclude_booking_id: id,
+        },
+      });
+      setTransferUnits(r.data.filter(u => u.id !== booking.unit_id));
+    } catch {
+      alert('Failed to load unit availability');
+      setTransferring(false);
+    }
+  }
+
+  async function doTransfer() {
+    if (!transferTarget) return;
+    setTransferLoading(true);
+    try {
+      await api.put(`/api/bookings/${id}/transfer`, { unit_id: transferTarget });
+      setTransferring(false);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Transfer failed');
+    } finally {
+      setTransferLoading(false);
+    }
+  }
+
   function waLink() {
     const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Birdnest Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
@@ -111,6 +147,9 @@ export default function BookingDetail() {
           <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
         </div>
         <div className="flex gap-2">
+          {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && (
+            <button className="btn btn-secondary" onClick={openTransfer}>Transfer Room</button>
+          )}
           {booking.guest_whatsapp && (
             <button className="btn btn-secondary" onClick={waLink}>💬 WhatsApp</button>
           )}
@@ -270,6 +309,60 @@ export default function BookingDetail() {
           <button className="btn btn-secondary" onClick={addNote}>Add</button>
         </div>
       </div>
+
+      {transferring && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Transfer Room — {booking.guest_name}</div>
+              <button className="btn btn-icon" onClick={() => setTransferring(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+                Current room: <strong>{booking.unit_name}</strong> · {booking.check_in_date?.slice(0,10)} → {booking.check_out_date?.slice(0,10)}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {transferUnits.map(u => {
+                  const isAvailable = u.available;
+                  const isSelected = transferTarget === u.id;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => isAvailable && setTransferTarget(u.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 14px', borderRadius: 8, cursor: isAvailable ? 'pointer' : 'not-allowed',
+                        border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
+                        background: isSelected ? 'var(--primary-light, #eff6ff)' : isAvailable ? 'var(--bg-card)' : 'var(--bg-muted, #f9fafb)',
+                        opacity: isAvailable ? 1 : 0.6,
+                        textAlign: 'left', width: '100%',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+                        {!isAvailable && u.conflict && (
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            Booked by {u.conflict.guest_name} · {u.conflict.check_in_date?.slice(0,10)} → {u.conflict.check_out_date?.slice(0,10)}
+                          </div>
+                        )}
+                      </div>
+                      <span className={`badge badge-${isAvailable ? 'green' : 'red'}`}>
+                        {isAvailable ? 'Available' : 'Unavailable'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setTransferring(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={doTransfer} disabled={!transferTarget || transferLoading}>
+                {transferLoading ? 'Transferring…' : 'Confirm Transfer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {checkingOut && (
         <div className="modal-backdrop">
