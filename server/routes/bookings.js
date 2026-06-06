@@ -203,7 +203,7 @@ router.get('/:id', auth, async (req, res) => {
 
 // POST /api/bookings
 router.post('/', auth, async (req, res) => {
-  const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status } = req.body;
+  const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, discount_type, discount_value } = req.body;
   if (!guest_id || !unit_id || !check_in_date || !check_out_date) {
     return res.status(400).json({ error: 'guest_id, unit_id, check_in_date, check_out_date required' });
   }
@@ -225,15 +225,24 @@ router.post('/', auth, async (req, res) => {
     }
 
     const total = parseFloat(total_amount || 0);
+
+    // Compute discount
+    const dType  = discount_type || null;
+    const dValue = parseFloat(discount_value || 0);
+    let discountAmount = 0;
+    if (dType === 'fixed')      discountAmount = Math.min(dValue, total);
+    if (dType === 'percentage') discountAmount = Math.round(total * dValue / 100);
+    const net = total - discountAmount;
+
     const depositAmount = deposit_amount !== undefined
-      ? Math.min(parseFloat(deposit_amount), total)
-      : Math.round(total * 0.3);
-    const balanceAmount = total - depositAmount;
+      ? Math.min(parseFloat(deposit_amount), net)
+      : Math.round(net * 0.3);
+    const balanceAmount = net - depositAmount;
 
     const { rows } = await client.query(
-      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', total_amount || 0, depositAmount, special_requests, internal_notes, status || 'pending', req.user.id]
+      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', total_amount || 0, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id]
     );
     const booking = rows[0];
     if (depositAmount > 0) {
@@ -256,6 +265,32 @@ router.post('/', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// PUT /api/bookings/:id/confirm  (for zero-net bookings with no payments to collect)
+router.put('/:id/confirm', auth, async (req, res) => {
+  try {
+    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1', [req.params.id]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (booking.status !== 'pending') return res.status(409).json({ error: 'Booking is not in pending status' });
+
+    const net = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
+    const hasPendingPayment = await db.query(
+      "SELECT id FROM payments WHERE booking_id = $1 AND status = 'pending' AND amount > 0",
+      [booking.id]
+    );
+    if (net > 0 && hasPendingPayment.rows.length > 0) {
+      return res.status(409).json({ error: 'Use payment confirmation to confirm this booking' });
+    }
+
+    const { rows: [updated] } = await db.query(
+      "UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1 RETURNING *",
+      [booking.id]
+    );
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
