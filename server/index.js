@@ -59,6 +59,7 @@ app.use('/api/iot', require('./routes/iot'));
 app.use('/api/board', require('./routes/board'));
 app.use('/api/display', require('./routes/display'));
 app.use('/api/night-audit', require('./routes/nightAudit'));
+app.use('/api/insights', require('./routes/insights'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
