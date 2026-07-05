@@ -226,7 +226,7 @@ export default function NewBooking() {
               <label className="form-label">Unit *</label>
               <select className="form-select" value={form.unit_id} onChange={e => set('unit_id', e.target.value)} required>
                 <option value="">Select unit…</option>
-                {units.map(u => <option key={u.id} value={u.id}>{u.name} — Rp {Number(u.base_rate).toLocaleString('id-ID')}/night</option>)}
+                {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
             <div className="form-group">

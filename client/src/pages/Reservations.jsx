@@ -40,6 +40,13 @@ function toDate(str) {
   return new Date(y, m - 1, d);
 }
 
+function formatRate(rate) {
+  if (!rate) return '';
+  if (rate >= 1000000) return `${(rate % 1000000 === 0 ? rate / 1000000 : (rate / 1000000).toFixed(1))}jt`;
+  if (rate >= 1000) return `${Math.round(rate / 1000)}rb`;
+  return String(rate);
+}
+
 export default function Reservations() {
   const nav = useNavigate();
   const { sources } = useSettings();
@@ -50,12 +57,14 @@ export default function Reservations() {
   const [month, setMonth]   = useState(now.getMonth() + 1);
   const [bookings, setBookings] = useState([]);
   const [units, setUnits]   = useState([]);
+  const [rates, setRates]   = useState({});
   const [view, setView]     = useState('calendar');
   const calWrapRef          = useRef(null);
 
   useEffect(() => { api.get('/api/units').then(r => setUnits(r.data)); }, []);
   useEffect(() => {
     api.get(`/api/bookings?month=${month}&year=${year}`).then(r => setBookings(r.data));
+    api.get(`/api/pricing/calendar?month=${month}&year=${year}`).then(r => setRates(r.data));
   }, [month, year]);
 
   // Scroll today into view at the left edge (cell = 72px + 2px gap = 74px per column)
@@ -188,14 +197,17 @@ export default function Reservations() {
 
     // Available
     const dd2 = String(d).padStart(2,'0'), mm2 = String(month).padStart(2,'0');
+    const rate = rates[unitId]?.[d];
     return (
       <div
         key={d}
         className={`cal-cell avail${todayCls}`}
         style={{ width: 72, flexShrink: 0 }}
-        title="Available — click to book"
+        title={rate ? `Rp ${rate.toLocaleString('id-ID')} / night — click to book` : 'Available — click to book'}
         onClick={() => nav(`/reservations/new?unit=${unitId}&date=${year}-${mm2}-${dd2}`)}
-      />
+      >
+        {rate ? formatRate(rate) : ''}
+      </div>
     );
   }
 

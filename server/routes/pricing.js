@@ -65,6 +65,48 @@ router.get('/suggest', auth, async (req, res) => {
   }
 });
 
+// GET /api/pricing/calendar?month=&year=
+// Returns each unit's effective nightly rate for every day of the given month:
+// { [unit_id]: { [day]: rate, ... }, ... }
+router.get('/calendar', auth, async (req, res) => {
+  const { month, year } = req.query;
+  if (!month || !year) return res.status(400).json({ error: 'month, year required' });
+
+  try {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const pad = n => String(n).padStart(2, '0');
+    const monthStart = `${year}-${pad(month)}-01`;
+    const monthEnd = `${year}-${pad(month)}-${pad(daysInMonth)}`;
+
+    const { rows: units } = await db.query('SELECT id, base_rate FROM units');
+    const { rows: periods } = await db.query(`
+      SELECT * FROM pricing_periods
+      WHERE is_active = true AND date_from <= $1 AND date_to >= $2
+      ORDER BY sort_order DESC
+    `, [monthEnd, monthStart]);
+
+    const rates = {};
+    for (const unit of units) {
+      const baseRate = parseFloat(unit.base_rate);
+      const unitPeriods = periods.filter(p => p.unit_ids.length === 0 || p.unit_ids.includes(unit.id));
+
+      const byDay = {};
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${pad(month)}-${pad(d)}`;
+        const period = unitPeriods.find(p => p.date_from <= dateStr && p.date_to >= dateStr);
+        byDay[d] = Math.round(period
+          ? (period.type === 'fixed' ? parseFloat(period.value) : baseRate * parseFloat(period.value))
+          : baseRate);
+      }
+      rates[unit.id] = byDay;
+    }
+
+    res.json(rates);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/pricing/periods
 router.post('/periods', auth, requireRole('owner'), async (req, res) => {
   const { name, color, date_from, date_to, type, value, unit_ids, sort_order } = req.body;
