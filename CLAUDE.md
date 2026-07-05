@@ -118,6 +118,7 @@ These names are final. Do not use alternatives.
 - `/api/users` — user management
 - `/api/settings` — property settings
 - `/api/iot` — Room Controller device states and commands (recently added)
+- `/api/insights` — Market Insights: competitor ratings, search trends, holidays, AI weekly briefing (see Market Insights section below)
 
 **IoT database tables (migration 006):**
 - `units.controller_id` — links a PMS unit to its ESP32 Room ID (e.g. `"1"`)
@@ -176,6 +177,28 @@ Each glamping unit has **two displays** with distinct, complementary roles:
 
 The IoT section in the PMS Settings page shows room controller status (online/offline, relay states, RGB). This was recently added as part of the MQTT integration work.
 
+**Reservations calendar** (`client/src/pages/Reservations.jsx`) shows each available night's effective rate (base rate, overridden by the highest-priority active pricing period) directly in the calendar cells, fetched from `GET /api/pricing/calendar?month=&year=`.
+
+---
+
+## Market Insights (Dashboard)
+
+Three cards on the Owner Dashboard, backed by `server/routes/insights.js`, `server/jobs/marketInsights.js`, and scheduled jobs in `server/jobs/index.js`. All external API calls degrade gracefully (skip + log) when their key isn't set — nothing crashes without them.
+
+**Competitor Ratings** — manually curated, not auto-discovered. Owner types a competitor name into the dashboard card; the backend resolves it via Google Places Text Search (`server/services/googlePlaces.js`) and starts tracking its rating/review count/price level. A fixed self-benchmark row (Birdnest's own Google listing) always sorts first. Add: `POST /api/insights/competitors {name}`. Remove (soft delete, keeps history): `DELETE /api/insights/competitors/:id`. Daily refresh at **06:00 WITA** just re-checks whatever's currently active — it does not discover or replace entries.
+- Table: `competitors` (id, name, place_id, matched_address, is_self, is_active) + `competitor_snapshots` (rating, review_count, price_level per check).
+- Note: Google has no `price_level` data for lodging in the Kintamani area as of 2026-07 — that field will likely always be empty here.
+
+**Search Interest** — Google Trends (unofficial library, no official API exists) for two fixed terms: `"kintamani glamping"`, `"bali glamping"`, geo `ID`. Weekly refresh, **Monday 06:30 WITA**. Table: `search_trends` (term, point_date, interest 0–100 relative to that term's own peak in the queried window).
+
+**AI Weekly Briefing** — Claude API (`claude-opus-4-8`, `server/services/claude.js`) reads the current competitor/trends/holidays data and returns a structured JSON briefing (headline + labeled highlights, via `output_config.format`) rather than free prose — keeps the dashboard card scannable. Weekly refresh, **Monday 07:00 WITA** (after trends). Table: `ai_market_summary` (singleton row, `summary` stored as JSON text).
+
+**Holidays** — `holidays` table seeded with Indonesian national + Balinese Hindu observances (Nyepi, Galungan, Kuningan — verified by web search 2026-07-06, since these follow the 210-day pawukon calendar and aren't in generic holiday APIs; re-verify/extend yearly). Dashboard shows a banner when one is within 45 days, linking to Pricing.
+
+**Property location**: `property_settings.latitude`/`longitude` (migration 015) — Birdnest's coordinates, used as the center point for any location-based lookups.
+
+Manual refresh triggers (owner only, useful right after a fresh deploy before the cron has fired): `POST /api/insights/competitors/refresh`, `/api/insights/trends/refresh`, `/api/insights/summary/refresh`.
+
 ---
 
 ## Environment Variables
@@ -188,6 +211,12 @@ MQTT_USERNAME=birdnest
 MQTT_PASSWORD=<password>
 ```
 
+Add these for Market Insights:
+```
+GOOGLE_PLACES_API_KEY=<key>        # console.cloud.google.com — legacy Places API enabled + billing active
+ANTHROPIC_API_KEY=<key>            # console.anthropic.com
+```
+
 ---
 
 ## Important Conventions
@@ -196,4 +225,4 @@ MQTT_PASSWORD=<password>
 - **Room IDs** — ESP32 uses simple string IDs (`"1"` through `"5"`). These map to `units.controller_id` in the database.
 - **No localStorage in PWA artifacts** — use React state or backend for persistence.
 - **CommonJS in server** — `server/` uses `require()` not `import`. Do not convert to ESM.
-- **Migrations** — new DB changes go in `server/db/migrations/` as numbered SQL files (next is `007_...`).
+- **Migrations** — new DB changes go in `server/db/migrations/` as numbered SQL files (next is `018_...`).

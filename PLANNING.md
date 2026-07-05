@@ -732,4 +732,17 @@ birdnest-pms/
 
 ---
 
+## 10. Post-Launch Addition: Market Insights (July 2026)
+
+Not part of the original phased plan above — added ad-hoc after Phase 1 shipped, in response to the owner wanting competitive/market awareness on the dashboard.
+
+**Three dashboard cards:**
+- **Competitor Ratings** — owner manually adds competitors by name; resolved via Google Places API, refreshed daily.
+- **Search Interest** — Google Trends data for "kintamani glamping" / "bali glamping", refreshed weekly.
+- **AI Weekly Briefing** — Claude API synthesizes the above (plus upcoming holidays) into a structured weekly summary for the owner.
+
+See `CLAUDE.md` → "Market Insights (Dashboard)" for full technical detail (routes, tables, cron schedule, env vars). This section exists only to flag that the feature is live and where it diverges from the original Phase 1–3 roadmap above.
+
+---
+
 *Start building in VSCode with Claude Code. Open the project folder, reference this document, and begin with Phase 1 Step 1: project setup.*
