@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 
-const PALETTE = ['#2D5016','#4A7C2A','#B8860B','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
+const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
@@ -181,7 +181,7 @@ export default function QuickCheckIn() {
               flex: 1, padding: '10px 0', borderRadius: 9, border: 'none',
               fontWeight: 700, fontSize: 14, cursor: 'pointer',
               background: tab === t.key ? 'white' : 'transparent',
-              color: tab === t.key ? '#2D5016' : '#6B7280',
+              color: tab === t.key ? '#5C1A2E' : '#6B7280',
               boxShadow: tab === t.key ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
               transition: 'all 0.15s',
             }}
@@ -333,7 +333,7 @@ export default function QuickCheckIn() {
                         <div style={{ fontSize: 44, marginBottom: 8 }}>✅</div>
                         <div style={{ fontWeight: 700, fontSize: 16, color: '#16A34A' }}>Foto ID berhasil diambil</div>
                         <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>{idFile.name}</div>
-                        <div style={{ fontSize: 12, color: '#2D5016', marginTop: 8 }}>Ketuk untuk foto ulang</div>
+                        <div style={{ fontSize: 12, color: '#5C1A2E', marginTop: 8 }}>Ketuk untuk foto ulang</div>
                       </>
                     ) : (
                       <>

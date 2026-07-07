@@ -22,9 +22,9 @@ export default defineConfig({
       manifest: {
         name: 'Zahill Room Display',
         short_name: 'Room Display',
-        description: 'In-room kiosk display for Zahill Glamping guests',
-        theme_color: '#05070a',
-        background_color: '#05070a',
+        description: 'In-room kiosk display for Zahill Kintamani Resort guests',
+        theme_color: '#0d0709',
+        background_color: '#0d0709',
         display: 'fullscreen',
         orientation: 'landscape',
         scope: '/',
@@ -37,11 +37,11 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 5174,
+    port: 5175,
     host: true,
     proxy: {
-      '/api': { target: 'http://localhost:4000', changeOrigin: true },
-      '/board-images': { target: 'http://localhost:4000', changeOrigin: true },
+      '/api': { target: 'http://localhost:4001', changeOrigin: true },
+      '/board-images': { target: 'http://localhost:4001', changeOrigin: true },
     },
   },
 });

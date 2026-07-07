@@ -18,14 +18,14 @@ export default function Clock({ large, compact }) {
   if (large) {
     return (
       <p className="text-3xl font-light text-white tracking-tighter">
-        {h}:{m} <span className="text-sm font-bold" style={{ color: '#c5a358' }}>{ampm}</span>
+        {h}:{m} <span className="text-sm font-bold" style={{ color: '#c9a227' }}>{ampm}</span>
       </p>
     );
   }
 
   return (
     <p className="text-2xl font-light text-white tracking-tighter">
-      {h}:{m} <span className="text-xs font-bold" style={{ color: '#c5a358' }}>{ampm}</span>
+      {h}:{m} <span className="text-xs font-bold" style={{ color: '#c9a227' }}>{ampm}</span>
     </p>
   );
 }

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { SourceBadge, useSettings } from '../context/SettingsContext';
 
-const PALETTE = ['#2D5016','#4A7C2A','#B8860B','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
+const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);

@@ -12,8 +12,8 @@ export default function IRControls({ onSend, large }) {
   return (
     <div className="glass-card rounded-3xl p-6 flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(197,163,88,0.1)' }}>
-          <span className="material-symbols-outlined text-xl" style={{ color: '#c5a358' }}>ac_unit</span>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(201,162,39,0.1)' }}>
+          <span className="material-symbols-outlined text-xl" style={{ color: '#c9a227' }}>ac_unit</span>
         </div>
         <div>
           <h3 className="text-sm font-semibold text-white">Air Conditioning</h3>
@@ -22,7 +22,7 @@ export default function IRControls({ onSend, large }) {
         {lastAction && (
           <span
             className="ml-auto text-[10px] font-bold uppercase tracking-widest"
-            style={{ color: lastAction === 'on' ? '#c5a358' : '#475569' }}
+            style={{ color: lastAction === 'on' ? '#c9a227' : '#475569' }}
           >
             AC {lastAction === 'on' ? 'On' : 'Off'}
           </span>
@@ -34,9 +34,9 @@ export default function IRControls({ onSend, large }) {
           onClick={() => handleSend(0, 'on')}
           className="flex items-center justify-center gap-2 rounded-2xl font-semibold text-sm transition-all active:scale-95"
           style={lastAction === 'on' ? {
-            background: 'rgba(197,163,88,0.18)',
-            border: '1px solid rgba(197,163,88,0.45)',
-            color: '#c5a358',
+            background: 'rgba(201,162,39,0.18)',
+            border: '1px solid rgba(201,162,39,0.45)',
+            color: '#c9a227',
           } : {
             background: 'rgba(255,255,255,0.03)',
             border: '1px solid rgba(255,255,255,0.08)',

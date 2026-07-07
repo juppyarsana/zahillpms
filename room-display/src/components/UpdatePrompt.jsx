@@ -13,7 +13,7 @@ export default function UpdatePrompt() {
       transform: 'translateX(-50%)',
       zIndex: 9999,
       background: 'rgba(15,18,24,0.95)',
-      border: '1px solid rgba(197,163,88,0.35)',
+      border: '1px solid rgba(201,162,39,0.35)',
       borderRadius: 16,
       padding: '14px 20px',
       display: 'flex',
@@ -22,12 +22,12 @@ export default function UpdatePrompt() {
       boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
       whiteSpace: 'nowrap',
     }}>
-      <span className="material-symbols-outlined" style={{ color: '#c5a358', fontSize: 22 }}>system_update</span>
+      <span className="material-symbols-outlined" style={{ color: '#c9a227', fontSize: 22 }}>system_update</span>
       <span style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>Update available</span>
       <button
         onClick={() => updateServiceWorker(true)}
         style={{
-          background: '#c5a358',
+          background: '#c9a227',
           color: '#05070a',
           border: 'none',
           borderRadius: 10,

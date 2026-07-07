@@ -36,8 +36,8 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
   return (
     <div className="w-screen h-screen bg-bg-dark flex overflow-hidden relative">
       {/* Ambient glows */}
-      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(197,163,88,0.05)' }} />
-      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(197,163,88,0.05)' }} />
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
+      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
 
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
@@ -52,7 +52,7 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className="flex flex-col items-center gap-1.5 w-full relative transition-colors"
-                style={{ color: active ? '#c5a358' : '#64748b' }}
+                style={{ color: active ? '#c9a227' : '#64748b' }}
               >
                 <span className={`material-symbols-outlined text-2xl${active ? ' filled' : ''}`}>
                   {item.icon}
@@ -61,7 +61,7 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
                 {active && (
                   <span
                     className="absolute right-0 rounded-l"
-                    style={{ background: '#c5a358', top: '20%', bottom: '20%', width: '3px' }}
+                    style={{ background: '#c9a227', top: '20%', bottom: '20%', width: '3px' }}
                   />
                 )}
               </button>
@@ -114,11 +114,11 @@ function IdleView({ unit, controller }) {
 
         <div className="flex items-end gap-3 leading-none">
           <span className="text-9xl font-extralight text-white tracking-tighter">{h}:{m}</span>
-          <span className="text-3xl font-bold mb-2" style={{ color: '#c5a358' }}>{ampm}</span>
+          <span className="text-3xl font-bold mb-2" style={{ color: '#c9a227' }}>{ampm}</span>
         </div>
 
         <div className="flex flex-col items-center gap-2 mt-2">
-          <h1 className="text-4xl font-extralight text-white">{unit?.name || 'Zahill Glamping'}</h1>
+          <h1 className="text-4xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>{unit?.name || 'Zahill Kintamani Resort'}</h1>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-600">Kintamani · Bali</p>
         </div>
 

@@ -6,8 +6,8 @@ import api from '../services/api';
 const EDITING_NONE = null;
 
 const AUTO_COLORS = [
-  '#4A7C2A','#1E40AF','#7C3AED','#DB2777','#0891B2',
-  '#B8860B','#9A3412','#0D9488','#C2410C','#6D28D9',
+  '#7A2540','#1E40AF','#7C3AED','#DB2777','#0891B2',
+  '#C9A227','#9A3412','#0D9488','#C2410C','#6D28D9',
 ];
 
 export default function Settings() {

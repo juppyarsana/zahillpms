@@ -47,8 +47,8 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
 
   return (
     <div className="w-screen h-screen bg-bg-dark flex overflow-hidden relative">
-      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(197,163,88,0.05)' }} />
-      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(197,163,88,0.05)' }} />
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
+      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
 
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
@@ -130,9 +130,9 @@ function NavBtn({ active, icon, label, onClick }) {
       onClick={onClick}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-        background: active ? 'rgba(197,163,88,0.12)' : 'none',
+        background: active ? 'rgba(201,162,39,0.12)' : 'none',
         border: 'none', cursor: 'pointer',
-        color: active ? '#c5a358' : '#64748b',
+        color: active ? '#c9a227' : '#64748b',
         fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
         textTransform: 'uppercase', letterSpacing: '0.1em',
         padding: '10px 4px', width: '100%', position: 'relative',
@@ -144,7 +144,7 @@ function NavBtn({ active, icon, label, onClick }) {
       {active && (
         <span style={{
           position: 'absolute', right: -8, top: '25%', bottom: '25%',
-          width: 3, background: '#c5a358', borderRadius: '2px 0 0 2px',
+          width: 3, background: '#c9a227', borderRadius: '2px 0 0 2px',
         }} />
       )}
     </button>

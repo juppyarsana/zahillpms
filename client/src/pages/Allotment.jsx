@@ -3,7 +3,7 @@ import api from '../services/api';
 
 const CHANNELS = ['direct', 'airbnb', 'booking_com', 'traveloka', 'buffer'];
 const LABELS  = { direct: 'Direct', airbnb: 'Airbnb', booking_com: 'Booking.com', traveloka: 'Traveloka', buffer: 'Buffer' };
-const COLORS  = { direct: '#2D5016', airbnb: '#FF5A5F', booking_com: '#003580', traveloka: '#038CFC', buffer: '#9CA3AF' };
+const COLORS  = { direct: '#5C1A2E', airbnb: '#FF5A5F', booking_com: '#003580', traveloka: '#038CFC', buffer: '#9CA3AF' };
 const CH_CLASS = { direct: 'ch-direct', airbnb: 'ch-airbnb', booking_com: 'ch-booking', traveloka: 'ch-traveloka', buffer: 'ch-buffer' };
 
 function TonightBadge({ status }) {

@@ -27,10 +27,10 @@ export default function Login() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-logo">
-          <img src="/logo.png" alt="Bird Nest" style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 12 }} />
-          <h1 style={{ letterSpacing: '0.1em', fontWeight: 800 }}>BIRDNEST</h1>
-          <p style={{ letterSpacing: '0.15em', fontSize: 11, textTransform: 'uppercase' }}>Escape In Nature</p>
-          <p style={{ fontSize: 11, marginTop: 4, opacity: 0.5 }}>Property Management System</p>
+          <img src="/logo.png" alt="Zahill" style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 12 }} />
+          <h1>ZAHILL</h1>
+          <p>Kintamani Resort</p>
+          <p style={{ fontSize: 11, marginTop: 4, opacity: 0.5, letterSpacing: 0, textTransform: 'none' }}>Property Management System</p>
         </div>
         {error && <div className="alert alert-error">{error}</div>}
         <form onSubmit={handleSubmit}>

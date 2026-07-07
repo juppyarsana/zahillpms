@@ -89,7 +89,7 @@ export default function Users() {
         {users.map(u => (
           <div key={u.id} className="flex-between" style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
             <div className="flex-center gap-2">
-              <div className="avatar avatar-md" style={{ background: '#2D5016', fontSize: 13 }}>
+              <div className="avatar avatar-md" style={{ background: '#5C1A2E', fontSize: 13 }}>
                 {u.name?.[0]?.toUpperCase()}
               </div>
               <div>

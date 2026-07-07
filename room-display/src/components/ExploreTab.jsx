@@ -69,7 +69,7 @@ function WeatherStrip({ weather }) {
       {/* Today */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#334155', marginRight: 4 }}>Today</span>
-        <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#c5a358' }}>{pickIcon(weather.today.icon)}</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#c9a227' }}>{pickIcon(weather.today.icon)}</span>
         <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1 }}>{weather.today.temp}°C</span>
         <div>
           <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{weather.today.desc}</div>
@@ -154,8 +154,8 @@ function CardSlideshow({ cards, category }) {
   }
 
   const card = items[Math.min(current, items.length - 1)];
-  const TAG_COLORS = { activity: '#4ade80', dining: '#fb923c', property: '#c5a358', notice: '#818cf8' };
-  const tagColor = TAG_COLORS[category] || '#c5a358';
+  const TAG_COLORS = { activity: '#4ade80', dining: '#fb923c', property: '#c9a227', notice: '#818cf8' };
+  const tagColor = TAG_COLORS[category] || '#c9a227';
 
   return (
     <div ref={swipeRef} style={{ flex: 1, position: 'relative', overflow: 'hidden', userSelect: 'none' }}>
@@ -206,11 +206,11 @@ function CardSlideshow({ cards, category }) {
       {paused && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          background: 'rgba(5,7,10,0.7)', border: '1px solid rgba(197,163,88,0.3)',
+          background: 'rgba(5,7,10,0.7)', border: '1px solid rgba(201,162,39,0.3)',
           borderRadius: '50%', width: 64, height: 64,
           display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 10,
         }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#c5a358' }}>pause</span>
+          <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#c9a227' }}>pause</span>
         </div>
       )}
 
@@ -234,7 +234,7 @@ function CardSlideshow({ cards, category }) {
 
       {/* Progress bar */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.03)' }}>
-        <div ref={barRef} style={{ height: '100%', background: '#c5a358', width: '0%' }} />
+        <div ref={barRef} style={{ height: '100%', background: '#c9a227', width: '0%' }} />
       </div>
     </div>
   );

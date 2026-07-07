@@ -170,7 +170,7 @@ function RevenueChart({ bookings, pendingCount, pendingTotal }) {
           const h = Math.max(8, Math.round((rev / maxRev) * 100));
           return (
             <div key={i} style={{ flex: 1, height: `${h}%`, borderRadius: '4px 4px 0 0',
-              background: isToday ? '#2D5016' : '#E8F0E0', transition: 'height 0.3s' }}
+              background: isToday ? '#5C1A2E' : '#F3E3E6', transition: 'height 0.3s' }}
               title={fmtIDR(rev)} />
           );
         })}
@@ -181,7 +181,7 @@ function RevenueChart({ bookings, pendingCount, pendingTotal }) {
         {days.map((d, i) => {
           const isToday = i === 6;
           return (
-            <span key={i} style={{ fontSize: 11, color: isToday ? '#2D5016' : '#6B7280',
+            <span key={i} style={{ fontSize: 11, color: isToday ? '#5C1A2E' : '#6B7280',
               fontWeight: isToday ? 800 : 400, flex: 1, textAlign: 'center' }}>
               {isToday ? 'Today' : DAY_LABELS[d.getDay()]}
             </span>
@@ -507,7 +507,7 @@ function AiSummaryCard({ summary }) {
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <span style={{
                   fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em',
-                  color: '#2D5016', background: '#EAF3E2', borderRadius: 4, padding: '3px 8px',
+                  color: '#5C1A2E', background: '#F3E3E6', borderRadius: 4, padding: '3px 8px',
                   flexShrink: 0, marginTop: 1, whiteSpace: 'nowrap',
                 }}>{h.label}</span>
                 <span style={{ fontSize: 13, lineHeight: 1.5 }}>{h.text}</span>
@@ -751,7 +751,7 @@ export default function Dashboard() {
             )}
 
             <div style={{ marginTop: 12 }}>
-              <Link to="/operations" style={{ fontSize: 12, color: '#2D5016', fontWeight: 600 }}>
+              <Link to="/operations" style={{ fontSize: 12, color: '#5C1A2E', fontWeight: 600 }}>
                 View all tasks →
               </Link>
             </div>

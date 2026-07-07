@@ -98,9 +98,9 @@ function NavDropdown({ icon, label, items }) {
                 cursor: 'pointer',
                 fontSize: 14,
                 fontFamily: 'inherit',
-                color: location.pathname.startsWith(item.to) ? '#2D5016' : '#374151',
+                color: location.pathname.startsWith(item.to) ? '#5C1A2E' : '#374151',
                 fontWeight: location.pathname.startsWith(item.to) ? 700 : 400,
-                borderLeft: location.pathname.startsWith(item.to) ? '3px solid #2D5016' : '3px solid transparent',
+                borderLeft: location.pathname.startsWith(item.to) ? '3px solid #5C1A2E' : '3px solid transparent',
               }}
               onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
               onMouseLeave={e => e.currentTarget.style.background = 'none'}

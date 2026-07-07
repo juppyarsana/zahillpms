@@ -16,7 +16,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'logo.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+      includeAssets: ['favicon.png', 'logo.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
@@ -35,8 +35,8 @@ export default defineConfig({
         name: 'Zahill PMS',
         short_name: 'Zahill',
         description: 'Glamping Property Management System — Kintamani, Bali',
-        theme_color: '#2D5016',
-        background_color: '#2D5016',
+        theme_color: '#5C1A2E',
+        background_color: '#5C1A2E',
         display: 'standalone',
         orientation: 'any',
         scope: '/',

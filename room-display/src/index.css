@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #c5a358;
-  --color-bg-dark: #05070a;
-  --color-sidebar-dark: #0a0c10;
-  --color-pane-dark: #0e1117;
+  --color-primary: #c9a227;
+  --color-bg-dark: #0d0709;
+  --color-sidebar-dark: #120a0d;
+  --color-pane-dark: #170e12;
 
   --font-display: 'Manrope', sans-serif;
+  --font-brand: 'Playfair Display', serif;
 }
 
 @layer base {

@@ -1,5 +1,5 @@
 /* ============================================================
-   BIRDNEST PMS — Global Base Styles
+   ZAHILL PMS — Global Base Styles
    Import tokens.css first, then this file.
    ============================================================ */
 
@@ -343,7 +343,7 @@ body {
 }
 .guest-row:hover {
   border-color: var(--green-dark);
-  box-shadow: 0 2px 8px rgba(45,80,22,0.1);
+  box-shadow: 0 2px 8px rgba(92,26,46,0.1);
   transform: translateY(-1px);
 }
 
@@ -483,7 +483,7 @@ hr.divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; 
 
 /* ── Profile Header ── */
 .profile-header {
-  background: linear-gradient(135deg, var(--green-dark) 0%, #4A7C2A 100%);
+  background: linear-gradient(135deg, var(--green-dark) 0%, #7A2540 100%);
   border-radius: var(--radius-xl);
   padding: 28px;
   color: white;

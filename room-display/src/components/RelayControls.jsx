@@ -19,8 +19,8 @@ export default function RelayControls({ relays, onToggle, large, pendingNums = n
             disabled={isPending}
             className={`flex flex-col items-center justify-center gap-3 rounded-3xl transition-all duration-250 select-none ${!isPending ? 'active:scale-95' : 'opacity-70'} ${large ? 'h-44' : 'h-36'}`}
             style={relay.state ? {
-              background: 'rgba(197,163,88,0.12)',
-              border: '1px solid rgba(197,163,88,0.4)',
+              background: 'rgba(201,162,39,0.12)',
+              border: '1px solid rgba(201,162,39,0.4)',
             } : {
               background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.08)',
@@ -28,11 +28,11 @@ export default function RelayControls({ relays, onToggle, large, pendingNums = n
           >
             <div
               className={`rounded-xl flex items-center justify-center ${large ? 'w-14 h-14' : 'w-11 h-11'}`}
-              style={{ background: relay.state ? 'rgba(197,163,88,0.2)' : 'rgba(255,255,255,0.05)' }}
+              style={{ background: relay.state ? 'rgba(201,162,39,0.2)' : 'rgba(255,255,255,0.05)' }}
             >
               <span
                 className={`material-symbols-outlined ${large ? 'text-3xl' : 'text-2xl'}${relay.state && !isPending ? ' filled' : ''} ${isPending ? 'animate-spin' : ''}`}
-                style={{ color: isPending ? '#c5a358' : relay.state ? '#c5a358' : '#64748b' }}
+                style={{ color: isPending ? '#c9a227' : relay.state ? '#c9a227' : '#64748b' }}
               >
                 {isPending ? 'progress_activity' : relay.icon}
               </span>
@@ -43,7 +43,7 @@ export default function RelayControls({ relays, onToggle, large, pendingNums = n
               </p>
               <p
                 className="text-[9px] font-bold uppercase tracking-widest mt-0.5"
-                style={{ color: isPending ? '#c5a358' : relay.state ? '#c5a358' : '#334155' }}
+                style={{ color: isPending ? '#c9a227' : relay.state ? '#c9a227' : '#334155' }}
               >
                 {isPending ? 'Pending…' : relay.state ? 'On' : 'Off'}
               </p>

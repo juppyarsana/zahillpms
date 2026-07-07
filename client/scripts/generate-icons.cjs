@@ -3,23 +3,32 @@ const path = require('path');
 
 const src = path.join(__dirname, '../public/logo.png');
 const out = path.join(__dirname, '../public');
+const maroon = { r: 92, g: 26, b: 46, alpha: 1 };
+
+async function withMaroonBg(size, extraPad = 0) {
+  const inner = size - extraPad * 2;
+  const logo = await sharp(src)
+    .resize(inner, inner, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .toBuffer();
+
+  return sharp({
+    create: { width: size, height: size, channels: 4, background: maroon },
+  })
+    .composite([{ input: logo, top: extraPad, left: extraPad }])
+    .png()
+    .toBuffer();
+}
 
 async function generate() {
   const sizes = [192, 512];
   for (const size of sizes) {
-    await sharp(src)
-      .resize(size, size, { fit: 'contain', background: { r: 45, g: 80, b: 22, alpha: 1 } })
-      .png()
-      .toFile(path.join(out, `pwa-${size}x${size}.png`));
+    const buf = await withMaroonBg(size);
+    await sharp(buf).toFile(path.join(out, `pwa-${size}x${size}.png`));
     console.log(`✓ pwa-${size}x${size}.png`);
   }
   // Maskable icon (more padding so logo doesn't touch safe zone edges)
-  await sharp(src)
-    .resize(384, 384, { fit: 'contain', background: { r: 45, g: 80, b: 22, alpha: 1 } })
-    .extend({ top: 64, bottom: 64, left: 64, right: 64, background: { r: 45, g: 80, b: 22, alpha: 1 } })
-    .resize(512, 512)
-    .png()
-    .toFile(path.join(out, 'pwa-maskable-512x512.png'));
+  const maskable = await withMaroonBg(512, 64);
+  await sharp(maskable).toFile(path.join(out, 'pwa-maskable-512x512.png'));
   console.log('✓ pwa-maskable-512x512.png');
   console.log('Done.');
 }

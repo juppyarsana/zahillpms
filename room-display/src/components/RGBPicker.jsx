@@ -22,8 +22,8 @@ export default function RGBPicker({ onSet, currentRgb }) {
   return (
     <div className="glass-card rounded-3xl p-6 flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(197,163,88,0.1)' }}>
-          <span className="material-symbols-outlined text-xl" style={{ color: '#c5a358' }}>palette</span>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(201,162,39,0.1)' }}>
+          <span className="material-symbols-outlined text-xl" style={{ color: '#c9a227' }}>palette</span>
         </div>
         <div>
           <h3 className="text-sm font-semibold text-white">Ambient Light</h3>
