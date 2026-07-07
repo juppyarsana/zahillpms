@@ -1,4 +1,4 @@
-package com.birdnest.tvscreensaver
+package com.zahill.tvscreensaver
 
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            val component = "$packageName/.BirdnestDreamService"
+            val component = "$packageName/.ZahillDreamService"
             val current = Settings.Secure.getString(contentResolver, "screensaver_components")
             if (current == component) {
                 Toast.makeText(this, R.string.screensaver_already_set, Toast.LENGTH_SHORT).show()
@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateScreensaverStatus(view: TextView) {
         val current = Settings.Secure.getString(contentResolver, "screensaver_components")
-        val isActive = current == "$packageName/.BirdnestDreamService"
+        val isActive = current == "$packageName/.ZahillDreamService"
         view.text = getString(if (isActive) R.string.screensaver_status_active else R.string.screensaver_status_inactive)
         view.setTextColor(
             if (isActive) 0xFF4CAF50.toInt() else getColor(android.R.color.darker_gray)

@@ -39,7 +39,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
           >
             {unit.name}
           </span>
-          <h3 className="text-xl font-semibold text-white">Birdnest Glamping</h3>
+          <h3 className="text-xl font-semibold text-white">Zahill Glamping</h3>
           <p className="text-xs text-slate-400 mt-0.5">Kintamani · Bali</p>
         </div>
       </div>

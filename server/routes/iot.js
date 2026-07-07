@@ -73,7 +73,7 @@ router.post('/relay', auth, async (req, res) => {
       return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
     }
     const { controller_id } = rows[0];
-    const topic = `birdnest/room/${controller_id}/relay/${relay_num}/set`;
+    const topic = `zahill/room/${controller_id}/relay/${relay_num}/set`;
     await mqttClient.publish(topic, state ? 'on' : 'off');
     res.json({ ok: true, topic, state });
   } catch (err) {
@@ -97,7 +97,7 @@ router.post('/rgb', auth, async (req, res) => {
       return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
     }
     const { controller_id } = rows[0];
-    const topic = `birdnest/room/${controller_id}/rgb/set`;
+    const topic = `zahill/room/${controller_id}/rgb/set`;
     await mqttClient.publish(topic, JSON.stringify({ r, g, b }));
     res.json({ ok: true, topic, r, g, b });
   } catch (err) {
@@ -114,7 +114,7 @@ router.post('/ir/send', auth, async (req, res) => {
   try {
     const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [unit_id]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
-    const topic = `birdnest/room/${rows[0].controller_id}/ir/send`;
+    const topic = `zahill/room/${rows[0].controller_id}/ir/send`;
     await mqttClient.publish(topic, String(slot));
     res.json({ ok: true, topic, slot });
   } catch (err) {
@@ -131,7 +131,7 @@ router.post('/ir/learn', auth, async (req, res) => {
   try {
     const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [unit_id]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
-    const topic = `birdnest/room/${rows[0].controller_id}/ir/learn`;
+    const topic = `zahill/room/${rows[0].controller_id}/ir/learn`;
     await mqttClient.publish(topic, String(slot));
     res.json({ ok: true, topic, slot });
   } catch (err) {
@@ -144,7 +144,7 @@ router.post('/units/:unitId/request-status', auth, async (req, res) => {
   try {
     const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [req.params.unitId]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
-    const topic = `birdnest/room/${rows[0].controller_id}/request/status`;
+    const topic = `zahill/room/${rows[0].controller_id}/request/status`;
     await mqttClient.publish(topic, '1');
     res.json({ ok: true, topic });
   } catch (err) {

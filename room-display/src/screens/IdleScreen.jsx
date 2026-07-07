@@ -42,7 +42,7 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
         <div className="mb-10" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src="/logo.png" alt="Birdnest" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Zahill" style={{ width: 52, height: 52, objectFit: 'contain' }} />
         </div>
         <nav className="flex flex-col gap-8 flex-1">
           {navItems.map(item => {
@@ -108,7 +108,7 @@ function IdleView({ unit, controller }) {
   return (
     <div className="w-full h-full flex items-center justify-center">
       <div className="flex flex-col items-center gap-8 text-center">
-        <img src="/logo.png" alt="Birdnest" style={{ width: 180, height: 180, objectFit: 'contain' }} />
+        <img src="/logo.png" alt="Zahill" style={{ width: 180, height: 180, objectFit: 'contain' }} />
 
         <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-700">{dateStr}</p>
 
@@ -118,7 +118,7 @@ function IdleView({ unit, controller }) {
         </div>
 
         <div className="flex flex-col items-center gap-2 mt-2">
-          <h1 className="text-4xl font-extralight text-white">{unit?.name || 'Birdnest Glamping'}</h1>
+          <h1 className="text-4xl font-extralight text-white">{unit?.name || 'Zahill Glamping'}</h1>
           <p className="text-xs uppercase tracking-[0.35em] text-slate-600">Kintamani · Bali</p>
         </div>
 

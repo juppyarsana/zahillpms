@@ -174,7 +174,7 @@ export default function SettingsRoomControllers() {
       <div className="card mb-3">
         <div className="card-title">Controllers & Relays</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Assign each nest to its ESP32 controller ID and configure relay labels, icons, and visibility. This ID must match what the device uses in its MQTT topics (e.g. <code>birdnest/room/<strong>1</strong>/connected</code>).
+          Assign each nest to its ESP32 controller ID and configure relay labels, icons, and visibility. This ID must match what the device uses in its MQTT topics (e.g. <code>zahill/room/<strong>1</strong>/connected</code>).
         </p>
 
         {iotUnits.map(unit => (

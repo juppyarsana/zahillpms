@@ -65,7 +65,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`Birdnest PMS server running on port ${PORT}`);
+  console.log(`Zahill PMS server running on port ${PORT}`);
   if (process.env.MQTT_BROKER) {
     mqttClient.connect();
   } else {

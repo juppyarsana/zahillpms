@@ -53,7 +53,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
         <div className="mb-6" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src="/logo.png" alt="Birdnest" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+          <img src="/logo.png" alt="Zahill" style={{ width: 52, height: 52, objectFit: 'contain' }} />
         </div>
 
         {/* Controls — top zone */}

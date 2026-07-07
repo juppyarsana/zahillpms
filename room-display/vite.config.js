@@ -20,9 +20,9 @@ export default defineConfig({
       registerType: 'prompt',
       devOptions: { enabled: true },
       manifest: {
-        name: 'Birdnest Room Display',
+        name: 'Zahill Room Display',
         short_name: 'Room Display',
-        description: 'In-room kiosk display for Birdnest Glamping guests',
+        description: 'In-room kiosk display for Zahill Glamping guests',
         theme_color: '#05070a',
         background_color: '#05070a',
         display: 'fullscreen',

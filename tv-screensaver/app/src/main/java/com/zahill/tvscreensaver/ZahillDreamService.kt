@@ -1,4 +1,4 @@
-package com.birdnest.tvscreensaver
+package com.zahill.tvscreensaver
 
 import android.net.Uri
 import android.service.dreams.DreamService
@@ -8,7 +8,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.FrameLayout
 
-class BirdnestDreamService : DreamService() {
+class ZahillDreamService : DreamService() {
     private lateinit var webView: WebView
 
     override fun onAttachedToWindow() {

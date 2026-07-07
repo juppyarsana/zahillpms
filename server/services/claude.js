@@ -34,7 +34,7 @@ const SUMMARY_SCHEMA = {
 async function generateMarketSummary({ competitors, trends, holidays }) {
   const client = new Anthropic();
 
-  const prompt = `You are a market analyst for Birdnest Glamping Kintamani, a 5-unit glamping property in Kintamani, Bali. Based on the data below, produce a weekly briefing for the owner: a headline capturing the single most important takeaway, plus 2-4 highlights grouped by category (demand, competitors, pricing, reputation). Each highlight should be one concise, specific sentence referencing actual numbers from the data. Skip any category with nothing notable to report rather than padding it out.
+  const prompt = `You are a market analyst for Zahill Glamping Kintamani, a 5-unit glamping property in Kintamani, Bali. Based on the data below, produce a weekly briefing for the owner: a headline capturing the single most important takeaway, plus 2-4 highlights grouped by category (demand, competitors, pricing, reputation). Each highlight should be one concise, specific sentence referencing actual numbers from the data. Skip any category with nothing notable to report rather than padding it out.
 
 Competitor ratings (self is marked is_self: true):
 ${JSON.stringify(competitors, null, 2)}

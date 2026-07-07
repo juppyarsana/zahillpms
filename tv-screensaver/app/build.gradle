@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-  namespace 'com.birdnest.tvscreensaver'
+  namespace 'com.zahill.tvscreensaver'
   compileSdk 35
 
   defaultConfig {
-    applicationId 'com.birdnest.tvscreensaver'
+    applicationId 'com.zahill.tvscreensaver'
     minSdk 24
     targetSdk 35
     versionCode 1

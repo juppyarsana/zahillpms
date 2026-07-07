@@ -2,23 +2,23 @@ const mqtt = require('mqtt');
 const db = require('../db');
 const sse = require('../sse');
 
-const BROKER = process.env.MQTT_BROKER || 'mqtt://mqtt.birdnestay.id:1883';
+const BROKER = process.env.MQTT_BROKER || 'mqtt://mqtt.d-zahill.kdai.cloud:1883';
 const USERNAME = process.env.MQTT_USERNAME || '';
 const PASSWORD = process.env.MQTT_PASSWORD || '';
-const CLIENT_ID = process.env.MQTT_CLIENT_ID || 'birdnest-pms';
+const CLIENT_ID = process.env.MQTT_CLIENT_ID || 'zahill-pms';
 
 let client = null;
 
-// birdnest/room/<controller_id>/connected          → "1" | "0"
-// birdnest/room/<controller_id>/relay/<relay_num>/state → "1" | "0"
-// birdnest/room/<controller_id>/rgb/state          → JSON {"r":0,"g":0,"b":0}
-// birdnest/room/<controller_id>/status             → JSON {"ip":"...","uptime":...}
+// zahill/room/<controller_id>/connected          → "1" | "0"
+// zahill/room/<controller_id>/relay/<relay_num>/state → "1" | "0"
+// zahill/room/<controller_id>/rgb/state          → JSON {"r":0,"g":0,"b":0}
+// zahill/room/<controller_id>/status             → JSON {"ip":"...","uptime":...}
 
 const SUBSCRIPTIONS = [
-  'birdnest/room/+/connected',
-  'birdnest/room/+/relay/+/state',
-  'birdnest/room/+/rgb/state',
-  'birdnest/room/+/status',
+  'zahill/room/+/connected',
+  'zahill/room/+/relay/+/state',
+  'zahill/room/+/rgb/state',
+  'zahill/room/+/status',
 ];
 
 async function handleConnected(controllerId, payload) {
@@ -76,8 +76,8 @@ async function handleStatus(controllerId, payload) {
 }
 
 function parseRelayTopic(topic) {
-  // birdnest/room/<id>/relay/<num>/state
-  const m = topic.match(/^birdnest\/room\/([^/]+)\/relay\/(\d+)\/state$/);
+  // zahill/room/<id>/relay/<num>/state
+  const m = topic.match(/^zahill\/room\/([^/]+)\/relay\/(\d+)\/state$/);
   return m ? { controllerId: m[1], relayNum: parseInt(m[2], 10) } : null;
 }
 

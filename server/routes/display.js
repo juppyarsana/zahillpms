@@ -99,7 +99,7 @@ router.post('/room/:roomId/relay', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'relay_num and state required' });
   }
   try {
-    const topic = `birdnest/room/${roomId}/relay/${relay_num}/set`;
+    const topic = `zahill/room/${roomId}/relay/${relay_num}/set`;
     try {
       await mqttClient.publish(topic, state ? 'on' : 'off');
     } catch (mqttErr) {
@@ -120,7 +120,7 @@ router.post('/room/:roomId/rgb', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'r, g, b required' });
   }
   try {
-    const topic = `birdnest/room/${roomId}/rgb/set`;
+    const topic = `zahill/room/${roomId}/rgb/set`;
     try {
       await mqttClient.publish(topic, JSON.stringify({ r, g, b }));
     } catch (mqttErr) {
@@ -141,7 +141,7 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'slot must be 0–4' });
   }
   try {
-    const topic = `birdnest/room/${roomId}/ir/send`;
+    const topic = `zahill/room/${roomId}/ir/send`;
     try {
       await mqttClient.publish(topic, String(slot));
     } catch (mqttErr) {

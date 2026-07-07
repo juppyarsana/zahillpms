@@ -89,7 +89,7 @@ function VacantScreen({ unitName }) {
         }}>
         <img
           src="/logo.png"
-          alt="Birdnest Glamping"
+          alt="Zahill Glamping"
           style={{ width: 'clamp(160px, 20vw, 300px)', marginBottom: 'clamp(0.5rem, 1.2vh, 1rem)' }}
         />
         <p className="font-bold uppercase tracking-[0.45em]"
@@ -140,7 +140,7 @@ function GuestScreen({ unit, booking }) {
         }}>
         <img
           src="/logo.png"
-          alt="Birdnest Glamping"
+          alt="Zahill Glamping"
           style={{ width: 'clamp(90px, 10vw, 160px)' }}
         />
         <p className="font-bold uppercase tracking-[0.4em]"
@@ -225,7 +225,7 @@ function UnconfiguredScreen() {
       <span className="material-symbols-outlined text-6xl" style={{ color: 'rgba(197,163,88,0.3)' }}>tv_off</span>
       <p className="text-lg font-extralight tracking-[0.2em] text-slate-500 uppercase">Display not configured</p>
       <p className="text-xs uppercase tracking-widest text-slate-700">
-        Open the Birdnest TV Settings app to set Room ID and token
+        Open the Zahill TV Settings app to set Room ID and token
       </p>
     </div>
   );

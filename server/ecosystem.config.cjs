@@ -1,8 +1,8 @@
 module.exports = {
   apps: [{
-    name: 'birdnest-pms',
+    name: 'zahill-pms',
     script: 'index.js',
-    cwd: '/var/www/birdnest/server',
+    cwd: '/var/www/zahill/server',
     instances: 1,
     autorestart: true,
     watch: false,

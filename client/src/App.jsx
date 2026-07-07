@@ -130,7 +130,7 @@ function TopNav() {
 
   return (
     <nav className="nav-bar">
-      <div className="nav-logo"><img src="/logo.png" alt="Birdnest" style={{ height: 44, objectFit: 'contain' }} /></div>
+      <div className="nav-logo"><img src="/logo.png" alt="Zahill" style={{ height: 44, objectFit: 'contain' }} /></div>
       <div className="nav-tabs">
         {can('dashboard') && <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>}
         {can('reservations')  && <NavLink to="/reservations"  className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>}

@@ -133,7 +133,7 @@ export default function BookingDetail() {
   }
 
   function waLink() {
-    const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Birdnest Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
+    const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Zahill Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {

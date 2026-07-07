@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Birdnest TV Screensaver</string>
-    <string name="service_name">Birdnest TV Screensaver</string>
+    <string name="app_name">Zahill TV Screensaver</string>
+    <string name="service_name">Zahill TV Screensaver</string>
     <string name="saved_message">Configuration saved</string>
     <string name="validation_error">Room and token are required</string>
     <string name="current_configuration">Room %1$s · URL %2$s</string>

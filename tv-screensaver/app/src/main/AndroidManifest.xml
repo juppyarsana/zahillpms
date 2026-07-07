@@ -22,7 +22,7 @@
         </activity>
 
         <service
-            android:name=".BirdnestDreamService"
+            android:name=".ZahillDreamService"
             android:label="@string/service_name"
             android:permission="android.permission.BIND_DREAM_SERVICE"
             android:exported="true">

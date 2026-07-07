@@ -1,4 +1,4 @@
--- Birdnest PMS — Initial Schema Migration
+-- Zahill PMS — Initial Schema Migration
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

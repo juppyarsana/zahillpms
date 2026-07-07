@@ -102,7 +102,7 @@ async function sendAuditEmail(businessDate, data) {
         <tr>
           <td style="background:#2D5016;border-radius:12px 12px 0 0;padding:28px 32px;">
             <div style="color:#a3c96e;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-              Birdnest Glamping · Kintamani, Bali
+              Zahill Glamping · Kintamani, Bali
             </div>
             <div style="color:#ffffff;font-size:22px;font-weight:700;margin-bottom:4px;">
               Night Audit Report
@@ -208,7 +208,7 @@ async function sendAuditEmail(businessDate, data) {
         <tr>
           <td style="background:#f9fafb;border-radius:0 0 12px 12px;padding:20px 32px;border-top:1px solid #e5e7eb;">
             <div style="font-size:11px;color:#9ca3af;text-align:center;">
-              Birdnest PMS · Automated night audit · ${new Date().toISOString()}
+              Zahill PMS · Automated night audit · ${new Date().toISOString()}
             </div>
           </td>
         </tr>
@@ -221,9 +221,9 @@ async function sendAuditEmail(businessDate, data) {
 </html>`.trim();
 
   await transporter.sendMail({
-    from: `Birdnest PMS <${gmailUser}>`,
+    from: `Zahill PMS <${gmailUser}>`,
     to: toAddr,
-    subject: `[Birdnest] Night Audit — ${fmtDateLong(businessDate)}`,
+    subject: `[Zahill] Night Audit — ${fmtDateLong(businessDate)}`,
     html,
   });
 

@@ -79,7 +79,7 @@ export default function Users() {
       <div className="page-header">
         <div>
           <div className="page-title">Staff Accounts</div>
-          <div className="page-subtitle">Manage who can access Birdnest PMS</div>
+          <div className="page-subtitle">Manage who can access Zahill PMS</div>
         </div>
         <button className="btn btn-primary" onClick={openAdd}>+ Add User</button>
       </div>

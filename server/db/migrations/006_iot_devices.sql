@@ -1,4 +1,4 @@
--- IoT device tables for Birdnest smart room integration
+-- IoT device tables for Zahill smart room integration
 
 -- Add controller_id to units (links a unit to its ESP32 controller)
 ALTER TABLE units ADD COLUMN IF NOT EXISTS controller_id VARCHAR(10);

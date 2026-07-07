@@ -32,8 +32,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Birdnest PMS',
-        short_name: 'Birdnest',
+        name: 'Zahill PMS',
+        short_name: 'Zahill',
         description: 'Glamping Property Management System — Kintamani, Bali',
         theme_color: '#2D5016',
         background_color: '#2D5016',
@@ -67,12 +67,12 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 5173,
+    port: 5174,
     host: true,
     proxy: {
-      '/api': { target: 'http://localhost:4000', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:4000', changeOrigin: true },
-      '/board-images': { target: 'http://localhost:4000', changeOrigin: true },
+      '/api': { target: 'http://localhost:4001', changeOrigin: true },
+      '/uploads': { target: 'http://localhost:4001', changeOrigin: true },
+      '/board-images': { target: 'http://localhost:4001', changeOrigin: true },
     },
   },
 });

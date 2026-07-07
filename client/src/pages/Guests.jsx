@@ -87,7 +87,7 @@ export default function Guests() {
   }
 
   function waInvite(g) {
-    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at Birdnest Glamping, Kintamani.\n\nAs a special birthday gift, we'd love to invite you back for a complimentary upgrade on your next stay! 🎁\n\nWith warmth, Birdnest Team 🪺`);
+    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at Zahill Glamping, Kintamani.\n\nAs a special birthday gift, we'd love to invite you back for a complimentary upgrade on your next stay! 🎁\n\nWith warmth, Zahill Team 🪺`);
     const rawWa = (g.whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {

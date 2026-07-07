@@ -3,7 +3,7 @@ set -e
 
 echo ""
 echo "══════════════════════════════════════"
-echo "  Birdnest PMS — Deploy"
+echo "  Zahill PMS — Deploy"
 echo "══════════════════════════════════════"
 
 # ── Git ──────────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ fi
 # ── Restart server ────────────────────────────────────────────────────────────
 echo ""
 echo "▸ Restarting server via PM2..."
-pm2 restart birdnest-pms --update-env
+pm2 restart zahill-pms --update-env
 
 echo ""
 echo "══════════════════════════════════════"

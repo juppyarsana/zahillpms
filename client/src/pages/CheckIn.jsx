@@ -28,7 +28,7 @@ function Row({ label, value, bold }) {
 const CHECKLIST = [
   { key: 'unit_clean',        label: 'Unit clean & ready',              sub: 'Housekeeping confirmed' },
   { key: 'amenities',         label: 'Welcome amenities in place',      sub: 'Water, local snacks, welcome card, fresh flowers' },
-  { key: 'wifi',              label: 'WiFi details provided',           sub: 'Network: BirdnestGuest · Pass: volcano2026' },
+  { key: 'wifi',              label: 'WiFi details provided',           sub: 'Network: ZahillGuest · Pass: volcano2026' },
   { key: 'checkout_time',     label: 'Guest briefed on check-out time', sub: 'Remind: 11:00 AM on check-out date' },
   { key: 'house_rules',       label: 'House rules explained',           sub: 'No campfire outside zone · Quiet hours 22:00 · No outside guests' },
   { key: 'id_captured',       label: 'ID / Passport captured',          sub: 'Required by Indonesian immigration regulation' },
@@ -149,7 +149,7 @@ export default function CheckIn() {
   }
 
   function waWelcome(b) {
-    const text = encodeURIComponent(`Welcome to Birdnest Glamping, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.\n\n🌄 Kintamani, Bali`);
+    const text = encodeURIComponent(`Welcome to Zahill Glamping, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.\n\n🌄 Kintamani, Bali`);
     const rawWa = (b.guest_whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {

@@ -1,14 +1,14 @@
-# Birdnest PMS — Project Planning Document
+# Zahill PMS — Project Planning Document
 
-> Glamping Property Management System for Birdnest, Kintamani, Bali  
-> Last updated: April 20, 2026  
-> Status: Ready to build — Phase 1
+> Property Management System for Zahill <!-- TODO: property type and location -->
+> Forked from Birdnest PMS's planning doc — adapt the specifics below (unit count, owner, location) for Zahill
+> Status: Forked, pending Zahill-specific setup
 
 ---
 
 ## 1. Project Overview
 
-A web-based Property Management System built to run a 5-unit glamping property in Kintamani, Bali. The owner (Juppy) operates the business remotely and needs a live command center, while on-site staff use it daily for check-in, housekeeping, and operations.
+A web-based Property Management System built to run <!-- TODO: unit count/type --> property <!-- TODO: location -->. The owner operates the business remotely and needs a live command center, while on-site staff use it daily for check-in, housekeeping, and operations.
 
 **Two user roles:**
 - **Owner** — Remote access, full visibility, dashboard-first, revenue and alerts
@@ -37,7 +37,7 @@ Consistent with the existing Separuh POS project.
 | Security | helmet, cors, express-rate-limit |
 | Dev | nodemon, uuid, nodemailer |
 | Deployment | Nginx + PM2 |
-| Target path | `/var/www/birdnest/` |
+| Target path | `/var/www/zahill/` |
 | Server port | 4000 (behind Nginx) |
 
 **Architecture:** Monorepo — React/Vite PWA frontend + Node/Express REST API backend + PostgreSQL
@@ -249,7 +249,7 @@ Full guest profiles — the memory of the property.
 Fully configurable by owner. No hardcoded tiers.
 
 **Tier structure (owner configures):**
-- Tier name (e.g., "Wanderer", "Explorer", "Adventurer", "Birdnest Member")
+- Tier name (e.g., "Wanderer", "Explorer", "Adventurer", "Zahill Member")
 - Threshold type: Total nights stayed | Total spend (Rp) | Number of visits
 - Threshold value (e.g., 7 nights)
 - Perks list (owner writes free-text perks, e.g., "Free sunrise Mount Batur trip")
@@ -283,7 +283,7 @@ End-of-day process that closes the business date, catches discrepancies, and pro
    Query all bookings where `status = 'confirmed'` AND `check_in_date = today`. These guests were expected but never checked in. Flag each one as `status = 'no_show'` and include them in the audit report. Owner can reverse a no-show manually if the guest arrives late.
 
 3. **In-house revenue tally**
-   Count all bookings with `status = 'checked_in'` and sum up their nightly rate (derived from `total_amount / nights`). This becomes the "room revenue today" figure in the daily summary. No new charge rows are written — Birdnest uses a fixed booking total, not a live folio — but the tally feeds the daily report.
+   Count all bookings with `status = 'checked_in'` and sum up their nightly rate (derived from `total_amount / nights`). This becomes the "room revenue today" figure in the daily summary. No new charge rows are written — Zahill uses a fixed booking total, not a live folio — but the tally feeds the daily report.
 
 4. **Ancillary revenue tally**
    Sum all `sales` records created today (both room-charge and walk-in) for the "ancillary revenue today" figure.
@@ -301,7 +301,7 @@ End-of-day process that closes the business date, catches discrepancies, and pro
    Insert a row into `night_audit_runs` with the closed business date, counts, revenue figures, list of flagged no-shows, list of pending balances due tomorrow, and the run timestamp.
 
 9. **Owner notification**
-   Send a summary email (via nodemailer) to the owner's configured email address. Subject: `[Birdnest] Night Audit — {date}`. Body includes: occupied units, no-shows flagged, revenue for the day, payments due tomorrow.
+   Send a summary email (via nodemailer) to the owner's configured email address. Subject: `[Zahill] Night Audit — {date}`. Body includes: occupied units, no-shows flagged, revenue for the day, payments due tomorrow.
 
 ---
 
@@ -384,7 +384,7 @@ client/src/pages/
 
 **Key design decisions:**
 
-- **No live folio posting** — Birdnest uses fixed booking totals, so there's no need to post individual nightly charge rows. The audit tallies revenue from existing booking data rather than building a running folio.
+- **No live folio posting** — Zahill uses fixed booking totals, so there's no need to post individual nightly charge rows. The audit tallies revenue from existing booking data rather than building a running folio.
 - **Idempotent guard** — the `UNIQUE` constraint on `night_audit_runs.business_date` prevents double-runs at the database level, in addition to the application-level check.
 - **No-show is reversible** — `no_show` is a booking status, not a deletion. Owner can manually flip it back to `confirmed` or `checked_in` if a guest arrives after midnight.
 - **Email is best-effort** — audit runs even if the email send fails. Email errors are logged but do not roll back the audit.
@@ -609,7 +609,7 @@ GET    /api/night-audit/:date
 ## 6. Folder Structure
 
 ```
-birdnest-pms/
+zahill-pms/
 ├── client/                    # React + Vite frontend
 │   ├── public/
 │   ├── src/
@@ -668,7 +668,7 @@ birdnest-pms/
 │   └── package.json
 │
 ├── PLANNING.md                # This file
-└── birdnest-pms-mockup.html  # UI reference mockup
+└── zahill-pms-mockup.html  # UI reference mockup
 ```
 
 ---
@@ -720,14 +720,14 @@ birdnest-pms/
 - **Multi-currency**: Display IDR by default. USD conversion rate configurable in settings. No automatic FX — just informational.
 - **OTA bookings**: Entered manually by staff. Source field tracks which channel. OTA payment = mark as "OTA Managed" in payment tracker.
 - **Loyalty tier recalculation**: Triggered on every checkout event. Queries total nights/spend/visits for that guest and assigns highest matching tier.
-- **No inventory management** in mini-POS — that's Separuh POS territory. Birdnest POS just records sales, no stock tracking.
-- **Design language**: Earthy, natural tones. Forest green (#2D5016) primary. Warm cream background. Mobile-first. Reference: `birdnest-pms-mockup.html`
+- **No inventory management** in mini-POS — that's Separuh POS territory. Zahill POS just records sales, no stock tracking.
+- **Design language**: Earthy, natural tones. Forest green (#2D5016) primary. Warm cream background. Mobile-first. Reference: `zahill-pms-mockup.html`
 
 ---
 
 ## 9. Reference Files
 
-- `birdnest-pms-mockup.html` — Interactive UI mockup (7 screens, open in browser)
+- `zahill-pms-mockup.html` — Interactive UI mockup (7 screens, open in browser)
 - `PLANNING.md` — This document
 
 ---

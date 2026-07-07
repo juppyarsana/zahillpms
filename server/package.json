@@ -1,7 +1,7 @@
 {
-  "name": "birdnest-pms-server",
+  "name": "zahill-pms-server",
   "version": "1.0.0",
-  "description": "Birdnest PMS API server",
+  "description": "Zahill PMS API server",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
