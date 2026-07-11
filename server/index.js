@@ -13,10 +13,15 @@ const app = express();
 
 app.set('trust proxy', 1); // Trust Nginx reverse proxy
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+// Each *_URL env var may be a comma-separated list (e.g. localhost + a LAN IP
+// for testing on a real tablet/TV on the same network).
+function parseOrigins(value, fallback) {
+  return (value || fallback).split(',').map(s => s.trim()).filter(Boolean);
+}
 const allowedOrigins = [
-  process.env.CLIENT_URL   || 'http://localhost:5173',
-  process.env.DISPLAY_URL  || 'http://localhost:5174',
-  process.env.TV_URL       || 'http://localhost:5176',
+  ...parseOrigins(process.env.CLIENT_URL,  'http://localhost:5174'),
+  ...parseOrigins(process.env.DISPLAY_URL, 'http://localhost:5175'),
+  ...parseOrigins(process.env.TV_URL,      'http://localhost:5176'),
 ];
 app.use(cors({
   origin: (origin, cb) => {
@@ -60,6 +65,7 @@ app.use('/api/board', require('./routes/board'));
 app.use('/api/display', require('./routes/display'));
 app.use('/api/night-audit', require('./routes/nightAudit'));
 app.use('/api/insights', require('./routes/insights'));
+app.use('/api/calls', require('./routes/calls'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 

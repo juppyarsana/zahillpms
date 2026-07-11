@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
+import callClient from './callClient';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
 import DebugMenu from './components/DebugMenu';
 import UpdatePrompt from './components/UpdatePrompt';
+import CallOverlay from './components/CallOverlay';
 
 const POLL_MS = 10_000;
+const END_TOAST_MS = 2500;
 const DEBUG_CLICK_THRESHOLD = 5;
 const DEBUG_CLICK_TIMEOUT = 3000;
 
@@ -18,6 +21,10 @@ export default function App() {
   const [debugClicks, setDebugClicks] = useState(0);
   const [showDebugMenu, setShowDebugMenu] = useState(false);
   const debugTimeoutRef = useCallback(() => setDebugClicks(0), []);
+
+  const [callState, setCallState] = useState({ status: 'idle', callId: null });
+  const [muted, setMuted] = useState(false);
+  const callIdRef = useRef(null);
 
   const handleDebugClick = useCallback(() => {
     setDebugClicks(prev => {
@@ -56,7 +63,7 @@ export default function App() {
   const fetchState = useCallback(async () => {
     if (!roomId || !displayToken) return;
     try {
-      const { data } = await api.get(`/room/${roomId}/state`);
+      const { data } = await api.get(`/display/room/${roomId}/state`);
       setState(data);
       setError(null);
     } catch (err) {
@@ -80,6 +87,87 @@ export default function App() {
       evtSource.close();
     };
   }, [fetchState]);
+
+  const endCallLocally = useCallback((finalStatus) => {
+    callClient.close();
+    callIdRef.current = null;
+    setMuted(false);
+    setCallState({ status: finalStatus, callId: null });
+    setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
+  }, []);
+
+  // Call signaling — separate SSE channel from the room-state one above,
+  // since call payloads carry real data rather than a "go refetch" ping.
+  useEffect(() => {
+    if (!roomId || !displayToken) return;
+    const evtSource = new EventSource(
+      `/api/calls/room/${roomId}/stream?token=${encodeURIComponent(displayToken)}`
+    );
+    evtSource.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (!msg.callId || msg.callId !== callIdRef.current) return;
+
+      if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
+        callClient.handleAnswer(msg.payload.sdp);
+      } else if (msg.type === 'signal' && msg.payload?.kind === 'ice') {
+        callClient.addIceCandidate(msg.payload.candidate);
+      } else if (msg.type === 'ended' || msg.type === 'missed') {
+        endCallLocally(msg.type);
+      }
+    };
+    evtSource.onerror = () => {};
+    return () => evtSource.close();
+  }, [roomId, displayToken, endCallLocally]);
+
+  const handlePlaceCall = useCallback(async () => {
+    if (callState.status !== 'idle') return;
+    try {
+      const { data } = await api.post('/calls', { roomId });
+      callIdRef.current = data.callId;
+      setCallState({ status: 'calling', callId: data.callId });
+
+      const offer = await callClient.createOffer({
+        onIceCandidate: (candidate) => {
+          api.post(`/calls/${data.callId}/signal-from-room`, { payload: { kind: 'ice', candidate } }).catch(() => {});
+        },
+        onConnectionStateChange: (connState) => {
+          if (connState === 'connected' && callIdRef.current === data.callId) {
+            setCallState({ status: 'connected', callId: data.callId });
+          }
+        },
+      });
+      await api.post(`/calls/${data.callId}/signal-from-room`, { payload: { kind: 'offer', sdp: offer } });
+    } catch (err) {
+      console.error('[Call] place call failed:', err);
+      callClient.close();
+      callIdRef.current = null;
+      setCallState({ status: 'failed', callId: null, error: err.response?.data?.error || err.message || 'Call failed' });
+      setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
+    }
+  }, [roomId, callState.status]);
+
+  const handleCancelCall = useCallback(async () => {
+    const id = callIdRef.current;
+    callClient.close();
+    callIdRef.current = null;
+    setCallState({ status: 'idle', callId: null });
+    if (id) { try { await api.post(`/calls/${id}/end-from-room`); } catch {} }
+  }, []);
+
+  const handleHangup = useCallback(async () => {
+    const id = callIdRef.current;
+    endCallLocally('ended');
+    if (id) { try { await api.post(`/calls/${id}/end-from-room`); } catch {} }
+  }, [endCallLocally]);
+
+  const handleMuteToggle = useCallback(() => {
+    setMuted(prev => {
+      const next = !prev;
+      callClient.setMuted(next);
+      return next;
+    });
+  }, []);
 
   if (!roomId || !displayToken) {
     return <SetupScreen onSetup={handleSetup} />;
@@ -107,6 +195,8 @@ export default function App() {
           roomId={roomId}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
+          onCallFrontDesk={handlePlaceCall}
+          callActive={callState.status !== 'idle'}
         />
         {showDebugMenu && (
           <DebugMenu
@@ -115,6 +205,13 @@ export default function App() {
             onClose={() => setShowDebugMenu(false)}
           />
         )}
+        <CallOverlay
+          callState={callState}
+          onCancel={handleCancelCall}
+          onHangup={handleHangup}
+          onMuteToggle={handleMuteToggle}
+          muted={muted}
+        />
         <UpdatePrompt />
       </>
     );
@@ -132,6 +229,8 @@ export default function App() {
         cards={state.cards || []}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
+        onCallFrontDesk={handlePlaceCall}
+        callActive={callState.status !== 'idle'}
       />
       {showDebugMenu && (
         <DebugMenu
@@ -140,6 +239,13 @@ export default function App() {
           onClose={() => setShowDebugMenu(false)}
         />
       )}
+      <CallOverlay
+        callState={callState}
+        onCancel={handleCancelCall}
+        onHangup={handleHangup}
+        onMuteToggle={handleMuteToggle}
+        muted={muted}
+      />
       <UpdatePrompt />
     </>
   );

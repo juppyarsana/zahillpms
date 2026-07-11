@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { CallProvider } from './context/CallContext';
 import UpdatePrompt from './components/UpdatePrompt';
+import CallBanner from './components/CallBanner';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
@@ -273,6 +275,7 @@ function Layout({ children }) {
       </main>
       <BottomNav />
       <UpdatePrompt />
+      <CallBanner />
     </div>
   );
 }
@@ -299,6 +302,7 @@ export default function App() {
           <Route path="/*" element={
             <RequireAuth>
             <SettingsProvider>
+            <CallProvider>
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
@@ -323,6 +327,7 @@ export default function App() {
                   <Route path="/night-audit"      element={<NightAudit />} />
                 </Routes>
               </Layout>
+            </CallProvider>
             </SettingsProvider>
             </RequireAuth>
           } />

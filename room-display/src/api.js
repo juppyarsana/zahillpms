@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api/display' });
+const api = axios.create({ baseURL: '/api' });
 
 api.interceptors.request.use(cfg => {
   const token = localStorage.getItem('displayToken');

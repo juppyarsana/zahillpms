@@ -14,11 +14,13 @@ function removeClient(controllerId, res) {
   }
 }
 
-// Sends a "refresh now" signal to all clients watching this room
-function notify(controllerId) {
+// Sends a "refresh now" signal to all clients watching this key.
+// Pass `data` to carry an actual payload (e.g. call signaling messages)
+// instead of the default "go refetch state" ping.
+function notify(controllerId, data) {
   const set = clients.get(controllerId);
   if (!set || set.size === 0) return;
-  const payload = 'data: {"type":"update"}\n\n';
+  const payload = `data: ${JSON.stringify(data || { type: 'update' })}\n\n`;
   for (const res of set) {
     try { res.write(payload); } catch {}
   }

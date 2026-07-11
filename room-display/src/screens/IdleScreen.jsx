@@ -4,8 +4,9 @@ import RelayControls from '../components/RelayControls';
 import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
+import CallButton from '../components/CallButton';
 
-export default function IdleScreen({ unit, controller, relays = [], roomId, onRefresh, onDebugClick }) {
+export default function IdleScreen({ unit, controller, relays = [], roomId, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -14,18 +15,18 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
       prev.map(r => r.relay_num === relayNum ? { ...r, state: newState } : r)
     );
     try {
-      await api.post(`/room/${roomId}/relay`, { relay_num: relayNum, state: newState });
+      await api.post(`/display/room/${roomId}/relay`, { relay_num: relayNum, state: newState });
     } catch {
       setLocalRelays(relays);
     }
   };
 
   const handleRGB = async (r, g, b) => {
-    try { await api.post(`/room/${roomId}/rgb`, { r, g, b }); } catch {}
+    try { await api.post(`/display/room/${roomId}/rgb`, { r, g, b }); } catch {}
   };
 
   const handleIR = async (slot) => {
-    try { await api.post(`/room/${roomId}/ir`, { slot }); } catch {}
+    try { await api.post(`/display/room/${roomId}/ir`, { slot }); } catch {}
   };
 
   const navItems = [
@@ -68,7 +69,8 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
             );
           })}
         </nav>
-        <div className="mt-auto">
+        <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+          <CallButton onClick={onCallFrontDesk} disabled={callActive} />
           <Clock compact />
         </div>
       </aside>

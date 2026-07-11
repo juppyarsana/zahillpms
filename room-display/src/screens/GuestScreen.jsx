@@ -6,6 +6,7 @@ import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 import ExploreTab from '../components/ExploreTab';
+import CallButton from '../components/CallButton';
 
 const EXPLORE_TABS = [
   { key: 'activity', icon: 'hiking',      label: 'Activities' },
@@ -13,7 +14,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, roomId, weather, cards = [], onRefresh, onDebugClick }) {
+export default function GuestScreen({ unit, booking, relays, controller, roomId, weather, cards = [], onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('controls');
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
@@ -27,7 +28,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
     setLocalRelays(prev => prev.map(r => r.relay_num === relayNum ? { ...r, state: newState } : r));
     setPendingRelays(prev => new Set([...prev, relayNum]));
     try {
-      await api.post(`/room/${roomId}/relay`, { relay_num: relayNum, state: newState });
+      await api.post(`/display/room/${roomId}/relay`, { relay_num: relayNum, state: newState });
     } catch {
       setLocalRelays(relays);
       setPendingRelays(prev => { const next = new Set(prev); next.delete(relayNum); return next; });
@@ -35,11 +36,11 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
   };
 
   const handleRGB = async (r, g, b) => {
-    try { await api.post(`/room/${roomId}/rgb`, { r, g, b }); } catch {}
+    try { await api.post(`/display/room/${roomId}/rgb`, { r, g, b }); } catch {}
   };
 
   const handleIR = async (slot) => {
-    try { await api.post(`/room/${roomId}/ir`, { slot }); } catch {}
+    try { await api.post(`/display/room/${roomId}/ir`, { slot }); } catch {}
   };
 
   // Only show explore tabs that have cards
@@ -76,7 +77,8 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
           )}
         </div>
 
-        <div className="mt-auto">
+        <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+          <CallButton onClick={onCallFrontDesk} disabled={callActive} />
           <Clock compact />
         </div>
       </aside>
