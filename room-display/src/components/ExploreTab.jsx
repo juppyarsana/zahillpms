@@ -247,22 +247,34 @@ export default function ExploreTab({ weather, cards = [], activeCategory, onCate
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <WeatherStrip weather={weather} />
       <CardSlideshow cards={cards} category={activeCategory} />
-      {/* Notice bar — always visible at bottom */}
-      {notices.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '9px 36px',
-          background: 'rgba(99,102,241,0.07)',
-          borderTop: '1px solid rgba(99,102,241,0.15)',
-          flexShrink: 0,
-        }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 15, color: '#818cf8', flexShrink: 0 }}>campaign</span>
-          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#818cf8', flexShrink: 0, marginRight: 4 }}>Notice</span>
-          <span style={{ fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {notices[0].title}{notices.length > 1 ? ` · +${notices.length - 1} more` : ''}
-          </span>
-        </div>
-      )}
+      {/* Notice bar — always visible at bottom, scrolls all notices */}
+      {notices.length > 0 && (() => {
+        const text = notices.map(n => n.title).join('     •     ');
+        const duration = Math.max(18, text.length * 0.16) + 14;
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'stretch', gap: 0,
+            padding: '0 0 0 36px',
+            background: 'rgba(99,102,241,0.07)',
+            borderTop: '1px solid rgba(99,102,241,0.15)',
+            flexShrink: 0, height: 34, overflow: 'hidden',
+          }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingRight: 16 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 15, color: '#818cf8' }}>campaign</span>
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: '#818cf8' }}>Notice</span>
+            </span>
+            <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              <div style={{
+                position: 'absolute', top: 0, bottom: 0, display: 'flex', alignItems: 'center',
+                whiteSpace: 'nowrap', animation: `zahill-ticker ${duration}s linear infinite`,
+              }}>
+                <span style={{ paddingRight: '100vw', fontSize: 12, color: '#64748b' }}>{text}</span>
+                <span style={{ paddingRight: '100vw', fontSize: 12, color: '#64748b' }}>{text}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* Dots + counter */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 36px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
