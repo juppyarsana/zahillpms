@@ -70,9 +70,9 @@ export default defineConfig({
     port: 5174,
     host: true,
     proxy: {
-      '/api': { target: 'http://localhost:4001', changeOrigin: true },
-      '/uploads': { target: 'http://localhost:4001', changeOrigin: true },
-      '/board-images': { target: 'http://localhost:4001', changeOrigin: true },
+      '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      '/uploads': { target: 'http://localhost:4000', changeOrigin: true },
+      '/board-images': { target: 'http://localhost:4000', changeOrigin: true },
     },
   },
 });
