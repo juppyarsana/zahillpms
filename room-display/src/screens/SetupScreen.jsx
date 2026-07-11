@@ -10,7 +10,7 @@ export default function SetupScreen({ onSetup }) {
   };
 
   return (
-    <div className="w-screen h-screen flex items-center justify-center bg-bg-dark relative overflow-hidden">
+    <div className="w-screen h-dvh flex items-center justify-center bg-bg-dark relative overflow-hidden">
       <div className="absolute -top-60 -right-60 w-[500px] h-[500px] rounded-full blur-[150px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
       <div className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full blur-[150px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
 

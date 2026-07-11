@@ -35,7 +35,7 @@ export default function IdleScreen({ unit, controller, relays = [], roomId, onRe
   ];
 
   return (
-    <div className="w-screen h-screen bg-bg-dark flex overflow-hidden relative">
+    <div className="w-screen h-dvh bg-bg-dark flex overflow-hidden relative">
       {/* Ambient glows */}
       <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
       <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />

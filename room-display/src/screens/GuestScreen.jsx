@@ -47,7 +47,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
 
   return (
-    <div className="w-screen h-screen bg-bg-dark flex overflow-hidden relative">
+    <div className="w-screen h-dvh bg-bg-dark flex overflow-hidden relative">
       <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
       <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
 
