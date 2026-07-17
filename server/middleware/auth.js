@@ -7,6 +7,7 @@ function authMiddleware(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.propertyId = req.user.propertyId;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

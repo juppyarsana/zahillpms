@@ -5,16 +5,24 @@ const claude = require('../services/claude');
 
 const TREND_TERMS = ['kintamani glamping', 'bali glamping'];
 
+async function getActiveProperties() {
+  const { rows } = await db.query('SELECT id FROM properties WHERE is_active = true');
+  return rows;
+}
+
 // Manually-curated list (owner adds/removes competitors via the dashboard). This job just
 // refreshes ratings for whatever's currently active — resolving a place_id on first sight,
 // then reusing it on every later run.
-async function refreshCompetitors() {
+async function refreshCompetitors(propertyId) {
   if (!places.isConfigured()) {
     console.log('[Insights] GOOGLE_PLACES_API_KEY not set — skipping competitor ratings refresh');
     return;
   }
 
-  const { rows: competitors } = await db.query('SELECT * FROM competitors WHERE is_active = true');
+  const { rows: competitors } = await db.query(
+    'SELECT * FROM competitors WHERE is_active = true AND property_id = $1',
+    [propertyId]
+  );
 
   for (const c of competitors) {
     try {
@@ -40,18 +48,18 @@ async function refreshCompetitors() {
     }
   }
 
-  console.log(`[Insights] Competitor ratings refreshed — ${competitors.length} active competitor(s)`);
+  console.log(`[Insights] Competitor ratings refreshed for property ${propertyId} — ${competitors.length} active competitor(s)`);
 }
 
-async function refreshSearchTrends() {
+async function refreshSearchTrends(propertyId) {
   for (const term of TREND_TERMS) {
     try {
       const points = await trends.fetchInterestOverTime(term, 90);
       for (const p of points) {
         await db.query(
-          `INSERT INTO search_trends (term, point_date, interest) VALUES ($1, $2, $3)
-           ON CONFLICT (term, point_date) DO UPDATE SET interest = EXCLUDED.interest`,
-          [term, p.date, p.interest]
+          `INSERT INTO search_trends (term, point_date, interest, property_id) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (term, point_date, property_id) DO UPDATE SET interest = EXCLUDED.interest`,
+          [term, p.date, p.interest, propertyId]
         );
       }
     } catch (err) {
@@ -61,13 +69,16 @@ async function refreshSearchTrends() {
 }
 
 // Pulls the same data the dashboard cards show and has Claude synthesize a short briefing.
-async function refreshAiSummary() {
+async function refreshAiSummary(propertyId) {
   if (!claude.isConfigured()) {
     console.log('[Insights] ANTHROPIC_API_KEY not set — skipping AI summary');
     return;
   }
 
-  const { rows: competitors } = await db.query('SELECT * FROM competitors WHERE is_active = true ORDER BY is_self DESC, name');
+  const { rows: competitors } = await db.query(
+    'SELECT * FROM competitors WHERE is_active = true AND property_id = $1 ORDER BY is_self DESC, name',
+    [propertyId]
+  );
   const competitorData = await Promise.all(competitors.map(async c => {
     const { rows: [latest] } = await db.query(
       'SELECT * FROM competitor_snapshots WHERE competitor_id = $1 ORDER BY captured_at DESC LIMIT 1', [c.id]
@@ -87,7 +98,10 @@ async function refreshAiSummary() {
   }));
 
   const { rows: trendRows } = await db.query(
-    `SELECT term, point_date, interest FROM search_trends WHERE point_date >= CURRENT_DATE - INTERVAL '14 days' ORDER BY term, point_date`
+    `SELECT term, point_date, interest FROM search_trends
+     WHERE property_id = $1 AND point_date >= CURRENT_DATE - INTERVAL '14 days'
+     ORDER BY term, point_date`,
+    [propertyId]
   );
   const trendData = {};
   for (const r of trendRows) {
@@ -106,13 +120,35 @@ async function refreshAiSummary() {
       holidays: holidayRows,
     });
     await db.query(
-      'UPDATE ai_market_summary SET summary = $1, generated_at = NOW() WHERE id = 1',
-      [JSON.stringify(summary)]
+      'UPDATE ai_market_summary SET summary = $1, generated_at = NOW() WHERE property_id = $2',
+      [JSON.stringify(summary), propertyId]
     );
-    console.log('[Insights] AI summary refreshed');
+    console.log(`[Insights] AI summary refreshed for property ${propertyId}`);
   } catch (err) {
     console.error('[Insights] Failed to generate AI summary:', err.message);
   }
 }
 
-module.exports = { refreshCompetitors, refreshSearchTrends, refreshAiSummary };
+async function refreshCompetitorsAllProperties() {
+  const properties = await getActiveProperties();
+  for (const prop of properties) await refreshCompetitors(prop.id);
+}
+
+async function refreshSearchTrendsAllProperties() {
+  const properties = await getActiveProperties();
+  for (const prop of properties) await refreshSearchTrends(prop.id);
+}
+
+async function refreshAiSummaryAllProperties() {
+  const properties = await getActiveProperties();
+  for (const prop of properties) await refreshAiSummary(prop.id);
+}
+
+module.exports = {
+  refreshCompetitors,
+  refreshSearchTrends,
+  refreshAiSummary,
+  refreshCompetitorsAllProperties,
+  refreshSearchTrendsAllProperties,
+  refreshAiSummaryAllProperties,
+};

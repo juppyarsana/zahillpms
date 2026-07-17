@@ -6,8 +6,14 @@ const requireRole = require('../middleware/role');
 // GET /api/loyalty/tiers
 router.get('/tiers', auth, async (req, res) => {
   try {
-    const tiersQ = db.query('SELECT * FROM loyalty_tiers ORDER BY sort_order, threshold_value');
-    const perksQ = db.query('SELECT * FROM loyalty_perks ORDER BY tier_id, sort_order');
+    const tiersQ = db.query('SELECT * FROM loyalty_tiers WHERE property_id = $1 ORDER BY sort_order, threshold_value', [req.propertyId]);
+    const perksQ = db.query(
+      `SELECT lp.* FROM loyalty_perks lp
+       JOIN loyalty_tiers lt ON lp.tier_id = lt.id
+       WHERE lt.property_id = $1
+       ORDER BY lp.tier_id, lp.sort_order`,
+      [req.propertyId]
+    );
     const [{ rows: tiers }, { rows: perks }] = await Promise.all([tiersQ, perksQ]);
     const result = tiers.map(t => ({ ...t, perks: perks.filter(p => p.tier_id === t.id) }));
     res.json(result);
@@ -26,9 +32,9 @@ router.post('/tiers', auth, requireRole('owner'), async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows: [tier] } = await client.query(
-      `INSERT INTO loyalty_tiers (name, emoji, color, threshold_type, threshold_value, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [name, emoji, color, threshold_type, threshold_value, sort_order || 0]
+      `INSERT INTO loyalty_tiers (name, emoji, color, threshold_type, threshold_value, sort_order, property_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [name, emoji, color, threshold_type, threshold_value, sort_order || 0, req.propertyId]
     );
     if (Array.isArray(perks)) {
       for (let i = 0; i < perks.length; i++) {
@@ -56,8 +62,8 @@ router.put('/tiers/:id', auth, requireRole('owner'), async (req, res) => {
         name = COALESCE($1, name), emoji = COALESCE($2, emoji), color = COALESCE($3, color),
         threshold_type = COALESCE($4, threshold_type), threshold_value = COALESCE($5, threshold_value),
         sort_order = COALESCE($6, sort_order)
-       WHERE id = $7 RETURNING *`,
-      [name, emoji, color, threshold_type, threshold_value, sort_order, req.params.id]
+       WHERE id = $7 AND property_id = $8 RETURNING *`,
+      [name, emoji, color, threshold_type, threshold_value, sort_order, req.params.id, req.propertyId]
     );
     if (!tier) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Tier not found' }); }
 
@@ -80,7 +86,7 @@ router.put('/tiers/:id', auth, requireRole('owner'), async (req, res) => {
 // DELETE /api/loyalty/tiers/:id
 router.delete('/tiers/:id', auth, requireRole('owner'), async (req, res) => {
   try {
-    await db.query('DELETE FROM loyalty_tiers WHERE id = $1', [req.params.id]);
+    await db.query('DELETE FROM loyalty_tiers WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     res.json({ message: 'Tier deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -6,8 +6,8 @@ const requireRole = require('../middleware/role');
 // GET /api/allotments?month=&year=
 router.get('/', auth, async (req, res) => {
   const { month, year } = req.query;
-  let query = 'SELECT a.*, u.name as unit_name FROM allotments a JOIN units u ON a.unit_id = u.id WHERE 1=1';
-  const params = [];
+  let query = 'SELECT a.*, u.name as unit_name FROM allotments a JOIN units u ON a.unit_id = u.id WHERE u.property_id = $1';
+  const params = [req.propertyId];
   if (month) { params.push(month); query += ` AND a.month = $${params.length}`; }
   if (year) { params.push(year); query += ` AND a.year = $${params.length}`; }
   query += ' ORDER BY u.name';
@@ -26,6 +26,12 @@ router.put('/', auth, requireRole('owner'), async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    const unitIds = allotments.map(a => a.unit_id);
+    const { rows: ownedUnits } = await client.query('SELECT id FROM units WHERE id = ANY($1) AND property_id = $2', [unitIds, req.propertyId]);
+    if (ownedUnits.length !== new Set(unitIds).size) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'One or more units not found' });
+    }
     for (const a of allotments) {
       await client.query(
         `INSERT INTO allotments (unit_id, channel, month, year, notes, updated_at)

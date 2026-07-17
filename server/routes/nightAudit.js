@@ -9,7 +9,7 @@ const ownerOnly = [auth, requireRole('owner')];
 // POST /api/night-audit/run — manually trigger (owner only)
 router.post('/run', ownerOnly, async (req, res) => {
   try {
-    const result = await runNightAudit(`manual:${req.user.id}`);
+    const result = await runNightAudit(`manual:${req.user.id}`, req.propertyId);
     if (result.skipped) {
       const msg = result.reason === 'future_date'
         ? `Cannot audit ${result.business_date} — the day has not completed yet`
@@ -28,9 +28,10 @@ router.get('/latest', ownerOnly, async (req, res) => {
   try {
     const [auditRes, settingsRes] = await Promise.all([
       db.query(
-        `SELECT * FROM night_audit_runs ORDER BY run_at DESC LIMIT 1`
+        `SELECT * FROM night_audit_runs WHERE property_id = $1 ORDER BY run_at DESC LIMIT 1`,
+        [req.propertyId]
       ),
-      db.query('SELECT business_date, last_audit_at FROM property_settings WHERE id = 1'),
+      db.query('SELECT business_date, last_audit_at FROM property_settings WHERE property_id = $1', [req.propertyId]),
     ]);
     res.json({
       latest: auditRes.rows[0] || null,
@@ -47,8 +48,8 @@ router.get('/history', ownerOnly, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 30, 90);
   try {
     const { rows } = await db.query(
-      `SELECT * FROM night_audit_runs ORDER BY business_date DESC LIMIT $1`,
-      [limit]
+      `SELECT * FROM night_audit_runs WHERE property_id = $1 ORDER BY business_date DESC LIMIT $2`,
+      [req.propertyId, limit]
     );
     res.json(rows);
   } catch (err) {
@@ -60,8 +61,8 @@ router.get('/history', ownerOnly, async (req, res) => {
 router.get('/:date', ownerOnly, async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT * FROM night_audit_runs WHERE business_date = $1`,
-      [req.params.date]
+      `SELECT * FROM night_audit_runs WHERE business_date = $1 AND property_id = $2`,
+      [req.params.date, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'No audit found for this date' });
     res.json(rows[0]);

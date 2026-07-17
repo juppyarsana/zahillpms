@@ -11,7 +11,8 @@ const { refreshCompetitors, refreshSearchTrends, refreshAiSummary } = require('.
 router.get('/competitors', auth, async (req, res) => {
   try {
     const { rows: competitors } = await db.query(
-      'SELECT * FROM competitors WHERE is_active = true ORDER BY is_self DESC, name'
+      'SELECT * FROM competitors WHERE is_active = true AND property_id = $1 ORDER BY is_self DESC, name',
+      [req.propertyId]
     );
 
     const result = await Promise.all(competitors.map(async c => {
@@ -61,11 +62,11 @@ router.post('/competitors', auth, requireRole('owner'), async (req, res) => {
     if (!match) return res.status(404).json({ error: `No Google listing found for "${name}"` });
 
     const { rows: [competitor] } = await db.query(
-      `INSERT INTO competitors (name, place_id, matched_address, is_active)
-       VALUES ($1, $2, $3, true)
-       ON CONFLICT (place_id) DO UPDATE SET name = EXCLUDED.name, matched_address = EXCLUDED.matched_address, is_active = true
+      `INSERT INTO competitors (name, place_id, matched_address, is_active, property_id)
+       VALUES ($1, $2, $3, true, $4)
+       ON CONFLICT (place_id, property_id) DO UPDATE SET name = EXCLUDED.name, matched_address = EXCLUDED.matched_address, is_active = true
        RETURNING id`,
-      [match.name, match.placeId, match.address]
+      [match.name, match.placeId, match.address, req.propertyId]
     );
     await db.query(
       'INSERT INTO competitor_snapshots (competitor_id, rating, review_count, price_level) VALUES ($1, $2, $3, $4)',
@@ -81,11 +82,11 @@ router.post('/competitors', auth, requireRole('owner'), async (req, res) => {
 // DELETE /api/insights/competitors/:id — remove a manually-added competitor (owner only)
 router.delete('/competitors/:id', auth, requireRole('owner'), async (req, res) => {
   try {
-    const { rows: [c] } = await db.query('SELECT is_self FROM competitors WHERE id = $1', [req.params.id]);
+    const { rows: [c] } = await db.query('SELECT is_self FROM competitors WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!c) return res.status(404).json({ error: 'Not found' });
     if (c.is_self) return res.status(400).json({ error: 'Cannot remove the self-benchmark row' });
 
-    await db.query('UPDATE competitors SET is_active = false WHERE id = $1', [req.params.id]);
+    await db.query('UPDATE competitors SET is_active = false WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     res.json({ message: 'Removed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -95,7 +96,7 @@ router.delete('/competitors/:id', auth, requireRole('owner'), async (req, res) =
 // POST /api/insights/competitors/refresh — manual trigger (owner only)
 router.post('/competitors/refresh', auth, requireRole('owner'), async (req, res) => {
   try {
-    await refreshCompetitors();
+    await refreshCompetitors(req.propertyId);
     res.json({ message: 'Competitor ratings refreshed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -107,8 +108,9 @@ router.get('/trends', auth, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT term, point_date, interest FROM search_trends
-       WHERE point_date >= CURRENT_DATE - INTERVAL '90 days'
-       ORDER BY term, point_date`
+       WHERE property_id = $1 AND point_date >= CURRENT_DATE - INTERVAL '90 days'
+       ORDER BY term, point_date`,
+      [req.propertyId]
     );
     const byTerm = {};
     for (const r of rows) {
@@ -124,7 +126,7 @@ router.get('/trends', auth, async (req, res) => {
 // POST /api/insights/trends/refresh — manual trigger (owner only)
 router.post('/trends/refresh', auth, requireRole('owner'), async (req, res) => {
   try {
-    await refreshSearchTrends();
+    await refreshSearchTrends(req.propertyId);
     res.json({ message: 'Search trends refreshed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -155,7 +157,7 @@ router.get('/holidays', auth, async (req, res) => {
 // GET /api/insights/summary
 router.get('/summary', auth, async (req, res) => {
   try {
-    const { rows: [row] } = await db.query('SELECT summary, generated_at FROM ai_market_summary WHERE id = 1');
+    const { rows: [row] } = await db.query('SELECT summary, generated_at FROM ai_market_summary WHERE property_id = $1', [req.propertyId]);
     let summary = null;
     if (row?.summary) {
       try { summary = JSON.parse(row.summary); } catch { summary = null; }
@@ -173,7 +175,7 @@ router.get('/summary', auth, async (req, res) => {
 // POST /api/insights/summary/refresh — manual trigger (owner only)
 router.post('/summary/refresh', auth, requireRole('owner'), async (req, res) => {
   try {
-    await refreshAiSummary();
+    await refreshAiSummary(req.propertyId);
     res.json({ message: 'AI summary refreshed' });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -25,10 +25,11 @@ router.get('/', auth, async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT * FROM guest_board_cards
+      WHERE property_id = $1
       ORDER BY
         CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
         sort_order, id
-    `);
+    `, [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -45,9 +46,9 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
     const filename = req.file ? `board-${Date.now()}.jpg` : null;
     const imageUrl = req.file ? await saveResized(req.file.buffer, filename) : null;
     const { rows: [card] } = await db.query(
-      `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [title, body, category, meta || null, imageUrl, active !== 'false', parseInt(sort_order) || 0]
+      `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order, property_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [title, body, category, meta || null, imageUrl, active !== 'false', parseInt(sort_order) || 0, req.propertyId]
     );
     res.status(201).json(card);
   } catch (err) {
@@ -59,7 +60,7 @@ router.post('/', auth, upload.single('image'), async (req, res) => {
 router.put('/:id', auth, upload.single('image'), async (req, res) => {
   const { title, body, category, meta, active, sort_order } = req.body;
   try {
-    const { rows: [existing] } = await db.query('SELECT * FROM guest_board_cards WHERE id = $1', [req.params.id]);
+    const { rows: [existing] } = await db.query('SELECT * FROM guest_board_cards WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!existing) return res.status(404).json({ error: 'Card not found' });
 
     let imageUrl = existing.image_url;
@@ -74,7 +75,7 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
 
     const { rows: [card] } = await db.query(
       `UPDATE guest_board_cards SET title=$1, body=$2, category=$3, meta=$4, image_url=$5,
-       active=$6, sort_order=$7, updated_at=NOW() WHERE id=$8 RETURNING *`,
+       active=$6, sort_order=$7, updated_at=NOW() WHERE id=$8 AND property_id=$9 RETURNING *`,
       [
         title ?? existing.title,
         body ?? existing.body,
@@ -84,6 +85,7 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
         active !== undefined ? active !== 'false' : existing.active,
         sort_order !== undefined ? parseInt(sort_order) : existing.sort_order,
         req.params.id,
+        req.propertyId,
       ]
     );
     res.json(card);
@@ -96,8 +98,8 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
 router.patch('/:id/toggle', auth, async (req, res) => {
   try {
     const { rows: [card] } = await db.query(
-      'UPDATE guest_board_cards SET active = NOT active, updated_at = NOW() WHERE id = $1 RETURNING *',
-      [req.params.id]
+      'UPDATE guest_board_cards SET active = NOT active, updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *',
+      [req.params.id, req.propertyId]
     );
     if (!card) return res.status(404).json({ error: 'Card not found' });
     res.json(card);
@@ -109,7 +111,7 @@ router.patch('/:id/toggle', auth, async (req, res) => {
 // DELETE /api/board/:id
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const { rows: [card] } = await db.query('DELETE FROM guest_board_cards WHERE id=$1 RETURNING *', [req.params.id]);
+    const { rows: [card] } = await db.query('DELETE FROM guest_board_cards WHERE id=$1 AND property_id=$2 RETURNING *', [req.params.id, req.propertyId]);
     if (!card) return res.status(404).json({ error: 'Card not found' });
     if (card.image_url) {
       const file = path.join(UPLOAD_DIR, path.basename(card.image_url));

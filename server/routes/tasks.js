@@ -10,9 +10,9 @@ router.get('/', auth, async (req, res) => {
     FROM tasks t
     LEFT JOIN units u ON t.unit_id = u.id
     LEFT JOIN users us ON t.assigned_to = us.id
-    WHERE 1=1
+    WHERE t.property_id = $1
   `;
-  const params = [];
+  const params = [req.propertyId];
   if (status) { params.push(status); query += ` AND t.status = $${params.length}`; }
   if (assigned_to) { params.push(assigned_to); query += ` AND t.assigned_to = $${params.length}`; }
   if (type) { params.push(type); query += ` AND t.type = $${params.length}`; }
@@ -32,9 +32,9 @@ router.post('/', auth, async (req, res) => {
   if (!title) return res.status(400).json({ error: 'title required' });
   try {
     const { rows } = await db.query(
-      `INSERT INTO tasks (title, description, type, priority, assigned_to, unit_id, booking_id, due_time)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [title, description, type || 'housekeeping', priority || 'medium', assigned_to || null, unit_id || null, booking_id || null, due_time || null]
+      `INSERT INTO tasks (title, description, type, priority, assigned_to, unit_id, booking_id, due_time, property_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [title, description, type || 'housekeeping', priority || 'medium', assigned_to || null, unit_id || null, booking_id || null, due_time || null, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -56,8 +56,8 @@ router.put('/:id', auth, async (req, res) => {
         assigned_to = COALESCE($6, assigned_to),
         due_time = COALESCE($7, due_time),
         updated_at = NOW()
-       WHERE id = $8 RETURNING *`,
-      [title, description, type, priority, status, assigned_to, due_time, req.params.id]
+       WHERE id = $8 AND property_id = $9 RETURNING *`,
+      [title, description, type, priority, status, assigned_to, due_time, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Task not found' });
     res.json(rows[0]);
@@ -69,7 +69,7 @@ router.put('/:id', auth, async (req, res) => {
 // DELETE /api/tasks/:id
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await db.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
+    await db.query('DELETE FROM tasks WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     res.json({ message: 'Task deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

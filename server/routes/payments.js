@@ -12,11 +12,12 @@ router.get('/pending', auth, async (req, res) => {
       JOIN bookings b ON p.booking_id = b.id
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
-      WHERE p.status = 'pending'
+      WHERE b.property_id = $1
+        AND p.status = 'pending'
         AND p.amount > 0
         AND b.status NOT IN ('cancelled','no_show')
       ORDER BY b.check_in_date, p.type
-    `);
+    `, [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -28,6 +29,8 @@ router.post('/', auth, async (req, res) => {
   const { booking_id, type, amount, method, notes } = req.body;
   if (!booking_id || !type || !amount) return res.status(400).json({ error: 'booking_id, type, amount required' });
   try {
+    const { rows: [booking] } = await db.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
     const { rows } = await db.query(
       `INSERT INTO payments (booking_id, type, amount, method, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [booking_id, type, amount, method, notes]
@@ -53,8 +56,8 @@ router.put('/:id', auth, async (req, res) => {
         received_by = COALESCE($4, received_by),
         notes = COALESCE($5, notes),
         amount = COALESCE($6, amount)
-       WHERE id = $7 RETURNING *`,
-      [status, method, received_at || null, status === 'received' ? req.user.id : null, notes, amount || null, req.params.id]
+       WHERE id = $7 AND booking_id IN (SELECT id FROM bookings WHERE property_id = $8) RETURNING *`,
+      [status, method, received_at || null, status === 'received' ? req.user.id : null, notes, amount || null, req.params.id, req.propertyId]
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
 

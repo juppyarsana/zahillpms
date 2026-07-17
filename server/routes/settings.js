@@ -2,14 +2,48 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
+const modules = require('../modules');
 
 const ownerOnly = [auth, requireRole('owner')];
+
+// ── Modules ───────────────────────────────────────────────────────────────
+
+router.get('/modules', ownerOnly, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT module, is_enabled FROM property_modules WHERE property_id = $1',
+      [req.propertyId]
+    );
+    const enabledByModule = {};
+    for (const r of rows) enabledByModule[r.module] = r.is_enabled;
+
+    const result = {};
+    for (const [key, def] of Object.entries(modules)) {
+      result[key] = { label: def.label, is_enabled: enabledByModule[key] ?? false };
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Display Token (Room Display / TV Display device provisioning) ───────────
+
+router.get('/display-token', ownerOnly, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT display_token FROM properties WHERE id = $1', [req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Property not found' });
+    res.json({ display_token: rows[0].display_token });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Booking Sources ──────────────────────────────────────────────────────────
 
 router.get('/booking-sources', auth, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM booking_sources ORDER BY sort_order, id');
+    const { rows } = await db.query('SELECT * FROM booking_sources WHERE property_id = $1 ORDER BY sort_order, id', [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -21,9 +55,9 @@ router.post('/booking-sources', auth, async (req, res) => {
   if (!id || !label) return res.status(400).json({ error: 'id and label are required' });
   try {
     const { rows } = await db.query(
-      `INSERT INTO booking_sources (id, label, is_ota, color, sort_order)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0]
+      `INSERT INTO booking_sources (id, label, is_ota, color, sort_order, property_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -43,8 +77,8 @@ router.put('/booking-sources/:id', auth, async (req, res) => {
         color      = COALESCE($3, color),
         is_active  = COALESCE($4, is_active),
         sort_order = COALESCE($5, sort_order)
-       WHERE id = $6 RETURNING *`,
-      [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null, req.params.id]
+       WHERE id = $6 AND property_id = $7 RETURNING *`,
+      [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Source not found' });
     res.json(rows[0]);
@@ -57,7 +91,7 @@ router.put('/booking-sources/:id', auth, async (req, res) => {
 
 router.get('/payment-methods', auth, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM payment_methods ORDER BY sort_order, id');
+    const { rows } = await db.query('SELECT * FROM payment_methods WHERE property_id = $1 ORDER BY sort_order, id', [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -69,9 +103,9 @@ router.post('/payment-methods', auth, async (req, res) => {
   if (!id || !label) return res.status(400).json({ error: 'id and label are required' });
   try {
     const { rows } = await db.query(
-      `INSERT INTO payment_methods (id, label, sort_order)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [id.toLowerCase().replace(/\s+/g, '_'), label, sort_order || 0]
+      `INSERT INTO payment_methods (id, label, sort_order, property_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [id.toLowerCase().replace(/\s+/g, '_'), label, sort_order || 0, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -89,8 +123,8 @@ router.put('/payment-methods/:id', auth, async (req, res) => {
         label      = COALESCE($1, label),
         is_active  = COALESCE($2, is_active),
         sort_order = COALESCE($3, sort_order)
-       WHERE id = $4 RETURNING *`,
-      [label, is_active ?? null, sort_order ?? null, req.params.id]
+       WHERE id = $4 AND property_id = $5 RETURNING *`,
+      [label, is_active ?? null, sort_order ?? null, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Method not found' });
     res.json(rows[0]);
@@ -103,7 +137,7 @@ router.put('/payment-methods/:id', auth, async (req, res) => {
 
 router.get('/roles', ownerOnly, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM roles ORDER BY id');
+    const { rows } = await db.query('SELECT * FROM roles WHERE property_id = $1 ORDER BY id', [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -116,8 +150,8 @@ router.post('/roles', ownerOnly, async (req, res) => {
   if (id === 'owner') return res.status(400).json({ error: 'Cannot create a role named owner' });
   try {
     const { rows } = await db.query(
-      'INSERT INTO roles (id, label, allowed_menus) VALUES ($1, $2, $3) RETURNING *',
-      [id.toLowerCase().replace(/\s+/g, '_'), label, allowed_menus || []]
+      'INSERT INTO roles (id, label, allowed_menus, property_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      [id.toLowerCase().replace(/\s+/g, '_'), label, allowed_menus || [], req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -135,8 +169,8 @@ router.put('/roles/:id', ownerOnly, async (req, res) => {
       `UPDATE roles SET
         label         = COALESCE($1, label),
         allowed_menus = COALESCE($2, allowed_menus)
-       WHERE id = $3 RETURNING *`,
-      [label, allowed_menus || null, req.params.id]
+       WHERE id = $3 AND property_id = $4 RETURNING *`,
+      [label, allowed_menus || null, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
     res.json(rows[0]);
@@ -148,9 +182,9 @@ router.put('/roles/:id', ownerOnly, async (req, res) => {
 router.delete('/roles/:id', ownerOnly, async (req, res) => {
   if (req.params.id === 'owner') return res.status(400).json({ error: 'Cannot delete the owner role' });
   try {
-    const { rows: users } = await db.query('SELECT id FROM users WHERE role = $1 LIMIT 1', [req.params.id]);
+    const { rows: users } = await db.query('SELECT id FROM users WHERE role = $1 AND property_id = $2 LIMIT 1', [req.params.id, req.propertyId]);
     if (users.length) return res.status(409).json({ error: 'Cannot delete a role that is assigned to users' });
-    const { rows } = await db.query('DELETE FROM roles WHERE id = $1 RETURNING id', [req.params.id]);
+    const { rows } = await db.query('DELETE FROM roles WHERE id = $1 AND property_id = $2 RETURNING id', [req.params.id, req.propertyId]);
     if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
     res.json({ message: 'Role deleted' });
   } catch (err) {

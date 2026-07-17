@@ -7,6 +7,7 @@ module.exports = function authQueryToken(req, res, next) {
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.propertyId = req.user.propertyId;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

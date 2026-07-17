@@ -11,12 +11,12 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
   const { roomId } = req.params;
   try {
     const { rows: unitRows } = await db.query(
-      `SELECT u.id, u.name, u.controller_id,
+      `SELECT u.id, u.name, u.controller_id, u.property_id,
               rcs.connected, rcs.rgb, rcs.last_seen
        FROM units u
        LEFT JOIN room_controller_status rcs ON rcs.controller_id = u.controller_id
-       WHERE u.controller_id = $1`,
-      [roomId]
+       WHERE u.controller_id = $1 AND u.property_id = $2`,
+      [roomId, req.propertyId]
     );
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
     const unit = unitRows[0];
@@ -45,10 +45,11 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     const { rows: cardRows } = await db.query(
       `SELECT id, title, body, category, meta, image_url
        FROM guest_board_cards
-       WHERE active = true
+       WHERE active = true AND property_id = $1
        ORDER BY
          CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
-         sort_order, id`
+         sort_order, id`,
+      [unit.property_id]
     );
 
     const weather = await getWeather();
@@ -68,8 +69,10 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
 
 // GET /api/display/room/:roomId/stream — SSE for real-time state updates
 // Auth via ?token= query param (EventSource can't send Authorization header)
-router.get('/room/:roomId/stream', authDisplay, (req, res) => {
+router.get('/room/:roomId/stream', authDisplay, async (req, res) => {
   const { roomId } = req.params;
+  const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+  if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -99,6 +102,8 @@ router.post('/room/:roomId/relay', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'relay_num and state required' });
   }
   try {
+    const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
     const topic = `zahill/room/${roomId}/relay/${relay_num}/set`;
     try {
       await mqttClient.publish(topic, state ? 'on' : 'off');
@@ -120,6 +125,8 @@ router.post('/room/:roomId/rgb', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'r, g, b required' });
   }
   try {
+    const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
     const topic = `zahill/room/${roomId}/rgb/set`;
     try {
       await mqttClient.publish(topic, JSON.stringify({ r, g, b }));
@@ -141,6 +148,8 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
     return res.status(400).json({ error: 'slot must be 0–4' });
   }
   try {
+    const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
     const topic = `zahill/room/${roomId}/ir/send`;
     try {
       await mqttClient.publish(topic, String(slot));

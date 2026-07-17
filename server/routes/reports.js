@@ -14,16 +14,17 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
         COUNT(*) as bookings_count,
         COALESCE(SUM(nights), 0) as total_nights
       FROM bookings
-      WHERE EXTRACT(MONTH FROM check_in_date) = $1
+      WHERE property_id = $3
+        AND EXTRACT(MONTH FROM check_in_date) = $1
         AND EXTRACT(YEAR FROM check_in_date) = $2
         AND status IN ('checked_in','checked_out','confirmed')
-    `, [month, year]);
+    `, [month, year, req.propertyId]);
 
     const ancillaryQ = db.query(`
       SELECT COALESCE(SUM(total_amount), 0) as ancillary_revenue, COUNT(*) as sales_count
       FROM sales
-      WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2
-    `, [month, year]);
+      WHERE property_id = $3 AND EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2
+    `, [month, year, req.propertyId]);
 
     const dailyQ = db.query(`
       SELECT d::date as date, COALESCE(SUM(b.total_amount / NULLIF(b.nights,0)), 0) as room_revenue
@@ -34,17 +35,19 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
       ) d
       LEFT JOIN bookings b ON d::date BETWEEN b.check_in_date AND b.check_out_date - 1
         AND b.status IN ('checked_in','checked_out','confirmed')
+        AND b.property_id = $3
       GROUP BY d ORDER BY d
-    `, [month, year]);
+    `, [month, year, req.propertyId]);
 
     const sourceQ = db.query(`
       SELECT source, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as revenue
       FROM bookings
-      WHERE EXTRACT(MONTH FROM check_in_date) = $1
+      WHERE property_id = $3
+        AND EXTRACT(MONTH FROM check_in_date) = $1
         AND EXTRACT(YEAR FROM check_in_date) = $2
         AND status IN ('checked_in','checked_out','confirmed')
       GROUP BY source
-    `, [month, year]);
+    `, [month, year, req.propertyId]);
 
     const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }] = await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ]);
 

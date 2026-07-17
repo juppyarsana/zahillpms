@@ -11,13 +11,18 @@ router.get('/units', auth, async (req, res) => {
               rcs.connected, rcs.ip_address, rcs.rgb, rcs.last_seen
        FROM units u
        LEFT JOIN room_controller_status rcs ON rcs.controller_id = u.controller_id
-       ORDER BY u.name`
+       WHERE u.property_id = $1
+       ORDER BY u.name`,
+      [req.propertyId]
     );
 
     const { rows: relays } = await db.query(
       `SELECT ur.unit_id, ur.relay_num, ur.label, ur.icon, ur.state, ur.enabled, ur.updated_at
        FROM unit_relays ur
-       ORDER BY ur.unit_id, ur.relay_num`
+       JOIN units u ON u.id = ur.unit_id
+       WHERE u.property_id = $1
+       ORDER BY ur.unit_id, ur.relay_num`,
+      [req.propertyId]
     );
 
     const relaysByUnit = {};
@@ -41,8 +46,8 @@ router.get('/units/:unitId', auth, async (req, res) => {
               rcs.connected, rcs.ip_address, rcs.rgb, rcs.last_seen
        FROM units u
        LEFT JOIN room_controller_status rcs ON rcs.controller_id = u.controller_id
-       WHERE u.id = $1`,
-      [req.params.unitId]
+       WHERE u.id = $1 AND u.property_id = $2`,
+      [req.params.unitId, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
 
@@ -66,8 +71,8 @@ router.post('/relay', auth, async (req, res) => {
   }
   try {
     const { rows } = await db.query(
-      'SELECT controller_id FROM units WHERE id = $1',
-      [unit_id]
+      'SELECT controller_id FROM units WHERE id = $1 AND property_id = $2',
+      [unit_id, req.propertyId]
     );
     if (!rows[0] || !rows[0].controller_id) {
       return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
@@ -90,8 +95,8 @@ router.post('/rgb', auth, async (req, res) => {
   }
   try {
     const { rows } = await db.query(
-      'SELECT controller_id FROM units WHERE id = $1',
-      [unit_id]
+      'SELECT controller_id FROM units WHERE id = $1 AND property_id = $2',
+      [unit_id, req.propertyId]
     );
     if (!rows[0] || !rows[0].controller_id) {
       return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
@@ -112,7 +117,7 @@ router.post('/ir/send', auth, async (req, res) => {
   if (!unit_id || slot == null) return res.status(400).json({ error: 'unit_id and slot are required' });
   if (slot < 0 || slot > 4) return res.status(400).json({ error: 'slot must be 0–4' });
   try {
-    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [unit_id]);
+    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
     const topic = `zahill/room/${rows[0].controller_id}/ir/send`;
     await mqttClient.publish(topic, String(slot));
@@ -129,7 +134,7 @@ router.post('/ir/learn', auth, async (req, res) => {
   if (!unit_id || slot == null) return res.status(400).json({ error: 'unit_id and slot are required' });
   if (slot < 0 || slot > 4) return res.status(400).json({ error: 'slot must be 0–4' });
   try {
-    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [unit_id]);
+    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
     const topic = `zahill/room/${rows[0].controller_id}/ir/learn`;
     await mqttClient.publish(topic, String(slot));
@@ -142,7 +147,7 @@ router.post('/ir/learn', auth, async (req, res) => {
 // POST /api/iot/units/:unitId/request-status — trigger full status publish from device
 router.post('/units/:unitId/request-status', auth, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1', [req.params.unitId]);
+    const { rows } = await db.query('SELECT controller_id FROM units WHERE id = $1 AND property_id = $2', [req.params.unitId, req.propertyId]);
     if (!rows[0]?.controller_id) return res.status(404).json({ error: 'Unit not found or has no controller assigned' });
     const topic = `zahill/room/${rows[0].controller_id}/request/status`;
     await mqttClient.publish(topic, '1');
@@ -158,8 +163,8 @@ router.put('/units/:unitId/controller', auth, async (req, res) => {
   const value = controller_id ? String(controller_id).trim().slice(0, 10) : null;
   try {
     const { rows } = await db.query(
-      'UPDATE units SET controller_id = $1 WHERE id = $2 RETURNING id, name, controller_id',
-      [value, req.params.unitId]
+      'UPDATE units SET controller_id = $1 WHERE id = $2 AND property_id = $3 RETURNING id, name, controller_id',
+      [value, req.params.unitId, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
     res.json(rows[0]);
@@ -175,6 +180,8 @@ router.put('/units/:unitId/relay/:relayNum/label', auth, async (req, res) => {
   const { label } = req.body;
   if (label == null) return res.status(400).json({ error: 'label is required' });
   try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE id = $1 AND property_id = $2', [req.params.unitId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Unit not found' });
     const { rows } = await db.query(
       `INSERT INTO unit_relays (unit_id, relay_num, label)
        VALUES ($1, $2, $3)
@@ -196,6 +203,8 @@ router.patch('/units/:unitId/relays/:relayNum', auth, async (req, res) => {
     return res.status(400).json({ error: 'label, icon, and enabled are required' });
   }
   try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE id = $1 AND property_id = $2', [req.params.unitId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Unit not found' });
     const { rows } = await db.query(
       `INSERT INTO unit_relays (unit_id, relay_num, label, icon, enabled)
        VALUES ($1, $2, $3, $4, $5)

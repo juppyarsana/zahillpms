@@ -230,15 +230,16 @@ async function sendAuditEmail(businessDate, data) {
   console.log(`[Night Audit] Email sent to ${toAddr}`);
 }
 
-async function runNightAudit(triggeredBy = 'auto') {
-  console.log(`[Night Audit] Starting (triggered by: ${triggeredBy})`);
+async function runNightAudit(triggeredBy = 'auto', propertyId) {
+  if (!propertyId) throw new Error('runNightAudit requires a propertyId');
+  console.log(`[Night Audit] Starting for property ${propertyId} (triggered by: ${triggeredBy})`);
 
   // 1. Guard — duplicate run check (always audits yesterday)
   const businessDate = getYesterday();
 
   const { rows: existing } = await db.query(
-    'SELECT id FROM night_audit_runs WHERE business_date = $1',
-    [businessDate]
+    'SELECT id FROM night_audit_runs WHERE business_date = $1 AND property_id = $2',
+    [businessDate, propertyId]
   );
   if (existing[0]) {
     console.log(`[Night Audit] Already run for ${businessDate}, skipping`);
@@ -248,26 +249,27 @@ async function runNightAudit(triggeredBy = 'auto') {
   // 2. No-show detection
   const { rows: noShows } = await db.query(
     `UPDATE bookings SET status = 'no_show', updated_at = NOW()
-     WHERE status = 'confirmed' AND check_in_date = $1
+     WHERE status = 'confirmed' AND check_in_date = $1 AND property_id = $2
      RETURNING id,
        (SELECT name FROM guests WHERE id = bookings.guest_id) AS guest_name,
        (SELECT name FROM units  WHERE id = bookings.unit_id)  AS unit_name`,
-    [businessDate]
+    [businessDate, propertyId]
   );
   if (noShows.length) console.log(`[Night Audit] Flagged ${noShows.length} no-show(s)`);
 
   // 3. Room revenue tally (nightly rate × 1 night for each checked-in booking)
   const { rows: roomRows } = await db.query(
     `SELECT COALESCE(SUM(total_amount::numeric / GREATEST(nights, 1)), 0) AS room_revenue
-     FROM bookings WHERE status = 'checked_in'`
+     FROM bookings WHERE status = 'checked_in' AND property_id = $1`,
+    [propertyId]
   );
   const roomRevenue = parseFloat(roomRows[0].room_revenue);
 
   // 4. Ancillary revenue tally
   const { rows: ancillaryRows } = await db.query(
     `SELECT COALESCE(SUM(total_amount), 0) AS ancillary_revenue
-     FROM sales WHERE DATE(created_at AT TIME ZONE 'Asia/Makassar') = $1`,
-    [businessDate]
+     FROM sales WHERE DATE(created_at AT TIME ZONE 'Asia/Makassar') = $1 AND property_id = $2`,
+    [businessDate, propertyId]
   );
   const ancillaryRevenue = parseFloat(ancillaryRows[0].ancillary_revenue);
 
@@ -279,8 +281,8 @@ async function runNightAudit(triggeredBy = 'auto') {
      JOIN guests g   ON g.id = b.guest_id
      JOIN units u    ON u.id = b.unit_id
      JOIN payments p ON p.booking_id = b.id AND p.type = 'balance' AND p.status = 'pending'
-     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in')`,
-    [tomorrow]
+     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in') AND b.property_id = $2`,
+    [tomorrow, propertyId]
   );
 
   // 6. Arriving guests (check-in = tomorrow)
@@ -289,9 +291,9 @@ async function runNightAudit(triggeredBy = 'auto') {
      FROM bookings b
      JOIN guests g ON g.id = b.guest_id
      JOIN units u  ON u.id = b.unit_id
-     WHERE b.check_in_date = $1 AND b.status = 'confirmed'
+     WHERE b.check_in_date = $1 AND b.status = 'confirmed' AND b.property_id = $2
      ORDER BY u.name`,
-    [tomorrow]
+    [tomorrow, propertyId]
   );
 
   // 8. Housekeeping task auto-generation for tomorrow's checkouts
@@ -299,8 +301,8 @@ async function runNightAudit(triggeredBy = 'auto') {
     `SELECT b.id AS booking_id, u.id AS unit_id, u.name AS unit_name
      FROM bookings b
      JOIN units u ON u.id = b.unit_id
-     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in')`,
-    [tomorrow]
+     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in') AND b.property_id = $2`,
+    [tomorrow, propertyId]
   );
 
   let tasksCreated = 0;
@@ -313,10 +315,10 @@ async function runNightAudit(triggeredBy = 'auto') {
     );
     if (!existingTask[0]) {
       await db.query(
-        `INSERT INTO tasks (id, title, type, priority, status, unit_id, booking_id, due_time, created_at, updated_at)
+        `INSERT INTO tasks (id, title, type, priority, status, unit_id, booking_id, due_time, created_at, updated_at, property_id)
          VALUES (uuid_generate_v4(), $1, 'housekeeping', 'high', 'todo', $2, $3,
-                 ($4::date + INTERVAL '11 hours'), NOW(), NOW())`,
-        [`Prep ${co.unit_name} for checkout`, co.unit_id, co.booking_id, tomorrow]
+                 ($4::date + INTERVAL '11 hours'), NOW(), NOW(), $5)`,
+        [`Prep ${co.unit_name} for checkout`, co.unit_id, co.booking_id, tomorrow, propertyId]
       );
       tasksCreated++;
     }
@@ -324,13 +326,14 @@ async function runNightAudit(triggeredBy = 'auto') {
 
   // 9. Record last audit time
   await db.query(
-    `UPDATE property_settings SET business_date = $1, last_audit_at = NOW() WHERE id = 1`,
-    [businessDate]
+    `UPDATE property_settings SET business_date = $1, last_audit_at = NOW() WHERE property_id = $2`,
+    [businessDate, propertyId]
   );
 
   // Count currently occupied units
   const { rows: occRows } = await db.query(
-    `SELECT COUNT(*) AS count FROM bookings WHERE status = 'checked_in'`
+    `SELECT COUNT(*) AS count FROM bookings WHERE status = 'checked_in' AND property_id = $1`,
+    [propertyId]
   );
   const unitsOccupied = parseInt(occRows[0].count);
 
@@ -340,12 +343,12 @@ async function runNightAudit(triggeredBy = 'auto') {
   await db.query(
     `INSERT INTO night_audit_runs
        (id, business_date, triggered_by, units_occupied, no_shows,
-        room_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary)
-     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        room_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary, property_id)
+     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       businessDate, triggeredBy, unitsOccupied,
       JSON.stringify(noShows), roomRevenue, ancillaryRevenue,
-      JSON.stringify(pendingBalances), JSON.stringify(arrivingToday), tasksCreated, summary,
+      JSON.stringify(pendingBalances), JSON.stringify(arrivingToday), tasksCreated, summary, propertyId,
     ]
   );
 
@@ -361,4 +364,15 @@ async function runNightAudit(triggeredBy = 'auto') {
   return { success: true, business_date: businessDate, summary };
 }
 
-module.exports = { runNightAudit, getBusinessDate };
+async function runNightAuditAllProperties(triggeredBy = 'auto') {
+  const { rows: properties } = await db.query('SELECT id FROM properties WHERE is_active = true');
+  for (const prop of properties) {
+    try {
+      await runNightAudit(triggeredBy, prop.id);
+    } catch (err) {
+      console.error(`[Night Audit] Failed for property ${prop.id}:`, err.message);
+    }
+  }
+}
+
+module.exports = { runNightAudit, runNightAuditAllProperties, getBusinessDate };

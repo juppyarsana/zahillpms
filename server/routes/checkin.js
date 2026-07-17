@@ -25,7 +25,7 @@ const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 // POST /api/checkin/:bookingId/start
 router.post('/:bookingId/start', auth, async (req, res) => {
   try {
-    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1', [req.params.bookingId]);
+    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     const isOTA = OTA_SOURCES.includes(booking.source);
 
@@ -53,8 +53,8 @@ router.post('/:bookingId/start', auth, async (req, res) => {
       }
     }
 
-    await db.query("UPDATE bookings SET status = 'checked_in', updated_at = NOW() WHERE id = $1", [req.params.bookingId]);
-    await db.query("UPDATE units SET status = 'occupied' WHERE id = $1", [booking.unit_id]);
+    await db.query("UPDATE bookings SET status = 'checked_in', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
+    await db.query("UPDATE units SET status = 'occupied' WHERE id = $1 AND property_id = $2", [booking.unit_id, req.propertyId]);
 
     const { rows } = await db.query(
       `INSERT INTO checkin_records (booking_id, checkin_time, processed_by)
@@ -74,14 +74,14 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
   try {
     await client.query('BEGIN');
 
+    const { rows: [scopedBooking] } = await client.query('SELECT guest_id FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
+    if (!scopedBooking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
     let id_document_url = null;
     if (req.file) {
       const filename = `${req.params.bookingId}-${Date.now()}.jpg`;
       id_document_url = await saveResized(req.file.buffer, filename);
-      const { rows: [booking] } = await client.query('SELECT guest_id FROM bookings WHERE id = $1', [req.params.bookingId]);
-      if (booking) {
-        await client.query('UPDATE guests SET id_document_url = $1 WHERE id = $2', [id_document_url, booking.guest_id]);
-      }
+      await client.query('UPDATE guests SET id_document_url = $1 WHERE id = $2', [id_document_url, scopedBooking.guest_id]);
     }
 
     const { rows } = await client.query(
@@ -115,11 +115,11 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1', [req.params.bookingId]);
+    const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
     if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
 
-    await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1", [req.params.bookingId]);
-    await client.query("UPDATE units SET status = 'available' WHERE id = $1", [booking.unit_id]);
+    await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
+    await client.query("UPDATE units SET status = 'available' WHERE id = $1 AND property_id = $2", [booking.unit_id, req.propertyId]);
     await client.query(
       'UPDATE checkin_records SET checkout_time = NOW(), condition_notes = COALESCE($1, condition_notes) WHERE booking_id = $2',
       [condition_notes, req.params.bookingId]
@@ -127,13 +127,13 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
 
     // Auto-generate housekeeping task
     await client.query(
-      `INSERT INTO tasks (title, type, priority, unit_id, booking_id, due_time)
-       VALUES ($1, 'housekeeping', 'high', $2, $3, NOW())`,
-      [`Clean & prepare unit after checkout`, booking.unit_id, booking.id]
+      `INSERT INTO tasks (title, type, priority, unit_id, booking_id, due_time, property_id)
+       VALUES ($1, 'housekeeping', 'high', $2, $3, NOW(), $4)`,
+      [`Clean & prepare unit after checkout`, booking.unit_id, booking.id, req.propertyId]
     );
 
     // Recalculate guest loyalty tier
-    await recalcGuestTier(client, booking.guest_id);
+    await recalcGuestTier(client, booking.guest_id, req.propertyId);
 
     await client.query('COMMIT');
     res.json({ message: 'Check-out complete', booking_id: req.params.bookingId });
@@ -145,19 +145,20 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   }
 });
 
-async function recalcGuestTier(client, guestId) {
+async function recalcGuestTier(client, guestId, propertyId) {
   const { rows: stats } = await client.query(`
     SELECT
       COALESCE(SUM(nights), 0) as total_nights,
       COALESCE(SUM(total_amount), 0) as total_spend,
       COUNT(*) as total_visits
     FROM bookings
-    WHERE guest_id = $1 AND status = 'checked_out'
-  `, [guestId]);
+    WHERE guest_id = $1 AND property_id = $2 AND status = 'checked_out'
+  `, [guestId, propertyId]);
 
   const { total_nights, total_spend, total_visits } = stats[0];
   const { rows: tiers } = await client.query(
-    'SELECT * FROM loyalty_tiers ORDER BY threshold_value DESC'
+    'SELECT * FROM loyalty_tiers WHERE property_id = $1 ORDER BY threshold_value DESC',
+    [propertyId]
   );
 
   let assignedTier = null;

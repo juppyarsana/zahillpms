@@ -1,12 +1,16 @@
 const cron = require('node-cron');
-const { runNightAudit } = require('./nightAudit');
-const { refreshCompetitors, refreshSearchTrends, refreshAiSummary } = require('./marketInsights');
+const { runNightAuditAllProperties } = require('./nightAudit');
+const {
+  refreshCompetitorsAllProperties,
+  refreshSearchTrendsAllProperties,
+  refreshAiSummaryAllProperties,
+} = require('./marketInsights');
 
 function registerJobs() {
   // Night audit — runs at 00:05 every night (after midnight, audits the just-completed day)
   cron.schedule('5 0 * * *', async () => {
     try {
-      await runNightAudit('auto');
+      await runNightAuditAllProperties('auto');
     } catch (err) {
       console.error('[Jobs] Night audit cron failed:', err.message);
     }
@@ -17,7 +21,7 @@ function registerJobs() {
   // Competitor ratings — daily at 06:00 WITA
   cron.schedule('0 6 * * *', async () => {
     try {
-      await refreshCompetitors();
+      await refreshCompetitorsAllProperties();
     } catch (err) {
       console.error('[Jobs] Competitor ratings cron failed:', err.message);
     }
@@ -26,7 +30,7 @@ function registerJobs() {
   // Search trends — weekly, Monday 06:30 WITA
   cron.schedule('30 6 * * 1', async () => {
     try {
-      await refreshSearchTrends();
+      await refreshSearchTrendsAllProperties();
     } catch (err) {
       console.error('[Jobs] Search trends cron failed:', err.message);
     }
@@ -35,7 +39,7 @@ function registerJobs() {
   // AI market summary — weekly, Monday 07:00 WITA (after ratings + trends refresh)
   cron.schedule('0 7 * * 1', async () => {
     try {
-      await refreshAiSummary();
+      await refreshAiSummaryAllProperties();
     } catch (err) {
       console.error('[Jobs] AI summary cron failed:', err.message);
     }

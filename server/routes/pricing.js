@@ -7,7 +7,8 @@ const requireRole = require('../middleware/role');
 router.get('/periods', auth, async (req, res) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM pricing_periods ORDER BY sort_order DESC, date_from'
+      'SELECT * FROM pricing_periods WHERE property_id = $1 ORDER BY sort_order DESC, date_from',
+      [req.propertyId]
     );
     res.json(rows);
   } catch (err) {
@@ -28,19 +29,20 @@ router.get('/suggest', auth, async (req, res) => {
     );
     if (nights === 0) return res.json({ nights: 0, suggested_total: 0, period: null });
 
-    const { rows: [unit] } = await db.query('SELECT * FROM units WHERE id = $1', [unit_id]);
+    const { rows: [unit] } = await db.query('SELECT * FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
     // Find highest-priority active period covering check_in date
     const { rows: periods } = await db.query(`
       SELECT * FROM pricing_periods
-      WHERE is_active = true
+      WHERE property_id = $3
+        AND is_active = true
         AND date_from <= $1
         AND date_to >= $1
         AND (unit_ids = '[]'::jsonb OR unit_ids @> $2::jsonb)
       ORDER BY sort_order DESC
       LIMIT 1
-    `, [check_in, JSON.stringify([unit_id])]);
+    `, [check_in, JSON.stringify([unit_id]), req.propertyId]);
 
     const period = periods[0] || null;
     let rate_per_night = parseFloat(unit.base_rate);
@@ -78,12 +80,12 @@ router.get('/calendar', auth, async (req, res) => {
     const monthStart = `${year}-${pad(month)}-01`;
     const monthEnd = `${year}-${pad(month)}-${pad(daysInMonth)}`;
 
-    const { rows: units } = await db.query('SELECT id, base_rate FROM units');
+    const { rows: units } = await db.query('SELECT id, base_rate FROM units WHERE property_id = $1', [req.propertyId]);
     const { rows: periods } = await db.query(`
       SELECT * FROM pricing_periods
-      WHERE is_active = true AND date_from <= $1 AND date_to >= $2
+      WHERE property_id = $3 AND is_active = true AND date_from <= $1 AND date_to >= $2
       ORDER BY sort_order DESC
-    `, [monthEnd, monthStart]);
+    `, [monthEnd, monthStart, req.propertyId]);
 
     const rates = {};
     for (const unit of units) {
@@ -115,10 +117,10 @@ router.post('/periods', auth, requireRole('owner'), async (req, res) => {
   }
   try {
     const { rows } = await db.query(
-      `INSERT INTO pricing_periods (name, color, date_from, date_to, type, value, unit_ids, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      `INSERT INTO pricing_periods (name, color, date_from, date_to, type, value, unit_ids, sort_order, property_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [name, color || '#6b7280', date_from, date_to, type || 'multiplier', value,
-       JSON.stringify(unit_ids || []), sort_order || 0]
+       JSON.stringify(unit_ids || []), sort_order || 0, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -141,10 +143,10 @@ router.put('/periods/:id', auth, requireRole('owner'), async (req, res) => {
         unit_ids = COALESCE($7, unit_ids),
         sort_order = COALESCE($8, sort_order),
         is_active = COALESCE($9, is_active)
-       WHERE id = $10 RETURNING *`,
+       WHERE id = $10 AND property_id = $11 RETURNING *`,
       [name, color, date_from, date_to, type, value,
        unit_ids ? JSON.stringify(unit_ids) : null,
-       sort_order, is_active, req.params.id]
+       sort_order, is_active, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Period not found' });
     res.json(rows[0]);
@@ -156,7 +158,7 @@ router.put('/periods/:id', auth, requireRole('owner'), async (req, res) => {
 // DELETE /api/pricing/periods/:id
 router.delete('/periods/:id', auth, requireRole('owner'), async (req, res) => {
   try {
-    await db.query('DELETE FROM pricing_periods WHERE id = $1', [req.params.id]);
+    await db.query('DELETE FROM pricing_periods WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     res.json({ message: 'Deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

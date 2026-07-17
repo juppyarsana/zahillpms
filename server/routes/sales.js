@@ -8,9 +8,9 @@ router.get('/', auth, async (req, res) => {
   let query = `
     SELECT s.*, u.name as served_by_name
     FROM sales s LEFT JOIN users u ON s.served_by = u.id
-    WHERE 1=1
+    WHERE s.property_id = $1
   `;
-  const params = [];
+  const params = [req.propertyId];
   if (booking_id) { params.push(booking_id); query += ` AND s.booking_id = $${params.length}`; }
   if (date_from) { params.push(date_from); query += ` AND s.created_at >= $${params.length}`; }
   if (date_to) { params.push(date_to); query += ` AND s.created_at <= $${params.length}`; }
@@ -32,10 +32,20 @@ router.post('/', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    if (booking_id) {
+      const { rows: [booking] } = await client.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
+      if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    }
+    const productIds = items.map(i => i.product_id);
+    const { rows: ownedProducts } = await client.query('SELECT id FROM products WHERE id = ANY($1) AND property_id = $2', [productIds, req.propertyId]);
+    if (ownedProducts.length !== new Set(productIds).size) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'One or more products not found' });
+    }
     const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * parseInt(i.quantity), 0);
     const { rows: [sale] } = await client.query(
-      'INSERT INTO sales (booking_id, payment_method, total_amount, served_by) VALUES ($1,$2,$3,$4) RETURNING *',
-      [booking_id || null, payment_method, total, req.user.id]
+      'INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [booking_id || null, payment_method, total, req.user.id, req.propertyId]
     );
     for (const item of items) {
       const subtotal = parseFloat(item.unit_price) * parseInt(item.quantity);
