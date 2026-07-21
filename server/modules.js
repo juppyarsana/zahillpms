@@ -4,7 +4,7 @@ module.exports = {
   reservations:    { label: 'Reservations',    routes: ['bookings', 'checkin', 'allotments', 'pricing'] },
   front_desk:      { label: 'Front Desk',      routes: ['checkin'] },
   guest_crm:       { label: 'Guest CRM',       routes: ['guests', 'loyalty'] },
-  financial:       { label: 'Financial',       routes: ['payments', 'reports', 'nightAudit'] },
+  financial:       { label: 'Financial',       routes: ['payments', 'reports', 'nightAudit', 'folio'] },
   operations:      { label: 'Operations',      routes: ['tasks'] },
   sales:           { label: 'Sales',           routes: ['products', 'sales'] },
   in_room_media:   { label: 'In-Room Media',   routes: ['board', 'display'] },

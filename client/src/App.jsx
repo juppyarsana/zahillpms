@@ -27,6 +27,9 @@ import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsBoardCards from './pages/SettingsBoardCards';
 import NightAudit from './pages/NightAudit';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminProperties from './pages/admin/Properties';
+import AdminPropertyDetail from './pages/admin/PropertyDetail';
 
 function NavDropdown({ icon, label, items }) {
   const [open, setOpen] = useState(false);
@@ -118,16 +121,16 @@ function NavDropdown({ icon, label, items }) {
 }
 
 function TopNav() {
-  const { user, logout, can } = useAuth();
+  const { user, logout, can, hasModule } = useAuth();
 
   const settingsItems = [
     can('units')            && { to: '/units',                     icon: '🏕', label: 'Units' },
     can('users')            && { to: '/users',                     icon: '👥', label: 'Users' },
     can('settings')         && { to: '/settings',                  icon: '🔧', label: 'Sources & Methods' },
-    can('room_controllers') && { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
-    user?.role === 'owner'  && { to: '/settings/board',            icon: '📋', label: 'Guest Board' },
+    can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
+    user?.role === 'owner'  && hasModule('in_room_media')    && { to: '/settings/board',            icon: '📋', label: 'Guest Board' },
     user?.role === 'owner'  && { to: '/settings/roles',            icon: '🔑', label: 'Roles & Permissions' },
-    user?.role === 'owner'  && { to: '/night-audit',               icon: '🌙', label: 'Night Audit' },
+    user?.role === 'owner'  && hasModule('financial')         && { to: '/night-audit',               icon: '🌙', label: 'Night Audit' },
   ].filter(Boolean);
 
   return (
@@ -138,11 +141,11 @@ function TopNav() {
         {can('reservations')  && <NavLink to="/reservations"  className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>}
         {can('quick_checkin') && <NavLink to="/quick-checkin" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⚡ Quick CI</NavLink>}
         {can('checkin_full')  && <NavLink to="/checkin"       className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>✅ Check-in/out</NavLink>}
-        {can('operations')    && <NavLink to="/operations"    className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🔧 Operations</NavLink>}
-        {can('guests')        && <NavLink to="/guests"        className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>👤 Guests</NavLink>}
-        {can('sales')         && <NavLink to="/sales"         className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🛍 Sales</NavLink>}
-        {can('loyalty')       && <NavLink to="/loyalty"       className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⭐ Loyalty</NavLink>}
-        {(can('allotments') || can('pricing')) && (
+        {can('operations') && hasModule('operations') && <NavLink to="/operations"    className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🔧 Operations</NavLink>}
+        {can('guests') && hasModule('guest_crm')       && <NavLink to="/guests"        className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>👤 Guests</NavLink>}
+        {can('sales') && hasModule('sales')            && <NavLink to="/sales"         className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🛍 Sales</NavLink>}
+        {can('loyalty') && hasModule('guest_crm')      && <NavLink to="/loyalty"       className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⭐ Loyalty</NavLink>}
+        {(can('allotments') || can('pricing')) && hasModule('reservations') && (
           <NavDropdown icon="🏠" label="Allotments" items={[
             can('allotments') && { to: '/allotment', icon: '📡', label: 'Channel' },
             can('pricing')    && { to: '/pricing',   icon: '💰', label: 'Pricing' },
@@ -170,7 +173,7 @@ function TopNav() {
 }
 
 function BottomNav() {
-  const { user, logout, can } = useAuth();
+  const { user, logout, can, hasModule } = useAuth();
   const location = useLocation();
   const nav = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -179,16 +182,16 @@ function BottomNav() {
     can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
     can('reservations')  && { to: '/reservations',  icon: '📅', label: 'Bookings' },
     can('quick_checkin') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
-    can('guests')        && { to: '/guests',         icon: '👤', label: 'Guests' },
+    can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
   ].filter(Boolean);
 
   const moreItems = [
-    can('checkin_full')     && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
-    can('operations')       && { to: '/operations',                  icon: '🔧', label: 'Operations' },
-    can('sales')            && { to: '/sales',                       icon: '🛍', label: 'Sales' },
-    can('loyalty')          && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
-    can('allotments')       && { to: '/allotment',                   icon: '📡', label: 'Channel' },
-    can('pricing')          && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
+    can('checkin_full')                                  && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
+    can('operations') && hasModule('operations')         && { to: '/operations',                  icon: '🔧', label: 'Operations' },
+    can('sales') && hasModule('sales')                   && { to: '/sales',                       icon: '🛍', label: 'Sales' },
+    can('loyalty') && hasModule('guest_crm')              && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
+    can('allotments') && hasModule('reservations')        && { to: '/allotment',                   icon: '📡', label: 'Channel' },
+    can('pricing') && hasModule('reservations')           && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
     can('units')            && { to: '/units',                       icon: '🏕', label: 'Units' },
     can('users')            && { to: '/users',                       icon: '👥', label: 'Users' },
     can('settings')         && { to: '/settings',                    icon: '🔧', label: 'Sources & Methods' },
@@ -293,12 +296,40 @@ function RequireMenu({ menuKey, children }) {
   return children;
 }
 
+function RequireModule({ moduleName, children }) {
+  const { hasModule, user } = useAuth();
+  if (!hasModule(moduleName)) return <Navigate to={firstAllowedPath(user)} replace />;
+  return children;
+}
+
+function RequireSuperAdmin({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_superadmin) return <Navigate to="/" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/admin" element={
+            <RequireSuperAdmin>
+              <AdminLayout>
+                <AdminProperties />
+              </AdminLayout>
+            </RequireSuperAdmin>
+          } />
+          <Route path="/admin/properties/:id" element={
+            <RequireSuperAdmin>
+              <AdminLayout>
+                <AdminPropertyDetail />
+              </AdminLayout>
+            </RequireSuperAdmin>
+          } />
           <Route path="/*" element={
             <RequireAuth>
             <SettingsProvider>
@@ -321,7 +352,7 @@ export default function App() {
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><Pricing /></RequireMenu>} />
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
                   <Route path="/settings"         element={<RequireMenu menuKey="settings"><Settings /></RequireMenu>} />
-                  <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><SettingsRoomControllers /></RequireMenu>} />
+                  <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><RequireModule moduleName="room_controller"><SettingsRoomControllers /></RequireModule></RequireMenu>} />
                   <Route path="/settings/board"   element={<SettingsBoardCards />} />
                   <Route path="/settings/roles"   element={<SettingsRoles />} />
                   <Route path="/night-audit"      element={<NightAudit />} />

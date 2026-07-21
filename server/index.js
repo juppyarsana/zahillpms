@@ -46,6 +46,7 @@ app.use('/board-images', express.static(path.join(__dirname, 'uploads/board')));
 // Routes
 const moduleGuard = require('./middleware/moduleGuard');
 const authSuperAdmin = require('./middleware/authSuperAdmin');
+const requireRole = require('./middleware/role');
 
 // Superadmin — separate auth layer above the property level, no moduleGuard
 app.use('/api/admin', authSuperAdmin, require('./routes/admin'));
@@ -55,6 +56,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/units', require('./routes/units'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/communications', auth, requireRole('owner'), require('./routes/communications'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/display', require('./routes/display'));
 
@@ -70,6 +72,7 @@ app.use('/api/loyalty', auth, moduleGuard('guest_crm'), require('./routes/loyalt
 app.use('/api/payments', auth, moduleGuard('financial'), require('./routes/payments'));
 app.use('/api/reports', auth, moduleGuard('financial'), require('./routes/reports'));
 app.use('/api/night-audit', auth, moduleGuard('financial'), require('./routes/nightAudit'));
+app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/tasks', auth, moduleGuard('operations'), require('./routes/tasks'));
 app.use('/api/products', auth, moduleGuard('sales'), require('./routes/products'));
 app.use('/api/sales', auth, moduleGuard('sales'), require('./routes/sales'));

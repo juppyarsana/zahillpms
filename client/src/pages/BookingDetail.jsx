@@ -5,6 +5,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
+const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -27,6 +28,13 @@ export default function BookingDetail() {
   const [transferUnits, setTransferUnits] = useState([]);
   const [transferTarget, setTransferTarget] = useState(null);
   const [transferLoading, setTransferLoading] = useState(false);
+  const [tab, setTab] = useState('details');
+  const [folio, setFolio] = useState(null);
+  const [folioLoading, setFolioLoading] = useState(false);
+  const [addingCharge, setAddingCharge] = useState(false);
+  const [chargeForm, setChargeForm] = useState({ type: 'misc', description: '', quantity: 1, unit_price: '' });
+  const [chargeError, setChargeError] = useState('');
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
   async function load() {
     try {
@@ -37,6 +45,59 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { load(); }, [id]);
+
+  async function loadFolio() {
+    setFolioLoading(true);
+    try {
+      const r = await api.get(`/api/folio/${id}`);
+      setFolio(r.data);
+    } catch {}
+    setFolioLoading(false);
+  }
+
+  useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
+
+  async function addCharge() {
+    setChargeError('');
+    if (!chargeForm.description.trim()) { setChargeError('Description required'); return; }
+    try {
+      await api.post(`/api/folio/${id}/charge`, chargeForm);
+      setChargeForm({ type: 'misc', description: '', quantity: 1, unit_price: '' });
+      setAddingCharge(false);
+      loadFolio();
+    } catch (err) {
+      setChargeError(err.response?.data?.error || 'Failed to add charge');
+    }
+  }
+
+  async function voidCharge(chargeId) {
+    if (!confirm('Void this charge?')) return;
+    try {
+      await api.delete(`/api/folio/charge/${chargeId}`);
+      loadFolio();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to void charge');
+    }
+  }
+
+  async function downloadInvoice() {
+    setDownloadingInvoice(true);
+    try {
+      const r = await api.get(`/api/folio/${id}/invoice`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download invoice');
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  }
 
   async function markPaid(payment) {
     setPaying(payment);
@@ -185,6 +246,13 @@ export default function BookingDetail() {
         </div>
       </div>
 
+      <div className="flex gap-2 mb-3">
+        <button className={`btn btn-sm ${tab === 'details' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('details')}>Details</button>
+        <button className={`btn btn-sm ${tab === 'folio' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('folio')}>Folio</button>
+      </div>
+
+      {tab === 'details' && (
+      <>
       <div className="grid-2" style={{ gap: 12 }}>
         <div className="card">
           <div className="card-title">Guest</div>
@@ -342,6 +410,109 @@ export default function BookingDetail() {
           <button className="btn btn-secondary" onClick={addNote}>Add</button>
         </div>
       </div>
+      </>
+      )}
+
+      {tab === 'folio' && (
+        <div className="card mt-3">
+          <div className="flex-between mb-3">
+            <div className="card-title" style={{ marginBottom: 0 }}>Folio</div>
+            <button className="btn btn-secondary btn-sm" onClick={downloadInvoice} disabled={downloadingInvoice}>
+              {downloadingInvoice ? 'Preparing…' : '⬇ Download Invoice'}
+            </button>
+          </div>
+
+          {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
+            <>
+              <div style={{ marginBottom: 10 }}>
+                {folio.charges.map(c => (
+                  <div key={c.id} className="flex-between" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{c.description}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(c.unit_price)}
+                        {c.posted_by_name && ` · ${c.posted_by_name}`}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>
+                      <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c.id)}>🗑️</button>
+                    </div>
+                  </div>
+                ))}
+                {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0' }}>No charges posted yet.</div>}
+              </div>
+
+              {addingCharge ? (
+                <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Type</label>
+                      <select className="form-select" value={chargeForm.type} onChange={e => setChargeForm(f => ({ ...f, type: e.target.value }))}>
+                        {CHARGE_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ flex: 2 }}>
+                      <label className="form-label">Description</label>
+                      <input className="form-input" value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Quantity</label>
+                      <input className="form-input" type="number" value={chargeForm.quantity} onChange={e => setChargeForm(f => ({ ...f, quantity: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Unit Price</label>
+                      <input className="form-input" type="number" value={chargeForm.unit_price} onChange={e => setChargeForm(f => ({ ...f, unit_price: e.target.value }))} />
+                    </div>
+                  </div>
+                  {chargeError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{chargeError}</div>}
+                  <div className="flex gap-2">
+                    <button className="btn btn-primary btn-sm" onClick={addCharge}>Add Charge</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setAddingCharge(false); setChargeError(''); }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="btn btn-secondary btn-sm mb-3" onClick={() => setAddingCharge(true)}>+ Add Charge</button>
+              )}
+
+              <div className="divider" />
+              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
+              </div>
+              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                <span className="text-muted">Service Charge ({folio.service_charge_rate}%)</span><span>{fmtIDR(folio.service_charge_amount)}</span>
+              </div>
+              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                <span className="text-muted">Tax ({folio.tax_rate}%)</span><span>{fmtIDR(folio.tax_amount)}</span>
+              </div>
+              <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 10 }}>
+                <span>Total</span><span>{fmtIDR(folio.total)}</span>
+              </div>
+
+              {folio.payments.filter(p => p.status === 'received').length > 0 && (
+                <>
+                  <div className="card-title" style={{ fontSize: 13 }}>Payments Received</div>
+                  {folio.payments.filter(p => p.status === 'received').map(p => (
+                    <div key={p.id} className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                      <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type} · {p.method?.replace('_', ' ')}</span>
+                      <span>{fmtIDR(p.amount)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              <div className="flex-between mt-3" style={{ fontWeight: 700, fontSize: 16 }}>
+                <span>Balance Due</span>
+                <span style={{ color: parseFloat(folio.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
+                  {fmtIDR(folio.balance_due)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {transferring && (
         <div className="modal-backdrop">

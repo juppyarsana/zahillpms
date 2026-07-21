@@ -25,14 +25,26 @@ export function firstAllowedPath(user) {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [modules, setModules] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  async function fetchModules() {
+    try {
+      const { data } = await api.get('/api/settings/modules');
+      setModules(data);
+    } catch (_) {
+      // leave modules null — hasModule() defaults open while unavailable
+    }
+  }
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     const stored = localStorage.getItem('user');
     if (token && stored) {
-      setUser(JSON.parse(stored));
+      const parsedUser = JSON.parse(stored);
+      setUser(parsedUser);
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      if (!parsedUser.is_superadmin) fetchModules();
     }
     setLoading(false);
   }, []);
@@ -43,6 +55,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('user', JSON.stringify(data.user));
     api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
     setUser(data.user);
+    if (!data.user.is_superadmin) fetchModules();
     return data.user;
   }
 
@@ -51,6 +64,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user');
     delete api.defaults.headers.common['Authorization'];
     setUser(null);
+    setModules(null);
   }
 
   // Owner always has full access; others check allowed_menus from login response
@@ -60,8 +74,13 @@ export function AuthProvider({ children }) {
     return Array.isArray(user.allowed_menus) && user.allowed_menus.includes(menuKey);
   }
 
+  function hasModule(moduleName) {
+    if (!modules) return true;
+    return modules[moduleName]?.is_enabled === true;
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, can, firstAllowedPath }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, can, modules, hasModule, firstAllowedPath }}>
       {children}
     </AuthContext.Provider>
   );

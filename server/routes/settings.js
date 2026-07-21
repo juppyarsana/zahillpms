@@ -39,6 +39,58 @@ router.get('/display-token', ownerOnly, async (req, res) => {
   }
 });
 
+// ── Property Details & Tax Config ────────────────────────────────────────────
+
+const PROPERTY_FIELDS = `tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
+        smtp_host, smtp_port, smtp_user, smtp_password, smtp_from`;
+
+router.get('/property', ownerOnly, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT ${PROPERTY_FIELDS} FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/property', ownerOnly, async (req, res) => {
+  const {
+    tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
+    smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
+  } = req.body;
+  try {
+    const { rows } = await db.query(
+      `UPDATE property_settings SET
+        tax_rate            = COALESCE($1, tax_rate),
+        service_charge_rate = COALESCE($2, service_charge_rate),
+        property_name       = COALESCE($3, property_name),
+        property_address    = COALESCE($4, property_address),
+        property_phone      = COALESCE($5, property_phone),
+        property_email      = COALESCE($6, property_email),
+        smtp_host           = COALESCE($7, smtp_host),
+        smtp_port           = COALESCE($8, smtp_port),
+        smtp_user           = COALESCE($9, smtp_user),
+        smtp_password       = COALESCE($10, smtp_password),
+        smtp_from           = COALESCE($11, smtp_from)
+       WHERE property_id = $12
+       RETURNING ${PROPERTY_FIELDS}`,
+      [
+        tax_rate ?? null, service_charge_rate ?? null, property_name ?? null, property_address ?? null, property_phone ?? null, property_email ?? null,
+        smtp_host ?? null, smtp_port ?? null, smtp_user ?? null, smtp_password ?? null, smtp_from ?? null,
+        req.propertyId,
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Booking Sources ──────────────────────────────────────────────────────────
 
 router.get('/booking-sources', auth, async (req, res) => {

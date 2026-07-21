@@ -15,7 +15,7 @@ export default function Login() {
     setLoading(true);
     try {
       const user = await login(form.email, form.password);
-      nav(firstAllowedPath(user));
+      nav(user.is_superadmin ? '/admin' : firstAllowedPath(user));
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

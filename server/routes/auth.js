@@ -35,6 +35,7 @@ router.post('/login', async (req, res) => {
     const userPayload = {
       id: user.id, name: user.name, email: user.email, role: user.role,
       allowed_menus: user.allowed_menus || [],
+      is_superadmin: user.is_superadmin || false,
     };
     res.json({ token, user: userPayload });
   } catch (err) {

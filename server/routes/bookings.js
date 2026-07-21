@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { sendBookingEmail } = require('../services/mailer');
 
 // GET /api/bookings
 router.get('/', auth, async (req, res) => {
@@ -273,6 +274,11 @@ router.post('/', auth, async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Fire and forget — don't await, don't fail the booking if email fails
+    sendBookingEmail(req.propertyId, booking.id, 'booking_confirmed')
+      .catch(err => console.error('Email trigger failed:', err));
+
     res.status(201).json(booking);
   } catch (err) {
     await client.query('ROLLBACK');

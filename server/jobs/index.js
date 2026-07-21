@@ -5,6 +5,7 @@ const {
   refreshSearchTrendsAllProperties,
   refreshAiSummaryAllProperties,
 } = require('./marketInsights');
+const { sendPreArrivalEmails, sendPostCheckoutEmails } = require('./communications');
 
 function registerJobs() {
   // Night audit — runs at 00:05 every night (after midnight, audits the just-completed day)
@@ -46,6 +47,26 @@ function registerJobs() {
   }, { timezone: 'Asia/Makassar' });
 
   console.log('[Jobs] Market insights scheduled — competitor ratings daily 06:00, search trends weekly Mon 06:30, AI summary weekly Mon 07:00 (WITA)');
+
+  // Pre-arrival email — daily at 10:00 WITA (bookings checking in tomorrow)
+  cron.schedule('0 10 * * *', async () => {
+    try {
+      await sendPreArrivalEmails();
+    } catch (err) {
+      console.error('[Jobs] Pre-arrival email cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  // Post-checkout email — daily at 11:00 WITA (bookings that checked out yesterday)
+  cron.schedule('0 11 * * *', async () => {
+    try {
+      await sendPostCheckoutEmails();
+    } catch (err) {
+      console.error('[Jobs] Post-checkout email cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Guest communication scheduled — pre-arrival daily 10:00, post-checkout daily 11:00 (WITA)');
 }
 
 module.exports = { registerJobs };
