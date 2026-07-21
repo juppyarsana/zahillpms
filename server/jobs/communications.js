@@ -29,7 +29,7 @@ async function findDueBookings(trigger, dateColumn, targetDate, extraFilter = ''
 
 async function sendPreArrivalEmails() {
   const tomorrow = getWitaDate(1);
-  const bookings = await findDueBookings('pre_arrival', 'check_in_date', tomorrow);
+  const bookings = await findDueBookings('pre_arrival', 'check_in_date', tomorrow, `AND b.status NOT IN ('cancelled', 'no_show')`);
   let sent = 0;
   for (const b of bookings) {
     try {
