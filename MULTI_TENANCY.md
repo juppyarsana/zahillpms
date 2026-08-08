@@ -20,7 +20,8 @@
 - Superadmin seed's bcrypt hash didn't actually match `superadmin123` — regenerated.
 
 ### Known gaps / not yet done (next steps)
-- **No frontend yet** for any of this — `routes/admin.js` is API-only, no superadmin UI; the client doesn't yet call `GET /api/settings/modules` to hide/show nav items.
+- **Update (traced 2026-08-08):** a superadmin UI now exists — `client/src/pages/admin/` (`Properties.jsx`, `PropertyDetail.jsx`), routed at `/admin`. It covers property list/create, property info edit, and module toggles — all wired to their matching `routes/admin.js` endpoints. See `CLAUDE.md`'s Multi-Tenancy section for the full trace.
+- **Closed (this session):** per-property staff user creation is now self-serve — added a "Staff Users" card to `PropertyDetail.jsx` (list + create, wired to the existing `GET/POST /api/admin/properties/:id/users`) plus a new `GET /api/admin/properties/:id/roles` endpoint so the create-user modal can populate a role dropdown. No edit/deactivate yet — that would need new `PATCH`/`DELETE` endpoints on `routes/admin.js` plus matching UI.
 - **Login doesn't resolve property by subdomain/tenant first** — `POST /api/auth/login` looks up a user by email alone (now globally unique per migration 023, so this is safe, just not subdomain-aware yet). Fine for now; worth revisiting once there are real multiple properties with real staff overlap.
 - `booking_sources`/`payment_methods`/`roles` still use raw string IDs as their identity (namespaced per property) rather than a surrogate key — works, but is a slightly unusual shape if it ever needs a proper FK from another table.
 

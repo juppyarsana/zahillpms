@@ -1,32 +1,34 @@
-# Zahill PMS — Claude Code Context
+# ZHP PMS — Claude Code Context
 
-> Read this file before starting any work. It defines naming conventions, architecture decisions, and current project state agreed upon by the owner.
->
-> **This is a fork of Birdnest PMS**, adapted for Zahill. The original project remains available as the `upstream` git remote — fetch/cherry-pick shared bug fixes or improvements from there when useful (`git fetch upstream`).
+> Read this file before starting any work. It defines naming conventions, architecture decisions, and current project state. **Keep it updated** — see "Working Across Multiple Machines" at the bottom. This file is the single source of truth that travels with the repo between the laptop and the PC; if it's stale, the next session starts blind.
 
 ---
 
-## Project Overview
+## What this is
 
-A Property Management System for **Zahill** <!-- TODO: fill in property type, unit count, and location, e.g. "a 12-room boutique hotel in Ubud, Bali" -->. Built as a monorepo with React/Vite frontend and Node/Express backend. See `PLANNING.md` for full feature specs and database schema.
+**ZHP PMS** (working platform name — originally built as "Zahill PMS" for a single property, now a **multi-tenant Property Management System platform** intended to be sold/hosted for multiple hotel/glamping clients from one shared codebase and database). Zahill is the first, reference property running on the platform; "Birdnest" is a second property used to build and verify multi-tenancy end-to-end. Both run on the same infrastructure, fully data-isolated from each other.
 
-**Owner:** <!-- TODO: owner name and contact email --><br>
-**Live domain:** `pms.d-zahill.kdai.cloud` <!-- TODO: confirm actual subdomain scheme --><br>
-**Server:** <!-- TODO: hosting details (cloud VM provider, OS, address) -->
+Built as a monorepo with React/Vite frontend(s) and a Node/Express backend shared by every property.
+
+**Owner:** Juppy (juppyjp@gmail.com)
+<!-- TODO: hosting details (cloud VM provider, address), production domain scheme for new client onboarding (e.g. {slug}.pms.yourplatform.com vs custom domains) -->
 
 ---
 
 ## Monorepo Structure
 
 ```
-Zahill PMS/            ← this repo (PMS + Room Display)
-├── client/            ← PMS frontend (React/Vite PWA)
-├── server/            ← Shared backend (Node/Express)
-├── room-display/      ← Room Display PWA
-├── PLANNING.md
-└── CLAUDE.md          ← this file
-
-<!-- TODO: if using Room Controller / IoT hardware, note the separate firmware repo here -->
+ZHP PMS/
+├── client/              ← PMS frontend (React/Vite PWA) — property staff + superadmin
+│   └── src/pages/admin/ ← Superadmin-only pages (Properties list, PropertyDetail)
+├── server/              ← Shared backend (Node/Express), serves ALL properties
+├── room-display/        ← Room Display PWA (per-room tablet)
+├── tv-display/           ← TV Welcome Display (React/Vite page loaded by the screensaver APK)
+├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView
+├── PLANNING.md          ← original single-property feature/schema spec (historical reference)
+├── ROADMAP.md           ← current feature roadmap, phase status, module registry
+├── MULTI_TENANCY.md     ← how/why multi-tenancy was built, migration-by-migration detail
+└── CLAUDE.md            ← this file
 ```
 
 ---
@@ -37,10 +39,85 @@ These names are final. Do not use alternatives.
 
 | Correct Name | Do NOT call it |
 |---|---|
+| **Property** | client, tenant, account (when referring to a hotel/glamping site on the platform) |
+| **Superadmin** | platform admin, root user |
 | **Room Controller** | ESP32 controller, IoT device, smart device |
 | **Room Display** | IoT panel, tablet app, room tablet, control panel |
-| **Zahill PMS** | admin panel, dashboard app |
 | **relay** | light, device, switch (in code/API) |
+| **module** | feature flag, plugin (when referring to `property_modules` entries) |
+
+Note: "Zahill PMS" as a product name is being superseded by the platform now serving multiple properties — `ROADMAP.md` already refers to it as "ZHP PMS." Not yet fully renamed across the codebase (package names, page titles); treat as in-progress.
+
+---
+
+## Multi-Tenancy & Platform Architecture
+
+**This is the core architectural fact about this codebase: it is not single-tenant.** Every property's data lives in the same database, isolated by `property_id`. This was built and verified in migrations **019–026** against a live second property (Birdnest) — full detail in `MULTI_TENANCY.md`.
+
+### How isolation works
+- Every business table has a `property_id` column (added in `019_multi_tenancy.sql`).
+- Every authenticated route reads `req.propertyId` (set by `middleware/auth.js` from the JWT — see below) and every query is scoped `WHERE property_id = $n`.
+- The JWT issued at login (`routes/auth.js`) embeds `propertyId` alongside `userId`/`role`. `middleware/auth.js` decodes it and sets `req.propertyId` on every request.
+- Formerly-singleton tables (`property_settings`, `ai_market_summary` — used to be `WHERE id = 1`) are now one row per property, scoped by `property_id` with a unique constraint instead of a hardcoded PK.
+- Tables with human-readable string IDs that used to be globally unique (`booking_sources`, `payment_methods`, `roles`) are now namespaced per property (`<id>-<property_uuid>`) so two properties can both have a role called `manager` without colliding. `users.role`, `bookings.source`, `payments.method` were widened to `varchar(50)` in migration `026` to fit these namespaced values.
+
+### Module system (per-property feature flags)
+Not every property needs every feature (e.g. a property with no ESP32 hardware shouldn't see Room Controller). `server/modules.js` maps each module to the route files it gates:
+
+| Module | Routes gated | Default |
+|---|---|---|
+| `reservations` | bookings, checkin, allotments, pricing | ✅ on |
+| `front_desk` | checkin | ✅ on |
+| `guest_crm` | guests, loyalty | ✅ on |
+| `financial` | payments, reports, nightAudit, folio | ✅ on |
+| `operations` | tasks | ✅ on |
+| `sales` | products, sales | ✅ on |
+| `in_room_media` | board, display | ✅ on |
+| `room_controller` | iot, calls | ❌ off by default (hardware-dependent) |
+| `insights` | insights | ✅ on |
+
+Always-on, ungated: `auth`, `dashboard`, `settings`, `units`, `users`, `communications`.
+
+Enforcement: `server/index.js` wires `moduleGuard('<module>')` into each route mount (after `auth`, so `req.propertyId` is already set). A disabled module returns `403 {"error": "Module not enabled for this property"}`. `property_modules` (property_id, module, is_enabled) is the backing table. `GET /api/settings/modules` (owner-only) is what the frontend nav should call to hide/show sections — confirm the client actually wires this before assuming nav visibility is automatic.
+
+### Superadmin & property onboarding
+A superadmin is a platform-level operator, not tied to any one property (`users.is_superadmin = true`, `property_id` nullable for them). Distinct auth layer: `middleware/authSuperAdmin.js`, mounted at `/api/admin` in `server/index.js`, ahead of and separate from the per-property `auth` + `moduleGuard` chain.
+
+`routes/admin.js` endpoints:
+- `GET /api/admin/properties` — list all properties + module counts
+- `POST /api/admin/properties` — create a property (`name`, `slug`, `plan`, `display_token`), then calls `seedPropertyDefaults(property.id)` to clone default settings/modules/booking-sources/payment-methods/roles in one shot
+- `GET /api/admin/properties/:id` — property detail + its module states
+- `PATCH /api/admin/properties/:id` — update name/slug/plan/is_active
+- `PATCH /api/admin/properties/:id/modules` — toggle a module on/off
+- `GET /api/admin/properties/:id/users` / `POST /api/admin/properties/:id/users` — manage a property's staff accounts
+
+**Frontend — traced button-by-button against the API above (verified, not assumed):**
+
+`client/src/pages/admin/` (`AdminLayout.jsx`, `Properties.jsx`, `PropertyDetail.jsx`), routed in `App.jsx` at `/admin` and `/admin/properties/:id`, gated by `RequireSuperAdmin` (checks `user.is_superadmin`, redirects to `/login` or `/` otherwise). `Login.jsx` sends a superadmin straight to `/admin` after auth; `AuthContext.jsx` skips the per-property `fetchModules()` call for superadmins since they have no `property_id`.
+
+| UI action | Wired to |
+|---|---|
+| `Properties.jsx` page load | `GET /api/admin/properties` — list + module count |
+| "+ New Property" → modal → "Create Property" | `POST /api/admin/properties` (auto-generates `display_token` client-side via `crypto.randomUUID`) |
+| "Manage" button on a property row | navigates to `/admin/properties/:id` |
+| `PropertyDetail.jsx` page load | `GET /api/admin/properties/:id` — property info + modules |
+| "Save Changes" (name/slug/plan/active) | `PATCH /api/admin/properties/:id` |
+| Module On/Off toggle buttons | `PATCH /api/admin/properties/:id/modules` (optimistic UI update, rolls back on error) |
+| `PropertyDetail.jsx` "Staff Users" card | `GET /api/admin/properties/:id/users` (list), `GET /api/admin/properties/:id/roles` (populates the role dropdown) |
+| "+ Add User" → modal → "Create User" | `POST /api/admin/properties/:id/users` (validates the role belongs to that property server-side) |
+
+**Closed gap (was open until this session):** the superadmin UI previously had no way to create a property's first staff login — `routes/admin.js` had the `users` endpoints but nothing called them. Added a "Staff Users" card to `PropertyDetail.jsx` plus a new `GET /api/admin/properties/:id/roles` endpoint (list-only, so the create-user modal can populate a role dropdown). Onboarding a new property is now fully self-serve from the superadmin UI: create property → toggle modules → add first staff user, no API tooling required.
+
+**Known limitation:** the Staff Users card is list + create only — no edit or deactivate/delete from the UI yet (matches what `routes/admin.js` exposes; there's no `PATCH`/`DELETE` on `/properties/:id/users/:userId`). Add those endpoints + UI controls if you need to reset a password or remove a departing staff member without going to the DB directly.
+
+**Credentials to know about (seeded placeholders — change before production):**
+- Superadmin: `admin@platform.com` / `superadmin123`
+- Demo second property "Birdnest" (slug `birdnest`): owner login `owner@birdnest.com` / `testpass123` — kept as a live reference for multi-tenancy verification; harmless to keep, fully isolated from Zahill's data, or delete if no longer needed.
+
+### Known gaps (from MULTI_TENANCY.md, still open as of last check)
+- **Login doesn't resolve by subdomain/tenant** — `POST /api/auth/login` looks up a user by email alone (globally unique since migration `023`). Fine while staff don't overlap across properties; revisit once there's real overlap or you want `{slug}.pms...` login pages.
+- `booking_sources` / `payment_methods` / `roles` use namespaced raw strings as their identity rather than a surrogate key — works, but awkward if another table ever needs a clean FK to them.
+- No environment-level docs yet for a full "spin up client #3" runbook beyond `POST /api/admin/properties` — worth writing once you actually onboard a paying second/third client.
 
 ---
 
@@ -48,37 +125,31 @@ These names are final. Do not use alternatives.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      Cloud VM                           │
-│  ┌─────────────┐   ┌──────────────┐   ┌─────────────┐  │
-│  │  Mosquitto  │◄──│   Backend    │──►│  PostgreSQL │  │
-│  │MQTT Broker  │   │ Node/Express │   │     DB      │  │
-│  │port 1883    │   │  port 4000   │   │             │  │
-│  └──────┬──────┘   └──────┬───────┘   └─────────────┘  │
-└─────────┼─────────────────┼───────────────────────────-─┘
-          │ MQTT             │ REST / WebSocket
-          │                 ├─────────────────────────────►
+│                      Cloud VM                            │
+│  ┌─────────────┐   ┌──────────────┐   ┌──────────────┐  │
+│  │  Mosquitto  │◄──│   Backend    │──►│  PostgreSQL  │  │
+│  │MQTT Broker  │   │ Node/Express │   │  (all        │  │
+│  │port 1883    │   │  port 4000   │   │  properties) │  │
+│  └──────┬──────┘   └──────┬───────┘   └──────────────┘  │
+└─────────┼─────────────────┼────────────────────────────-─┘
+          │ MQTT             │ REST
    ┌──────▼──────┐   ┌──────▼────────┐   ┌──────────────┐
-   │    ESP32    │   │  Zahill PMS   │   │ Room Display │
-   │Room Control-│   │  client/      │   │room-display/ │
-   │    ler      │   │pms.d-zahill.  │   │display.d-    │
-   │  per room   │   │  kdai.cloud   │   │zahill...     │
+   │    ESP32    │   │  PMS client/  │   │ Room Display │
+   │Room Control-│   │ (per-property │   │ + TV Display │
+   │    ler      │   │  login, JWT   │   │ (per-property│
+   │  per room   │   │  scoped data) │   │ display_token)│
    └─────────────┘   └───────────────┘   └──────────────┘
 ```
 
-- **Room Controller** — ESP32 in each room (if hardware is used at this property). Controls generic relays, RGB LED, IR blaster (for AC).
-- **Room Display** — PWA mounted in each room. Shows guest details when occupied and allows basic room control. Lives at `display.d-zahill.kdai.cloud` <!-- TODO: confirm subdomain -->.
-- **Backend** — Shared by both PMS and Room Display. Bridges MQTT ↔ database ↔ frontend.
-- **Mosquitto** — MQTT broker on the same VM. Address: `mqtt.d-zahill.kdai.cloud:1883` <!-- TODO: set up broker, confirm address -->.
+One backend, one database, many properties. The client app, Room Display, and TV Display are the same codebase deployed once — property identity comes from the logged-in user's JWT (staff apps) or the per-property `display_token` (guest-facing displays), not from separate deployments.
 
 ---
 
 ## MQTT Setup
 
-<!-- TODO: this needs its own broker instance and credentials — do NOT reuse Birdnest's mqtt.birdnestay.id broker or topic namespace, to avoid any risk of cross-property command collisions. -->
-
-- Broker: `mqtt.d-zahill.kdai.cloud` port `1883`
+- Broker: `mqtt.d-zahill.kdai.cloud` port `1883` (Zahill's own broker — each property should get its own broker/credentials; do not share across properties, to avoid cross-property command collisions)
 - WebSockets: port `9001`
-- Auth: username `zahill`, password configured
+- Auth: username `zahill`, password configured per `server/.env`
 - DNS: `mqtt.d-zahill.kdai.cloud` A record → VM IP
 
 ### Topic Structure
@@ -95,33 +166,29 @@ These names are final. Do not use alternatives.
 - `zahill/room/{id}/status` — full JSON snapshot
 - `zahill/room/{id}/connected` — `true`/`false` LWT (retained)
 
+<!-- TODO: topic namespace is currently "zahill/..." hardcoded — when a second property with real Room Controller hardware comes online, this needs a per-property namespace (e.g. "{property_slug}/room/{id}/...") so MQTT topics don't collide across properties on a shared broker. -->
+
 ---
 
 ## Backend — Current State
 
 **Stack:** Node.js + Express (CommonJS), PostgreSQL (raw SQL), JWT auth, PM2 + Nginx
 **Port:** 4000 behind Nginx
-**Entry:** `server/index.js`
+**Entry:** `server/index.js` — also where module gating is wired (see Multi-Tenancy section above)
 
-**Completed routes:**
-- `/api/auth` — login/logout
-- `/api/units` — glamping unit CRUD
-- `/api/guests` — guest profiles
-- `/api/bookings` — reservations
-- `/api/payments` — deposit/balance tracking
-- `/api/checkin` — check-in/out flow
-- `/api/allotments` — OTA channel allotment
-- `/api/tasks` — operations kanban
-- `/api/loyalty` — loyalty tiers
-- `/api/products` — ancillary product catalog
-- `/api/sales` — ancillary sales
-- `/api/dashboard` — owner dashboard summary
-- `/api/reports` — revenue reports
-- `/api/pricing` — dynamic pricing periods
-- `/api/users` — user management
-- `/api/settings` — property settings
-- `/api/iot` — Room Controller device states and commands
-- `/api/insights` — Market Insights: competitor ratings, search trends, holidays, AI weekly briefing (see Market Insights section below)
+**Route files** (`server/routes/`):
+- `auth` — login/logout (always on)
+- `admin` — superadmin: property CRUD, module toggles, per-property user management (separate `authSuperAdmin` layer)
+- `units`, `users`, `settings`, `dashboard`, `display` — core, always on
+- `bookings`, `checkin`, `allotments`, `pricing` — reservations + front desk
+- `guests`, `loyalty` — guest CRM
+- `payments`, `reports`, `nightAudit`, `folio` — financial
+- `tasks` — operations kanban
+- `products`, `sales` — ancillary sales
+- `board` — Guest Board CMS (In-Room Media)
+- `iot`, `calls` — Room Controller (MQTT-backed device state, room-to-desk calls)
+- `insights` — Market Insights (competitors, trends, AI briefing)
+- `communications` — guest email (owner-only)
 
 **IoT database tables (migration 006):**
 - `units.controller_id` — links a PMS unit to its ESP32 Room ID (e.g. `"1"`)
@@ -130,11 +197,56 @@ These names are final. Do not use alternatives.
 
 **MQTT client:** `server/mqtt/index.js` — connects to Mosquitto, subscribes to all room topics, updates DB on incoming messages.
 
+**Migrations** (`server/db/migrations/`, run via `npm run migrate` → `server/db/migrate.js`):
+
+| # | What |
+|---|---|
+| 001 | Initial schema |
+| 002 | Pricing periods |
+| 003–004 | Deposit amount / paid status |
+| 005 | Dynamic sources & methods |
+| 006 | IoT devices |
+| 007 | Relay config |
+| 008–009 | Roles |
+| 010 | Guest board |
+| 011–012 | Night audit |
+| 013 | Booking discount |
+| 014 | Market insights |
+| 015 | Property location |
+| 016 | Competitor extras |
+| 017 | AI market summary |
+| 018 | Calls |
+| **019–021** | **Core multi-tenancy** — property_id everywhere, route scoping, per-property display_token |
+| **022** | **Property module system** |
+| **023–026** | **Superadmin + onboarding** — auth, admin routes, seedPropertyDefaults, singleton-table fixes, column widening |
+| 027 | Fix namespaced role/source/method IDs |
+| 028 | Folio charges |
+| 029 | Tax config |
+| 030 | Guest communication (email templates) |
+| 031 | SMTP config (per-property) |
+
+**Next migration number: 032** (keep `ROADMAP.md` in sync when you add one).
+
+---
+
+## Frontend — Current State
+
+**Stack:** React 18 + Vite 5 + PWA (vite-plugin-pwa)
+**Location:** `client/`
+
+Key pages (`client/src/pages/`): `Dashboard`, `Reservations`, `NewBooking`, `BookingDetail`, `CheckIn`, `QuickCheckIn`, `Guests`, `GuestProfile`, `Loyalty`, `Allotment`, `Pricing`, `Sales`, `Operations`, `NightAudit`, `Users`, `Settings`, `SettingsRoles`, `SettingsBoardCards`, `SettingsRoomControllers`, `UnitSettings`, `Login`.
+
+Superadmin pages (`client/src/pages/admin/`): `AdminLayout`, `Properties`, `PropertyDetail`.
+
+**Reservations calendar** (`Reservations.jsx`) shows each available night's effective rate (base rate, overridden by the highest-priority active pricing period) directly in the calendar cells, via `GET /api/pricing/calendar?month=&year=`.
+
+**Folio** — running charge ledger per booking (room charges, F&B, sales, activities), settled at checkout. Tab on `BookingDetail.jsx`. Backed by `routes/folio.js` / migration `028`.
+
+**Guest Communication** — email templates editor in Settings, per-property SMTP config (falls back to platform-default SMTP env vars if a property hasn't configured its own). Backed by `routes/communications.js` / migrations `030`–`031`.
+
 ---
 
 ## In-Room Display Hardware
-
-<!-- TODO: confirm whether Zahill uses the same Room Display / TV Display hardware as Birdnest (Samsung Galaxy Tab A9 + Xiaomi Android TV), or different devices. -->
 
 Each unit can have **two displays** with distinct, complementary roles:
 
@@ -142,114 +254,90 @@ Each unit can have **two displays** with distinct, complementary roles:
 **Primary purpose:** Device control — relay toggles, RGB LED, AC via IR blaster
 **Secondary:** Shows guest name and stay dates at a glance
 
-- Calls `GET /api/display/room/:roomId/state` (via `authDisplay` middleware)
+- Calls `GET /api/display/room/:roomId/state` (via `authDisplay` middleware, per-property `display_token` — not a staff JWT)
 - Three screens: `SetupScreen` (first-time config), `IdleScreen` (vacant), `GuestScreen` (occupied)
-- Room ID and display token stored in localStorage
+- Room ID and display token stored in localStorage on the device
 - Debug menu triggered by 5 rapid taps
-- Stack: React/Vite PWA, served from `display.d-zahill.kdai.cloud` <!-- TODO -->
+- Stack: React/Vite PWA (`room-display/`)
 
 ### 2. TV Welcome Display
-**Only purpose:** Welcome guests and show their stay details when TV is idle
-**No device controls** — this is purely a guest-facing ambient display
+**Only purpose:** Welcome guests and show their stay details when TV is idle. No device controls — purely guest-facing ambient display.
 
-**Key decisions (inherited from Birdnest — re-confirm for Zahill):**
-- Guests also use this TV for regular entertainment (Netflix, YouTube, etc.)
-- Built as an **Android TV screensaver (DreamService APK)** that wraps a WebView
-- Screensaver launches after TV is idle; pressing any remote button exits back to normal TV
-- APK is sideloaded onto each TV (no Play Store required)
-- Room ID configured once during installation (stored in app SharedPreferences)
-- The WebView loads a dedicated page from `tv-display/` in this monorepo
-- UI: landscape only, large text, beautiful/branded — Zahill aesthetic, guest-facing
-- No touch interaction — passive display only
-- Calls the **same backend endpoint** as the Room Display: `GET /api/display/room/:roomId/state`
+- Android TV screensaver (DreamService APK, `tv-screensaver/`, package `com.zahill.tvscreensaver`) wraps a fullscreen WebView loading `tv-display/`
+- Screensaver launches after TV idle; any remote button press exits back to normal TV
+- APK sideloaded per TV (no Play Store); Room ID configured once at install (SharedPreferences)
+- Landscape only, large text, no touch interaction
+- Calls the same `GET /api/display/room/:roomId/state` endpoint as Room Display
   - Returns: `unit.name`, `booking.guest_name`, `booking.check_in_date`, `booking.check_out_date`, `booking.num_guests`
-  - Returns `booking: null` when room is vacant → show a branded idle screen
-
-**Two parts to build/adapt:**
-1. `tv-display/` — simple React/Vite app (or plain HTML) served at `tv.d-zahill.kdai.cloud` <!-- TODO -->. Landscape-only, no controls, large beautiful UI. Two states: occupied (show guest welcome) and vacant (show Zahill branding).
-2. `tv-screensaver/` — Kotlin Android TV app (DreamService). Opens `tv.d-zahill.kdai.cloud?room={roomId}` in a fullscreen WebView. Android package is `com.zahill.tvscreensaver`.
-
-**Stack:** Kotlin DreamService APK + React/Vite page served from subdomain
-
----
-
-## PMS Frontend — Current State
-
-**Stack:** React 18 + Vite 5 + PWA (vite-plugin-pwa)
-**Location:** `client/`
-**Live at:** `pms.d-zahill.kdai.cloud` <!-- TODO -->
-
-The IoT section in the PMS Settings page shows room controller status (online/offline, relay states, RGB) — only relevant if this property uses Room Controllers.
-
-**Reservations calendar** (`client/src/pages/Reservations.jsx`) shows each available night's effective rate (base rate, overridden by the highest-priority active pricing period) directly in the calendar cells, fetched from `GET /api/pricing/calendar?month=&year=`.
+  - Returns `booking: null` when vacant → branded idle screen
 
 ---
 
 ## Market Insights (Dashboard)
 
-Three cards on the Owner Dashboard, backed by `server/routes/insights.js`, `server/jobs/marketInsights.js`, and scheduled jobs in `server/jobs/index.js`. All external API calls degrade gracefully (skip + log) when their key isn't set — nothing crashes without them.
+Three cards on the Owner Dashboard, backed by `server/routes/insights.js`, `server/jobs/marketInsights.js`, `server/jobs/index.js`. All external API calls degrade gracefully (skip + log) when their key isn't set.
 
-**Competitor Ratings** — manually curated, not auto-discovered. Owner types a competitor name into the dashboard card; the backend resolves it via Google Places Text Search (`server/services/googlePlaces.js`) and starts tracking its rating/review count/price level. Add: `POST /api/insights/competitors {name}`. Remove (soft delete, keeps history): `DELETE /api/insights/competitors/:id`. Daily refresh at **06:00** just re-checks whatever's currently active — it does not discover or replace entries.
-- Table: `competitors` (id, name, place_id, matched_address, is_self, is_active) + `competitor_snapshots` (rating, review_count, price_level per check).
-- **TODO:** the self-benchmark row (`is_self = true`) is currently unset for Zahill — resolve Zahill's own Google Places listing and seed it (see migration `016_competitor_extras.sql`, which currently still has Birdnest's place ID commented context — replace with Zahill's).
+- **Competitor Ratings** — manually curated. Owner types a competitor name; backend resolves via Google Places Text Search (`services/googlePlaces.js`), tracks rating/review count/price level. `POST /api/insights/competitors`, `DELETE /api/insights/competitors/:id` (soft delete). Daily refresh at 06:00 (per property, once jobs are scoped — confirm `marketInsights.js` loops over active properties rather than assuming a single one, per the multi-tenancy migration guide).
+- **Search Interest** — Google Trends (unofficial library). Tracked terms in `TREND_TERMS` — confirm these are Zahill-relevant (glamping/Bali terms), not leftover from Birdnest.
+- **AI Weekly Briefing** — Claude API (`services/claude.js`), structured JSON output. Monday refresh. Confirm the property-description prompt is Zahill's, not Birdnest's.
+- **Holidays** — `holidays` table, Indonesian national + Balinese Hindu observances. Region-specific — a non-Bali property would need different seeding.
 
-**Search Interest** — Google Trends (unofficial library, no official API exists). **TODO:** the tracked search terms in `server/jobs/marketInsights.js` (`TREND_TERMS`) are still Birdnest's ("kintamani glamping", "bali glamping") — update to terms relevant to Zahill's market.
-
-**AI Weekly Briefing** — Claude API (`claude-opus-4-8`, `server/services/claude.js`) reads the current competitor/trends/holidays data and returns a structured JSON briefing (headline + labeled highlights, via `output_config.format`) rather than free prose. **TODO:** the prompt in `claude.js` still describes "Birdnest Glamping Kintamani" — update the property description. Weekly refresh, **Monday** (after trends). Table: `ai_market_summary` (singleton row, `summary` stored as JSON text).
-
-**Holidays** — `holidays` table seeded with Indonesian national + Balinese Hindu observances (Nyepi, Galungan, Kuningan). **TODO:** confirm these are relevant to Zahill's location — if outside Bali, this table needs different regional holidays.
-
-**Property location**: `property_settings.latitude`/`longitude` (migration 015) — **TODO:** currently still seeded with Birdnest's coordinates; update to Zahill's actual location.
-
-Manual refresh triggers (owner only, useful right after a fresh deploy before the cron has fired): `POST /api/insights/competitors/refresh`, `/api/insights/trends/refresh`, `/api/insights/summary/refresh`.
+Manual refresh triggers (owner only): `POST /api/insights/competitors/refresh`, `/api/insights/trends/refresh`, `/api/insights/summary/refresh`.
 
 ---
 
 ## Environment Variables
 
-Add these to `server/.env` — **all values below must be Zahill's own, never shared with Birdnest's**:
-```
-MQTT_BROKER=mqtt://mqtt.d-zahill.kdai.cloud
-MQTT_PORT=1883
-MQTT_USERNAME=zahill
-MQTT_PASSWORD=<password>
-```
-
-Add these for Market Insights:
-```
-GOOGLE_PLACES_API_KEY=<key>        # console.cloud.google.com — legacy Places API enabled + billing active
-ANTHROPIC_API_KEY=<key>            # console.anthropic.com
-```
-
-Recommended: use separate Google Cloud / Anthropic accounts (or at least separate API keys) from Birdnest's, so usage and billing don't mix between properties.
+See `server/.env.example` for the full current list (kept up to date — check there first, not here, since env vars change often). Categories: server/DB core, JWT, CORS origins (`CLIENT_URL`/`DISPLAY_URL`/`TV_URL`, comma-separated for multi-origin dev), Room Display/TV `DISPLAY_TOKEN`, MQTT, Market Insights (`GOOGLE_PLACES_API_KEY`, `ANTHROPIC_API_KEY`), weather, and platform-default SMTP (`PLATFORM_SMTP_*`, used when a property hasn't set its own).
 
 ---
 
 ## Important Conventions
 
-- **Relays are generic** — all relays are `relay_1` through `relay_N` in firmware and database. Human-readable labels (e.g. "Main Light", "AC") are stored in the `unit_relays` table and shown in the PMS UI. Never hardcode relay purposes in firmware.
-- **Room IDs** — ESP32 uses simple string IDs. These map to `units.controller_id` in the database.
-- **No localStorage in PWA artifacts** — use React state or backend for persistence.
-- **CommonJS in server** — `server/` uses `require()` not `import`. Do not convert to ESM.
-- **Migrations** — new DB changes go in `server/db/migrations/` as numbered SQL files (next is `018_...`).
+- **Every new table needs `property_id`** (unless it's genuinely platform-global, like `properties` itself or superadmin-only tables) — and every route touching it needs `WHERE property_id = $n` on every SELECT/INSERT/UPDATE/DELETE. This is the single easiest thing to forget when adding a feature; it's the difference between multi-tenant and a data leak between clients.
+- **Relays are generic** — `relay_1`...`relay_N` in firmware/DB. Human-readable labels live in `unit_relays`. Never hardcode relay purposes in firmware.
+- **Room IDs** — ESP32 uses simple string IDs, mapped via `units.controller_id`.
+- **No localStorage in PWA artifacts** — use React state or backend for persistence (exception: Room Display's own device-local room ID/token, which is intentionally local to that physical tablet).
+- **CommonJS in server** — `require()`, not `import`. Do not convert to ESM.
+- **Migrations** — numbered SQL files in `server/db/migrations/`, next is `032`. Update the "Next migration number" line in `ROADMAP.md` when you add one.
+- **New features that touch routes must consider**: does this need a new module in `server/modules.js`? Does it need `property_id` scoping? Should the migration number and this file's migration table both be updated in the same commit?
 
 ---
 
-## Setup Checklist (Fork-Specific TODOs)
+## Open Decisions (not yet final — context for whoever picks this up next)
 
-This repo was forked from Birdnest PMS. Before going live for Zahill, work through:
+- **Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner (clean trademark/domain check, though `nestly.com` itself is squatted — would need `.io`/`getnestly.com`/similar). Guesthive and Havenstay were also clear on a conflict check. Not yet decided — don't rename anything in code/docs until it's locked in.
+- **WhatsApp messaging (Phase B item 5):** decided against Fonnte (unofficial WhatsApp Web gateway) due to real ban risk for a product resold to paying clients. Leaning toward **api.co.id** — an Indonesian Meta Tech Provider offering the official WhatsApp Cloud API at low cost with no per-message markup. Architecture direction: **one WhatsApp number/WABA per property** (not one shared platform-wide number), managed under the platform's own Meta Business Portfolio via the Tech Provider / Embedded Signup model — this keeps messages branded as the property (guests see "Zahill," not the platform name) while sparing each client the full manual Meta Business Verification (they can start immediately at the unverified 250-conversations/day tier). Not yet implemented — no `whatsapp` module, no migration, no route file exist yet. See chat history for the full reasoning if picking this up cold.
 
-- [ ] Fill in property details above (owner, unit count, location, hosting)
-- [ ] Set up Zahill's own MQTT broker (do not share Birdnest's)
-- [ ] Set up Zahill's own PostgreSQL database
-- [ ] Generate fresh secrets (`JWT_SECRET`, `DISPLAY_TOKEN`) — never reuse Birdnest's
-- [ ] Get separate `GOOGLE_PLACES_API_KEY` / `ANTHROPIC_API_KEY` (or at least separate keys within existing accounts)
-- [ ] Update `server/jobs/marketInsights.js` `TREND_TERMS` for Zahill's market
-- [ ] Update `server/services/claude.js` prompt's property description
-- [ ] Update `property_settings` coordinates (migration or via Settings UI once built)
-- [ ] Resolve and seed Zahill's own self-benchmark competitor row
-- [ ] Set up DNS/subdomains for Zahill's actual domain
-- [ ] Replace seeded demo units in `server/db/migrations/001_initial.sql` ("Nest 1"–"Nest 5") with Zahill's actual room/unit list and count
-- [ ] Replace logo/icon assets (`client/public/logo.png`, PWA icons, `room-display` icon) — still Birdnest's branding
-- [ ] `client/src/pages/Dashboard.jsx` — hardcoded `"Kintamani, Bali"` subtitle text needs updating to Zahill's actual location
-- [ ] Review `PLANNING.md` — original Birdnest phase plan, adapt as needed for Zahill's requirements
+---
+
+## Roadmap Status (summary — full detail in ROADMAP.md)
+
+- ✅ Foundation complete (migrations 001–026): core PMS, operations, sales, loyalty, market insights, in-room media, Room Controller/IoT, multi-tenancy, module system, superadmin.
+- ✅ Phase A (Guest Folio, Invoice/Receipt PDF, Tax & Service Charge config) — implemented, migrations 028–029.
+- ✅ Phase B item 4 (Automated Email) — implemented, migrations 030–031.
+- ⏳ Phase B item 5 (WhatsApp messaging) — not started; Fonnte or Twilio WABA under consideration.
+- ⏳ Phase C (Direct Booking Engine, Beds24 Channel Manager) — not started.
+- ⚪ Phase D (Reviews, Group Bookings, F&B/POS, Concierge, Stripe subscription billing) — build when a client actually requests it.
+
+Check `ROADMAP.md` directly before starting new work — this summary will drift faster than that file does.
+
+---
+
+## Working Across Multiple Machines (laptop + PC)
+
+Since development happens on two machines, **this file and `ROADMAP.md` are the handoff mechanism** between them — not memory, not chat history. Treat doc updates as part of the feature, not cleanup afterward.
+
+**Every time you (or Claude) finish a feature, migration, or architectural change:**
+1. Update `ROADMAP.md` — flip the status, bump "Next migration number" if a migration was added.
+2. Update this file (`CLAUDE.md`) if the change affects: routes, migrations table, module registry, module list, env vars, naming conventions, or known gaps.
+3. Commit docs **in the same commit** as the code change, not a separate "docs" commit later — it's too easy to skip that second commit.
+4. `git push` before walking away from either machine.
+
+**Starting a session on either machine:**
+1. `git pull` first, always — don't trust memory of "where things were."
+2. Re-read this file's Multi-Tenancy and Roadmap Status sections if it's been more than a few days.
+3. Run `npm run migrate` in `server/` if migrations were added on the other machine — check the migrations table above against what's actually applied in your local DB if unsure.
+4. `npm install` in `client/` and `server/` if `package.json`/lockfiles changed.
+
+If a feature was left half-done on one machine, add a one-line note under "Known gaps" in the relevant section above (or a `<!-- TODO -->` comment) rather than relying on remembering it — the whole point of this file is that neither machine has to hold context in your head.

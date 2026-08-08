@@ -96,6 +96,19 @@ router.patch('/properties/:id/modules', async (req, res) => {
   }
 });
 
+// GET /api/admin/properties/:id/roles
+router.get('/properties/:id/roles', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT id, label FROM roles WHERE property_id = $1 ORDER BY label',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/properties/:id/users
 router.get('/properties/:id/users', async (req, res) => {
   try {
