@@ -1,6 +1,6 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-07-20
+Last updated: 2026-08-09
 
 ---
 
@@ -19,7 +19,7 @@ Last updated: 2026-07-20
 
 ---
 
-## 🔵 Phase A — Close Critical Gaps (NEXT)
+## ✅ Phase A — Close Critical Gaps
 
 > These are the biggest gaps vs. market-standard PMS (Cloudbeds, Mews, Little Hotelier).
 > Build all three together — they share the same data model.
@@ -82,9 +82,37 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## 🟣 Phase C — Distribution & Direct Revenue
+## 🔵 Phase D — Selected Modules (NEXT)
 
-> Grows bookings, reduces OTA commission dependency.
+> Reprioritized ahead of Phase C (2026-08-09) — group bookings, F&B/POS, and
+> concierge/activities matter more right now than distribution channels.
+> Reviews & Feedback and Subscription Billing stay in Phase D but are
+> deprioritized back to "build when requested" alongside Phase C.
+
+### 9. Group Bookings
+- Multiple rooms under one reservation
+- Master folio, group check-in
+- Needed for villa/event properties
+- Status: 🔵 Next
+
+### 10. F&B / Full POS
+- Table management, kitchen display system, stock tracking
+- Existing sales module covers most small properties
+- Only needed for properties with a restaurant
+- Status: 🔵 Next
+
+### 11. Concierge / Activities
+- Activity catalog, tour bookings, transport scheduling
+- Upsell revenue tracking
+- Can surface through In-Room Media tablet
+- Status: 🔵 Next
+
+---
+
+## ⚪ Phase C — Distribution & Direct Revenue (deprioritized — build after Phase D's selected modules)
+
+> Grows bookings, reduces OTA commission dependency. Moved after Phase D
+> (2026-08-09) — not urgent until the selected Phase D modules are done.
 
 ### 6. Direct Booking Engine
 - Embeddable JS widget (one script tag) for client websites
@@ -102,27 +130,12 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## ⚪ Phase D — Polish & Advanced (Build when clients request)
+## ⚪ Phase D — Remaining (build when clients request)
 
 ### 8. Reviews & Feedback
 - Post-stay survey auto-trigger (builds on Phase B email/WhatsApp)
 - OTA review monitoring
 - Reputation score dashboard
-
-### 9. Group Bookings
-- Multiple rooms under one reservation
-- Master folio, group check-in
-- Needed for villa/event properties
-
-### 10. F&B / Full POS
-- Table management, kitchen display system, stock tracking
-- Existing sales module covers most small properties
-- Only needed for properties with a restaurant
-
-### 11. Concierge / Activities
-- Activity catalog, tour bookings, transport scheduling
-- Upsell revenue tracking
-- Can surface through In-Room Media tablet
 
 ### 12. Subscription Billing (Stripe)
 - Automate SaaS billing per property per plan

@@ -335,9 +335,11 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - ✅ Foundation complete (migrations 001–026): core PMS, operations, sales, loyalty, market insights, in-room media, Room Controller/IoT, multi-tenancy, module system, superadmin.
 - ✅ Phase A (Guest Folio, Invoice/Receipt PDF, Tax & Service Charge config) — implemented, migrations 028–029.
 - ✅ Phase B item 4 (Automated Email) — implemented, migrations 030–031.
-- ⏳ Phase B item 5 (WhatsApp messaging) — not started; Fonnte or Twilio WABA under consideration.
-- ⏳ Phase C (Direct Booking Engine, Beds24 Channel Manager) — not started.
-- ⚪ Phase D (Reviews, Group Bookings, F&B/POS, Concierge, Stripe subscription billing) — build when a client actually requests it.
+- ⏳ Phase B item 5 (WhatsApp messaging) — not started; leaning toward api.co.id (official WhatsApp Cloud API), see Open Decisions below.
+- ✅ Superadmin Property Branding (logo, brand color, contact info) — implemented, migration 032.
+- 🔵 **Phase D selected modules (NEXT, reprioritized 2026-08-09)** — Group Bookings, F&B/Full POS, Concierge/Activities. Not started.
+- ⚪ Phase C (Direct Booking Engine, Beds24 Channel Manager) — deprioritized behind Phase D's selected modules, not started.
+- ⚪ Phase D remaining (Reviews & Feedback, Stripe subscription billing) — build when a client actually requests it.
 
 Check `ROADMAP.md` directly before starting new work — this summary will drift faster than that file does.
 
