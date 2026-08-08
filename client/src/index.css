@@ -19,7 +19,128 @@ button { cursor: pointer; font-family: inherit; }
 input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 
 /* ── App Shell ── */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-shell { display: flex; flex-direction: row; min-height: 100vh; }
+.app-main  { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
+/* ── Sidebar (desktop) ── */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--green-dark);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  flex-shrink: 0;
+}
+.sidebar-logo img { height: 36px; width: 36px; object-fit: contain; flex-shrink: 0; }
+.sidebar-logo-name {
+  color: white;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-nav { flex: 1; padding: 10px 10px; overflow-y: auto; min-height: 0; }
+
+/* Settings — visually separated from daily-use nav above (own block, not
+   part of the scrollable list), pinned just above the user footer. Mirrors
+   how Cloudbeds/Mews keep configuration structurally apart from day-to-day
+   navigation instead of mixing them in one list. */
+.sidebar-settings {
+  flex-shrink: 0;
+  padding: 6px 10px 10px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  background: rgba(0,0,0,0.12);
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+/* ── Collapsible sidebar groups (Rates & Channels, Settings sub-groups) ── */
+.sidebar-group { margin-bottom: 2px; }
+.sidebar-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  color: rgba(255,255,255,0.55);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 10px 12px 6px;
+}
+.sidebar-group-header:hover { color: rgba(255,255,255,0.85); }
+.sidebar-group-chevron { font-size: 9px; transition: transform var(--transition); }
+.sidebar-group-chevron.open { transform: rotate(90deg); }
+.sidebar-group-items { padding-top: 2px; }
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  color: rgba(255,255,255,0.65);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  transition: all var(--transition);
+  margin-bottom: 2px;
+}
+.sidebar-link:hover  { color: white; background: rgba(255,255,255,0.06); }
+.sidebar-link.active { color: white; background: var(--green-mid); font-weight: 700; }
+.sidebar-link-icon   { font-size: 15px; flex-shrink: 0; width: 18px; text-align: center; }
+.sidebar-link-label  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sidebar-section-label {
+  color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 16px 12px 6px;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+.sidebar-user { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sidebar-user-info { min-width: 0; }
+.sidebar-user-name { color: white; font-size: var(--text-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-user-role { color: rgba(255,255,255,0.5); font-size: 11px; text-transform: capitalize; }
+.sidebar-signout {
+  width: 100%;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  color: rgba(255,255,255,0.75);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sidebar-signout:hover { color: white; border-color: rgba(255,255,255,0.4); }
+.sidebar-build { color: rgba(255,255,255,0.3); font-size: 10px; font-family: monospace; text-align: center; margin-top: 10px; }
 
 /* ── Top Navigation Bar (matches mockup .nav-bar exactly) ── */
 .nav-bar {
@@ -369,7 +490,10 @@ tr:hover td { background: #FAFAF8; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  /* Top nav: keep logo, hide tabs and user actions */
+  /* Sidebar is desktop-only — BottomNav takes over below */
+  .sidebar { display: none; }
+
+  /* Top nav (AdminLayout only, at this breakpoint): keep logo, hide tabs and user actions */
   .nav-tabs { display: none; }
   .nav-end  { display: none; }
   .nav-logo { border-right: none; }

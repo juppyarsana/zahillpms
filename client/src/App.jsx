@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
-import { SettingsProvider, useSettings } from './context/SettingsContext';
+import { SettingsProvider } from './context/SettingsContext';
 import { CallProvider } from './context/CallContext';
+import Sidebar from './components/Sidebar';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallBanner from './components/CallBanner';
 import Login from './pages/Login';
@@ -23,6 +23,8 @@ import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
+import SettingsProperty from './pages/SettingsProperty';
+import SettingsCommunications from './pages/SettingsCommunications';
 import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsBoardCards from './pages/SettingsBoardCards';
@@ -30,148 +32,6 @@ import NightAudit from './pages/NightAudit';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
-
-function NavDropdown({ icon, label, items }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const btnRef = useRef(null);
-  const menuRef = useRef(null);
-  const location = useLocation();
-  const nav = useNavigate();
-
-  const isActive = items.some(c => location.pathname.startsWith(c.to));
-
-  function toggle() {
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: r.left });
-    }
-    setOpen(o => !o);
-  }
-
-  useEffect(() => {
-    if (!open) return;
-    function onMouseDown(e) {
-      const inBtn = btnRef.current && btnRef.current.contains(e.target);
-      const inMenu = menuRef.current && menuRef.current.contains(e.target);
-      if (!inBtn && !inMenu) setOpen(false);
-    }
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [open]);
-
-  useEffect(() => { setOpen(false); }, [location.pathname]);
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        className={`nav-tab${isActive ? ' active' : ''}`}
-        onClick={toggle}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-      >
-        {icon} {label} <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 1 }}>▾</span>
-      </button>
-
-      {open && createPortal(
-        <div
-          ref={menuRef}
-          style={{
-            position: 'fixed',
-            top: pos.top,
-            left: pos.left,
-            minWidth: 160,
-            background: 'white',
-            border: '1px solid #e5e7eb',
-            borderRadius: 8,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-            zIndex: 9999,
-            overflow: 'hidden',
-          }}
-        >
-          {items.map(item => (
-            <button
-              key={item.to}
-              onClick={() => { nav(item.to); setOpen(false); }}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '11px 16px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontFamily: 'inherit',
-                color: location.pathname.startsWith(item.to) ? '#5C1A2E' : '#374151',
-                fontWeight: location.pathname.startsWith(item.to) ? 700 : 400,
-                borderLeft: location.pathname.startsWith(item.to) ? '3px solid #5C1A2E' : '3px solid transparent',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-              onMouseLeave={e => e.currentTarget.style.background = 'none'}
-            >
-              {item.icon} {item.label}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-function TopNav() {
-  const { user, logout, can, hasModule } = useAuth();
-  const { branding } = useSettings();
-
-  const settingsItems = [
-    can('units')            && { to: '/units',                     icon: '🏕', label: 'Units' },
-    can('users')            && { to: '/users',                     icon: '👥', label: 'Users' },
-    can('settings')         && { to: '/settings',                  icon: '🔧', label: 'Sources & Methods' },
-    can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '⚡', label: 'Room Controllers' },
-    user?.role === 'owner'  && hasModule('in_room_media')    && { to: '/settings/board',            icon: '📋', label: 'Guest Board' },
-    user?.role === 'owner'  && { to: '/settings/roles',            icon: '🔑', label: 'Roles & Permissions' },
-    user?.role === 'owner'  && hasModule('financial')         && { to: '/night-audit',               icon: '🌙', label: 'Night Audit' },
-  ].filter(Boolean);
-
-  return (
-    <nav className="nav-bar">
-      <div className="nav-logo"><img src={branding?.logo_url || '/logo.png'} alt={branding?.name || 'ZHP PMS'} style={{ height: 44, objectFit: 'contain' }} /></div>
-      <div className="nav-tabs">
-        {can('dashboard') && <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>}
-        {can('reservations')  && <NavLink to="/reservations"  className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>}
-        {can('quick_checkin') && <NavLink to="/quick-checkin" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⚡ Quick CI</NavLink>}
-        {can('checkin_full')  && <NavLink to="/checkin"       className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>✅ Check-in/out</NavLink>}
-        {can('operations') && hasModule('operations') && <NavLink to="/operations"    className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🔧 Operations</NavLink>}
-        {can('guests') && hasModule('guest_crm')       && <NavLink to="/guests"        className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>👤 Guests</NavLink>}
-        {can('sales') && hasModule('sales')            && <NavLink to="/sales"         className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>🛍 Sales</NavLink>}
-        {can('loyalty') && hasModule('guest_crm')      && <NavLink to="/loyalty"       className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>⭐ Loyalty</NavLink>}
-        {(can('allotments') || can('pricing')) && hasModule('reservations') && (
-          <NavDropdown icon="🏠" label="Allotments" items={[
-            can('allotments') && { to: '/allotment', icon: '📡', label: 'Channel' },
-            can('pricing')    && { to: '/pricing',   icon: '💰', label: 'Pricing' },
-          ].filter(Boolean)} />
-        )}
-        {settingsItems.length > 0 && (
-          <NavDropdown icon="⚙️" label="Settings" items={settingsItems} />
-        )}
-      </div>
-      <div className="nav-end">
-        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
-          {__APP_COMMIT__}
-        </span>
-        <div
-          className="avatar avatar-md"
-          style={{ background: 'rgba(255,255,255,0.15)', cursor: 'pointer', fontSize: 13 }}
-          title={`${user?.name} · ${user?.role}`}
-        >
-          {user?.name?.[0]?.toUpperCase()}
-        </div>
-        <button className="nav-signout" onClick={logout}>Sign out</button>
-      </div>
-    </nav>
-  );
-}
 
 function BottomNav() {
   const { user, logout, can, hasModule } = useAuth();
@@ -181,13 +41,13 @@ function BottomNav() {
 
   const mainItems = [
     can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
-    can('reservations')  && { to: '/reservations',  icon: '📅', label: 'Bookings' },
-    can('quick_checkin') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
+    can('reservations') && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Bookings' },
+    can('quick_checkin') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
     can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
   ].filter(Boolean);
 
   const moreItems = [
-    can('checkin_full')                                  && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
+    can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
     can('operations') && hasModule('operations')         && { to: '/operations',                  icon: '🔧', label: 'Operations' },
     can('sales') && hasModule('sales')                   && { to: '/sales',                       icon: '🛍', label: 'Sales' },
     can('loyalty') && hasModule('guest_crm')              && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
@@ -195,7 +55,9 @@ function BottomNav() {
     can('pricing') && hasModule('reservations')           && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
     can('units')            && { to: '/units',                       icon: '🏕', label: 'Units' },
     can('users')            && { to: '/users',                       icon: '👥', label: 'Users' },
-    can('settings')         && { to: '/settings',                    icon: '🔧', label: 'Sources & Methods' },
+    user?.role === 'owner'  && { to: '/settings/property',           icon: '🏢', label: 'Property Details' },
+    user?.role === 'owner'  && { to: '/settings',                    icon: '🔧', label: 'Sources & Methods' },
+    user?.role === 'owner'  && { to: '/settings/communications',     icon: '✉️', label: 'Email & Communication' },
     user?.role === 'owner'  && { to: '/settings/roles',              icon: '🔑', label: 'Roles & Permissions' },
   ].filter(Boolean);
 
@@ -273,11 +135,13 @@ function BottomNav() {
 function Layout({ children }) {
   return (
     <div className="app-shell">
-      <TopNav />
-      <main className="main-content">
-        <div className="page-wrap">{children}</div>
-      </main>
-      <BottomNav />
+      <Sidebar />
+      <div className="app-main">
+        <main className="main-content">
+          <div className="page-wrap">{children}</div>
+        </main>
+        <BottomNav />
+      </div>
       <UpdatePrompt />
       <CallBanner />
     </div>
@@ -299,7 +163,15 @@ function RequireMenu({ menuKey, children }) {
 
 function RequireModule({ moduleName, children }) {
   const { hasModule, user } = useAuth();
-  if (!hasModule(moduleName)) return <Navigate to={firstAllowedPath(user)} replace />;
+  const names = Array.isArray(moduleName) ? moduleName : [moduleName];
+  if (!names.every(hasModule)) return <Navigate to={firstAllowedPath(user)} replace />;
+  return children;
+}
+
+function RequireOwner({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
+  if (user?.role !== 'owner') return <Navigate to={firstAllowedPath(user)} replace />;
   return children;
 }
 
@@ -339,25 +211,27 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
-                  <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><Reservations /></RequireMenu>} />
-                  <Route path="/reservations/new" element={<RequireMenu menuKey="reservations"><NewBooking /></RequireMenu>} />
-                  <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><BookingDetail /></RequireMenu>} />
-                  <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><CheckIn /></RequireMenu>} />
-                  <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><QuickCheckIn /></RequireMenu>} />
-                  <Route path="/guests"           element={<RequireMenu menuKey="guests"><Guests /></RequireMenu>} />
-                  <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><GuestProfile /></RequireMenu>} />
-                  <Route path="/operations"       element={<RequireMenu menuKey="operations"><Operations /></RequireMenu>} />
-                  <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><Allotment /></RequireMenu>} />
-                  <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><Loyalty /></RequireMenu>} />
-                  <Route path="/sales"            element={<RequireMenu menuKey="sales"><Sales /></RequireMenu>} />
+                  <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
+                  <Route path="/reservations/new" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
+                  <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
+                  <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
+                  <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
+                  <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
+                  <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />
+                  <Route path="/operations"       element={<RequireMenu menuKey="operations"><RequireModule moduleName="operations"><Operations /></RequireModule></RequireMenu>} />
+                  <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><RequireModule moduleName="reservations"><Allotment /></RequireModule></RequireMenu>} />
+                  <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><RequireModule moduleName="guest_crm"><Loyalty /></RequireModule></RequireMenu>} />
+                  <Route path="/sales"            element={<RequireMenu menuKey="sales"><RequireModule moduleName="sales"><Sales /></RequireModule></RequireMenu>} />
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
-                  <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><Pricing /></RequireMenu>} />
+                  <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
-                  <Route path="/settings"         element={<RequireMenu menuKey="settings"><Settings /></RequireMenu>} />
+                  <Route path="/settings"         element={<RequireOwner><Settings /></RequireOwner>} />
+                  <Route path="/settings/property" element={<RequireOwner><SettingsProperty /></RequireOwner>} />
+                  <Route path="/settings/communications" element={<RequireOwner><SettingsCommunications /></RequireOwner>} />
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><RequireModule moduleName="room_controller"><SettingsRoomControllers /></RequireModule></RequireMenu>} />
-                  <Route path="/settings/board"   element={<SettingsBoardCards />} />
-                  <Route path="/settings/roles"   element={<SettingsRoles />} />
-                  <Route path="/night-audit"      element={<NightAudit />} />
+                  <Route path="/settings/board"   element={<RequireOwner><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireOwner>} />
+                  <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
+                  <Route path="/night-audit"      element={<RequireOwner><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireOwner>} />
                 </Routes>
               </Layout>
             </CallProvider>

@@ -179,3 +179,39 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Logo threaded through: client nav, invoice PDF, Room Display, TV Display,
   guest emails
 - Status: ✅ Implemented
+
+---
+
+## ✅ Sidebar Navigation + Module-Aligned Route Guards
+
+> The staff nav was a horizontal top bar with flyout dropdowns; disabled
+> modules were hidden from the nav but their pages were still directly
+> reachable by URL (403s from the API instead of a clean redirect).
+
+- New `client/src/components/Sidebar.jsx` replaces `TopNav` on desktop
+  (mobile `BottomNav` unchanged); `AdminLayout.jsx` (superadmin) intentionally
+  kept its own top-bar pattern, out of scope
+- Every module-gated route in `App.jsx` now wrapped in `RequireModule`
+  (extended to accept an array of modules); added `RequireOwner` for the two
+  routes that had no guard at all (`/settings/roles`, `/night-audit`)
+- Follow-up while reviewing the new sidebar: `/settings` ("Sources & Methods")
+  turned out to mix four unrelated concerns (property/tax details, SMTP +
+  email templates, booking sources, payment methods). Split into
+  `/settings/property`, `/settings/communications`, and a trimmed `/settings`
+  that now actually matches its label — all three `RequireOwner`
+- Checked the resulting grouping against Cloudbeds/Mews (both keep
+  Settings/Configuration structurally separate from daily-use nav, not
+  nested inline — Cloudbeds under a distinct "System" menu, Mews as its own
+  admin-only top-level item). Moved the sidebar's Settings section out of
+  the scrollable daily-use list into its own visually distinct block
+  (divider + dark tint) pinned above the footer, rather than building a full
+  separate settings hub page — proportionate to this app's ~9 settings items
+  vs. Cloudbeds' enterprise scale
+- Fixed a real flex-sizing CSS bug from that pass (outer `.sidebar` and the
+  new settings block both had competing `overflow`/`max-height` rules,
+  starving the daily-use nav of space). Also added collapsible/expandable
+  groups (`SidebarSection` in `Sidebar.jsx`, state persisted per-section in
+  `localStorage`) for Rates & Channels and three Settings sub-groups
+  (General / Guest & Booking / Admin), collapsed by default so rarely-used
+  config doesn't dominate the sidebar visually
+- Status: ✅ Implemented
