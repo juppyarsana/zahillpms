@@ -52,6 +52,14 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       [unit.property_id]
     );
 
+    const { rows: propertyRows } = await db.query(
+      `SELECT COALESCE(ps.property_name, p.name) AS name, ps.logo_url, ps.brand_color
+       FROM properties p
+       LEFT JOIN property_settings ps ON ps.property_id = p.id
+       WHERE p.id = $1`,
+      [unit.property_id]
+    );
+
     const weather = await getWeather();
 
     res.json({
@@ -61,6 +69,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       relays: relayRows,
       cards: cardRows,
       weather,
+      property: propertyRows[0] || null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

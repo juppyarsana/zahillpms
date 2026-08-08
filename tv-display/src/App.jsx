@@ -88,7 +88,7 @@ function TVBackground({ imageUrl }) {
 
 // ─── Vacant screen ──────────────────────────────────────────────────────────
 
-function VacantScreen({ unitName, cards = [] }) {
+function VacantScreen({ unitName, cards = [], property }) {
   const time = useClock();
   const h = time.getHours().toString().padStart(2, '0');
   const m = time.getMinutes().toString().padStart(2, '0');
@@ -127,8 +127,8 @@ function VacantScreen({ unitName, cards = [] }) {
           minWidth: 'clamp(280px, 38vw, 560px)',
         }}>
         <img
-          src="/logo.png"
-          alt="Zahill Kintamani Resort"
+          src={property?.logo_url || '/logo.png'}
+          alt={property?.name || 'ZHP PMS'}
           style={{ width: 'clamp(160px, 20vw, 300px)', marginBottom: 'clamp(0.5rem, 1.2vh, 1rem)' }}
         />
         <p className="font-bold uppercase tracking-[0.45em]"
@@ -158,7 +158,7 @@ function VacantScreen({ unitName, cards = [] }) {
 
 // ─── Guest screen ────────────────────────────────────────────────────────────
 
-function GuestScreen({ unit, booking, cards = [], weather }) {
+function GuestScreen({ unit, booking, cards = [], weather, property }) {
   const time = useClock();
   const h = time.getHours().toString().padStart(2, '0');
   const m = time.getMinutes().toString().padStart(2, '0');
@@ -184,8 +184,8 @@ function GuestScreen({ unit, booking, cards = [], weather }) {
           gap: 'clamp(0.3rem, 0.8vh, 0.6rem)',
         }}>
         <img
-          src="/logo.png"
-          alt="Zahill Kintamani Resort"
+          src={property?.logo_url || '/logo.png'}
+          alt={property?.name || 'ZHP PMS'}
           style={{ width: 'clamp(90px, 10vw, 160px)' }}
         />
         <p className="font-bold uppercase tracking-[0.4em]"
@@ -369,14 +369,14 @@ export default function App() {
 
   if (!state.booking) return (
     <>
-      <VacantScreen unitName={state.unit?.name} cards={state.cards} />
+      <VacantScreen unitName={state.unit?.name} cards={state.cards} property={state.property} />
       <BuildBadge />
     </>
   );
 
   return (
     <>
-      <GuestScreen unit={state.unit} booking={state.booking} cards={state.cards} weather={state.weather} />
+      <GuestScreen unit={state.unit} booking={state.booking} cards={state.cards} weather={state.weather} property={state.property} />
       <BuildBadge />
     </>
   );

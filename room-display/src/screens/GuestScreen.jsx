@@ -14,7 +14,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, roomId, weather, cards = [], onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('controls');
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
@@ -54,7 +54,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
       {/* Sidebar */}
       <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
         <div className="mb-6" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src="/logo.png" alt="Zahill" style={{ width: 52, height: 52, objectFit: 'contain' }} />
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || 'ZHP PMS'} style={{ width: 52, height: 52, objectFit: 'contain' }} />
         </div>
 
         {/* Controls — top zone */}
@@ -87,7 +87,7 @@ export default function GuestScreen({ unit, booking, relays, controller, roomId,
       <main className="flex-1 flex overflow-hidden">
         {activeTab === 'controls' ? (
           <>
-            <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} />
+            <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} />
             <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
               <div className="h-full flex flex-col gap-6">
                 <div className="flex justify-between items-start">

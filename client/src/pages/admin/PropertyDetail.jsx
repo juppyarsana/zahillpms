@@ -26,6 +26,11 @@ export default function PropertyDetail() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  const [brandingForm, setBrandingForm] = useState(null);
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const [brandingError, setBrandingError] = useState('');
+  const [logoUploading, setLogoUploading] = useState(false);
+
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [userModal, setUserModal] = useState(false);
@@ -39,6 +44,13 @@ export default function PropertyDetail() {
       const { modules: mods, ...prop } = data;
       setProperty(prop);
       setForm({ name: prop.name, slug: prop.slug, plan: prop.plan, is_active: prop.is_active });
+      setBrandingForm({
+        brand_color: prop.brand_color || '#5C1A2E',
+        property_name: prop.property_name || '',
+        property_address: prop.property_address || '',
+        property_phone: prop.property_phone || '',
+        property_email: prop.property_email || '',
+      });
       setModules(mods);
     } catch (_) {}
   }
@@ -100,6 +112,37 @@ export default function PropertyDetail() {
     }
   }
 
+  const setBranding = (k, v) => setBrandingForm(f => ({ ...f, [k]: v }));
+
+  async function saveBranding() {
+    setBrandingError('');
+    setBrandingSaving(true);
+    try {
+      const { data } = await api.patch(`/api/admin/properties/${id}/branding`, brandingForm);
+      setProperty(p => ({ ...p, ...data }));
+    } catch (err) {
+      setBrandingError(err.response?.data?.error || 'Failed to save branding');
+    } finally {
+      setBrandingSaving(false);
+    }
+  }
+
+  async function uploadLogo(file) {
+    if (!file) return;
+    setBrandingError('');
+    setLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      const { data } = await api.post(`/api/admin/properties/${id}/logo`, fd);
+      setProperty(p => ({ ...p, logo_url: data.logo_url }));
+    } catch (err) {
+      setBrandingError(err.response?.data?.error || 'Failed to upload logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
   async function toggleModule(moduleName, current) {
     setModules(mods => mods.map(m => m.module === moduleName ? { ...m, is_enabled: !current } : m));
     try {
@@ -109,7 +152,7 @@ export default function PropertyDetail() {
     }
   }
 
-  if (!property || !form) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
+  if (!property || !form || !brandingForm) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -152,6 +195,57 @@ export default function PropertyDetail() {
         </label>
         <button className="btn btn-primary" onClick={saveInfo} disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-title">Branding</div>
+        {brandingError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{brandingError}</div>}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+          <img
+            src={property.logo_url || '/logo.png'}
+            alt="Logo"
+            style={{ width: 64, height: 64, objectFit: 'contain', border: '1px solid var(--border)', borderRadius: 8, padding: 4 }}
+          />
+          <div>
+            <input
+              type="file"
+              accept="image/*"
+              disabled={logoUploading}
+              onChange={e => uploadLogo(e.target.files[0])}
+            />
+            {logoUploading && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Uploading…</div>}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Brand Color</label>
+          <input
+            type="color"
+            value={brandingForm.brand_color}
+            onChange={e => setBranding('brand_color', e.target.value)}
+            style={{ width: 60, height: 36, padding: 2, cursor: 'pointer' }}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Property Name (shown to guests/staff)</label>
+          <input className="form-input" value={brandingForm.property_name} onChange={e => setBranding('property_name', e.target.value)} placeholder={property.name} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Phone</label>
+          <input className="form-input" value={brandingForm.property_phone} onChange={e => setBranding('property_phone', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Address</label>
+          <input className="form-input" value={brandingForm.property_address} onChange={e => setBranding('property_address', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Email</label>
+          <input className="form-input" type="email" value={brandingForm.property_email} onChange={e => setBranding('property_email', e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={saveBranding} disabled={brandingSaving}>
+          {brandingSaving ? 'Saving…' : 'Save Branding'}
         </button>
       </div>
 

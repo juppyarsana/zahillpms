@@ -1,27 +1,30 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 
-const SettingsContext = createContext({ sources: [], paymentMethods: [], reload: () => {} });
+const SettingsContext = createContext({ sources: [], paymentMethods: [], branding: null, reload: () => {} });
 
 export function SettingsProvider({ children }) {
   const [sources, setSources] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [branding, setBranding] = useState(null);
 
   async function load() {
     try {
-      const [s, p] = await Promise.all([
+      const [s, p, b] = await Promise.all([
         api.get('/api/settings/booking-sources'),
         api.get('/api/settings/payment-methods'),
+        api.get('/api/settings/branding'),
       ]);
       setSources(s.data);
       setPaymentMethods(p.data);
+      setBranding(b.data);
     } catch {}
   }
 
   useEffect(() => { load(); }, []);
 
   return (
-    <SettingsContext.Provider value={{ sources, paymentMethods, reload: load }}>
+    <SettingsContext.Provider value={{ sources, paymentMethods, branding, reload: load }}>
       {children}
     </SettingsContext.Provider>
   );

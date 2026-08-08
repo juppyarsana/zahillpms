@@ -43,6 +43,10 @@ app.use('/uploads', auth, express.static(path.join(__dirname, 'uploads')));
 // Board card images are guest-facing — served without auth
 app.use('/board-images', express.static(path.join(__dirname, 'uploads/board')));
 
+// Property logos — needed pre-auth (login screen), by display_token apps
+// (Room Display/TV Display), and by external email clients — no auth possible
+app.use('/property-logos', express.static(path.join(__dirname, 'uploads/property-logos')));
+
 // Routes
 const moduleGuard = require('./middleware/moduleGuard');
 const authSuperAdmin = require('./middleware/authSuperAdmin');
@@ -53,6 +57,7 @@ app.use('/api/admin', authSuperAdmin, require('./routes/admin'));
 
 // Core routes — no module guard (always on)
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/public', require('./routes/public'));
 app.use('/api/units', require('./routes/units'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/settings', require('./routes/settings'));

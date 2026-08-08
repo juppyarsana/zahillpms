@@ -86,9 +86,11 @@ A superadmin is a platform-level operator, not tied to any one property (`users.
 `routes/admin.js` endpoints:
 - `GET /api/admin/properties` — list all properties + module counts
 - `POST /api/admin/properties` — create a property (`name`, `slug`, `plan`, `display_token`), then calls `seedPropertyDefaults(property.id)` to clone default settings/modules/booking-sources/payment-methods/roles in one shot
-- `GET /api/admin/properties/:id` — property detail + its module states
+- `GET /api/admin/properties/:id` — property detail + its module states + branding fields (`logo_url`, `brand_color`, `property_name`, `property_address`, `property_phone`, `property_email`, joined from `property_settings`)
 - `PATCH /api/admin/properties/:id` — update name/slug/plan/is_active
 - `PATCH /api/admin/properties/:id/modules` — toggle a module on/off
+- `PATCH /api/admin/properties/:id/branding` — update brand color + contact/invoice fields on `property_settings` (same columns the property owner can also edit in their own Settings page — both write the same row, last save wins, by design)
+- `POST /api/admin/properties/:id/logo` — multipart logo upload (`multer` + `sharp`, resized to 512×512 PNG, saved to `server/uploads/property-logos/`, served unauthenticated at `/property-logos/*` since the login screen, Room/TV Display, and email clients all need it without a JWT)
 - `GET /api/admin/properties/:id/users` / `POST /api/admin/properties/:id/users` — manage a property's staff accounts
 
 **Frontend — traced button-by-button against the API above (verified, not assumed):**
@@ -105,8 +107,19 @@ A superadmin is a platform-level operator, not tied to any one property (`users.
 | Module On/Off toggle buttons | `PATCH /api/admin/properties/:id/modules` (optimistic UI update, rolls back on error) |
 | `PropertyDetail.jsx` "Staff Users" card | `GET /api/admin/properties/:id/users` (list), `GET /api/admin/properties/:id/roles` (populates the role dropdown) |
 | "+ Add User" → modal → "Create User" | `POST /api/admin/properties/:id/users` (validates the role belongs to that property server-side) |
+| `PropertyDetail.jsx` "Branding" card — logo upload | `POST /api/admin/properties/:id/logo` (multipart, preview updates from the returned `logo_url`) |
+| "Branding" card — color picker + name/address/phone/email fields → "Save Branding" | `PATCH /api/admin/properties/:id/branding` |
 
-**Closed gap (was open until this session):** the superadmin UI previously had no way to create a property's first staff login — `routes/admin.js` had the `users` endpoints but nothing called them. Added a "Staff Users" card to `PropertyDetail.jsx` plus a new `GET /api/admin/properties/:id/roles` endpoint (list-only, so the create-user modal can populate a role dropdown). Onboarding a new property is now fully self-serve from the superadmin UI: create property → toggle modules → add first staff user, no API tooling required.
+**Closed gap (was open until a previous session):** the superadmin UI previously had no way to create a property's first staff login — `routes/admin.js` had the `users` endpoints but nothing called them. Added a "Staff Users" card to `PropertyDetail.jsx` plus a new `GET /api/admin/properties/:id/roles` endpoint (list-only, so the create-user modal can populate a role dropdown). Onboarding a new property is now fully self-serve from the superadmin UI: create property → toggle modules → add first staff user, no API tooling required.
+
+**Closed gap (this session): per-property branding.** Every property used to render with Zahill's hardcoded logo and name everywhere — a single static `client/public/logo.png` and hardcoded strings, since the client/room-display/tv-display apps are each one shared deployment for every property. Migration `032` added `property_settings.logo_url` / `brand_color`. The new "Branding" card above lets superadmin set logo, color, and contact/invoice fields (`property_name`/`address`/`phone`/`email` — the property owner keeps their own edit access to the same fields in their own Settings page; both write the same `property_settings` row, last save wins).
+
+Logo threading, end to end:
+- **Client nav** (`App.jsx` `TopNav`) — `SettingsContext.jsx` fetches `GET /api/settings/branding` (plain `auth`, not owner-gated — every staff role needs the nav logo) alongside its existing sources/payment-methods calls.
+- **Login screen** (`Login.jsx`) — runs pre-JWT, so it can't resolve a property the normal way. Added a new no-auth route file `routes/public.js` (`GET /api/public/properties/:slug/branding`) and an optional property-slug field on the login form (also reachable via `/login/:slug`), remembered in `localStorage` (`lastPropertySlug`) so returning staff see the right branding without retyping. **This is cosmetic only** — it does not change how `POST /api/auth/login` resolves the user (still by email alone, see Known gaps below).
+- **Invoice PDF** (`routes/folio.js`) — draws the logo top-right via `pdfkit`'s `doc.image()` if the file exists on disk; wrapped in try/catch so a missing/corrupt logo falls back to the pre-existing text-only header rather than breaking invoice generation.
+- **Room Display / TV Display** — both already call the same `GET /api/display/room/:roomId/state` (via `authDisplay`/`display_token`); that response now carries a `property: { name, logo_url, brand_color }` field, so both apps picked up branding by threading one new prop through their screen components (`SetupScreen.jsx` is the one exception — it runs before a room/token is configured at all, so it has no property to resolve and still shows the platform default).
+- **Guest emails** (`services/mailer.js`) — `wrapEmailBody()` prepends a logo `<img>` at send time (not baked into the stored templates) if `logo_url` is set. Needs an **absolute** URL since email clients don't resolve relative paths — new env var `SERVER_PUBLIC_URL` (see Environment Variables below); if unset, emails just skip the logo rather than breaking.
 
 **Known limitation:** the Staff Users card is list + create only — no edit or deactivate/delete from the UI yet (matches what `routes/admin.js` exposes; there's no `PATCH`/`DELETE` on `/properties/:id/users/:userId`). Add those endpoints + UI controls if you need to reset a password or remove a departing staff member without going to the DB directly.
 
@@ -115,7 +128,7 @@ A superadmin is a platform-level operator, not tied to any one property (`users.
 - Demo second property "Birdnest" (slug `birdnest`): owner login `owner@birdnest.com` / `testpass123` — kept as a live reference for multi-tenancy verification; harmless to keep, fully isolated from Zahill's data, or delete if no longer needed.
 
 ### Known gaps (from MULTI_TENANCY.md, still open as of last check)
-- **Login doesn't resolve by subdomain/tenant** — `POST /api/auth/login` looks up a user by email alone (globally unique since migration `023`). Fine while staff don't overlap across properties; revisit once there's real overlap or you want `{slug}.pms...` login pages.
+- **Login still doesn't resolve the *user* by subdomain/tenant** — `POST /api/auth/login` looks up a user by email alone (globally unique since migration `023`). The login screen can now show the right property's *branding* pre-auth via an optional slug field (`GET /api/public/properties/:slug/branding`, see Superadmin section above), but that's cosmetic only — actual auth is still email-only, and there's still no real subdomain/DNS-based routing. Fine while staff don't overlap across properties; revisit if you want `{slug}.pms...` login pages or true per-property subdomains.
 - `booking_sources` / `payment_methods` / `roles` use namespaced raw strings as their identity rather than a surrogate key — works, but awkward if another table ever needs a clean FK to them.
 - No environment-level docs yet for a full "spin up client #3" runbook beyond `POST /api/admin/properties` — worth writing once you actually onboard a paying second/third client.
 
@@ -178,6 +191,7 @@ One backend, one database, many properties. The client app, Room Display, and TV
 
 **Route files** (`server/routes/`):
 - `auth` — login/logout (always on)
+- `public` — unauthenticated endpoints callable pre-login/pre-JWT (e.g. property branding lookup by slug for the login screen)
 - `admin` — superadmin: property CRUD, module toggles, per-property user management (separate `authSuperAdmin` layer)
 - `units`, `users`, `settings`, `dashboard`, `display` — core, always on
 - `bookings`, `checkin`, `allotments`, `pricing` — reservations + front desk
@@ -224,8 +238,9 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 029 | Tax config |
 | 030 | Guest communication (email templates) |
 | 031 | SMTP config (per-property) |
+| 032 | Property branding (logo_url, brand_color on property_settings) |
 
-**Next migration number: 032** (keep `ROADMAP.md` in sync when you add one).
+**Next migration number: 033** (keep `ROADMAP.md` in sync when you add one).
 
 ---
 
@@ -243,6 +258,8 @@ Superadmin pages (`client/src/pages/admin/`): `AdminLayout`, `Properties`, `Prop
 **Folio** — running charge ledger per booking (room charges, F&B, sales, activities), settled at checkout. Tab on `BookingDetail.jsx`. Backed by `routes/folio.js` / migration `028`.
 
 **Guest Communication** — email templates editor in Settings, per-property SMTP config (falls back to platform-default SMTP env vars if a property hasn't configured its own). Backed by `routes/communications.js` / migrations `030`–`031`.
+
+**Per-property branding** — logo, brand color, and contact/invoice fields, set from the superadmin `PropertyDetail.jsx` "Branding" card (see Superadmin section above for the full trace). Rendered via `SettingsContext.jsx`'s `branding` value in the client nav, and via `/login/:slug` + an optional slug field on `Login.jsx` pre-auth. Backed by migration `032`.
 
 ---
 
@@ -268,8 +285,10 @@ Each unit can have **two displays** with distinct, complementary roles:
 - APK sideloaded per TV (no Play Store); Room ID configured once at install (SharedPreferences)
 - Landscape only, large text, no touch interaction
 - Calls the same `GET /api/display/room/:roomId/state` endpoint as Room Display
-  - Returns: `unit.name`, `booking.guest_name`, `booking.check_in_date`, `booking.check_out_date`, `booking.num_guests`
+  - Returns: `unit.name`, `booking.guest_name`, `booking.check_in_date`, `booking.check_out_date`, `booking.num_guests`, `property.{name,logo_url,brand_color}`
   - Returns `booking: null` when vacant → branded idle screen
+
+Both displays render the property's own logo/name from that `property` field (falling back to the bundled default asset/text when a property hasn't uploaded one) — see the Superadmin Property Branding trace above.
 
 ---
 
@@ -288,7 +307,7 @@ Manual refresh triggers (owner only): `POST /api/insights/competitors/refresh`, 
 
 ## Environment Variables
 
-See `server/.env.example` for the full current list (kept up to date — check there first, not here, since env vars change often). Categories: server/DB core, JWT, CORS origins (`CLIENT_URL`/`DISPLAY_URL`/`TV_URL`, comma-separated for multi-origin dev), Room Display/TV `DISPLAY_TOKEN`, MQTT, Market Insights (`GOOGLE_PLACES_API_KEY`, `ANTHROPIC_API_KEY`), weather, and platform-default SMTP (`PLATFORM_SMTP_*`, used when a property hasn't set its own).
+See `server/.env.example` for the full current list (kept up to date — check there first, not here, since env vars change often). Categories: server/DB core, JWT, CORS origins (`CLIENT_URL`/`DISPLAY_URL`/`TV_URL`, comma-separated for multi-origin dev), Room Display/TV `DISPLAY_TOKEN`, MQTT, Market Insights (`GOOGLE_PLACES_API_KEY`, `ANTHROPIC_API_KEY`), weather, platform-default SMTP (`PLATFORM_SMTP_*`, used when a property hasn't set its own), and `SERVER_PUBLIC_URL` (this server's own publicly reachable base URL, used to build absolute property-logo URLs for guest emails — unset in local dev just skips the logo image in emails).
 
 ---
 

@@ -2,6 +2,8 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
+const path = require('path');
+const fs = require('fs');
 
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
@@ -29,7 +31,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId]
   );
   const settingsQ = db.query(
-    `SELECT tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email
+    `SELECT tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email, logo_url
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
@@ -125,6 +127,15 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
 
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     doc.pipe(res);
+
+    if (property.logo_url) {
+      try {
+        const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
+        if (fs.existsSync(logoPath)) doc.image(logoPath, 480, 45, { fit: [70, 70] });
+      } catch (_) {
+        // Corrupt/missing logo file — fall back to text-only header below.
+      }
+    }
 
     doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', { continued: false });
     doc.fontSize(9).font('Helvetica').fillColor('#555');

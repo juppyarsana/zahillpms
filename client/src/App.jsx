@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
-import { SettingsProvider } from './context/SettingsContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { CallProvider } from './context/CallContext';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallBanner from './components/CallBanner';
@@ -122,6 +122,7 @@ function NavDropdown({ icon, label, items }) {
 
 function TopNav() {
   const { user, logout, can, hasModule } = useAuth();
+  const { branding } = useSettings();
 
   const settingsItems = [
     can('units')            && { to: '/units',                     icon: '🏕', label: 'Units' },
@@ -135,7 +136,7 @@ function TopNav() {
 
   return (
     <nav className="nav-bar">
-      <div className="nav-logo"><img src="/logo.png" alt="Zahill" style={{ height: 44, objectFit: 'contain' }} /></div>
+      <div className="nav-logo"><img src={branding?.logo_url || '/logo.png'} alt={branding?.name || 'ZHP PMS'} style={{ height: 44, objectFit: 'contain' }} /></div>
       <div className="nav-tabs">
         {can('dashboard') && <NavLink to="/" end className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📊 Dashboard</NavLink>}
         {can('reservations')  && <NavLink to="/reservations"  className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>📅 Reservations</NavLink>}
@@ -316,6 +317,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/login/:slug" element={<Login />} />
           <Route path="/admin" element={
             <RequireSuperAdmin>
               <AdminLayout>

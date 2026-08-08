@@ -19,6 +19,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
       '/board-images': { target: 'http://localhost:4000', changeOrigin: true },
+      '/property-logos': { target: 'http://localhost:4000', changeOrigin: true },
     },
   },
 });

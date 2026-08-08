@@ -91,6 +91,23 @@ router.patch('/property', ownerOnly, async (req, res) => {
   }
 });
 
+// GET /api/settings/branding — logo/name/color for the nav bar. Any
+// authenticated staff role (not owner-only) since everyone sees the nav.
+router.get('/branding', auth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT COALESCE(property_name, (SELECT name FROM properties WHERE id = $1)) AS name,
+              logo_url, brand_color
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Booking Sources ──────────────────────────────────────────────────────────
 
 router.get('/booking-sources', auth, async (req, res) => {

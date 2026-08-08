@@ -192,6 +192,7 @@ export default function App() {
           unit={state.unit}
           controller={state.controller}
           relays={state.relays}
+          property={state.property}
           roomId={roomId}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
@@ -224,6 +225,7 @@ export default function App() {
         booking={state.booking}
         relays={state.relays}
         controller={state.controller}
+        property={state.property}
         roomId={roomId}
         weather={state.weather}
         cards={state.cards || []}

@@ -3,7 +3,7 @@ function fmt(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-export default function StayPanel({ unit, booking, relays, controller }) {
+export default function StayPanel({ unit, booking, relays, controller, property }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const checkIn  = new Date(booking.check_in_date);
@@ -39,7 +39,7 @@ export default function StayPanel({ unit, booking, relays, controller }) {
           >
             {unit.name}
           </span>
-          <h3 className="text-xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>Zahill Kintamani Resort</h3>
+          <h3 className="text-xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>{property?.name || 'ZHP PMS'}</h3>
           <p className="text-xs text-slate-400 mt-0.5">Kintamani · Bali</p>
         </div>
       </div>

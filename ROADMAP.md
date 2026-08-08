@@ -146,4 +146,23 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 032
+## Next migration number: 033
+
+---
+
+## ✅ Superadmin Property Branding
+
+> Superadmin could create/manage properties but every property looked
+> identical (single shared logo + hardcoded name on login/nav). Onboarding a
+> real second/third client needed per-property branding.
+
+- Migration 032: `property_settings.logo_url`, `property_settings.brand_color`
+- Superadmin Property Detail: new Branding card (logo upload, color, contact
+  fields) — owner keeps their own edit access on the same fields, both write
+  the same row
+- Login screen resolves branding pre-auth via an optional property slug
+  (`GET /api/public/properties/:slug/branding`, cosmetic only — doesn't
+  change how `/api/auth/login` authenticates)
+- Logo threaded through: client nav, invoice PDF, Room Display, TV Display,
+  guest emails
+- Status: ✅ Implemented

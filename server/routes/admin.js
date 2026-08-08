@@ -1,7 +1,18 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
+const sharp = require('sharp');
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const seedPropertyDefaults = require('../utils/seedPropertyDefaults');
+
+const LOGO_DIR = path.join(__dirname, '../uploads/property-logos');
+if (!fs.existsSync(LOGO_DIR)) fs.mkdirSync(LOGO_DIR, { recursive: true });
+
+const uploadLogo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+const BRANDING_FIELDS = `logo_url, brand_color, property_name, property_address, property_phone, property_email`;
 
 // GET /api/admin/properties
 router.get('/properties', async (req, res) => {
@@ -43,7 +54,13 @@ router.post('/properties', async (req, res) => {
 // GET /api/admin/properties/:id
 router.get('/properties/:id', async (req, res) => {
   try {
-    const { rows: [property] } = await db.query('SELECT * FROM properties WHERE id = $1', [req.params.id]);
+    const { rows: [property] } = await db.query(
+      `SELECT p.*, ${BRANDING_FIELDS.split(', ').map(f => `ps.${f}`).join(', ')}
+       FROM properties p
+       LEFT JOIN property_settings ps ON ps.property_id = p.id
+       WHERE p.id = $1`,
+      [req.params.id]
+    );
     if (!property) return res.status(404).json({ error: 'Property not found' });
     const { rows: modules } = await db.query(
       'SELECT module, is_enabled FROM property_modules WHERE property_id = $1 ORDER BY module',
@@ -90,6 +107,49 @@ router.patch('/properties/:id/modules', async (req, res) => {
        RETURNING *`,
       [req.params.id, module, is_enabled]
     );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/properties/:id/branding
+router.patch('/properties/:id/branding', async (req, res) => {
+  const { brand_color, property_name, property_address, property_phone, property_email } = req.body;
+  try {
+    const { rows } = await db.query(
+      `UPDATE property_settings SET
+        brand_color      = COALESCE($1, brand_color),
+        property_name    = COALESCE($2, property_name),
+        property_address = COALESCE($3, property_address),
+        property_phone   = COALESCE($4, property_phone),
+        property_email   = COALESCE($5, property_email)
+       WHERE property_id = $6 RETURNING ${BRANDING_FIELDS}`,
+      [brand_color, property_name, property_address, property_phone, property_email, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/properties/:id/logo
+router.post('/properties/:id/logo', uploadLogo.single('logo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'logo file required' });
+  try {
+    const filename = `${req.params.id}-${Date.now()}.png`;
+    await sharp(req.file.buffer)
+      .resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toFile(path.join(LOGO_DIR, filename));
+    const logoUrl = `/property-logos/${filename}`;
+
+    const { rows } = await db.query(
+      'UPDATE property_settings SET logo_url = $1 WHERE property_id = $2 RETURNING logo_url',
+      [logoUrl, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

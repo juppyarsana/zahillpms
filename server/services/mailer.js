@@ -6,6 +6,16 @@ function renderTemplate(template, vars) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
 }
 
+// Prepends a logo header to the rendered body at send time — templates
+// themselves stay logo-free so this applies uniformly without editing
+// every seeded row. Needs an absolute URL since email clients fetch
+// images from the open internet, not relative paths.
+function wrapEmailBody(html, { logo_url, property_name }) {
+  if (!logo_url || !process.env.SERVER_PUBLIC_URL) return html;
+  const logoSrc = `${process.env.SERVER_PUBLIC_URL}${logo_url}`;
+  return `<div style="margin-bottom:16px"><img src="${logoSrc}" alt="${property_name || ''}" style="max-height:60px"></div>${html}`;
+}
+
 async function sendBookingEmail(propertyId, bookingId, trigger) {
   const { rows: [tmpl] } = await db.query(
     'SELECT * FROM email_templates WHERE property_id = $1 AND trigger = $2 AND is_active = true',
@@ -17,7 +27,7 @@ async function sendBookingEmail(propertyId, bookingId, trigger) {
     SELECT b.id, b.property_id, b.check_in_date, b.check_out_date, b.nights,
            g.name AS guest_name, g.email AS guest_email,
            u.name AS unit_name,
-           ps.property_name, ps.smtp_host, ps.smtp_port,
+           ps.property_name, ps.logo_url, ps.smtp_host, ps.smtp_port,
            ps.smtp_user, ps.smtp_password, ps.smtp_from
     FROM bookings b
     JOIN guests g ON g.id = b.guest_id
@@ -38,7 +48,7 @@ async function sendBookingEmail(propertyId, bookingId, trigger) {
     property_name:  booking.property_name || 'The Property',
   };
   const subject = renderTemplate(tmpl.subject, vars);
-  const html    = renderTemplate(tmpl.body_html, vars);
+  const html    = wrapEmailBody(renderTemplate(tmpl.body_html, vars), booking);
 
   const transportConfig = booking.smtp_host ? {
     host: booking.smtp_host,
