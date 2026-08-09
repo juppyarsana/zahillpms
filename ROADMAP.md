@@ -93,7 +93,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Multiple rooms under one reservation
 - Master folio, group check-in
 - Needed for villa/event properties
-- Status: 🔵 Next
+- Status: ✅ Implemented (migration 033) — see write-up below
 
 ### 10. F&B / Full POS
 - Table management, kitchen display system, stock tracking
@@ -159,7 +159,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 033
+## Next migration number: 034
 
 ---
 
@@ -214,4 +214,58 @@ Per-property tax and service charge rates, applied on folio and invoice.
   `localStorage`) for Rates & Channels and three Settings sub-groups
   (General / Guest & Booking / Admin), collapsed by default so rarely-used
   config doesn't dominate the sidebar visually
+- Status: ✅ Implemented
+
+---
+
+## ✅ Group Bookings (Phase D #9)
+
+> First Phase D module built — chosen over F&B/POS and Concierge/Activities
+> for the best effort-to-value ratio: it extends existing data/UI
+> (bookings, folio, check-in) rather than introducing a new module or a
+> new real-time UI paradigm.
+
+- Migration 033: `reservation_groups` table (property_id, primary_guest_id,
+  shared check_in/check_out dates, group-level discount/deposit,
+  `active`/`cancelled` status) + nullable `bookings.reservation_group_id`
+  FK (house style for optional cross-cutting relations — every existing
+  booking stays `NULL`, zero migration risk). Also widened
+  `email_templates.trigger` and dynamically seeded a `group_booking_confirmed`
+  template for every existing property.
+- A group = **one primary guest + one shared date range**, multiple
+  units/rooms. Group-level discount/deposit are entered once and prorated
+  server-side across child bookings proportional to each room's own price
+  (last room absorbs the rounding remainder so both sums stay exact).
+- **Single-room bookings are completely untouched** — `NewBooking.jsx`
+  only calls the new group endpoint once a 2nd room is added
+  (`POST /api/bookings/group`, rejects `rooms.length < 2` server-side).
+  No "invisible group of 1" is ever created.
+- New endpoints, all inside the existing gated route files (no new module
+  needed — gating is per-file): `POST/GET/DELETE /api/bookings/group/:id`,
+  `POST /api/checkin/group/:id/start`, `GET /api/folio/group/:id`.
+- Group check-in is **best-effort/partial**: each room is attempted
+  independently (`checkinOneBooking()` extracted as a shared helper from
+  the original single-room route in `checkin.js`); a failing room (e.g.
+  unpaid balance) is flagged in the response, not rolled back with the
+  others. Group *creation*, by contrast, stays fully atomic.
+- Master folio (`GET /api/folio/group/:id`) aggregates each room's own
+  folio — `folio_charges.booking_id` stays `NOT NULL`, charges are still
+  always posted per-room; the group view is a rollup only, no schema
+  change to that table.
+- Multi-room groups get one combined confirmation email
+  (`sendGroupBookingEmail` in `mailer.js`, new `group_booking_confirmed`
+  trigger editable in Settings → Communications) instead of N per-room
+  emails.
+- Frontend: `NewBooking.jsx` gained a repeatable "+ Add Another Room" line;
+  new `GroupDetail.jsx` page at `/reservations/group/:groupId` (rooms list,
+  payment rollup, "Check In Whole Group", "Cancel Group", Master Folio tab);
+  `BookingDetail.jsx` shows a "Part of a group booking" banner linking to
+  it; `CheckIn.jsx`/`QuickCheckIn.jsx` cluster same-group arrivals under one
+  header with a "Check In Whole Group" action, reusing the existing
+  single-room modal for anyone who wants to do one room at a time.
+- Verified end-to-end: proration math (discount/deposit sums exact),
+  best-effort partial check-in (one room blocked on unpaid deposit while
+  its sibling succeeds), master folio rollup, and — critically — that the
+  pre-existing single-booking create/view/checkin flow is byte-for-byte
+  unaffected.
 - Status: ✅ Implemented

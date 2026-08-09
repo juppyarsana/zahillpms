@@ -22,46 +22,83 @@ async function saveResized(buffer, filename) {
 
 const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 
+// Shared by the single-room route below and the group check-in route —
+// throws an Error with .code/.status set on a business-rule failure
+// (mirrors the res.status(409)/code shape the single-room route used to
+// return directly) so the group route can catch per-room without one
+// room's failure aborting the others.
+async function checkinOneBooking(bookingId, propertyId, userId) {
+  const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [bookingId, propertyId]);
+  if (!booking) { const err = new Error('Booking not found'); err.status = 404; throw err; }
+  const isOTA = OTA_SOURCES.includes(booking.source);
+
+  if (isOTA) {
+    // OTA manages payment externally — allow from any pre-checkin status
+    if (!['confirmed', 'deposit_paid', 'pending'].includes(booking.status)) {
+      const err = new Error(`Cannot check in — booking status is ${booking.status}`); err.status = 409; throw err;
+    }
+  } else {
+    // Direct / walk-in: full payment required before check-in
+    if (booking.status === 'deposit_paid') {
+      const err = new Error('Balance payment has not been received. Full payment is required before check-in.');
+      err.status = 409; err.code = 'BALANCE_UNPAID'; throw err;
+    }
+    if (booking.status === 'pending') {
+      const err = new Error('Payment has not been received. Full payment is required before check-in.');
+      err.status = 409; err.code = 'DEPOSIT_UNPAID'; throw err;
+    }
+    if (booking.status !== 'confirmed') {
+      const err = new Error(`Cannot check in — booking status is ${booking.status}`); err.status = 409; throw err;
+    }
+  }
+
+  await db.query("UPDATE bookings SET status = 'checked_in', updated_at = NOW() WHERE id = $1 AND property_id = $2", [bookingId, propertyId]);
+  await db.query("UPDATE units SET status = 'occupied' WHERE id = $1 AND property_id = $2", [booking.unit_id, propertyId]);
+
+  const { rows } = await db.query(
+    `INSERT INTO checkin_records (booking_id, checkin_time, processed_by)
+     VALUES ($1, NOW(), $2) ON CONFLICT (booking_id) DO UPDATE SET checkin_time = NOW(), processed_by = $2 RETURNING *`,
+    [bookingId, userId]
+  );
+  return rows[0];
+}
+
 // POST /api/checkin/:bookingId/start
 router.post('/:bookingId/start', auth, async (req, res) => {
   try {
-    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    const isOTA = OTA_SOURCES.includes(booking.source);
+    const record = await checkinOneBooking(req.params.bookingId, req.propertyId, req.user.id);
+    res.json(record);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+  }
+});
 
-    if (isOTA) {
-      // OTA manages payment externally — allow from any pre-checkin status
-      if (!['confirmed', 'deposit_paid', 'pending'].includes(booking.status)) {
-        return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
-      }
-    } else {
-      // Direct / walk-in: full payment required before check-in
-      if (booking.status === 'deposit_paid') {
-        return res.status(409).json({
-          error: 'Balance payment has not been received. Full payment is required before check-in.',
-          code: 'BALANCE_UNPAID',
-        });
-      }
-      if (booking.status === 'pending') {
-        return res.status(409).json({
-          error: 'Payment has not been received. Full payment is required before check-in.',
-          code: 'DEPOSIT_UNPAID',
-        });
-      }
-      if (booking.status !== 'confirmed') {
-        return res.status(409).json({ error: `Cannot check in — booking status is ${booking.status}` });
+// POST /api/checkin/group/:groupId/start — best-effort: every eligible room
+// is attempted independently; a failing room is flagged in `results` rather
+// than rolling back the rooms that succeeded. Always returns 200 (unless the
+// group has no eligible rooms at all) — inspect `results`, don't rely on the
+// HTTP status to mean "all rooms checked in".
+router.post('/group/:groupId/start', auth, async (req, res) => {
+  try {
+    const { rows: bookings } = await db.query(`
+      SELECT b.id FROM bookings b
+      JOIN reservation_groups g ON g.id = b.reservation_group_id
+      WHERE g.id = $1 AND g.property_id = $2
+        AND b.status NOT IN ('cancelled','no_show','checked_in','checked_out')
+    `, [req.params.groupId, req.propertyId]);
+    if (bookings.length === 0) return res.status(404).json({ error: 'Group not found or no eligible rooms' });
+
+    const results = [];
+    for (const b of bookings) {
+      try {
+        const record = await checkinOneBooking(b.id, req.propertyId, req.user.id);
+        results.push({ booking_id: b.id, ok: true, checkin_record: record });
+      } catch (err) {
+        results.push({ booking_id: b.id, ok: false, code: err.code || null, error: err.message });
       }
     }
-
-    await db.query("UPDATE bookings SET status = 'checked_in', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
-    await db.query("UPDATE units SET status = 'occupied' WHERE id = $1 AND property_id = $2", [booking.unit_id, req.propertyId]);
-
-    const { rows } = await db.query(
-      `INSERT INTO checkin_records (booking_id, checkin_time, processed_by)
-       VALUES ($1, NOW(), $2) ON CONFLICT (booking_id) DO UPDATE SET checkin_time = NOW(), processed_by = $2 RETURNING *`,
-      [req.params.bookingId, req.user.id]
-    );
-    res.json(rows[0]);
+    const succeeded = results.filter(r => r.ok).length;
+    res.json({ group_id: req.params.groupId, attempted: results.length, succeeded, failed: results.length - succeeded, results });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

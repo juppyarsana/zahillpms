@@ -58,7 +58,6 @@ export default function Sidebar() {
   const adminItems = [
     can('users')            && { to: '/users',                     icon: '👥', label: 'Users' },
     user?.role === 'owner'  && { to: '/settings/roles',            icon: '🔑', label: 'Roles & Permissions' },
-    user?.role === 'owner'  && hasModule('financial')         && { to: '/night-audit',               icon: '🌙', label: 'Night Audit' },
   ].filter(Boolean);
 
   const hasSettings = generalItems.length > 0 || guestBookingItems.length > 0 || adminItems.length > 0;
@@ -79,6 +78,7 @@ export default function Sidebar() {
         {can('guests') && hasModule('guest_crm')       && <SidebarLink to="/guests" icon="👤" label="Guests" />}
         {can('loyalty') && hasModule('guest_crm')      && <SidebarLink to="/loyalty" icon="⭐" label="Loyalty" />}
         {can('sales') && hasModule('sales')            && <SidebarLink to="/sales" icon="🛍" label="Sales" />}
+        {user?.role === 'owner' && hasModule('financial') && <SidebarLink to="/night-audit" icon="🌙" label="Night Audit" />}
 
         {showRatesSection && (
           <SidebarSection id="rates" label="Rates & Channels" defaultOpen>

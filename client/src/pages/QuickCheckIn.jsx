@@ -15,6 +15,23 @@ function initials(name = '') {
 }
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
+// Groups arrivals sharing a reservation_group_id under one cluster, in the
+// order their first room appears, leaving ungrouped rows as singles.
+function clusterByGroup(list) {
+  const seen = new Set();
+  const result = [];
+  for (const b of list) {
+    if (b.reservation_group_id) {
+      if (seen.has(b.reservation_group_id)) continue;
+      seen.add(b.reservation_group_id);
+      result.push({ type: 'group', groupId: b.reservation_group_id, bookings: list.filter(x => x.reservation_group_id === b.reservation_group_id) });
+    } else {
+      result.push({ type: 'single', booking: b });
+    }
+  }
+  return result;
+}
+
 
 function GuestCard({ booking, borderColor, rightLabel, rightColor, onClick }) {
   return (
@@ -66,6 +83,8 @@ export default function QuickCheckIn() {
   const [ciLoading, setCiLoading]     = useState(false);
   const [ciMsg, setCiMsg]             = useState('');
   const [depositBlockId, setDepositBlockId] = useState(null);
+  const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
+  const [groupCheckinResults, setGroupCheckinResults] = useState(null);
 
   // Check-out state
   const [departures, setDepartures]   = useState([]);
@@ -104,6 +123,20 @@ export default function QuickCheckIn() {
   }
 
   function closeCiModal() { setCiSelected(null); setCiMsg(''); setDepositBlockId(null); }
+
+  async function checkInWholeGroup(groupId) {
+    setGroupCheckinLoading(groupId);
+    setGroupCheckinResults(null);
+    try {
+      const r = await api.post(`/api/checkin/group/${groupId}/start`);
+      setGroupCheckinResults({ groupId, ...r.data });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Gagal check-in grup');
+    } finally {
+      setGroupCheckinLoading(null);
+    }
+  }
 
   async function doCheckin() {
     setCiLoading(true);
@@ -201,18 +234,57 @@ export default function QuickCheckIn() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {arrivals.map(b => {
-              const isOTA = otaSources.includes(b.source);
-              const ready = b.deposit_paid || isOTA;
+            {clusterByGroup(arrivals).map(item => {
+              if (item.type === 'single') {
+                const b = item.booking;
+                const isOTA = otaSources.includes(b.source);
+                const ready = b.deposit_paid || isOTA;
+                return (
+                  <GuestCard
+                    key={b.id}
+                    booking={b}
+                    borderColor={ready ? '#BBF7D0' : '#FED7AA'}
+                    rightLabel={ready ? 'Siap ✓' : '⚠ Bayar'}
+                    rightColor={ready ? '#16A34A' : '#D97706'}
+                    onClick={() => openCheckin(b)}
+                  />
+                );
+              }
+              const { groupId, bookings } = item;
+              const results = groupCheckinResults?.groupId === groupId ? groupCheckinResults : null;
               return (
-                <GuestCard
-                  key={b.id}
-                  booking={b}
-                  borderColor={ready ? '#BBF7D0' : '#FED7AA'}
-                  rightLabel={ready ? 'Siap ✓' : '⚠ Bayar'}
-                  rightColor={ready ? '#16A34A' : '#D97706'}
-                  onClick={() => openCheckin(b)}
-                />
+                <div key={groupId} style={{ border: '2px solid #E5E7EB', borderRadius: 14, padding: 12, background: '#FAFAFA' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingLeft: 6 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      {bookings.length} kamar · {bookings[0].guest_name}
+                    </div>
+                    <button className="btn btn-primary btn-sm" onClick={() => checkInWholeGroup(groupId)} disabled={groupCheckinLoading === groupId}>
+                      {groupCheckinLoading === groupId ? 'Memproses…' : 'Check In Semua'}
+                    </button>
+                  </div>
+                  {results && (
+                    <div style={{ fontSize: 12, marginBottom: 8, paddingLeft: 6 }}>
+                      {results.succeeded} dari {results.attempted} kamar berhasil check-in
+                      {results.failed > 0 && ` — ${results.failed} gagal`}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {bookings.map(b => {
+                      const isOTA = otaSources.includes(b.source);
+                      const ready = b.deposit_paid || isOTA;
+                      return (
+                        <GuestCard
+                          key={b.id}
+                          booking={b}
+                          borderColor={ready ? '#BBF7D0' : '#FED7AA'}
+                          rightLabel={ready ? 'Siap ✓' : '⚠ Bayar'}
+                          rightColor={ready ? '#16A34A' : '#D97706'}
+                          onClick={() => openCheckin(b)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>

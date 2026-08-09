@@ -59,6 +59,42 @@ async function loadFolio(bookingId, propertyId) {
   };
 }
 
+// GET /api/folio/group/:groupId — master folio: aggregates each room's own
+// folio (still keyed to its own booking_id — folio_charges are always posted
+// per-room) into one combined total. Read-only, no schema change.
+router.get('/group/:groupId', auth, async (req, res) => {
+  try {
+    const { rows: [group] } = await db.query(
+      'SELECT id FROM reservation_groups WHERE id = $1 AND property_id = $2',
+      [req.params.groupId, req.propertyId]
+    );
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const { rows: bookingRows } = await db.query(
+      'SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2',
+      [req.params.groupId, req.propertyId]
+    );
+    const folios = await Promise.all(bookingRows.map(b => loadFolio(b.id, req.propertyId)));
+    const sum = key => round2(folios.reduce((s, f) => s + f[key], 0));
+
+    res.json({
+      group_id: group.id,
+      rooms: folios.map(f => ({
+        booking_id: f.booking.id, unit_name: f.booking.unit_name,
+        charges: f.charges, payments: f.payments,
+        subtotal: f.subtotal, total: f.total, balance_due: f.balance_due,
+      })),
+      subtotal: sum('subtotal'),
+      service_charge_amount: sum('service_charge_amount'),
+      tax_amount: sum('tax_amount'),
+      total: sum('total'),
+      balance_due: sum('balance_due'),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/folio/:bookingId
 router.get('/:bookingId', auth, async (req, res) => {
   try {

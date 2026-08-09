@@ -246,6 +246,13 @@ export default function BookingDetail() {
         </div>
       </div>
 
+      {booking.group && (
+        <div className="alert alert-success mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Part of a group booking ({booking.group.room_count} rooms)</span>
+          <Link to={`/reservations/group/${booking.group.id}`} className="btn btn-sm btn-secondary">View Group →</Link>
+        </div>
+      )}
+
       <div className="flex gap-2 mb-3">
         <button className={`btn btn-sm ${tab === 'details' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('details')}>Details</button>
         <button className={`btn btn-sm ${tab === 'folio' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('folio')}>Folio</button>

@@ -15,6 +15,23 @@ function initials(name = '') {
 }
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
+// Groups arrivals sharing a reservation_group_id under one cluster, in the
+// order their first room appears, leaving ungrouped rows as singles.
+function clusterByGroup(list) {
+  const seen = new Set();
+  const result = [];
+  for (const b of list) {
+    if (b.reservation_group_id) {
+      if (seen.has(b.reservation_group_id)) continue;
+      seen.add(b.reservation_group_id);
+      result.push({ type: 'group', groupId: b.reservation_group_id, bookings: list.filter(x => x.reservation_group_id === b.reservation_group_id) });
+    } else {
+      result.push({ type: 'single', booking: b });
+    }
+  }
+  return result;
+}
+
 
 function Row({ label, value, bold }) {
   return (
@@ -54,6 +71,8 @@ export default function CheckIn() {
   const [loading, setLoading]       = useState(false);
   const [msg, setMsg]               = useState('');
   const [depositBlockId, setDepositBlockId] = useState(null);
+  const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
+  const [groupCheckinResults, setGroupCheckinResults] = useState(null);
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -97,6 +116,20 @@ export default function CheckIn() {
     }
     setDepositBlockId(null);
     setMsg('');
+  }
+
+  async function checkInWholeGroup(groupId) {
+    setGroupCheckinLoading(groupId);
+    setGroupCheckinResults(null);
+    try {
+      const r = await api.post(`/api/checkin/group/${groupId}/start`);
+      setGroupCheckinResults({ groupId, ...r.data });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to check in group');
+    } finally {
+      setGroupCheckinLoading(null);
+    }
   }
 
   function startCheckout(b) {
@@ -178,59 +211,84 @@ export default function CheckIn() {
         <div className="card">
           <div className="card-title">Arriving Today ({arrivals.length})</div>
           {arrivals.length === 0 && <p className="text-muted">No arrivals today</p>}
-          {arrivals.map(b => {
-            const depositOk = b.deposit_paid || isOTA(b);
+          {clusterByGroup(arrivals).map(item => {
             const todayStr = new Date().toISOString().slice(0, 10);
-            const isOverdue = b.check_in_date < todayStr;
-            return (
-              <div
-                key={b.id}
-                className="guest-row"
-                style={{
-                  marginBottom: 8, cursor: 'default',
-                  ...(isOverdue ? { background: '#FFF7ED', borderColor: '#FED7AA' } : {}),
-                }}
-              >
-                <div className="avatar avatar-md" style={{ background: avatarColor(b.guest_name), flexShrink: 0 }}>
-                  {initials(b.guest_name)}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
-                  <div className="text-muted" style={{ fontSize: 11 }}>
-                    {b.unit_name} · {b.num_guests} pax · {b.nationality}
-                    {isOverdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
+            const rows = (item.type === 'group' ? item.bookings : [item.booking]).map(b => {
+              const depositOk = b.deposit_paid || isOTA(b);
+              const isOverdue = b.check_in_date < todayStr;
+              return (
+                <div
+                  key={b.id}
+                  className="guest-row"
+                  style={{
+                    marginBottom: 8, cursor: 'default',
+                    ...(isOverdue ? { background: '#FFF7ED', borderColor: '#FED7AA' } : {}),
+                  }}
+                >
+                  <div className="avatar avatar-md" style={{ background: avatarColor(b.guest_name), flexShrink: 0 }}>
+                    {initials(b.guest_name)}
                   </div>
-                  {isOverdue && (
-                    <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
-                      Was due: {b.check_in_date}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                    <div className="text-muted" style={{ fontSize: 11 }}>
+                      {b.unit_name} · {b.num_guests} pax · {b.nationality}
+                      {isOverdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
                     </div>
-                  )}
-                  {b.guest_whatsapp && (
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ marginTop: 4, padding: '2px 8px', fontSize: 11 }}
-                      onClick={() => waWelcome(b)}
+                    {isOverdue && (
+                      <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
+                        Was due: {b.check_in_date}
+                      </div>
+                    )}
+                    {b.guest_whatsapp && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginTop: 4, padding: '2px 8px', fontSize: 11 }}
+                        onClick={() => waWelcome(b)}
+                      >
+                        💬 Send Welcome WA
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <span
+                      className={`badge ${depositOk ? 'badge-blue' : 'badge-red'}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => startCheckin(b)}
                     >
-                      💬 Send Welcome WA
-                    </button>
-                  )}
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <span
-                    className={`badge ${depositOk ? 'badge-blue' : 'badge-red'}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => startCheckin(b)}
-                  >
-                    Check In →
-                  </span>
-                  <div style={{ fontSize: 11, marginTop: 4, color: depositOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
-                    {isOTA(b)
-                      ? '🏷 OTA managed'
-                      : b.deposit_paid
-                        ? '✓ Deposit paid'
-                        : '⚠ Deposit pending'}
+                      Check In →
+                    </span>
+                    <div style={{ fontSize: 11, marginTop: 4, color: depositOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
+                      {isOTA(b)
+                        ? '🏷 OTA managed'
+                        : b.deposit_paid
+                          ? '✓ Deposit paid'
+                          : '⚠ Deposit pending'}
+                    </div>
                   </div>
                 </div>
+              );
+            });
+
+            if (item.type === 'single') return rows[0];
+
+            const results = groupCheckinResults?.groupId === item.groupId ? groupCheckinResults : null;
+            return (
+              <div key={item.groupId} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8, marginBottom: 8, background: '#FAFAFA' }}>
+                <div className="flex-between" style={{ marginBottom: 8, paddingLeft: 4 }}>
+                  <span style={{ fontWeight: 700, fontSize: 12 }}>
+                    {item.bookings.length} rooms · {item.bookings[0].guest_name}
+                  </span>
+                  <button className="btn btn-primary btn-sm" onClick={() => checkInWholeGroup(item.groupId)} disabled={groupCheckinLoading === item.groupId}>
+                    {groupCheckinLoading === item.groupId ? 'Processing…' : 'Check In Whole Group'}
+                  </button>
+                </div>
+                {results && (
+                  <div style={{ fontSize: 11, marginBottom: 8, paddingLeft: 4 }}>
+                    {results.succeeded} of {results.attempted} rooms checked in
+                    {results.failed > 0 && ` — ${results.failed} failed`}
+                  </div>
+                )}
+                {rows}
               </div>
             );
           })}

@@ -34,6 +34,12 @@ const DEFAULT_EMAIL_TEMPLATES = [
    <p>If you have a moment, we would greatly appreciate a review of your stay.</p>
    <p>Warm regards,<br>{{property_name}}</p>`,
   },
+  {
+    // Kept in sync with the dynamic seed in migration 033_group_bookings.sql
+    trigger: 'group_booking_confirmed',
+    subject: 'Your group reservation at {{property_name}} is confirmed',
+    body_html: `<p>Dear {{guest_name}},</p><p>Your group reservation for {{room_count}} rooms ({{room_names}}) from {{check_in_date}} to {{check_out_date}} at {{property_name}} is confirmed. Total: {{total_amount}}.</p>`,
+  },
 ];
 
 async function seedPropertyDefaults(propertyId) {

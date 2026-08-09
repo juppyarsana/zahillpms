@@ -48,6 +48,8 @@ function AllotmentNote({ allotment, source, checkIn, sources }) {
   );
 }
 
+const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '' };
+
 export default function NewBooking() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
@@ -56,18 +58,21 @@ export default function NewBooking() {
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
   const [form, setForm] = useState({
-    guest_id: '', unit_id: sp.get('unit') || '',
+    guest_id: '',
     check_in_date: sp.get('date') || '', check_out_date: '',
-    num_guests: 1, source: 'direct', total_amount: '', deposit_pct: 30, special_requests: '', status: 'pending',
+    source: 'direct', deposit_pct: 30, special_requests: '', status: 'pending',
     discount_type: '', discount_value: '',
   });
+  const [rooms, setRooms] = useState([{ ...EMPTY_ROOM, unit_id: sp.get('unit') || '' }]);
   const [newGuest, setNewGuest] = useState({ name: '', whatsapp: '', nationality: '', email: '' });
   const [mode, setMode] = useState('search');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [priceSuggestion, setPriceSuggestion] = useState(null);
-  const [availability, setAvailability] = useState(null);
+  const [priceSuggestions, setPriceSuggestions] = useState([]);
+  const [availabilities, setAvailabilities] = useState([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+
+  const isGroup = rooms.length > 1;
 
   useEffect(() => {
     api.get('/api/units').then(r => setUnits(r.data));
@@ -81,38 +86,33 @@ export default function NewBooking() {
     }
   }, [guestSearch]);
 
-  useEffect(() => {
-    if (form.unit_id && form.check_in_date && form.check_out_date) {
-      api.get(`/api/pricing/suggest?unit_id=${form.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`)
-        .then(r => setPriceSuggestion(r.data))
-        .catch(() => setPriceSuggestion(null));
-    } else {
-      setPriceSuggestion(null);
-    }
-  }, [form.unit_id, form.check_in_date, form.check_out_date]);
+  const unitIdsKey = rooms.map(r => r.unit_id).join(',');
 
   useEffect(() => {
-    if (form.unit_id && form.check_in_date && form.check_out_date && form.check_out_date > form.check_in_date) {
-      setAvailabilityLoading(true);
-      setAvailability(null);
-      api.get(`/api/bookings/availability?unit_id=${form.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`)
-        .then(r => setAvailability(r.data))
-        .catch(() => setAvailability(null))
-        .finally(() => setAvailabilityLoading(false));
-    } else {
-      setAvailability(null);
-    }
-  }, [form.unit_id, form.check_in_date, form.check_out_date]);
+    if (!form.check_in_date || !form.check_out_date) { setPriceSuggestions([]); return; }
+    Promise.all(rooms.map(r => r.unit_id
+      ? api.get(`/api/pricing/suggest?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`).then(res => res.data).catch(() => null)
+      : Promise.resolve(null)
+    )).then(setPriceSuggestions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitIdsKey, form.check_in_date, form.check_out_date]);
 
-  const nights = priceSuggestion?.nights || 0;
-  const suggestedTotal = priceSuggestion?.suggested_total || 0;
+  useEffect(() => {
+    if (!form.check_in_date || !form.check_out_date || form.check_out_date <= form.check_in_date) { setAvailabilities([]); return; }
+    setAvailabilityLoading(true);
+    Promise.all(rooms.map(r => r.unit_id
+      ? api.get(`/api/bookings/availability?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`).then(res => res.data).catch(() => null)
+      : Promise.resolve(null)
+    )).then(setAvailabilities).finally(() => setAvailabilityLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitIdsKey, form.check_in_date, form.check_out_date]);
 
-  const totalAmt   = parseFloat(form.total_amount || 0);
+  const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
   const dValue     = parseFloat(form.discount_value || 0);
   const discountAmt = !form.discount_type || !dValue ? 0
-    : form.discount_type === 'fixed' ? Math.min(dValue, totalAmt)
-    : Math.round(totalAmt * dValue / 100);
-  const netAmt = totalAmt - discountAmt;
+    : form.discount_type === 'fixed' ? Math.min(dValue, groupTotal)
+    : Math.round(groupTotal * dValue / 100);
+  const netAmt = groupTotal - discountAmt;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -125,22 +125,45 @@ export default function NewBooking() {
         guestId = r.data.id;
       }
       if (!guestId) { setError('Select or create a guest'); setLoading(false); return; }
-      const total = parseFloat(form.total_amount || 0);
-      if (!total) { setError('Please enter the total amount before saving'); setLoading(false); return; }
-      const dValue = parseFloat(form.discount_value || 0);
-      const discountAmt = !form.discount_type || !dValue ? 0
-        : form.discount_type === 'fixed' ? Math.min(dValue, total)
-        : Math.round(total * dValue / 100);
-      const net = total - discountAmt;
-      const deposit_amount = Math.round(net * (form.deposit_pct / 100));
-      const res = await api.post('/api/bookings', {
-        ...form,
-        guest_id: guestId,
-        deposit_amount,
-        discount_type: form.discount_type || null,
-        discount_value: dValue,
-      });
-      nav(`/reservations/${res.data.id}`);
+      if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); setLoading(false); return; }
+      if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); setLoading(false); return; }
+
+      const deposit_amount = Math.round(netAmt * (form.deposit_pct / 100));
+
+      if (!isGroup) {
+        // Single-room booking — same endpoint and payload shape as before
+        // this feature existed. No proration, no group ever created.
+        const room = rooms[0];
+        const res = await api.post('/api/bookings', {
+          guest_id: guestId,
+          unit_id: room.unit_id,
+          num_guests: room.num_guests,
+          total_amount: room.total_amount,
+          check_in_date: form.check_in_date,
+          check_out_date: form.check_out_date,
+          source: form.source,
+          status: form.status,
+          special_requests: form.special_requests,
+          deposit_amount,
+          discount_type: form.discount_type || null,
+          discount_value: dValue,
+        });
+        nav(`/reservations/${res.data.id}`);
+      } else {
+        const res = await api.post('/api/bookings/group', {
+          guest_id: guestId,
+          check_in_date: form.check_in_date,
+          check_out_date: form.check_out_date,
+          source: form.source,
+          status: form.status,
+          special_requests: form.special_requests,
+          group_discount_type: form.discount_type || null,
+          group_discount_value: dValue,
+          group_deposit_amount: deposit_amount,
+          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount })),
+        });
+        nav(`/reservations/group/${res.data.group.id}`);
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create booking');
     } finally {
@@ -149,6 +172,11 @@ export default function NewBooking() {
   }
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  function setRoom(i, k, v) { setRooms(rs => rs.map((r, idx) => idx === i ? { ...r, [k]: v } : r)); }
+  function addRoom() { setRooms(rs => [...rs, { ...EMPTY_ROOM }]); }
+  function removeRoom(i) { setRooms(rs => rs.filter((_, idx) => idx !== i)); }
+
+  const anyUnavailable = availabilities.some(a => a && a.available === false);
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
@@ -209,7 +237,7 @@ export default function NewBooking() {
         </div>
 
         <div className="card mb-3">
-          <div className="card-title">Booking Details</div>
+          <div className="card-title">Dates</div>
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Check-in *</label>
@@ -220,80 +248,107 @@ export default function NewBooking() {
               <input className="form-input" type="date" value={form.check_out_date} min={form.check_in_date} onChange={e => set('check_out_date', e.target.value)} required />
             </div>
           </div>
-          {nights > 0 && <div className="alert alert-success" style={{ marginTop: -4, marginBottom: 12 }}>{nights} night{nights !== 1 ? 's' : ''}</div>}
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Unit *</label>
-              <select className="form-select" value={form.unit_id} onChange={e => set('unit_id', e.target.value)} required>
-                <option value="">Select unit…</option>
-                {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Number of Guests</label>
-              <input className="form-input" type="number" min={1} max={10} value={form.num_guests} onChange={e => set('num_guests', parseInt(e.target.value))} />
-            </div>
+          <div className="form-group">
+            <label className="form-label">Source</label>
+            <select className="form-select" value={form.source} onChange={e => set('source', e.target.value)}>
+              {sources.filter(s => s.is_active).map(s => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          {availabilityLoading && (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>Checking availability…</div>
-          )}
-          {availability && (
-            <div style={{ marginBottom: 12 }}>
-              {availability.available ? (
-                <div className="alert alert-success" style={{ marginBottom: availability.allotment ? 6 : 0 }}>
-                  Unit is available for the selected dates
+        {rooms.map((room, i) => {
+          const priceSuggestion = priceSuggestions[i];
+          const availability = availabilities[i];
+          const suggestedTotal = priceSuggestion?.suggested_total || 0;
+          return (
+            <div className="card mb-3" key={i}>
+              <div className="card-title flex" style={{ justifyContent: 'space-between' }}>
+                <span>{isGroup ? `Room ${i + 1}` : 'Booking Details'}</span>
+                {rooms.length > 1 && (
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => removeRoom(i)}>Remove</button>
+                )}
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Unit *</label>
+                  <select className="form-select" value={room.unit_id} onChange={e => setRoom(i, 'unit_id', e.target.value)} required>
+                    <option value="">Select unit…</option>
+                    {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
                 </div>
-              ) : (
-                <div className="alert alert-error" style={{ marginBottom: availability.allotment ? 6 : 0 }}>
-                  <strong>Not available</strong> — conflicting booking{availability.conflicts.length > 1 ? 's' : ''}:
-                  {availability.conflicts.map(c => (
-                    <div key={c.id} style={{ marginTop: 4, fontSize: 12 }}>
-                      {c.guest_name} · {c.check_in_date?.slice(0,10)} → {c.check_out_date?.slice(0,10)} ({c.status})
+                <div className="form-group">
+                  <label className="form-label">Number of Guests</label>
+                  <input className="form-input" type="number" min={1} max={10} value={room.num_guests} onChange={e => setRoom(i, 'num_guests', parseInt(e.target.value))} />
+                </div>
+              </div>
+
+              {availabilityLoading && (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>Checking availability…</div>
+              )}
+              {availability && (
+                <div style={{ marginBottom: 12 }}>
+                  {availability.available ? (
+                    <div className="alert alert-success" style={{ marginBottom: availability.allotment ? 6 : 0 }}>
+                      Unit is available for the selected dates
                     </div>
-                  ))}
+                  ) : (
+                    <div className="alert alert-error" style={{ marginBottom: availability.allotment ? 6 : 0 }}>
+                      <strong>Not available</strong> — conflicting booking{availability.conflicts.length > 1 ? 's' : ''}:
+                      {availability.conflicts.map(c => (
+                        <div key={c.id} style={{ marginTop: 4, fontSize: 12 }}>
+                          {c.guest_name} · {c.check_in_date?.slice(0,10)} → {c.check_out_date?.slice(0,10)} ({c.status})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {availability.allotment ? (
+                    <AllotmentNote allotment={availability.allotment} source={form.source} checkIn={form.check_in_date} sources={sources} />
+                  ) : room.unit_id && form.check_in_date ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                      No allotment set for {new Date(form.check_in_date + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' })}
+                    </div>
+                  ) : null}
                 </div>
               )}
-              {availability.allotment ? (
-                <AllotmentNote allotment={availability.allotment} source={form.source} checkIn={form.check_in_date} sources={sources} />
-              ) : form.unit_id && form.check_in_date ? (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                  No allotment set for {new Date(form.check_in_date + 'T00:00:00').toLocaleString('default', { month: 'long', year: 'numeric' })}
-                </div>
-              ) : null}
-            </div>
-          )}
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Source</label>
-              <select className="form-select" value={form.source} onChange={e => set('source', e.target.value)}>
-                {sources.filter(s => s.is_active).map(s => (
-                  <option key={s.id} value={s.id}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Total Amount (IDR)</label>
-            <input className="form-input" type="number" value={form.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
-              onChange={e => set('total_amount', e.target.value)} />
-            {priceSuggestion && !form.total_amount && suggestedTotal > 0 && (
-              <div style={{ marginTop: 6 }}>
-                {priceSuggestion.period && (
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>
-                    <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
-                      {priceSuggestion.period.name}
-                    </span>
-                    {' '}applied · Rp {Number(priceSuggestion.rate_per_night).toLocaleString('id-ID')}/night
+
+              <div className="form-group">
+                <label className="form-label">Total Amount (IDR)</label>
+                <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
+                  onChange={e => setRoom(i, 'total_amount', e.target.value)} />
+                {priceSuggestion && !room.total_amount && suggestedTotal > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {priceSuggestion.period && (
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
+                          {priceSuggestion.period.name}
+                        </span>
+                        {' '}applied · Rp {Number(priceSuggestion.rate_per_night).toLocaleString('id-ID')}/night
+                      </div>
+                    )}
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
+                      Use Rp {Number(suggestedTotal).toLocaleString('id-ID')}
+                      {!priceSuggestion.period && ' (base rate)'}
+                    </button>
                   </div>
                 )}
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => set('total_amount', suggestedTotal)}>
-                  Use Rp {Number(suggestedTotal).toLocaleString('id-ID')}
-                  {!priceSuggestion.period && ' (base rate)'}
-                </button>
               </div>
-            )}
-          </div>
+            </div>
+          );
+        })}
+
+        <div className="mb-3">
+          <button type="button" className="btn btn-secondary" onClick={addRoom}>+ Add Another Room</button>
+        </div>
+
+        <div className="card mb-3">
+          <div className="card-title">{isGroup ? 'Group Discount & Deposit' : 'Discount & Deposit'}</div>
+          {isGroup && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+              Group total: Rp {groupTotal.toLocaleString('id-ID')} across {rooms.length} rooms
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Discount</label>
             <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
@@ -356,8 +411,8 @@ export default function NewBooking() {
         {error && <div className="alert alert-error">{error}</div>}
         <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
           <Link to="/reservations" className="btn btn-secondary">Cancel</Link>
-          <button type="submit" className="btn btn-primary" disabled={loading || availability?.available === false}>
-            {loading ? 'Creating…' : 'Create Booking'}
+          <button type="submit" className="btn btn-primary" disabled={loading || anyUnavailable}>
+            {loading ? 'Creating…' : isGroup ? 'Create Group Booking' : 'Create Booking'}
           </button>
         </div>
       </form>

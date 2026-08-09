@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import BookingDetail from './pages/BookingDetail';
+import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
@@ -214,6 +215,7 @@ export default function App() {
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/new" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
+                  <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />

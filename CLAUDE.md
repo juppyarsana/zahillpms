@@ -239,8 +239,9 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 030 | Guest communication (email templates) |
 | 031 | SMTP config (per-property) |
 | 032 | Property branding (logo_url, brand_color on property_settings) |
+| 033 | Group Bookings — `reservation_groups`, `bookings.reservation_group_id`, `group_booking_confirmed` email trigger |
 
-**Next migration number: 033** (keep `ROADMAP.md` in sync when you add one).
+**Next migration number: 034** (keep `ROADMAP.md` in sync when you add one).
 
 ---
 
@@ -268,6 +269,8 @@ Sidebar layout: `.sidebar-nav` (flex:1, `min-height:0`, its own `overflow-y:auto
 **Guest Communication** — email templates editor in Settings, per-property SMTP config (falls back to platform-default SMTP env vars if a property hasn't configured its own). Backed by `routes/communications.js` / migrations `030`–`031`.
 
 **Per-property branding** — logo, brand color, and contact/invoice fields, set from the superadmin `PropertyDetail.jsx` "Branding" card (see Superadmin section above for the full trace). Rendered via `SettingsContext.jsx`'s `branding` value in the client nav, and via `/login/:slug` + an optional slug field on `Login.jsx` pre-auth. Backed by migration `032`.
+
+**Group Bookings** (Phase D #9) — multiple room bookings under one guest + shared date range (villa/event groups), with a group-level discount/deposit prorated across child bookings, a master folio rollup, and best-effort group check-in. Backed by migration `033` (`reservation_groups` table, nullable `bookings.reservation_group_id`). `NewBooking.jsx`'s "+ Add Another Room" is the only new UI surface for *creating* one — a single-room submission still goes through the original `POST /api/bookings` untouched, and only 2+ rooms route to the new `POST /api/bookings/group`. New page `GroupDetail.jsx` (`/reservations/group/:groupId`) shows the room list, payment rollup, a "Check In Whole Group" action (`POST /api/checkin/group/:groupId/start`, partial-success — inspect the response body, not just the HTTP status), "Cancel Group", and a Master Folio tab (`GET /api/folio/group/:groupId`, aggregates each room's own folio — `folio_charges` still always posts per-room). `BookingDetail.jsx` shows a "Part of a group booking" banner when relevant; `CheckIn.jsx`/`QuickCheckIn.jsx` cluster same-group arrivals under one header. No new module — all new endpoints live inside the existing `bookings`/`checkin`/`folio` route files, so they inherit `reservations`/`front_desk`/`financial` gating for free. Multi-room groups get one combined confirmation email (new `group_booking_confirmed` template trigger, editable in Settings → Communications) instead of one per room.
 
 ---
 
@@ -326,7 +329,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - **Room IDs** — ESP32 uses simple string IDs, mapped via `units.controller_id`.
 - **No localStorage in PWA artifacts** — use React state or backend for persistence (exception: Room Display's own device-local room ID/token, which is intentionally local to that physical tablet).
 - **CommonJS in server** — `require()`, not `import`. Do not convert to ESM.
-- **Migrations** — numbered SQL files in `server/db/migrations/`, next is `032`. Update the "Next migration number" line in `ROADMAP.md` when you add one.
+- **Migrations** — numbered SQL files in `server/db/migrations/`, next is `034`. Update the "Next migration number" line in `ROADMAP.md` when you add one.
 - **New features that touch routes must consider**: does this need a new module in `server/modules.js`? Does it need `property_id` scoping? Should the migration number and this file's migration table both be updated in the same commit?
 - **New module-gated client pages need `RequireModule` on the route, not just a `hasModule()` check in the nav** — `client/src/App.jsx`'s route list and `client/src/components/Sidebar.jsx`/`BottomNav`'s nav-visibility checks are two separate places that must agree; it's easy to add one and forget the other (this was a real, multi-route bug fixed in one pass — see `git log` around the sidebar redesign).
 
@@ -346,7 +349,8 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - ✅ Phase B item 4 (Automated Email) — implemented, migrations 030–031.
 - ⏳ Phase B item 5 (WhatsApp messaging) — not started; leaning toward api.co.id (official WhatsApp Cloud API), see Open Decisions below.
 - ✅ Superadmin Property Branding (logo, brand color, contact info) — implemented, migration 032.
-- 🔵 **Phase D selected modules (NEXT, reprioritized 2026-08-09)** — Group Bookings, F&B/Full POS, Concierge/Activities. Not started.
+- ✅ Phase D item 9 (Group Bookings) — implemented, migration 033.
+- 🔵 **Phase D remaining selected modules (NEXT, reprioritized 2026-08-09)** — F&B/Full POS, Concierge/Activities. Not started.
 - ⚪ Phase C (Direct Booking Engine, Beds24 Channel Manager) — deprioritized behind Phase D's selected modules, not started.
 - ⚪ Phase D remaining (Reviews & Feedback, Stripe subscription billing) — build when a client actually requests it.
 

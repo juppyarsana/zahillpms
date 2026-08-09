@@ -5,6 +5,7 @@ const EMAIL_TRIGGERS = [
   { id: 'booking_confirmed', label: 'Booking Confirmed' },
   { id: 'pre_arrival', label: 'Pre-Arrival (T-1 day)' },
   { id: 'post_checkout', label: 'Post-Checkout' },
+  { id: 'group_booking_confirmed', label: 'Group Booking Confirmed' },
 ];
 
 export default function SettingsCommunications() {
@@ -196,7 +197,11 @@ export default function SettingsCommunications() {
             <textarea className="form-input" rows={8} style={{ fontFamily: 'monospace', fontSize: 12 }}
               value={templateForm.body_html} onChange={e => setTemplateField('body_html', e.target.value)} />
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-              Placeholders: {'{{guest_name}}'}, {'{{check_in_date}}'}, {'{{check_out_date}}'}, {'{{unit_name}}'}, {'{{nights}}'}, {'{{property_name}}'}
+              {activeTrigger === 'group_booking_confirmed' ? (
+                <>Placeholders: {'{{guest_name}}'}, {'{{check_in_date}}'}, {'{{check_out_date}}'}, {'{{room_count}}'}, {'{{room_names}}'}, {'{{total_amount}}'}, {'{{nights}}'}, {'{{property_name}}'}</>
+              ) : (
+                <>Placeholders: {'{{guest_name}}'}, {'{{check_in_date}}'}, {'{{check_out_date}}'}, {'{{unit_name}}'}, {'{{nights}}'}, {'{{property_name}}'}</>
+              )}
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>

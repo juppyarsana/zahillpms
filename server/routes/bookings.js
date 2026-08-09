@@ -1,11 +1,11 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const { sendBookingEmail } = require('../services/mailer');
+const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 
 // GET /api/bookings
 router.get('/', auth, async (req, res) => {
-  const { month, year, unit_id, status } = req.query;
+  const { month, year, unit_id, status, group_id } = req.query;
   let query = `
     SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, u.name as unit_name,
            EXISTS(
@@ -26,6 +26,7 @@ router.get('/', auth, async (req, res) => {
   }
   if (unit_id) { params.push(unit_id); query += ` AND b.unit_id = $${params.length}`; }
   if (status) { params.push(status); query += ` AND b.status = $${params.length}`; }
+  if (group_id) { params.push(group_id); query += ` AND b.reservation_group_id = $${params.length}`; }
   query += ' ORDER BY b.check_in_date';
 
   try {
@@ -44,7 +45,10 @@ router.get('/today/arrivals', auth, async (req, res) => {
              u.name as unit_name,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
-             )) as deposit_paid
+             )) as deposit_paid,
+             CASE WHEN b.reservation_group_id IS NULL THEN 1
+                  ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
+             END AS group_size
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -66,7 +70,10 @@ router.get('/today/departures', auth, async (req, res) => {
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp,
              u.name as unit_name,
              EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received') as balance_paid,
-             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount
+             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount,
+             CASE WHEN b.reservation_group_id IS NULL THEN 1
+                  ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
+             END AS group_size
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -89,7 +96,10 @@ router.get('/in-house', auth, async (req, res) => {
              u.name as unit_name,
              b.check_out_date < CURRENT_DATE as overdue,
              EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received') as balance_paid,
-             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount
+             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount,
+             CASE WHEN b.reservation_group_id IS NULL THEN 1
+                  ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
+             END AS group_size
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -180,6 +190,57 @@ router.get('/transfer-availability', auth, async (req, res) => {
   }
 });
 
+// GET /api/bookings/group/:groupId
+router.get('/group/:groupId', auth, async (req, res) => {
+  try {
+    const { rows: [group] } = await db.query(`
+      SELECT rg.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.email as guest_email
+      FROM reservation_groups rg JOIN guests g ON g.id = rg.primary_guest_id
+      WHERE rg.id = $1 AND rg.property_id = $2`, [req.params.groupId, req.propertyId]);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const { rows: bookings } = await db.query(`
+      SELECT b.*, u.name as unit_name,
+             (SELECT checkin_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkin_time,
+             (SELECT checkout_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkout_time
+      FROM bookings b JOIN units u ON u.id = b.unit_id
+      WHERE b.reservation_group_id = $1 AND b.property_id = $2
+      ORDER BY u.name`, [req.params.groupId, req.propertyId]);
+
+    const paymentsByBooking = await db.query(
+      `SELECT * FROM payments WHERE booking_id = ANY($1::uuid[]) ORDER BY booking_id, type`,
+      [bookings.map(b => b.id)]
+    );
+    const bookingsWithPayments = bookings.map(b => ({
+      ...b,
+      payments: paymentsByBooking.rows.filter(p => p.booking_id === b.id),
+    }));
+
+    const statusBreakdown = {};
+    bookings.forEach(b => { statusBreakdown[b.status] = (statusBreakdown[b.status] || 0) + 1; });
+    const paidAmount = paymentsByBooking.rows.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
+    const totalAmount = bookings.reduce((s, b) => s + parseFloat(b.total_amount), 0);
+    const netAmount = totalAmount - parseFloat(group.group_discount_amount || 0);
+
+    res.json({
+      group,
+      bookings: bookingsWithPayments,
+      rollup: {
+        room_count: bookings.length,
+        total_amount: totalAmount,
+        discount_amount: parseFloat(group.group_discount_amount || 0),
+        net_amount: netAmount,
+        deposit_amount: parseFloat(group.group_deposit_amount || 0),
+        paid_amount: paidAmount,
+        balance_due: netAmount - paidAmount,
+        status_breakdown: statusBreakdown,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/bookings/:id
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -188,7 +249,10 @@ router.get('/:id', auth, async (req, res) => {
              u.name as unit_name,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
-             )) as deposit_paid
+             )) as deposit_paid,
+             CASE WHEN b.reservation_group_id IS NULL THEN 1
+                  ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
+             END AS group_size
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
     const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [req.params.id]);
@@ -204,7 +268,8 @@ router.get('/:id', auth, async (req, res) => {
     const [{ rows: [booking] }, { rows: payments }, { rows: notes }, { rows: [checkin_record] }] =
       await Promise.all([bookingQ, paymentsQ, notesQ, checkinQ]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null });
+    const group = booking.reservation_group_id ? { id: booking.reservation_group_id, room_count: booking.group_size } : null;
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -280,6 +345,144 @@ router.post('/', auth, async (req, res) => {
       .catch(err => console.error('Email trigger failed:', err));
 
     res.status(201).json(booking);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/bookings/group — multi-room reservation under one guest + shared dates.
+// Single-room bookings keep using POST / above unchanged; this endpoint only
+// exists once there are 2+ rooms (rooms.length < 2 is rejected below).
+router.post('/group', auth, async (req, res) => {
+  const {
+    guest_id, check_in_date, check_out_date, source, status,
+    special_requests, internal_notes,
+    group_discount_type, group_discount_value, group_deposit_amount,
+    rooms,
+  } = req.body;
+
+  if (!guest_id || !check_in_date || !check_out_date || !Array.isArray(rooms) || rooms.length < 2) {
+    return res.status(400).json({ error: 'guest_id, check_in_date, check_out_date, and at least 2 rooms are required' });
+  }
+  const unitIds = rooms.map(r => r.unit_id);
+  if (unitIds.some(id => !id) || new Set(unitIds).size !== unitIds.length) {
+    return res.status(400).json({ error: 'Each room needs a unit_id, and units must not repeat' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: guestRows } = await client.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
+    if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
+
+    const { rows: unitRows } = await client.query('SELECT id FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
+    if (unitRows.length !== unitIds.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'One or more units not found' }); }
+
+    for (const unitId of unitIds) {
+      const conflict = await client.query(`
+        SELECT id FROM bookings
+        WHERE unit_id = $1 AND property_id = $4
+          AND status NOT IN ('cancelled','no_show')
+          AND check_in_date < $3 AND check_out_date > $2
+      `, [unitId, check_in_date, check_out_date, req.propertyId]);
+      if (conflict.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Unit ${unitId} is not available for the selected dates` });
+      }
+    }
+
+    const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
+
+    const gdType = group_discount_type || null;
+    const gdValue = parseFloat(group_discount_value || 0);
+    let groupDiscountAmount = 0;
+    if (gdType === 'fixed')      groupDiscountAmount = Math.min(gdValue, groupTotal);
+    if (gdType === 'percentage') groupDiscountAmount = Math.round(groupTotal * gdValue / 100);
+    const groupNet = groupTotal - groupDiscountAmount;
+    const groupDepositAmount = Math.min(parseFloat(group_deposit_amount || 0), groupNet);
+
+    // Prorate discount/deposit per room by each room's share of the group total.
+    // The last room absorbs the rounding remainder so both sums stay exact.
+    let discountRemaining = groupDiscountAmount;
+    let depositRemaining = groupDepositAmount;
+    const shares = rooms.map((room, i) => {
+      const isLast = i === rooms.length - 1;
+      const roomTotal = parseFloat(room.total_amount || 0);
+      const discountShare = isLast ? discountRemaining : Math.round(groupDiscountAmount * roomTotal / (groupTotal || 1));
+      discountRemaining -= discountShare;
+      const roomNet = roomTotal - discountShare;
+      return { room, roomTotal, discountShare, roomNet, isLast };
+    });
+    // Second pass for deposit share, since it's proportional to roomNet / groupNet
+    shares.forEach(s => {
+      s.depositShare = s.isLast ? depositRemaining : Math.round(groupDepositAmount * s.roomNet / (groupNet || 1));
+      depositRemaining -= s.depositShare;
+      s.balanceShare = s.roomNet - s.depositShare;
+    });
+
+    const { rows: [group] } = await client.query(
+      `INSERT INTO reservation_groups (property_id, primary_guest_id, check_in_date, check_out_date, group_discount_type, group_discount_value, group_discount_amount, group_deposit_amount, special_requests, internal_notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [req.propertyId, guest_id, check_in_date, check_out_date, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id]
+    );
+
+    const bookings = [];
+    for (const s of shares) {
+      // Child bookings store the GROUP's discount_type/discount_value verbatim
+      // (so BookingDetail.jsx's existing discount box renders unchanged) but
+      // their own prorated discount_amount/deposit_amount — that amount won't
+      // self-reconcile if recomputed against this one room's total in
+      // isolation, which is intentional, not a bug to "fix" later.
+      const { rows: [booking] } = await client.query(
+        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+        [guest_id, s.room.unit_id, check_in_date, check_out_date, s.room.num_guests || 1, source || 'direct', s.roomTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id]
+      );
+      if (s.depositShare > 0) {
+        await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
+      }
+      if (s.balanceShare > 0) {
+        await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', s.balanceShare]);
+      }
+      bookings.push(booking);
+    }
+
+    await client.query('COMMIT');
+
+    sendGroupBookingEmail(req.propertyId, group.id)
+      .catch(err => console.error('Group email trigger failed:', err));
+
+    res.status(201).json({ group, bookings });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/bookings/group/:groupId  (cancel whole group — no hard delete)
+router.delete('/group/:groupId', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [group] } = await client.query(
+      "UPDATE reservation_groups SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
+      [req.params.groupId, req.propertyId]
+    );
+    if (!group) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Group not found' }); }
+    const { rows: bookings } = await client.query(
+      `UPDATE bookings SET status = 'cancelled', updated_at = NOW()
+       WHERE reservation_group_id = $1 AND property_id = $2 AND status NOT IN ('checked_out','cancelled')
+       RETURNING *`,
+      [req.params.groupId, req.propertyId]
+    );
+    await client.query('COMMIT');
+    res.json({ group, bookings });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
