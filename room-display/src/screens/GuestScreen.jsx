@@ -6,6 +6,7 @@ import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 import ExploreTab from '../components/ExploreTab';
+import OrderFoodTab from '../components/OrderFoodTab';
 import CallButton from '../components/CallButton';
 
 const EXPLORE_TABS = [
@@ -14,7 +15,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('controls');
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
@@ -58,8 +59,11 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         </div>
 
         {/* Controls — top zone */}
-        <div style={{ width: '100%', padding: '0 8px' }}>
+        <div style={{ width: '100%', padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <NavBtn id="controls" active={activeTab === 'controls'} icon="auto_fix_high" label="Controls" onClick={() => setActiveTab('controls')} />
+          {orderingEnabled && (
+            <NavBtn id="order" active={activeTab === 'order'} icon="restaurant_menu" label="Order Food" onClick={() => setActiveTab('order')} />
+          )}
         </div>
 
         {/* Separator */}
@@ -114,6 +118,8 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
               </div>
             </section>
           </>
+        ) : activeTab === 'order' ? (
+          <OrderFoodTab roomId={roomId} />
         ) : (
           <ExploreTab
             weather={weather}

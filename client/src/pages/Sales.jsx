@@ -18,6 +18,8 @@ export default function Sales() {
   const [orderDone, setOrderDone] = useState(false);
   const [newProduct, setNewProduct] = useState(null);
   const [prodForm, setProdForm] = useState({ name: '', category: 'drinks', price: '', description: '' });
+  const [orderType, setOrderType] = useState('takeaway');
+  const [tableNumber, setTableNumber] = useState('');
 
   async function loadProducts() { const r = await api.get('/api/products?available=true'); setProducts(r.data); }
   async function loadSales() { const r = await api.get('/api/sales'); setSales(r.data); }
@@ -53,10 +55,13 @@ export default function Sales() {
       booking_id: selectedBooking?.id || null,
       payment_method: selectedBooking ? 'room_charge' : payMethod,
       items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price })),
+      order_type: orderType,
+      table_number: orderType === 'dine_in' ? tableNumber || null : null,
     });
     setCart([]);
     setSelectedBooking(null);
     setBookingSearch('');
+    setTableNumber('');
     setOrderDone(true);
     loadSales();
     setTimeout(() => setOrderDone(false), 2500);
@@ -108,6 +113,23 @@ export default function Sales() {
           <div className="card" style={{ alignSelf: 'flex-start', position: 'sticky', top: 16 }}>
             <div className="card-title">Order</div>
 
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Order Type</label>
+                <select className="form-select" value={orderType} onChange={e => setOrderType(e.target.value)}>
+                  <option value="takeaway">Takeaway</option>
+                  <option value="dine_in">Dine-in</option>
+                  <option value="room_service">Room Service</option>
+                </select>
+              </div>
+              {orderType === 'dine_in' && (
+                <div className="form-group">
+                  <label className="form-label">Table #</label>
+                  <input className="form-input" value={tableNumber} onChange={e => setTableNumber(e.target.value)} placeholder="e.g. 4" />
+                </div>
+              )}
+            </div>
+
             <div className="form-group">
               <label className="form-label">Charge to Room (optional)</label>
               <input className="form-input" placeholder="Search checked-in guest…" value={bookingSearch}
@@ -138,7 +160,9 @@ export default function Sales() {
 
             <div className="divider" />
 
-            {cart.length === 0 ? (
+            {orderDone ? (
+              <div className="alert alert-success">Order recorded! ✓</div>
+            ) : cart.length === 0 ? (
               <p className="text-muted" style={{ textAlign: 'center', padding: 16 }}>Cart is empty</p>
             ) : (
               <>
@@ -158,13 +182,9 @@ export default function Sales() {
                 <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, marginTop: 12, marginBottom: 8 }}>
                   <span>Total</span><span>{fmtIDR(cartTotal)}</span>
                 </div>
-                {orderDone ? (
-                  <div className="alert alert-success">Order recorded! ✓</div>
-                ) : (
-                  <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={submitOrder}>
-                    {selectedBooking ? '💳 Charge to Room' : '✓ Complete Sale'}
-                  </button>
-                )}
+                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={submitOrder}>
+                  {selectedBooking ? '💳 Charge to Room' : '✓ Complete Sale'}
+                </button>
               </>
             )}
           </div>

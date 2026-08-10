@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const salesService = require('../services/salesService');
 
 // GET /api/sales
 router.get('/', auth, async (req, res) => {
@@ -25,42 +26,23 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/sales
 router.post('/', auth, async (req, res) => {
-  const { booking_id, payment_method, items } = req.body;
+  const { booking_id, payment_method, items, order_type, table_number } = req.body;
   if (!payment_method || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'payment_method and items required' });
   }
-  const client = await db.pool.connect();
   try {
-    await client.query('BEGIN');
     if (booking_id) {
-      const { rows: [booking] } = await client.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
-      if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+      const { rows: [booking] } = await db.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
+      if (!booking) return res.status(404).json({ error: 'Booking not found' });
     }
-    const productIds = items.map(i => i.product_id);
-    const { rows: ownedProducts } = await client.query('SELECT id FROM products WHERE id = ANY($1) AND property_id = $2', [productIds, req.propertyId]);
-    if (ownedProducts.length !== new Set(productIds).size) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'One or more products not found' });
-    }
-    const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * parseInt(i.quantity), 0);
-    const { rows: [sale] } = await client.query(
-      'INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [booking_id || null, payment_method, total, req.user.id, req.propertyId]
-    );
-    for (const item of items) {
-      const subtotal = parseFloat(item.unit_price) * parseInt(item.quantity);
-      await client.query(
-        'INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5)',
-        [sale.id, item.product_id, item.quantity, item.unit_price, subtotal]
-      );
-    }
-    await client.query('COMMIT');
-    res.status(201).json(sale);
+    const result = await salesService.createSale(req.propertyId, {
+      bookingId: booking_id, paymentMethod: payment_method, items,
+      orderType: order_type, tableNumber: table_number, servedBy: req.user.id,
+    });
+    if (result.error) return res.status(404).json({ error: result.error });
+    res.status(201).json(result.sale);
   } catch (err) {
-    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
   }
 });
 

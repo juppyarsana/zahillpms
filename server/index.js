@@ -91,6 +91,11 @@ app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insigh
 // moduleGuard('room_controller') is applied per-route inside routes/calls.js instead.
 app.use('/api/calls', require('./routes/calls'));
 
+// /api/kitchen mixes staff auth (regular endpoints) with authQueryToken
+// (the /stream SSE endpoint) the same way /api/calls does — moduleGuard('sales')
+// is applied per-route inside routes/kitchen.js instead.
+app.use('/api/kitchen', require('./routes/kitchen'));
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 const PORT = process.env.PORT || 4000;

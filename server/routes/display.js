@@ -1,9 +1,12 @@
 const router = require('express').Router();
 const db = require('../db');
 const authDisplay = require('../middleware/authDisplay');
+const moduleGuard = require('../middleware/moduleGuard');
 const mqttClient = require('../mqtt');
 const sse = require('../sse');
 const { getWeather } = require('../weather');
+const salesService = require('../services/salesService');
+const salesGate = moduleGuard('sales');
 
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
@@ -60,6 +63,11 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       [unit.property_id]
     );
 
+    const { rows: moduleRows } = await db.query(
+      'SELECT is_enabled FROM property_modules WHERE property_id = $1 AND module = $2',
+      [unit.property_id, 'sales']
+    );
+
     const weather = await getWeather();
 
     res.json({
@@ -70,6 +78,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       cards: cardRows,
       weather,
       property: propertyRows[0] || null,
+      orderingEnabled: moduleRows[0]?.is_enabled || false,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -166,6 +175,74 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
       console.warn('[DISPLAY] MQTT publish failed:', mqttErr.message);
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/display/room/:roomId/menu — guest self-ordering menu
+router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const { rows: products } = await db.query(
+      `SELECT id, name, category, price, description
+       FROM products WHERE property_id = $1 AND is_available = true
+       ORDER BY category, name`,
+      [req.propertyId]
+    );
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/display/room/:roomId/order — guest places a room-service order
+// Body: { items: [{ product_id, quantity }] }
+// Prices are looked up server-side, not trusted from the request — unlike
+// the staff POS (routes/sales.js), this endpoint is reachable by a guest
+// device, so it must not accept a client-supplied unit_price.
+router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
+  const { roomId } = req.params;
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'items required' });
+  }
+  try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT id FROM bookings
+       WHERE unit_id = $1 AND status IN ('confirmed', 'checked_in')
+         AND check_in_date <= CURRENT_DATE AND check_out_date >= CURRENT_DATE
+       ORDER BY check_in_date DESC LIMIT 1`,
+      [unitRows[0].id]
+    );
+    if (!bookingRows[0]) return res.status(404).json({ error: 'No active stay found for this room' });
+
+    const productIds = items.map(i => i.product_id);
+    const { rows: products } = await db.query(
+      'SELECT id, price FROM products WHERE id = ANY($1) AND property_id = $2 AND is_available = true',
+      [productIds, req.propertyId]
+    );
+    if (products.length !== new Set(productIds).size) {
+      return res.status(404).json({ error: 'One or more items are no longer available' });
+    }
+    const priceById = new Map(products.map(p => [p.id, p.price]));
+    const pricedItems = items.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: priceById.get(i.product_id) }));
+
+    const result = await salesService.createSale(req.propertyId, {
+      bookingId: bookingRows[0].id,
+      paymentMethod: 'room_charge',
+      orderType: 'room_service',
+      items: pricedItems,
+      servedBy: null,
+    });
+    if (result.error) return res.status(404).json({ error: result.error });
+    res.status(201).json({ ok: true, total: result.sale.total_amount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -280,13 +280,14 @@ Each unit can have **two displays** with distinct, complementary roles:
 
 ### 1. Room Display
 **Primary purpose:** Device control — relay toggles, RGB LED, AC via IR blaster
-**Secondary:** Shows guest name and stay dates at a glance
+**Secondary:** Shows guest name and stay dates at a glance; guest self-ordering (see below)
 
 - Calls `GET /api/display/room/:roomId/state` (via `authDisplay` middleware, per-property `display_token` — not a staff JWT)
 - Three screens: `SetupScreen` (first-time config), `IdleScreen` (vacant), `GuestScreen` (occupied)
 - Room ID and display token stored in localStorage on the device
 - Debug menu triggered by 5 rapid taps
 - Stack: React/Vite PWA (`room-display/`)
+- **Guest self-ordering** (extends the `sales` module, see `ROADMAP.md`): when occupied and the property's `sales` module is on (`state.orderingEnabled`), `GuestScreen` shows an "Order Food" tab (`OrderFoodTab.jsx`) listing the full product catalog. `GET /api/display/room/:roomId/menu` + `POST /api/display/room/:roomId/order` (both `authDisplay` + `moduleGuard('sales')`) create a `room_charge` / `room_service` sale against the room's current `checked_in` booking — prices are always looked up server-side, never trusted from the tablet. Feeds the same Kitchen Display (`/kitchen` in the PMS client) as staff-entered orders. Sale creation itself lives in `server/services/salesService.js`, shared with the staff POS (`routes/sales.js`).
 
 ### 2. TV Welcome Display
 **Only purpose:** Welcome guests and show their stay details when TV is idle. No device controls — purely guest-facing ambient display.

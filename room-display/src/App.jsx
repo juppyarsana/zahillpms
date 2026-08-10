@@ -229,6 +229,7 @@ export default function App() {
         roomId={roomId}
         weather={state.weather}
         cards={state.cards || []}
+        orderingEnabled={state.orderingEnabled}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}

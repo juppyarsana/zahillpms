@@ -99,7 +99,9 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Table management, kitchen display system, stock tracking
 - Existing sales module covers most small properties
 - Only needed for properties with a restaurant
-- Status: 🔵 Next
+- Status: 🟡 Kitchen Display System and guest self-ordering from the Room
+  Display both shipped (see write-ups below); table management and stock
+  tracking not started
 
 ### 11. Concierge / Activities
 - Activity catalog, tour bookings, transport scheduling
@@ -143,6 +145,99 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
+## 🟡 Kitchen Display System (Phase D #10, first slice)
+
+> First slice of F&B/Full POS. "Table" kept deliberately loose (a free-text
+> label on an order, not a seating/reservation system) so a fuller table
+> management feature can be layered on later without reworking this.
+
+- Migration 034: `sales` gained `order_type` (`dine_in`/`room_service`/
+  `takeaway`), `table_number` (free text), and `kitchen_status`
+  (`new`→`preparing`→`ready`→`served`, `NULL` for orders with no
+  `food`/`drinks` items — nothing to cook). No new tables — pure extension
+  of the existing `sales`/`sale_items` schema, gated under the existing
+  `sales` module (no new module row).
+- `POST /api/sales` now auto-detects whether an order needs the kitchen
+  from its items' product categories and sets `kitchen_status='new'`
+  accordingly, pushing a live update.
+- New `server/routes/kitchen.js` (mounted without a blanket `auth`, mixing
+  regular staff auth with `authQueryToken` for its SSE stream — same
+  pattern as `calls.js`, and independent of it: KDS does **not** reuse
+  `calls.js`'s channel/stream since that's gated behind `room_controller`,
+  which Zahill doesn't have enabled): `GET /active` (ticket board data),
+  `PATCH /:id/status` (advance a ticket), `GET /stream` (SSE push on
+  `kitchen:{propertyId}`, reusing `server/sse/index.js`'s existing
+  "refresh now" ping mode — clients just refetch `/active` on any message,
+  no payload duplication).
+- Frontend: `KitchenTicketsContext.jsx` (modeled on `CallContext.jsx`'s
+  `EventSource` pattern) + `KitchenDisplay.jsx` page at `/kitchen`
+  (New/Preparing/Ready columns, tap to advance). New `kitchen_display` menu
+  key (Settings → Roles) gates it per staff role, same opt-in convention as
+  `sales` itself. `Sales.jsx` POS gained an Order Type selector (+ table
+  number for dine-in) feeding the new columns.
+- Fixed a pre-existing bug found while verifying this: the POS "Order
+  recorded!" success toast never actually rendered — clearing the cart on
+  submit flipped the card to its "Cart is empty" branch before the
+  `orderDone` toast branch was ever reached. Affected all Sales orders, not
+  just kitchen ones.
+- Verified end-to-end with a live dev server + browser: order creation
+  correctly sets/omits `kitchen_status` based on item category, SSE pushes
+  a new ticket to an already-open Kitchen Display tab with no manual
+  reload, and a ticket advances New → Preparing → Ready → Served via real
+  clicks against the running app.
+- Status: ✅ Implemented (this slice). Table management and stock tracking
+  remain open for a future pass.
+
+---
+
+## 🟡 Guest Self-Ordering from the Room Display
+
+> Second slice of F&B/Full POS, building directly on the Kitchen Display
+> System above. Lets a guest place a room-service order themselves from the
+> in-room tablet instead of a staff member keying it in via the Sales POS.
+
+- No new module: gated by the existing `sales` module (per-route
+  `moduleGuard('sales')` inside `server/routes/display.js`, following the
+  mixed-auth per-route pattern already established by `calls.js`/
+  `kitchen.js` — the file's `app.use('/api/display', ...)` mount itself
+  stays guard-free, matching its existing routes).
+- Extracted the sale-creation transaction (validate products → compute
+  total/kitchen-status → insert `sales`+`sale_items` → SSE-notify the
+  kitchen) out of `routes/sales.js` and into `server/services/
+  salesService.js` (`createSale`), now used by both the staff POS and the
+  new guest endpoint — avoids duplicating that logic a second time.
+- New `GET /api/display/room/:roomId/menu` (full product catalog —
+  food/drinks/merchandise/tour, per owner decision) and `POST
+  /api/display/room/:roomId/order` (`authDisplay`-only, no staff auth,
+  resolves the room's current `checked_in` booking server-side the same
+  way `GET /room/:roomId/state` already does). Orders are always
+  `payment_method: 'room_charge'` / `order_type: 'room_service'`,
+  `served_by: NULL`.
+- **Security**: unlike the staff POS (which sends its own cached
+  `unit_price` and is trusted since it's an authenticated staff member),
+  the guest order endpoint looks up each product's price from the database
+  itself and ignores any price the tablet might send — a guest device
+  can't be trusted the same way.
+- `GET /room/:roomId/state` gained an `orderingEnabled` flag (a
+  `property_modules` check for `sales`) so the tablet knows whether to
+  show the ordering tab at all.
+- Frontend (`room-display/`): new "Order Food" tab in `GuestScreen.jsx`
+  (only shown when `orderingEnabled`), new `OrderFoodTab.jsx` component
+  (category-grouped menu + cart, styled to match the existing tablet
+  theme). Per owner decision, it's a **simple confirmation** flow, not
+  live order-status tracking — guest sees "Order placed!" and can order
+  again; staff/kitchen track the rest via `/kitchen` as normal.
+- Verified end-to-end with a live dev server + browser: menu loads and
+  renders by category, placing a mixed order (a food item + a tour item)
+  correctly charges the active booking's folio via `room_charge`, prices
+  came from the server regardless of what the client sent, only the
+  food/drink line item surfaced on the Kitchen Display (the tour item
+  correctly did not), and the tab disappears entirely (and the endpoints
+  403) when the `sales` module is disabled for the property.
+- Status: ✅ Implemented
+
+---
+
 ## Module Registry (for reference)
 
 | Module           | Enabled by default | Optional for  |
@@ -159,7 +254,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 034
+## Next migration number: 035
 
 ---
 
