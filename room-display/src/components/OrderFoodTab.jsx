@@ -57,7 +57,13 @@ export default function OrderFoodTab({ roomId }) {
       setConfirmed(true);
       setTimeout(() => setConfirmed(false), CONFIRMATION_MS);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not place your order. Please try again.');
+      const data = err.response?.data;
+      if (data?.code === 'OUT_OF_STOCK') {
+        setError(`Sorry, we just ran out of ${data.items.map(i => i.name).join(', ')}. Please adjust your order.`);
+        loadMenu();
+      } else {
+        setError(data?.error || 'Could not place your order. Please try again.');
+      }
     } finally {
       setPlacing(false);
     }

@@ -6,7 +6,7 @@ module.exports = {
   guest_crm:       { label: 'Guest CRM',       routes: ['guests', 'loyalty'] },
   financial:       { label: 'Financial',       routes: ['payments', 'reports', 'nightAudit', 'folio'] },
   operations:      { label: 'Operations',      routes: ['tasks'] },
-  sales:           { label: 'Sales',           routes: ['products', 'sales'] },
+  sales:           { label: 'Sales',           routes: ['products', 'sales', 'tables'] },
   in_room_media:   { label: 'In-Room Media',   routes: ['board', 'display'] },
   room_controller: { label: 'Room Controller', routes: ['iot', 'calls'] },
   insights:        { label: 'Insights',        routes: ['insights'] },

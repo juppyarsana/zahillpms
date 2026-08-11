@@ -26,7 +26,7 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/sales
 router.post('/', auth, async (req, res) => {
-  const { booking_id, payment_method, items, order_type, table_number } = req.body;
+  const { booking_id, payment_method, items, order_type, table_number, table_id } = req.body;
   if (!payment_method || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'payment_method and items required' });
   }
@@ -37,8 +37,9 @@ router.post('/', auth, async (req, res) => {
     }
     const result = await salesService.createSale(req.propertyId, {
       bookingId: booking_id, paymentMethod: payment_method, items,
-      orderType: order_type, tableNumber: table_number, servedBy: req.user.id,
+      orderType: order_type, tableNumber: table_number, tableId: table_id, servedBy: req.user.id,
     });
+    if (result.code === 'OUT_OF_STOCK') return res.status(409).json({ error: result.error, code: result.code, items: result.items });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json(result.sale);
   } catch (err) {

@@ -1,6 +1,6 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-08-09
+Last updated: 2026-08-11
 
 ---
 
@@ -99,9 +99,9 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Table management, kitchen display system, stock tracking
 - Existing sales module covers most small properties
 - Only needed for properties with a restaurant
-- Status: 🟡 Kitchen Display System and guest self-ordering from the Room
-  Display both shipped (see write-ups below); table management and stock
-  tracking not started
+- Status: ✅ Implemented — Kitchen Display System and guest self-ordering
+  shipped first (see write-ups below); table management and stock tracking
+  shipped in the same pass as the final slice (see write-up below)
 
 ### 11. Concierge / Activities
 - Activity catalog, tour bookings, transport scheduling
@@ -238,6 +238,78 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
+## ✅ Table Management & Stock Tracking (Phase D #10, final slice)
+
+> Closes out F&B / Full POS. Table management turns the free-text
+> `table_number` (added in migration 034) into real, occupancy-tracked
+> entities; stock tracking reverses an earlier deliberate decision
+> (`PLANNING.md`: "Zahill POS just records sales, no stock tracking") now
+> that a client actually needs it. Both stay gated under the existing
+> `sales` module — no new module row, consistent with how Kitchen Display
+> was gated.
+
+- Migration 035: `restaurant_tables` (property_id, name, capacity, status
+  `available`/`occupied`) + nullable `sales.table_id` FK. `sales.table_number`
+  is kept and now denormalized from the selected table's name at order
+  time — existing rows and the Kitchen Display's read of `table_number`
+  needed zero changes; `table_id` is the new source of truth for occupancy.
+- Migration 036: `products` gained `track_stock` (bool, default off —
+  existing products are unaffected), `stock_quantity`, `low_stock_threshold`.
+  New `stock_movements` table is an audit ledger (house style — same shape
+  as `folio_charges`) recording every change: `sale` (automatic),
+  `restock`/`adjustment`/`waste` (manual, via the new stock-adjust endpoint).
+- New `server/routes/tables.js`: `GET/POST/PUT/DELETE /api/tables`,
+  `PATCH /api/tables/:id/status` (any staff can clear a table once bussed;
+  create/edit/delete stay owner-only, matching `products.js`'s convention).
+  Added to `modules.js`'s `sales` route list (mounted the same way as
+  `products`/`sales`, not the mixed-auth per-route pattern `kitchen.js`
+  needed) and to `server/index.js`.
+- `salesService.createSale` (shared by the staff POS and guest
+  self-ordering — see below) now, in the same transaction as before:
+  row-locks (`FOR UPDATE`) every product in the cart, rejects the whole
+  sale with `{ code: 'OUT_OF_STOCK', items: [...] }` if any tracked
+  product's `stock_quantity` can't cover the requested quantity (**hard
+  block**, no partial fulfillment — a race between two concurrent sales of
+  the last unit is caught by the row lock, not just a pre-check), decrements
+  stock and inserts a `stock_movements` row per tracked item on success,
+  and — when a `table_id` is supplied for a dine-in order — resolves it to
+  the table's current name and flips the table to `occupied`.
+- `routes/products.js` gained `PATCH /:id/stock` (owner-only restock/
+  adjustment/waste, also row-locked, rejects if it would take stock below
+  0) and `GET /:id/stock/movements` (audit trail, last 50).
+- `routes/display.js`'s guest menu endpoint
+  (`GET /room/:roomId/menu`) now excludes any `track_stock` product at
+  `stock_quantity <= 0` — a guest never sees an item they can't actually
+  order. The guest order endpoint inherits the hard stock block for free
+  since it goes through the same `salesService.createSale`.
+- Frontend (`Sales.jsx`): new **Tables** tab (add/delete tables, see
+  status, "Clear Table" to free one up after bussing). POS tab's table
+  input is now a dropdown of real tables (occupied ones stay selectable —
+  a table can have more than one round of orders — just labeled
+  `(occupied)`) instead of free text; out-of-stock products are greyed out
+  and disabled in the product grid; a 409 from the server surfaces the
+  specific item(s) that ran out rather than a generic failure. Products tab
+  gained an **Edit** action (there was previously no edit UI at all, only
+  the `PUT` endpoint — also closes a pre-existing gap where `is_available`
+  had no toggle anywhere in the UI) plus stock fields (track/quantity/low-
+  stock threshold on add, an **Adjust Stock** modal for restock/waste/
+  adjustment after) and a stock badge (in-stock count / low / out).
+- `room-display/src/components/OrderFoodTab.jsx` (guest self-ordering)
+  handles the same `OUT_OF_STOCK` response with a guest-appropriate message
+  naming the item(s) and reloads the menu so it reflects current stock.
+- Verified end-to-end against the dev database directly (bypassing HTTP
+  auth, exercising `salesService.createSale` the same way both routes do):
+  a dine-in sale against a real table denormalizes the table name onto
+  `table_number`, sets `table_id`, and flips the table to `occupied`; a
+  tracked product's stock decrements by the sold quantity and logs a
+  `stock_movements` row with `reason='sale'`; an over-quantity sale against
+  the now-reduced stock is rejected with `OUT_OF_STOCK` and rolls back
+  cleanly (stock unchanged, no sale/stock_movements row created). Both the
+  `client` and `room-display` apps build clean with no errors.
+- Status: ✅ Implemented
+
+---
+
 ## Module Registry (for reference)
 
 | Module           | Enabled by default | Optional for  |
@@ -254,7 +326,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 035
+## Next migration number: 037
 
 ---
 

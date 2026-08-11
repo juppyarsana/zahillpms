@@ -71,7 +71,7 @@ Not every property needs every feature (e.g. a property with no ESP32 hardware s
 | `guest_crm` | guests, loyalty | ✅ on |
 | `financial` | payments, reports, nightAudit, folio | ✅ on |
 | `operations` | tasks | ✅ on |
-| `sales` | products, sales | ✅ on |
+| `sales` | products, sales, tables | ✅ on |
 | `in_room_media` | board, display | ✅ on |
 | `room_controller` | iot, calls | ❌ off by default (hardware-dependent) |
 | `insights` | insights | ✅ on |
@@ -198,7 +198,7 @@ One backend, one database, many properties. The client app, Room Display, and TV
 - `guests`, `loyalty` — guest CRM
 - `payments`, `reports`, `nightAudit`, `folio` — financial
 - `tasks` — operations kanban
-- `products`, `sales` — ancillary sales
+- `products`, `sales`, `tables`, `kitchen` — ancillary sales, table management, Kitchen Display (all ride on the `sales` module; `kitchen` applies its `moduleGuard('sales')` per-route instead of via `modules.js`, same mixed-auth pattern as `calls`)
 - `board` — Guest Board CMS (In-Room Media)
 - `iot`, `calls` — Room Controller (MQTT-backed device state, room-to-desk calls)
 - `insights` — Market Insights (competitors, trends, AI briefing)
@@ -240,8 +240,11 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 031 | SMTP config (per-property) |
 | 032 | Property branding (logo_url, brand_color on property_settings) |
 | 033 | Group Bookings — `reservation_groups`, `bookings.reservation_group_id`, `group_booking_confirmed` email trigger |
+| 034 | Kitchen Display System — `sales.order_type`/`table_number`/`kitchen_status` |
+| 035 | Table Management — `restaurant_tables`, `sales.table_id` |
+| 036 | Stock Tracking — `products.track_stock`/`stock_quantity`/`low_stock_threshold`, `stock_movements` |
 
-**Next migration number: 034** (keep `ROADMAP.md` in sync when you add one).
+**Next migration number: 037** (keep `ROADMAP.md` in sync when you add one).
 
 ---
 
@@ -351,7 +354,8 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - ⏳ Phase B item 5 (WhatsApp messaging) — not started; leaning toward api.co.id (official WhatsApp Cloud API), see Open Decisions below.
 - ✅ Superadmin Property Branding (logo, brand color, contact info) — implemented, migration 032.
 - ✅ Phase D item 9 (Group Bookings) — implemented, migration 033.
-- 🔵 **Phase D remaining selected modules (NEXT, reprioritized 2026-08-09)** — F&B/Full POS, Concierge/Activities. Not started.
+- ✅ Phase D item 10 (F&B / Full POS) — implemented across four slices: Kitchen Display System + guest self-ordering (migration 034), then table management + stock tracking (migrations 035–036).
+- 🔵 **Phase D item 11 (Concierge / Activities) — NEXT.** Not started.
 - ⚪ Phase C (Direct Booking Engine, Beds24 Channel Manager) — deprioritized behind Phase D's selected modules, not started.
 - ⚪ Phase D remaining (Reviews & Feedback, Stripe subscription billing) — build when a client actually requests it.
 

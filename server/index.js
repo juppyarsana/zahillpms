@@ -81,6 +81,7 @@ app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'))
 app.use('/api/tasks', auth, moduleGuard('operations'), require('./routes/tasks'));
 app.use('/api/products', auth, moduleGuard('sales'), require('./routes/products'));
 app.use('/api/sales', auth, moduleGuard('sales'), require('./routes/sales'));
+app.use('/api/tables', auth, moduleGuard('sales'), require('./routes/tables'));
 app.use('/api/board', auth, moduleGuard('in_room_media'), require('./routes/board'));
 app.use('/api/iot', auth, moduleGuard('room_controller'), require('./routes/iot'));
 app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insights'));

@@ -189,7 +189,8 @@ router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
 
     const { rows: products } = await db.query(
       `SELECT id, name, category, price, description
-       FROM products WHERE property_id = $1 AND is_available = true
+       FROM products
+       WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
        ORDER BY category, name`,
       [req.propertyId]
     );
@@ -241,6 +242,7 @@ router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
       items: pricedItems,
       servedBy: null,
     });
+    if (result.code === 'OUT_OF_STOCK') return res.status(409).json({ error: result.error, code: result.code, items: result.items });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json({ ok: true, total: result.sale.total_amount });
   } catch (err) {
