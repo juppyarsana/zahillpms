@@ -22,6 +22,7 @@ const allowedOrigins = [
   ...parseOrigins(process.env.CLIENT_URL,  'http://localhost:5174'),
   ...parseOrigins(process.env.DISPLAY_URL, 'http://localhost:5175'),
   ...parseOrigins(process.env.TV_URL,      'http://localhost:5176'),
+  ...parseOrigins(process.env.KITCHEN_URL, 'http://localhost:5177'),
 ];
 app.use(cors({
   origin: (origin, cb) => {
@@ -92,9 +93,9 @@ app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insigh
 // moduleGuard('room_controller') is applied per-route inside routes/calls.js instead.
 app.use('/api/calls', require('./routes/calls'));
 
-// /api/kitchen mixes staff auth (regular endpoints) with authQueryToken
-// (the /stream SSE endpoint) the same way /api/calls does — moduleGuard('sales')
-// is applied per-route inside routes/kitchen.js instead.
+// /api/kitchen — kitchen-display/ kiosk app, authDisplay (device token) on
+// every route, same as /api/display. moduleGuard('sales') applied per-route
+// inside routes/kitchen.js instead of here.
 app.use('/api/kitchen', require('./routes/kitchen'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));

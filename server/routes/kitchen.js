@@ -1,20 +1,19 @@
 const router = require('express').Router();
 const db = require('../db');
-const auth = require('../middleware/auth');
-const authQueryToken = require('../middleware/authQueryToken');
+const authDisplay = require('../middleware/authDisplay');
 const moduleGuard = require('../middleware/moduleGuard');
 const sse = require('../sse');
 const gate = moduleGuard('sales');
 
-// Mounted without a blanket `auth` (like calls.js) because /stream needs
-// authQueryToken (EventSource can't set an Authorization header) while the
-// other two routes use the normal staff `auth` — moduleGuard('sales') is
-// applied per-route instead.
+// Kitchen Display is its own kiosk app (kitchen-display/), same device-token
+// model as Room Display / TV Display — not staff JWT. authDisplay already
+// reads the token from either the Authorization header or ?token=, which
+// covers /stream (EventSource can't set custom headers) for free.
 
 const STATUSES = ['preparing', 'ready', 'served'];
 
 // GET /api/kitchen/active — tickets not yet served, oldest first
-router.get('/active', auth, gate, async (req, res) => {
+router.get('/active', authDisplay, gate, async (req, res) => {
   try {
     const { rows: sales } = await db.query(
       `SELECT s.id, s.order_type, s.table_number, s.kitchen_status, s.created_at,
@@ -48,7 +47,7 @@ router.get('/active', auth, gate, async (req, res) => {
 });
 
 // PATCH /api/kitchen/:id/status
-router.patch('/:id/status', auth, gate, async (req, res) => {
+router.patch('/:id/status', authDisplay, gate, async (req, res) => {
   const { status } = req.body;
   if (!STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
   try {
@@ -67,14 +66,14 @@ router.patch('/:id/status', auth, gate, async (req, res) => {
 });
 
 // GET /api/kitchen/stream — SSE for the kitchen display screen
-router.get('/stream', authQueryToken, gate, (req, res) => {
+router.get('/stream', authDisplay, gate, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  const key = 'kitchen:' + req.user.propertyId;
+  const key = 'kitchen:' + req.propertyId;
   sse.addClient(key, res);
 
   const heartbeat = setInterval(() => {

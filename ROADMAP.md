@@ -147,7 +147,12 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ## 🟡 Kitchen Display System (Phase D #10, first slice)
 
-> First slice of F&B/Full POS. "Table" kept deliberately loose (a free-text
+> First slice of F&B/Full POS. Originally shipped as a page inside the PMS
+> client (`/kitchen`, described below) — later extracted into its own
+> standalone kiosk app, see "Kitchen Display Extracted to Standalone Kiosk
+> App" further down for the current architecture.
+>
+> "Table" kept deliberately loose (a free-text
 > label on an order, not a seating/reservation system) so a fuller table
 > management feature can be layered on later without reworking this.
 
@@ -306,6 +311,53 @@ Per-property tax and service charge rates, applied on folio and invoice.
   the now-reduced stock is rejected with `OUT_OF_STOCK` and rolls back
   cleanly (stock unchanged, no sale/stock_movements row created). Both the
   `client` and `room-display` apps build clean with no errors.
+- Status: ✅ Implemented
+
+---
+
+## ✅ Kitchen Display Extracted to Standalone Kiosk App
+
+> The Kitchen Display System (above) originally shipped as a page inside the
+> PMS client (`/kitchen`, staff-JWT-gated, requiring a `kitchen_display`
+> staff-role permission). A kitchen station doesn't need — and shouldn't
+> need — a staff login just to see the ticket board, and a shared client
+> device sitting in the kitchen logged in as a staff member is a weaker
+> security posture than the device-token model already used by Room Display
+> and TV Display. Extracted it to match that pattern, same rationale as the
+> `half.kdai.cloud` module-subdomain scheme (see `CLAUDE.md`).
+
+- New `kitchen-display/` app: React/Vite PWA, same shape as `room-display/`/
+  `tv-display/` (setup screen storing the per-property `display_token` in
+  localStorage, debug-tap reset, `vite-plugin-pwa` manifest, dev port 5177).
+  `SetupScreen.jsx` accepts the same token already used by Room Display / TV
+  Display; `TicketBoard.jsx` is the New/Preparing/Ready ticket board (ported
+  from the old `KitchenDisplay.jsx`) with a live SSE subscription.
+- `server/routes/kitchen.js`: swapped its previous mixed-auth pattern (staff
+  `auth` on `/active`/`/status`, `authQueryToken` on `/stream`, matching
+  `calls.js`) for `authDisplay` (per-property `display_token`) on all three
+  routes — the same middleware `routes/display.js` uses. `authDisplay`
+  already reads the token from either the `Authorization` header or
+  `?token=`, so it covers the SSE endpoint for free without a separate
+  query-token middleware. `moduleGuard('sales')` still applied per-route.
+- `server/index.js` gained a `KITCHEN_URL` CORS origin (default
+  `http://localhost:5177`), same pattern as `CLIENT_URL`/`DISPLAY_URL`/
+  `TV_URL`.
+- `server/.env.example`: added `KITCHEN_URL`; reworded the old
+  `DISPLAY_TOKEN` placeholder line to clarify it isn't an env var at all —
+  it's per-property (`properties.display_token`, migration 021), retrieved
+  via the owner-only `GET /api/settings/display-token` (now surfaced in a
+  new "Device Setup" card on `SettingsProperty.jsx`, shared by Room/TV/
+  Kitchen Display setup).
+- Removed from the PMS client: `pages/KitchenDisplay.jsx`,
+  `context/KitchenTicketsContext.jsx`, the `/kitchen` route, the
+  `kitchen_display` menu key (`SettingsRoles.jsx`), and its nav links
+  (`Sidebar.jsx` desktop nav, `BottomNav` mobile nav in `App.jsx`).
+- New `nginx/kitchen.conf`: serves `kitchen-display/dist` at
+  `kitchen.half.kdai.cloud`, proxies `/api/` to the backend — same shape as
+  `nginx/display.conf`/`nginx/tv-display.conf`. Not yet deployed (domain is
+  decided, not live yet — see `CLAUDE.md`'s "What this is" section).
+- Both `client` and `kitchen-display` verified to build clean with no
+  errors after the extraction.
 - Status: ✅ Implemented
 
 ---

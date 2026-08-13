@@ -11,7 +11,10 @@
 Built as a monorepo with React/Vite frontend(s) and a Node/Express backend shared by every property.
 
 **Owner:** Juppy (juppyjp@gmail.com)
-<!-- TODO: hosting details (cloud VM provider, address), production domain scheme for new client onboarding (e.g. {slug}.pms.yourplatform.com vs custom domains) -->
+
+**Product name is now locked: HALF.** Domain/tenancy scheme decided (2026-08-14): a single app subdomain (`half.kdai.cloud`), not one subdomain per client. Every property logs into the same domain; the JWT (already carries `propertyId`) is what resolves tenant, exactly like GitHub/Stripe Dashboard/Google Workspace rather than Shopify-style `client.myapp.com`. Rejected per-client subdomains because it would require wildcard DNS/cert + a Host-header-based login rewrite for no real benefit at current scale (one browser origin is fine since no one needs two properties open in parallel tabs today — superadmin already has its own separate, non-property-scoped auth layer for cross-property work). Module-specific subdomains keep the existing pattern, just moved off `zahill.kdai.cloud` onto `half.kdai.cloud` (e.g. `kitchen.half.kdai.cloud`, `display.half.kdai.cloud`, `tv.half.kdai.cloud`) — small fixed set, no wildcard needed. If a client later wants their own branded custom domain, that's a per-client CNAME added on top of this, not a redesign.
+
+**Not yet done:** this is a naming/architecture decision, not an executed migration — `zahill.kdai.cloud`/`d-zahill.kdai.cloud` are still the live domains, and "Zahill PMS"/"ZHP PMS" still appear throughout code (package names, page titles, MQTT topic namespace, Nginx configs). Renaming those and standing up `half.kdai.cloud` is future work, not done in this pass.
 
 ---
 
@@ -24,6 +27,7 @@ ZHP PMS/
 ├── server/              ← Shared backend (Node/Express), serves ALL properties
 ├── room-display/        ← Room Display PWA (per-room tablet)
 ├── tv-display/           ← TV Welcome Display (React/Vite page loaded by the screensaver APK)
+├── kitchen-display/      ← Kitchen Display PWA (kitchen ticket board kiosk)
 ├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView
 ├── PLANNING.md          ← original single-property feature/schema spec (historical reference)
 ├── ROADMAP.md           ← current feature roadmap, phase status, module registry
@@ -198,7 +202,8 @@ One backend, one database, many properties. The client app, Room Display, and TV
 - `guests`, `loyalty` — guest CRM
 - `payments`, `reports`, `nightAudit`, `folio` — financial
 - `tasks` — operations kanban
-- `products`, `sales`, `tables`, `kitchen` — ancillary sales, table management, Kitchen Display (all ride on the `sales` module; `kitchen` applies its `moduleGuard('sales')` per-route instead of via `modules.js`, same mixed-auth pattern as `calls`)
+- `products`, `sales`, `tables` — ancillary sales, table management (ride on the `sales` module via `modules.js`)
+- `kitchen` — Kitchen Display kiosk app's API. `authDisplay` (per-property `display_token`, same as `display`) on every route, not staff JWT — the Kitchen Display is its own kiosk app (`kitchen-display/`), not a page inside the PMS client. `moduleGuard('sales')` applied per-route instead of via `modules.js`.
 - `board` — Guest Board CMS (In-Room Media)
 - `iot`, `calls` — Room Controller (MQTT-backed device state, room-to-desk calls)
 - `insights` — Market Insights (competitors, trends, AI briefing)
@@ -279,7 +284,7 @@ Sidebar layout: `.sidebar-nav` (flex:1, `min-height:0`, its own `overflow-y:auto
 
 ## In-Room Display Hardware
 
-Each unit can have **two displays** with distinct, complementary roles:
+Each unit can have **two displays** with distinct, complementary roles, plus one property-wide Kitchen Display kiosk (not per-unit):
 
 ### 1. Room Display
 **Primary purpose:** Device control — relay toggles, RGB LED, AC via IR blaster
@@ -290,7 +295,7 @@ Each unit can have **two displays** with distinct, complementary roles:
 - Room ID and display token stored in localStorage on the device
 - Debug menu triggered by 5 rapid taps
 - Stack: React/Vite PWA (`room-display/`)
-- **Guest self-ordering** (extends the `sales` module, see `ROADMAP.md`): when occupied and the property's `sales` module is on (`state.orderingEnabled`), `GuestScreen` shows an "Order Food" tab (`OrderFoodTab.jsx`) listing the full product catalog. `GET /api/display/room/:roomId/menu` + `POST /api/display/room/:roomId/order` (both `authDisplay` + `moduleGuard('sales')`) create a `room_charge` / `room_service` sale against the room's current `checked_in` booking — prices are always looked up server-side, never trusted from the tablet. Feeds the same Kitchen Display (`/kitchen` in the PMS client) as staff-entered orders. Sale creation itself lives in `server/services/salesService.js`, shared with the staff POS (`routes/sales.js`).
+- **Guest self-ordering** (extends the `sales` module, see `ROADMAP.md`): when occupied and the property's `sales` module is on (`state.orderingEnabled`), `GuestScreen` shows an "Order Food" tab (`OrderFoodTab.jsx`) listing the full product catalog. `GET /api/display/room/:roomId/menu` + `POST /api/display/room/:roomId/order` (both `authDisplay` + `moduleGuard('sales')`) create a `room_charge` / `room_service` sale against the room's current `checked_in` booking — prices are always looked up server-side, never trusted from the tablet. Feeds the Kitchen Display kiosk (below) the same as staff-entered orders. Sale creation itself lives in `server/services/salesService.js`, shared with the staff POS (`routes/sales.js`).
 
 ### 2. TV Welcome Display
 **Only purpose:** Welcome guests and show their stay details when TV is idle. No device controls — purely guest-facing ambient display.
@@ -304,6 +309,15 @@ Each unit can have **two displays** with distinct, complementary roles:
   - Returns `booking: null` when vacant → branded idle screen
 
 Both displays render the property's own logo/name from that `property` field (falling back to the bundled default asset/text when a property hasn't uploaded one) — see the Superadmin Property Branding trace above.
+
+### 3. Kitchen Display
+**Only purpose:** Kitchen ticket board — New/Preparing/Ready columns, tap to advance a ticket. One kiosk per kitchen station, not per-unit.
+
+- Originally shipped as a page inside the PMS client (`/kitchen`, staff-JWT-gated); extracted into its own standalone kiosk app (`kitchen-display/`) to match the Room Display / TV Display pattern — same `display_token` device-auth model instead of staff login, so a kitchen tablet doesn't need a staff account.
+- `GET /api/kitchen/active` (ticket board data), `PATCH /api/kitchen/:id/status` (advance a ticket), `GET /api/kitchen/stream` (SSE push on `kitchen:{propertyId}`) — all `authDisplay`, all gated `moduleGuard('sales')` per-route. `authDisplay` reads the token from either the `Authorization` header or `?token=`, so the same middleware covers the SSE endpoint (EventSource can't set custom headers) without a separate query-token middleware.
+- Setup screen accepts the same per-property `display_token` used by Room Display and TV Display (surfaced in `SettingsProperty.jsx`'s "Device Setup" card, owner-only, `GET /api/settings/display-token`).
+- Stack: React/Vite PWA (`kitchen-display/`), dev port 5177, CORS origin via `KITCHEN_URL` env var. Deployed at `kitchen.half.kdai.cloud` per `nginx/kitchen.conf`.
+- Removed from the PMS client as part of this extraction: `pages/KitchenDisplay.jsx`, `context/KitchenTicketsContext.jsx`, the `/kitchen` route, the `kitchen_display` menu key (`SettingsRoles.jsx`) and its nav links (`Sidebar.jsx`/`BottomNav`). Staff no longer need a menu permission for it — it's a separate device, not a PMS page.
 
 ---
 
@@ -341,7 +355,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 ## Open Decisions (not yet final — context for whoever picks this up next)
 
-- **Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner (clean trademark/domain check, though `nestly.com` itself is squatted — would need `.io`/`getnestly.com`/similar). Guesthive and Havenstay were also clear on a conflict check. Not yet decided — don't rename anything in code/docs until it's locked in.
+- ~~**Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner...~~ **Decided (2026-08-14): the product name is HALF.** See the domain/tenancy note under "What this is" above for the working domain (`half.kdai.cloud`) and architecture. Actual rename across code/docs/infra is still pending — see that note for what's not done yet.
 - **WhatsApp messaging (Phase B item 5):** decided against Fonnte (unofficial WhatsApp Web gateway) due to real ban risk for a product resold to paying clients. Leaning toward **api.co.id** — an Indonesian Meta Tech Provider offering the official WhatsApp Cloud API at low cost with no per-message markup. Architecture direction: **one WhatsApp number/WABA per property** (not one shared platform-wide number), managed under the platform's own Meta Business Portfolio via the Tech Provider / Embedded Signup model — this keeps messages branded as the property (guests see "Zahill," not the platform name) while sparing each client the full manual Meta Business Verification (they can start immediately at the unverified 250-conversations/day tier). Not yet implemented — no `whatsapp` module, no migration, no route file exist yet. See chat history for the full reasoning if picking this up cold.
 
 ---
@@ -354,7 +368,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - ⏳ Phase B item 5 (WhatsApp messaging) — not started; leaning toward api.co.id (official WhatsApp Cloud API), see Open Decisions below.
 - ✅ Superadmin Property Branding (logo, brand color, contact info) — implemented, migration 032.
 - ✅ Phase D item 9 (Group Bookings) — implemented, migration 033.
-- ✅ Phase D item 10 (F&B / Full POS) — implemented across four slices: Kitchen Display System + guest self-ordering (migration 034), then table management + stock tracking (migrations 035–036).
+- ✅ Phase D item 10 (F&B / Full POS) — implemented across four slices: Kitchen Display System + guest self-ordering (migration 034), then table management + stock tracking (migrations 035–036). Kitchen Display later extracted from the PMS client into its own standalone kiosk app (`kitchen-display/`), same `display_token` model as Room/TV Display.
 - 🔵 **Phase D item 11 (Concierge / Activities) — NEXT.** Not started.
 - ⚪ Phase C (Direct Booking Engine, Beds24 Channel Manager) — deprioritized behind Phase D's selected modules, not started.
 - ⚪ Phase D remaining (Reviews & Feedback, Stripe subscription billing) — build when a client actually requests it.

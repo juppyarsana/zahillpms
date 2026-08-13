@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
 import { SettingsProvider } from './context/SettingsContext';
 import { CallProvider } from './context/CallContext';
-import { KitchenTicketsProvider } from './context/KitchenTicketsContext';
 import Sidebar from './components/Sidebar';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallBanner from './components/CallBanner';
@@ -21,7 +20,6 @@ import Operations from './pages/Operations';
 import Allotment from './pages/Allotment';
 import Loyalty from './pages/Loyalty';
 import Sales from './pages/Sales';
-import KitchenDisplay from './pages/KitchenDisplay';
 import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
@@ -53,7 +51,6 @@ function BottomNav() {
     can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
     can('operations') && hasModule('operations')         && { to: '/operations',                  icon: '🔧', label: 'Operations' },
     can('sales') && hasModule('sales')                   && { to: '/sales',                       icon: '🛍', label: 'Sales' },
-    can('kitchen_display') && hasModule('sales')          && { to: '/kitchen',                     icon: '🍳', label: 'Kitchen Display' },
     can('loyalty') && hasModule('guest_crm')              && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
     can('allotments') && hasModule('reservations')        && { to: '/allotment',                   icon: '📡', label: 'Channel' },
     can('pricing') && hasModule('reservations')           && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
@@ -212,7 +209,6 @@ export default function App() {
             <RequireAuth>
             <SettingsProvider>
             <CallProvider>
-            <KitchenTicketsProvider>
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
@@ -228,7 +224,6 @@ export default function App() {
                   <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><RequireModule moduleName="reservations"><Allotment /></RequireModule></RequireMenu>} />
                   <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><RequireModule moduleName="guest_crm"><Loyalty /></RequireModule></RequireMenu>} />
                   <Route path="/sales"            element={<RequireMenu menuKey="sales"><RequireModule moduleName="sales"><Sales /></RequireModule></RequireMenu>} />
-                  <Route path="/kitchen"          element={<RequireMenu menuKey="kitchen_display"><RequireModule moduleName="sales"><KitchenDisplay /></RequireModule></RequireMenu>} />
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
@@ -241,7 +236,6 @@ export default function App() {
                   <Route path="/night-audit"      element={<RequireOwner><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireOwner>} />
                 </Routes>
               </Layout>
-            </KitchenTicketsProvider>
             </CallProvider>
             </SettingsProvider>
             </RequireAuth>

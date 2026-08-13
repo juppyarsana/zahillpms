@@ -7,9 +7,19 @@ export default function SettingsProperty() {
   const [propertySaved, setPropertySaved] = useState(false);
   const [propertyError, setPropertyError] = useState('');
 
+  const [displayToken, setDisplayToken] = useState('');
+  const [tokenCopied, setTokenCopied] = useState(false);
+
   useEffect(() => {
     api.get('/api/settings/property').then(r => setPropertyForm(r.data)).catch(() => {});
+    api.get('/api/settings/display-token').then(r => setDisplayToken(r.data.display_token)).catch(() => {});
   }, []);
+
+  function copyToken() {
+    navigator.clipboard.writeText(displayToken);
+    setTokenCopied(true);
+    setTimeout(() => setTokenCopied(false), 2000);
+  }
 
   function setProp(k, v) {
     setPropertyForm(f => ({ ...f, [k]: v }));
@@ -82,6 +92,20 @@ export default function SettingsProperty() {
               {propertySaved && <span style={{ fontSize: 12, color: 'var(--color-success, #16a34a)' }}>Saved</span>}
             </div>
           </>
+        )}
+      </div>
+
+      <div className="card mt-3">
+        <div className="card-title">Device Setup</div>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+          Room Display, TV Display, and Kitchen Display units all activate with this same token — paste it into a
+          device's setup screen once when you first set it up.
+        </p>
+        {displayToken && (
+          <div className="flex gap-2 items-center">
+            <input className="form-input" readOnly value={displayToken} style={{ maxWidth: 320, fontFamily: 'monospace' }} />
+            <button className="btn btn-secondary btn-sm" onClick={copyToken}>{tokenCopied ? 'Copied!' : 'Copy'}</button>
+          </div>
         )}
       </div>
     </div>
