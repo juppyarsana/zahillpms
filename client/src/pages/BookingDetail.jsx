@@ -28,6 +28,12 @@ export default function BookingDetail() {
   const [transferUnits, setTransferUnits] = useState([]);
   const [transferTarget, setTransferTarget] = useState(null);
   const [transferLoading, setTransferLoading] = useState(false);
+  const [amending, setAmending] = useState(false);
+  const [amendCheckIn, setAmendCheckIn] = useState('');
+  const [amendCheckOut, setAmendCheckOut] = useState('');
+  const [amendAvailability, setAmendAvailability] = useState(null);
+  const [amendChecking, setAmendChecking] = useState(false);
+  const [amendLoading, setAmendLoading] = useState(false);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
@@ -193,6 +199,49 @@ export default function BookingDetail() {
     }
   }
 
+  function openAmend() {
+    setAmendCheckIn(booking.check_in_date?.slice(0, 10) || '');
+    setAmendCheckOut(booking.check_out_date?.slice(0, 10) || '');
+    setAmendAvailability(null);
+    setAmending(true);
+  }
+
+  useEffect(() => {
+    if (!amending || !amendCheckIn || !amendCheckOut) return;
+    if (new Date(amendCheckOut) <= new Date(amendCheckIn)) { setAmendAvailability(null); return; }
+    let cancelled = false;
+    setAmendChecking(true);
+    api.get('/api/bookings/availability', {
+      params: { unit_id: booking.unit_id, check_in: amendCheckIn, check_out: amendCheckOut, exclude_booking_id: id },
+    }).then(r => { if (!cancelled) setAmendAvailability(r.data); })
+      .catch(() => { if (!cancelled) setAmendAvailability(null); })
+      .finally(() => { if (!cancelled) setAmendChecking(false); });
+    return () => { cancelled = true; };
+  }, [amending, amendCheckIn, amendCheckOut]);
+
+  async function doAmendDates() {
+    setAmendLoading(true);
+    try {
+      await api.put(`/api/bookings/${id}/dates`, { check_in_date: amendCheckIn, check_out_date: amendCheckOut });
+      setAmending(false);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to amend dates');
+    } finally {
+      setAmendLoading(false);
+    }
+  }
+
+  async function markNoShow() {
+    if (!confirm('Mark this booking as a no-show? The guest never checked in.')) return;
+    try {
+      await api.put(`/api/bookings/${id}/no-show`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to mark as no-show');
+    }
+  }
+
   function waLink() {
     const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Zahill Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
@@ -218,6 +267,9 @@ export default function BookingDetail() {
           <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
         </div>
         <div className="flex gap-2">
+          {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group && (
+            <button className="btn btn-secondary" onClick={openAmend}>Amend Dates</button>
+          )}
           {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && (
             <button className="btn btn-secondary" onClick={openTransfer}>Transfer Room</button>
           )}
@@ -239,6 +291,9 @@ export default function BookingDetail() {
           {booking.status === 'pending' &&
             parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
             <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
+          )}
+          {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) && (
+            <button className="btn btn-secondary" onClick={markNoShow}>Mark No-Show</button>
           )}
           {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) ? (
             <button className="btn btn-danger" onClick={cancel}>Cancel</button>
@@ -518,6 +573,60 @@ export default function BookingDetail() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {amending && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Amend Dates — {booking.guest_name}</div>
+              <button className="btn btn-icon" onClick={() => setAmending(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+                {booking.unit_name} · currently {booking.check_in_date?.slice(0,10)} → {booking.check_out_date?.slice(0,10)}
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Check-in</label>
+                  <input className="form-input" type="date" value={amendCheckIn} onChange={e => setAmendCheckIn(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Check-out</label>
+                  <input className="form-input" type="date" value={amendCheckOut} onChange={e => setAmendCheckOut(e.target.value)} />
+                </div>
+              </div>
+              {amendCheckOut && amendCheckIn && new Date(amendCheckOut) <= new Date(amendCheckIn) && (
+                <div className="alert alert-error">Check-out must be after check-in.</div>
+              )}
+              {amendChecking && <div className="text-muted" style={{ fontSize: 13 }}>Checking availability…</div>}
+              {!amendChecking && amendAvailability && !amendAvailability.available && (
+                <div className="alert alert-error">
+                  Unit is not available for these dates — conflicts with {amendAvailability.conflicts.map(c => c.guest_name).join(', ')}.
+                </div>
+              )}
+              <div className="alert alert-success" style={{ marginTop: 12 }}>
+                This doesn't recalculate the total amount — adjust it under Payment Tracking if needed.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setAmending(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={doAmendDates}
+                disabled={
+                  amendLoading || amendChecking ||
+                  !amendCheckIn || !amendCheckOut ||
+                  new Date(amendCheckOut) <= new Date(amendCheckIn) ||
+                  (amendCheckIn === booking.check_in_date?.slice(0,10) && amendCheckOut === booking.check_out_date?.slice(0,10)) ||
+                  (amendAvailability && !amendAvailability.available)
+                }
+              >
+                {amendLoading ? 'Saving…' : 'Save New Dates'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

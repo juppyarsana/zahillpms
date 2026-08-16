@@ -113,9 +113,9 @@ router.get('/in-house', auth, async (req, res) => {
   }
 });
 
-// GET /api/bookings/availability?unit_id=&check_in=&check_out=
+// GET /api/bookings/availability?unit_id=&check_in=&check_out=&exclude_booking_id=
 router.get('/availability', auth, async (req, res) => {
-  const { unit_id, check_in, check_out } = req.query;
+  const { unit_id, check_in, check_out, exclude_booking_id } = req.query;
   if (!unit_id || !check_in || !check_out) {
     return res.status(400).json({ error: 'unit_id, check_in, check_out required' });
   }
@@ -123,6 +123,9 @@ router.get('/availability', auth, async (req, res) => {
     const { rows: unitRows } = await db.query('SELECT id FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!unitRows[0]) return res.status(404).json({ error: 'Unit not found' });
 
+    const conflictParams = [unit_id, check_in, check_out, req.propertyId];
+    let excludeClause = '';
+    if (exclude_booking_id) { conflictParams.push(exclude_booking_id); excludeClause = `AND b.id != $${conflictParams.length}`; }
     const conflictQ = db.query(`
       SELECT b.id, b.check_in_date, b.check_out_date, b.status, g.name as guest_name
       FROM bookings b
@@ -132,7 +135,8 @@ router.get('/availability', auth, async (req, res) => {
         AND b.status NOT IN ('cancelled','no_show')
         AND b.check_in_date < $3
         AND b.check_out_date > $2
-    `, [unit_id, check_in, check_out, req.propertyId]);
+        ${excludeClause}
+    `, conflictParams);
 
     const checkInDate = new Date(check_in);
     const allotmentQ = db.query(
@@ -575,6 +579,88 @@ router.put('/:id/transfer', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// PUT /api/bookings/:id/dates  (amend check-in/check-out dates, same unit)
+router.put('/:id/dates', auth, async (req, res) => {
+  const { check_in_date, check_out_date } = req.body;
+  if (!check_in_date || !check_out_date) return res.status(400).json({ error: 'check_in_date, check_out_date required' });
+  if (new Date(check_out_date) <= new Date(check_in_date)) {
+    return res.status(400).json({ error: 'Check-out date must be after check-in date' });
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    if (booking.reservation_group_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Date changes are not supported for group bookings yet' });
+    }
+
+    const amendable = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+    if (!amendable.includes(booking.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot amend dates — booking status is ${booking.status}` });
+    }
+
+    if (booking.check_in_date === check_in_date && booking.check_out_date === check_out_date) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'New dates are the same as the current dates' });
+    }
+
+    const { rows: conflicts } = await client.query(`
+      SELECT id FROM bookings
+      WHERE unit_id = $1
+        AND property_id = $5
+        AND id != $2
+        AND status NOT IN ('cancelled','no_show')
+        AND check_in_date < $4
+        AND check_out_date > $3
+    `, [booking.unit_id, req.params.id, check_in_date, check_out_date, req.propertyId]);
+    if (conflicts.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Unit is not available for the new dates' });
+    }
+
+    await client.query(
+      'UPDATE bookings SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3 AND property_id = $4',
+      [check_in_date, check_out_date, req.params.id, req.propertyId]
+    );
+
+    await client.query('COMMIT');
+    const { rows: [updated] } = await db.query(`
+      SELECT b.*, g.name as guest_name, u.name as unit_name
+      FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
+      WHERE b.id = $1 AND b.property_id = $2
+    `, [req.params.id, req.propertyId]);
+    res.json(updated);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/bookings/:id/no-show
+router.put('/:id/no-show', auth, async (req, res) => {
+  try {
+    const { rows: [booking] } = await db.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    if (!['pending', 'deposit_paid', 'confirmed'].includes(booking.status)) {
+      return res.status(409).json({ error: `Cannot mark as no-show — booking status is ${booking.status}` });
+    }
+    const { rows } = await db.query(
+      "UPDATE bookings SET status = 'no_show', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
+      [req.params.id, req.propertyId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

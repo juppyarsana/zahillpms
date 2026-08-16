@@ -181,6 +181,16 @@ export default function CheckIn() {
     }
   }
 
+  async function markNoShow(b) {
+    if (!confirm(`Mark ${b.guest_name} as a no-show? The guest never checked in.`)) return;
+    try {
+      await api.put(`/api/bookings/${b.id}/no-show`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to mark as no-show');
+    }
+  }
+
   function waWelcome(b) {
     const text = encodeURIComponent(`Welcome to Zahill Glamping, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.\n\n🌄 Kintamani, Bali`);
     const rawWa = (b.guest_whatsapp || '').trim();
@@ -264,6 +274,13 @@ export default function CheckIn() {
                           ? '✓ Deposit paid'
                           : '⚠ Deposit pending'}
                     </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginTop: 4, padding: '2px 8px', fontSize: 11, color: 'var(--text-muted)' }}
+                      onClick={() => markNoShow(b)}
+                    >
+                      No-show
+                    </button>
                   </div>
                 </div>
               );

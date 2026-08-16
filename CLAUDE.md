@@ -272,6 +272,8 @@ Sidebar layout: `.sidebar-nav` (flex:1, `min-height:0`, its own `overflow-y:auto
 
 **Reservations calendar** (`Reservations.jsx`) shows each available night's effective rate (base rate, overridden by the highest-priority active pricing period) directly in the calendar cells, via `GET /api/pricing/calendar?month=&year=`.
 
+**Amend stay dates / manual no-show** — two front-desk gaps closed after a reservation-flow audit against Cloudbeds/Mews-style PMS behavior. `BookingDetail.jsx`'s "Amend Dates" button (`PUT /api/bookings/:id/dates`) lets staff change check-in/check-out on an existing booking without going through Transfer Room — re-checks conflicts on the same unit, does **not** touch `total_amount` (staff adjust that separately if needed), and is blocked for group-member bookings (dates are shared across a group's rooms; amending one room's dates independently isn't supported yet). "Mark No-Show" (`PUT /api/bookings/:id/no-show`, also surfaced as a quick action on `CheckIn.jsx`'s arrivals list) lets staff flag a no-show manually instead of waiting for the nightly `runNightAudit` job, which still auto-flags any `confirmed` booking whose check-in date has passed. Neither endpoint sends a guest-facing email (the `email_templates` `TRIGGERS` list wasn't extended) or touches payments/refunds — both remain open gaps.
+
 **Folio** — running charge ledger per booking (room charges, F&B, sales, activities), settled at checkout. Tab on `BookingDetail.jsx`. Backed by `routes/folio.js` / migration `028`.
 
 **Guest Communication** — email templates editor in Settings, per-property SMTP config (falls back to platform-default SMTP env vars if a property hasn't configured its own). Backed by `routes/communications.js` / migrations `030`–`031`.
