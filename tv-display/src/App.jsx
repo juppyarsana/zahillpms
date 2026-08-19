@@ -14,6 +14,18 @@ function useClock() {
   return time;
 }
 
+// getHours() is 24-hour (0-23) — convert to 12-hour before pairing with an
+// AM/PM suffix, otherwise afternoon/evening shows e.g. "13:44 PM".
+function formatClock(time) {
+  const hours24 = time.getHours();
+  const hour12 = hours24 % 12 || 12;
+  return {
+    h: hour12.toString().padStart(2, '0'),
+    m: time.getMinutes().toString().padStart(2, '0'),
+    ampm: hours24 >= 12 ? 'PM' : 'AM',
+  };
+}
+
 function formatDate(value) {
   if (!value) return '';
   const [y, m, d] = value.split('-').map(Number);
@@ -90,9 +102,7 @@ function TVBackground({ imageUrl }) {
 
 function VacantScreen({ unitName, cards = [], property }) {
   const time = useClock();
-  const h = time.getHours().toString().padStart(2, '0');
-  const m = time.getMinutes().toString().padStart(2, '0');
-  const ampm = time.getHours() >= 12 ? 'PM' : 'AM';
+  const { h, m, ampm } = formatClock(time);
   const dateStr = time.toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
@@ -160,9 +170,7 @@ function VacantScreen({ unitName, cards = [], property }) {
 
 function GuestScreen({ unit, booking, cards = [], weather, property }) {
   const time = useClock();
-  const h = time.getHours().toString().padStart(2, '0');
-  const m = time.getMinutes().toString().padStart(2, '0');
-  const ampm = time.getHours() >= 12 ? 'PM' : 'AM';
+  const { h, m, ampm } = formatClock(time);
   const hasNotices = cards.some(c => c.category === 'notice');
   const carouselCards = cards.filter(c => c.category !== 'notice');
   const activeIndex = useCardRotation(carouselCards.length);

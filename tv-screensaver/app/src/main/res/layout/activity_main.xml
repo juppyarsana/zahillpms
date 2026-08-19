@@ -32,16 +32,24 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Room ID"
+            android:text="Controller ID"
             android:textColor="@android:color/white"
             android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="From Settings → Room Controllers in the PMS. NOT the room name/number — this is the fixed device ID, and stays the same even if the room gets renamed."
+            android:textColor="@android:color/darker_gray"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
 
         <EditText
             android:id="@+id/roomIdInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="text"
-            android:hint="e.g. 1"
+            android:hint="e.g. 101"
             android:textColor="@android:color/white"
             android:textColorHint="@android:color/darker_gray"
             android:backgroundTint="@android:color/white"
@@ -79,7 +87,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="textUri"
-            android:hint="https://tv.d-zahill.kdai.cloud"
+            android:hint="https://tv.zahill.kdai.cloud"
             android:textColor="@android:color/white"
             android:textColorHint="@android:color/darker_gray"
             android:backgroundTint="@android:color/white"
