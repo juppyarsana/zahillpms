@@ -25,6 +25,7 @@ export default function App() {
   const [callState, setCallState] = useState({ status: 'idle', callId: null });
   const [muted, setMuted] = useState(false);
   const callIdRef = useRef(null);
+  const pendingOfferRef = useRef(null);
 
   const handleDebugClick = useCallback(() => {
     setDebugClicks(prev => {
@@ -91,6 +92,7 @@ export default function App() {
   const endCallLocally = useCallback((finalStatus) => {
     callClient.close();
     callIdRef.current = null;
+    pendingOfferRef.current = null;
     setMuted(false);
     setCallState({ status: finalStatus, callId: null });
     setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
@@ -106,9 +108,19 @@ export default function App() {
     evtSource.onmessage = (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
+
+      if (msg.type === 'incoming_call_from_staff') {
+        if (callIdRef.current) return; // already on/ringing a call — ignore
+        callIdRef.current = msg.callId;
+        setCallState({ status: 'incoming', callId: msg.callId, staffName: msg.staffName });
+        return;
+      }
+
       if (!msg.callId || msg.callId !== callIdRef.current) return;
 
-      if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
+      if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
+        pendingOfferRef.current = msg.payload.sdp;
+      } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
         callClient.handleAnswer(msg.payload.sdp);
       } else if (msg.type === 'signal' && msg.payload?.kind === 'ice') {
         callClient.addIceCandidate(msg.payload.candidate);
@@ -151,6 +163,7 @@ export default function App() {
     const id = callIdRef.current;
     callClient.close();
     callIdRef.current = null;
+    pendingOfferRef.current = null;
     setCallState({ status: 'idle', callId: null });
     if (id) { try { await api.post(`/calls/${id}/end-from-room`); } catch {} }
   }, []);
@@ -160,6 +173,38 @@ export default function App() {
     endCallLocally('ended');
     if (id) { try { await api.post(`/calls/${id}/end-from-room`); } catch {} }
   }, [endCallLocally]);
+
+  // Guest answers a call placed by staff — mirrors CallContext.jsx's
+  // answerCall on the staff side. The offer may not have arrived yet (it's
+  // sent async, right after the ring notification); if so this silently
+  // no-ops once, same accepted race as the staff-side equivalent — in
+  // practice a human needs a moment to notice and tap Answer, which is
+  // almost always enough time for the offer to land first.
+  const handleAnswerIncoming = useCallback(async () => {
+    const id = callIdRef.current;
+    if (!id || callState.status !== 'incoming') return;
+    try {
+      await api.post(`/calls/${id}/answer-from-room`);
+      setCallState(prev => (prev.callId === id ? { ...prev, status: 'connecting' } : prev));
+
+      const offerSdp = pendingOfferRef.current;
+      if (!offerSdp) return;
+      const answer = await callClient.createAnswer(offerSdp, {
+        onIceCandidate: (candidate) => {
+          api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'ice', candidate } }).catch(() => {});
+        },
+        onConnectionStateChange: (connState) => {
+          if (connState === 'connected' && callIdRef.current === id) {
+            setCallState(prev => (prev.callId === id ? { ...prev, status: 'connected' } : prev));
+          }
+        },
+      });
+      await api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'answer', sdp: answer } });
+    } catch (err) {
+      console.error('[Call] answer failed:', err);
+      endCallLocally('failed');
+    }
+  }, [callState.status, endCallLocally]);
 
   const handleMuteToggle = useCallback(() => {
     setMuted(prev => {
@@ -209,6 +254,7 @@ export default function App() {
         <CallOverlay
           callState={callState}
           onCancel={handleCancelCall}
+          onAnswer={handleAnswerIncoming}
           onHangup={handleHangup}
           onMuteToggle={handleMuteToggle}
           muted={muted}

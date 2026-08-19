@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export default function CallOverlay({ callState, onCancel, onHangup, onMuteToggle, muted }) {
+export default function CallOverlay({ callState, onCancel, onAnswer, onHangup, onMuteToggle, muted }) {
   const { status, error } = callState;
   if (!status || status === 'idle') return null;
 
@@ -20,6 +20,33 @@ export default function CallOverlay({ callState, onCancel, onHangup, onMuteToggl
     );
   }
 
+  if (status === 'incoming') {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(5,7,10,0.92)', backdropFilter: 'blur(6px)' }}>
+        <div className="flex flex-col items-center gap-6 text-center">
+          <div style={{
+            width: 96, height: 96, borderRadius: '50%', background: 'rgba(220,38,38,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 48, color: '#dc2626' }}>call</span>
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2" style={{ color: '#dc2626' }}>Incoming Call</p>
+            <h1 className="text-2xl font-extralight text-white">Front Desk</h1>
+          </div>
+          <div className="flex gap-4">
+            <button onClick={onAnswer} style={{ ...btnStyle(false), background: '#16a34a' }}>
+              <span className="material-symbols-outlined">call</span>
+            </button>
+            <button onClick={onCancel} style={btnStyle(true)}>
+              <span className="material-symbols-outlined">call_end</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'rgba(5,7,10,0.92)', backdropFilter: 'blur(6px)' }}>
       <div className="flex flex-col items-center gap-6 text-center">
@@ -32,7 +59,7 @@ export default function CallOverlay({ callState, onCancel, onHangup, onMuteToggl
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2" style={{ color: '#c9a227' }}>Front Desk</p>
           <h1 className="text-2xl font-extralight text-white">
-            {status === 'calling' ? 'Calling…' : 'Connected'}
+            {status === 'calling' ? 'Calling…' : status === 'connecting' ? 'Connecting…' : 'Connected'}
           </h1>
           {status === 'connected' && <CallTimer />}
         </div>

@@ -1,5 +1,9 @@
 import { useCall } from '../context/CallContext';
 
+function callerLabel(call) {
+  return call.guestName ? `${call.guestName} - ${call.unitName}` : `Room ${call.unitName}`;
+}
+
 export default function CallBanner() {
   const { incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute } = useCall();
 
@@ -21,7 +25,7 @@ export default function CallBanner() {
             Incoming Call
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 32 }}>
-            Room {incomingCall.unitName}
+            {callerLabel(incomingCall)}
           </div>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
             <button
@@ -49,7 +53,7 @@ export default function CallBanner() {
       <div style={bannerStyle('#166534')}>
         <span style={{ fontSize: 18 }}>📞</span>
         <span style={{ fontWeight: 700 }}>
-          {activeCall.status === 'connected' ? 'On call' : 'Connecting…'} — Room {activeCall.unitName}
+          {activeCall.status === 'connected' ? 'On call' : activeCall.status === 'calling' ? 'Calling…' : 'Connecting…'} — {callerLabel(activeCall)}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button
@@ -64,7 +68,7 @@ export default function CallBanner() {
             style={{ background: 'white', color: '#166534', border: 'none' }}
             onClick={endCall}
           >
-            Hang up
+            {activeCall.status === 'calling' ? 'Cancel' : 'Hang up'}
           </button>
         </div>
       </div>

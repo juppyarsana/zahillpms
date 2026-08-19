@@ -54,6 +54,18 @@ router.post('/', authDisplay, gate, async (req, res) => {
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
     const unit = unitRows[0];
 
+    // Best-effort guest name for the staff-facing incoming-call banner —
+    // null for a vacant room calling (e.g. from IdleScreen), which is fine.
+    const { rows: bookingRows } = await db.query(
+      `SELECT g.name AS guest_name
+       FROM bookings b JOIN guests g ON g.id = b.guest_id
+       WHERE b.unit_id = $1 AND b.status IN ('confirmed', 'checked_in')
+         AND b.check_in_date <= CURRENT_DATE AND b.check_out_date >= CURRENT_DATE
+       ORDER BY b.check_in_date DESC LIMIT 1`,
+      [unit.id]
+    );
+    const guestName = bookingRows[0]?.guest_name || null;
+
     const { rows } = await db.query(
       `INSERT INTO calls (unit_id) VALUES ($1) RETURNING id`,
       [unit.id]
@@ -63,8 +75,59 @@ router.post('/', authDisplay, gate, async (req, res) => {
     const handle = setTimeout(() => markMissed(callId).catch(() => {}), RING_TIMEOUT_MS);
     ringTimeouts.set(callId, handle);
 
-    sse.notify(staffChannel(unit.property_id), { type: 'incoming_call', callId, unitName: unit.name, roomId });
+    sse.notify(staffChannel(unit.property_id), { type: 'incoming_call', callId, unitName: unit.name, roomId, guestName });
     res.status(201).json({ callId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/calls/to-room — staff calls a specific room
+// Body: { unitId }
+router.post('/to-room', auth, gate, async (req, res) => {
+  const { unitId } = req.body;
+  if (!unitId) return res.status(400).json({ error: 'unitId required' });
+  try {
+    const { rows: unitRows } = await db.query(
+      'SELECT id, name, controller_id FROM units WHERE id = $1 AND property_id = $2',
+      [unitId, req.propertyId]
+    );
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+    const unit = unitRows[0];
+    if (!unit.controller_id) return res.status(400).json({ error: 'Room has no controller assigned' });
+
+    const { rows } = await db.query(
+      `INSERT INTO calls (unit_id, direction, initiated_by) VALUES ($1, 'staff_to_room', $2) RETURNING id`,
+      [unit.id, req.user.id]
+    );
+    const callId = rows[0].id;
+
+    const handle = setTimeout(() => markMissed(callId).catch(() => {}), RING_TIMEOUT_MS);
+    ringTimeouts.set(callId, handle);
+
+    sse.notify('room:' + unit.controller_id, { type: 'incoming_call_from_staff', callId, staffName: req.user.name });
+    res.status(201).json({ callId, unitName: unit.name, roomId: unit.controller_id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/calls/:id/answer-from-room — room answers a staff-initiated call
+router.post('/:id/answer-from-room', authDisplay, gate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const unit = await getCallUnit(id);
+    if (!unit || unit.property_id !== req.propertyId) return res.status(404).json({ error: 'Call not found' });
+    const { rows } = await db.query(
+      `UPDATE calls SET status = 'answered', answered_at = NOW()
+       WHERE id = $1 AND status = 'ringing' AND direction = 'staff_to_room'
+       RETURNING *`,
+      [id]
+    );
+    if (!rows[0]) return res.status(409).json({ error: 'Call no longer ringing' });
+    clearRingTimeout(id);
+    sse.notify(staffChannel(unit.property_id), { type: 'answered_from_room', callId: id });
+    res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -76,7 +139,7 @@ router.post('/:id/answer', auth, gate, async (req, res) => {
   try {
     const { rows } = await db.query(
       `UPDATE calls SET status = 'answered', answered_by = $2, answered_at = NOW()
-       WHERE id = $1 AND status = 'ringing'
+       WHERE id = $1 AND status = 'ringing' AND direction = 'room_to_staff'
          AND unit_id IN (SELECT id FROM units WHERE property_id = $3)
        RETURNING *`,
       [id, req.user.id, req.propertyId]

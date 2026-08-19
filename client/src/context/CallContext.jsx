@@ -33,9 +33,11 @@ export function CallProvider({ children }) {
       try { msg = JSON.parse(e.data); } catch { return; }
 
       if (msg.type === 'incoming_call') {
-        setIncomingCall({ callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId });
+        setIncomingCall({ callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
       } else if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
         pendingOffers.current.set(msg.callId, msg.payload.sdp);
+      } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
+        if (activeCallRef.current?.callId === msg.callId) callClient.handleAnswer(msg.payload.sdp);
       } else if (msg.type === 'signal' && msg.payload?.kind === 'ice') {
         if (activeCallRef.current?.callId === msg.callId) {
           callClient.addIceCandidate(msg.payload.candidate);
@@ -44,9 +46,11 @@ export function CallProvider({ children }) {
           list.push(msg.payload.candidate);
           pendingIce.current.set(msg.callId, list);
         }
-      } else if (msg.type === 'call_taken' || msg.type === 'missed') {
+      } else if (msg.type === 'answered_from_room') {
+        setActiveCall(prev => (prev?.callId === msg.callId && prev.status === 'calling' ? { ...prev, status: 'connecting' } : prev));
+      } else if (msg.type === 'call_taken') {
         setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
-      } else if (msg.type === 'ended') {
+      } else if (msg.type === 'ended' || msg.type === 'missed') {
         setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
         setActiveCall(prev => {
           if (prev?.callId !== msg.callId) return prev;
@@ -71,7 +75,7 @@ export function CallProvider({ children }) {
     }
 
     setIncomingCall(null);
-    setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, status: 'connecting' });
+    setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'connecting' });
 
     const offerSdp = pendingOffers.current.get(callId);
     pendingOffers.current.delete(callId);
@@ -98,6 +102,34 @@ export function CallProvider({ children }) {
 
   const dismissIncoming = useCallback(() => setIncomingCall(null), []);
 
+  // Staff places a call to a specific room. Mirrors the room's own outgoing
+  // call flow (App.jsx's handlePlaceCall) — offer created immediately, mic
+  // requested up front, connectionstatechange drives 'calling' -> 'connected'.
+  const callRoom = useCallback(async (unit) => {
+    if (activeCallRef.current || incomingCall) throw new Error('Already on a call');
+    const { data } = await api.post('/api/calls/to-room', { unitId: unit.id });
+    setActiveCall({ callId: data.callId, roomId: data.roomId, unitName: data.unitName, status: 'calling' });
+
+    try {
+      const offer = await callClient.createOffer({
+        onIceCandidate: (candidate) => {
+          api.post(`/api/calls/${data.callId}/signal`, { roomId: data.roomId, payload: { kind: 'ice', candidate } }).catch(() => {});
+        },
+        onConnectionStateChange: (connState) => {
+          if (connState === 'connected') {
+            setActiveCall(prev => (prev?.callId === data.callId ? { ...prev, status: 'connected' } : prev));
+          }
+        },
+      });
+      await api.post(`/api/calls/${data.callId}/signal`, { roomId: data.roomId, payload: { kind: 'offer', sdp: offer } });
+    } catch (err) {
+      callClient.close();
+      setActiveCall(null);
+      try { await api.post(`/api/calls/${data.callId}/end`); } catch {}
+      throw err;
+    }
+  }, [incomingCall]);
+
   const endCall = useCallback(async () => {
     const call = activeCallRef.current;
     callClient.close();
@@ -115,7 +147,7 @@ export function CallProvider({ children }) {
   }, []);
 
   return (
-    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute }}>
+    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute, callRoom }}>
       {children}
     </CallContext.Provider>
   );

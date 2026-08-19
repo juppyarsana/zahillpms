@@ -3,6 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
+import { useCall } from '../context/CallContext';
+import ActionMenu from '../components/ActionMenu';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -17,6 +19,7 @@ export default function BookingDetail() {
   const nav = useNavigate();
   const { paymentMethods, sources } = useSettings();
   const { hasModule } = useAuth();
+  const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
@@ -255,6 +258,14 @@ export default function BookingDetail() {
     }
   }
 
+  async function callRoomAction() {
+    try {
+      await callRoom({ id: booking.unit_id, name: booking.unit_name });
+    } catch (err) {
+      alert(err.response?.data?.error || err.message || 'Could not place call');
+    }
+  }
+
   function waLink() {
     const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Zahill Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
@@ -279,16 +290,7 @@ export default function BookingDetail() {
           <div className="page-title">Booking #{id.slice(0,8).toUpperCase()}</div>
           <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
         </div>
-        <div className="flex gap-2">
-          {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group && (
-            <button className="btn btn-secondary" onClick={openAmend}>Amend Dates</button>
-          )}
-          {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && (
-            <button className="btn btn-secondary" onClick={openTransfer}>Transfer Room</button>
-          )}
-          {booking.guest_whatsapp && (
-            <button className="btn btn-secondary" onClick={waLink}>💬 WhatsApp</button>
-          )}
+        <div className="flex gap-2 items-center">
           {(() => {
             const isOTA = sources.find(s => s.id === booking.source)?.is_ota;
             const canCheckin = isOTA
@@ -305,12 +307,18 @@ export default function BookingDetail() {
             parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
             <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
           )}
-          {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) && (
-            <button className="btn btn-secondary" onClick={markNoShow}>Mark No-Show</button>
-          )}
-          {['pending', 'deposit_paid', 'confirmed'].includes(booking.status) ? (
-            <button className="btn btn-danger" onClick={cancel}>Cancel</button>
-          ) : null}
+          <ActionMenu items={[
+            hasModule('room_controller') && { label: 'Call Room', icon: '📞', onClick: callRoomAction },
+            booking.guest_whatsapp && { label: 'WhatsApp Guest', icon: '💬', onClick: waLink },
+            ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
+              { label: 'Amend Dates', icon: '📅', onClick: openAmend },
+            ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+              { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
+            ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
+              { label: 'Mark No-Show', icon: '🚫', onClick: markNoShow },
+            ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
+              { label: 'Cancel Booking', icon: '✕', onClick: cancel, danger: true },
+          ]} />
         </div>
       </div>
 

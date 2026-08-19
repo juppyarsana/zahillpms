@@ -528,7 +528,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 039
+## Next migration number: 040
 
 ---
 
@@ -828,3 +828,97 @@ Per-property tax and service charge rates, applied on folio and invoice.
   rather than introducing a new floating-UI positioning concern across
   every screen.
 - Status: ✅ Implemented — not yet manually verified in a browser.
+
+---
+
+## ✅ Two-way room-to-desk calling
+
+> `calls`/`routes/calls.js` already had a full WebRTC voice-call system
+> (offer/answer/ICE relayed over SSE, ring timeout, mute) — but only
+> room -> staff (guest taps "Call Front Desk"). Staff had no way to call
+> a room back. Undocumented in CLAUDE.md until this pass even for the
+> original direction — added a proper write-up alongside the extension.
+
+- Migration 039: `calls.direction` (`room_to_staff` default /
+  `staff_to_room`) and `calls.initiated_by` (nullable FK to `users`, set
+  for staff-placed calls).
+- The signaling relay endpoints (`POST /:id/signal` staff->room,
+  `POST /:id/signal-from-room` room->staff) were already direction-
+  agnostic — they just forward whatever offer/answer/ICE payload to the
+  other side's SSE channel. So the reverse direction only needed two new
+  endpoints: `POST /api/calls/to-room` (staff places a call — validates
+  the unit has a `controller_id`, inserts a `staff_to_room` row, 45s ring
+  timeout same as before, notifies `room:{controllerId}`) and
+  `POST /api/calls/:id/answer-from-room` (guest answers — marks
+  `answered`, notifies the staff broadcast channel). `/end`,
+  `/end-from-room`, `/signal`, `/signal-from-room`, and the missed-call
+  timeout were all already generic enough to reuse verbatim. Added a
+  defensive `direction` filter to the existing `/answer` (staff-answers)
+  route so it can't accidentally answer a call meant for the room side.
+- Both `room-display/src/callClient.js` and
+  `client/src/services/callClient.js` were previously asymmetric (room's
+  only knew how to offer, staff's only knew how to answer) — merged into
+  one symmetric shape (`createOffer`/`createAnswer`/`handleAnswer`/
+  `addIceCandidate`/`setMuted`/`close`) in both, since which side offers
+  now depends on who placed the call. Kept as two near-identical files
+  rather than a shared package — matches the existing convention of
+  small per-app duplication already used for calls elsewhere in this
+  codebase.
+- Staff side: new "Call a Room" entry in `Sidebar.jsx` (shown whenever
+  `room_controller` is on — not owner-gated, since answering an incoming
+  call was never role-restricted either) opens `CallRoomModal.jsx`, a
+  picker over `GET /api/iot/units` filtered to units with a controller
+  assigned. Deliberately shows no online/offline badge — that endpoint's
+  `connected` field is the ESP32 Room Controller's MQTT status, not the
+  Room Display tablet's, and there's no tracked presence signal for the
+  tablet app; an unreachable room's call just rings out and gets marked
+  `missed` after 45s, same as an unanswered room->staff call already did.
+  `CallContext.jsx` gained a `callRoom(unit)` action (creates the offer
+  immediately, same as the room's own outgoing-call flow) and handling
+  for the `answer` signal kind and `answered_from_room` event, neither of
+  which the staff side ever needed to receive before. `CallBanner.jsx`
+  now distinguishes `'calling'` (ringing out) from `'connecting'`/`'on
+  call'` in its status text and switches its hang-up button to "Cancel"
+  while still ringing.
+- Room side: `App.jsx` gained an `'incoming'` `callState` status (new
+  `incoming_call_from_staff` SSE event, guarded so a room already on/
+  ringing a call ignores a second one) and a new `handleAnswerIncoming`
+  handler — the room's first time ever creating a WebRTC *answer* rather
+  than an offer. Declining reuses the existing `handleCancelCall`
+  unchanged (already generic). `CallOverlay.jsx` gained a red ringing
+  screen for `'incoming'` (Answer/Decline) and a `'connecting'` label for
+  the gap between answering and ICE actually completing.
+- Known limitation, mirrored deliberately from the pre-existing
+  room->staff flow rather than solved differently: the offer/answer SDP
+  is sent asynchronously right after the ring notification, so there's a
+  small theoretical window where the callee could tap Answer before it
+  arrives (silently no-ops if so). In practice a human needs a moment to
+  notice and react, which is normally enough time — same accepted
+  tradeoff the original implementation already made for room->staff.
+- Status: ✅ Implemented — not yet manually verified in a browser (owner
+  to confirm end-to-end on two real devices/tabs: place a call each
+  direction, answer, mute, hang up, and let one ring out unanswered).
+- **Follow-up, same day:** added a second entry point — `BookingDetail.jsx`
+  now has a "Call Room" action too (calls `useCall()`'s `callRoom()`
+  directly against `booking.unit_id`, no picker needed since the booking
+  already names its room). Its page-header button row had grown to up to
+  8 buttons once this was added on top of Amend Dates/Transfer Room/
+  WhatsApp/Check In/Check Out/Confirm/Mark No-Show/Cancel, so it was the
+  trigger for consolidating all of those (except the one status-driven
+  primary CTA) into a new reusable "⋮" `ActionMenu.jsx` dropdown
+  component — see `CLAUDE.md`'s "BookingDetail.jsx action menu" note.
+- **Bug fix, caught in local testing:** the room's incoming-call screen
+  was showing the individual staff member's name (`req.user.name`,
+  whoever placed the call) — confusing/unprofessional on a guest-facing
+  screen, and could even collide with the guest's own name coincidentally
+  matching a staff member's. `CallOverlay.jsx`'s `'incoming'` state now
+  always shows a fixed "Front Desk" label regardless of who called (the
+  server still sends `staffName` in case it's useful later; the room app
+  just no longer renders it). Went the other way on the staff side
+  instead of removing information — `routes/calls.js`'s room-places-call
+  handler (`POST /`) now looks up the unit's active booking's guest name
+  and includes it in the `incoming_call` SSE payload, so `CallBanner.jsx`
+  shows "Guest Name - Unit Name" instead of just "Room Unit Name" (falls
+  back to unit-name-only for a vacant room calling, e.g. from
+  `IdleScreen` — no guest to name). Threaded through `answerCall()` so
+  the "On call" banner keeps showing it after answering, too.

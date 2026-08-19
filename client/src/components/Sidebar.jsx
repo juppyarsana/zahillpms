@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import CallRoomModal from './CallRoomModal';
 
 function SidebarLink({ to, end, icon, label }) {
   return (
@@ -40,6 +41,7 @@ function SidebarSection({ id, label, defaultOpen = false, children }) {
 export default function Sidebar() {
   const { user, logout, can, hasModule } = useAuth();
   const { branding } = useSettings();
+  const [showCallModal, setShowCallModal] = useState(false);
 
   const showRatesSection = (can('allotments') || can('pricing')) && hasModule('reservations');
 
@@ -63,6 +65,7 @@ export default function Sidebar() {
   const hasSettings = generalItems.length > 0 || guestBookingItems.length > 0 || adminItems.length > 0;
 
   return (
+    <>
     <aside className="sidebar">
       <div className="sidebar-logo">
         <img src={branding?.logo_url || '/logo.png'} alt={branding?.name || 'ZHP PMS'} />
@@ -86,6 +89,17 @@ export default function Sidebar() {
             {can('allotments') && <SidebarLink to="/allotment" icon="📡" label="Channel" />}
             {can('pricing')    && <SidebarLink to="/pricing"   icon="💰" label="Pricing" />}
           </SidebarSection>
+        )}
+
+        {hasModule('room_controller') && (
+          <button
+            className="sidebar-link"
+            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+            onClick={() => setShowCallModal(true)}
+          >
+            <span className="sidebar-link-icon">📞</span>
+            <span className="sidebar-link-label">Call a Room</span>
+          </button>
         )}
       </nav>
 
@@ -124,5 +138,7 @@ export default function Sidebar() {
         <div className="sidebar-build">{__APP_COMMIT__}</div>
       </div>
     </aside>
+    {showCallModal && <CallRoomModal onClose={() => setShowCallModal(false)} />}
+    </>
   );
 }
