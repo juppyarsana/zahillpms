@@ -63,6 +63,18 @@ if [ -d "tv-display" ]; then
   cd ..
 fi
 
+# ── Kitchen Display build ─────────────────────────────────────────────────────
+if [ -d "kitchen-display" ]; then
+  echo ""
+  echo "▸ Installing kitchen-display dependencies..."
+  cd kitchen-display
+  npm install
+  echo ""
+  echo "▸ Building kitchen-display..."
+  npm run build
+  cd ..
+fi
+
 # ── Restart server ────────────────────────────────────────────────────────────
 echo ""
 echo "▸ Restarting server via PM2..."
