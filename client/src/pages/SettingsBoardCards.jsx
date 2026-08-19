@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
@@ -9,15 +10,18 @@ const CATEGORIES = [
   { value: 'notice',   label: 'Notice',    color: '#818cf8' },
 ];
 
-const EMPTY_FORM = { title: '', body: '', category: 'activity', meta: '', active: true };
+const EMPTY_FORM = { title: '', body: '', category: 'activity', meta: '', active: true, paid: false, price: '', linkMode: 'new', link_activity_id: '' };
 
 function catMeta(cat) {
   return CATEGORIES.find(c => c.value === cat) || CATEGORIES[0];
 }
 
+function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
 export default function SettingsBoardCards() {
-  const { user } = useAuth();
+  const { user, hasModule } = useAuth();
   const [cards, setCards]       = useState([]);
+  const [catalog, setCatalog]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState(null); // card id or null
@@ -35,7 +39,13 @@ export default function SettingsBoardCards() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    if (hasModule('activities')) {
+      api.get('/api/activities', { params: { available: true } }).then(({ data }) => setCatalog(data)).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openNew() {
     setEditing(null);
@@ -48,7 +58,10 @@ export default function SettingsBoardCards() {
 
   function openEdit(card) {
     setEditing(card.id);
-    setForm({ title: card.title, body: card.body, category: card.category, meta: card.meta || '', active: card.active });
+    setForm({
+      title: card.title, body: card.body, category: card.category, meta: card.meta || '', active: card.active,
+      paid: !!card.activity_id, price: card.activity_price ?? '', linkMode: 'new', link_activity_id: '',
+    });
     setImageFile(null);
     setImagePreview(card.image_url || null);
     setError('');
@@ -70,10 +83,25 @@ export default function SettingsBoardCards() {
     setImagePreview(URL.createObjectURL(file));
   }
 
+  const editingCard = editing ? cards.find(c => c.id === editing) : null;
+  const alreadyLinked = !!editingCard?.activity_id;
+  const linkedActivityIds = new Set(cards.map(c => c.activity_id).filter(Boolean));
+  const availableToLink = catalog.filter(a => !linkedActivityIds.has(a.id));
+
   async function save() {
     if (!form.title.trim() || !form.body.trim()) {
       setError('Title and description are required.');
       return;
+    }
+    if (form.paid && !alreadyLinked) {
+      if (form.linkMode === 'existing' && !form.link_activity_id) {
+        setError('Choose an activity to link.');
+        return;
+      }
+      if (form.linkMode === 'new' && form.price === '') {
+        setError('Price is required for a paid card.');
+        return;
+      }
     }
     setSaving(true);
     setError('');
@@ -157,7 +185,14 @@ export default function SettingsBoardCards() {
                         <img src={card.image_url} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{card.title}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {card.title}
+                          {card.activity_id && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 10, padding: '1px 8px' }}>
+                              {fmtIDR(card.activity_price)}{card.activity_available === false ? ' · inactive' : ''}
+                            </span>
+                          )}
+                        </div>
                         {card.meta && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{card.meta}</div>}
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {card.body}
@@ -229,6 +264,82 @@ export default function SettingsBoardCards() {
                 <label className="form-label">Meta <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — shown as small detail line)</span></label>
                 <input className="form-input" value={form.meta} onChange={e => setForm(f => ({ ...f, meta: e.target.value }))} placeholder="e.g. 20 min drive · open 8am–6pm" />
               </div>
+
+              {hasModule('activities') && (
+                <div className="form-group">
+                  <label className="form-label">Bookable</label>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: alreadyLinked || form.paid ? 10 : 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, paid: false }))}
+                      style={{
+                        padding: '6px 14px', borderRadius: 20, border: '1px solid',
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                        borderColor: !form.paid ? 'var(--gold)' : 'var(--border)',
+                        background: !form.paid ? 'rgba(197,163,88,0.12)' : 'transparent',
+                        color: !form.paid ? 'var(--gold)' : 'var(--text-muted)',
+                      }}
+                    >
+                      Free (info only)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, paid: true }))}
+                      style={{
+                        padding: '6px 14px', borderRadius: 20, border: '1px solid',
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                        borderColor: form.paid ? 'var(--gold)' : 'var(--border)',
+                        background: form.paid ? 'rgba(197,163,88,0.12)' : 'transparent',
+                        color: form.paid ? 'var(--gold)' : 'var(--text-muted)',
+                      }}
+                    >
+                      Paid (bookable)
+                    </button>
+                  </div>
+
+                  {form.paid && alreadyLinked && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                      <span>Price: <strong>{fmtIDR(form.price)}</strong></span>
+                      <Link to="/activities" className="btn btn-sm btn-secondary" style={{ fontSize: 11 }}>Manage full details →</Link>
+                    </div>
+                  )}
+                  {form.paid && !alreadyLinked && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {availableToLink.length > 0 && (
+                        <div style={{ display: 'flex', gap: 14, fontSize: 12 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                            <input type="radio" checked={form.linkMode === 'new'} onChange={() => setForm(f => ({ ...f, linkMode: 'new' }))} />
+                            Create new activity
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                            <input type="radio" checked={form.linkMode === 'existing'} onChange={() => setForm(f => ({ ...f, linkMode: 'existing' }))} />
+                            Link an existing activity
+                          </label>
+                        </div>
+                      )}
+                      {form.linkMode === 'existing' && availableToLink.length > 0 ? (
+                        <select
+                          className="form-input"
+                          value={form.link_activity_id}
+                          onChange={e => setForm(f => ({ ...f, link_activity_id: e.target.value }))}
+                        >
+                          <option value="">Select an activity…</option>
+                          {availableToLink.map(a => (
+                            <option key={a.id} value={a.id}>{a.name} — {fmtIDR(a.price)}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="number" min="0" className="form-input"
+                          value={form.price}
+                          onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                          placeholder="Price per person (Rp)"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Image <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>

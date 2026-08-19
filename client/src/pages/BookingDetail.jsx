@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings, SourceBadge } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
+const ACTIVITY_STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -14,6 +16,7 @@ export default function BookingDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const { paymentMethods, sources } = useSettings();
+  const { hasModule } = useAuth();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
@@ -41,6 +44,7 @@ export default function BookingDetail() {
   const [chargeForm, setChargeForm] = useState({ type: 'misc', description: '', quantity: 1, unit_price: '' });
   const [chargeError, setChargeError] = useState('');
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  const [activityBookings, setActivityBookings] = useState(null);
 
   async function load() {
     try {
@@ -62,6 +66,15 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
+
+  async function loadActivityBookings() {
+    try {
+      const r = await api.get('/api/activities/bookings', { params: { booking_id: id } });
+      setActivityBookings(r.data);
+    } catch {}
+  }
+
+  useEffect(() => { if (tab === 'activities' && !activityBookings) loadActivityBookings(); }, [tab]);
 
   async function addCharge() {
     setChargeError('');
@@ -311,6 +324,7 @@ export default function BookingDetail() {
       <div className="flex gap-2 mb-3">
         <button className={`btn btn-sm ${tab === 'details' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('details')}>Details</button>
         <button className={`btn btn-sm ${tab === 'folio' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('folio')}>Folio</button>
+        {hasModule('activities') && <button className={`btn btn-sm ${tab === 'activities' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('activities')}>Activities</button>}
       </div>
 
       {tab === 'details' && (
@@ -572,6 +586,30 @@ export default function BookingDetail() {
                 </span>
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {tab === 'activities' && (
+        <div className="card mt-3">
+          <div className="card-title">Activity Bookings</div>
+          {!activityBookings ? <div className="text-muted">Loading…</div> : activityBookings.length === 0 ? (
+            <div className="text-muted" style={{ padding: '10px 0' }}>No activity bookings for this stay yet — guests can request one from the Room Display, or add one from the Activities page.</div>
+          ) : (
+            activityBookings.map(ab => (
+              <div key={ab.id} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{ab.activity_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {String(ab.scheduled_date).slice(0, 10)}{ab.scheduled_time ? ` ${ab.scheduled_time.slice(0, 5)}` : ''} · {ab.num_participants} pax
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <span style={{ fontWeight: 600 }}>{fmtIDR(ab.total_amount)}</span>
+                  <span className={`badge badge-${ACTIVITY_STATUS_BADGE[ab.status]}`}>{ab.status}</span>
+                </div>
+              </div>
+            ))
           )}
         </div>
       )}

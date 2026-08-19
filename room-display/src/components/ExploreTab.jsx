@@ -89,7 +89,9 @@ function WeatherStrip({ weather }) {
   );
 }
 
-function CardSlideshow({ cards, category }) {
+function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
+function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
   const [fade, setFade] = useState(true);
@@ -198,6 +200,21 @@ function CardSlideshow({ cards, category }) {
                 {card.meta}
               </div>
             )}
+            {activitiesEnabled && card.activity_id && (
+              <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', gap: 18 }}>
+                <span style={{ fontSize: 20, fontWeight: 300, color: '#fff' }}>{fmtIDR(card.activity_price)} <span style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>/ person</span></span>
+                <button
+                  onClick={() => onBookActivity?.(card.activity_id)}
+                  style={{
+                    padding: '10px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                    background: '#c9a227', color: '#0a0d12', fontSize: 12, fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.12em',
+                  }}
+                >
+                  Book Now
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -240,13 +257,13 @@ function CardSlideshow({ cards, category }) {
   );
 }
 
-export default function ExploreTab({ weather, cards = [], activeCategory, onCategoryChange }) {
+export default function ExploreTab({ weather, cards = [], activeCategory, onCategoryChange, activitiesEnabled, onBookActivity }) {
   const notices = cards.filter(c => c.category === 'notice');
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <WeatherStrip weather={weather} />
-      <CardSlideshow cards={cards} category={activeCategory} />
+      <CardSlideshow cards={cards} category={activeCategory} activitiesEnabled={activitiesEnabled} onBookActivity={onBookActivity} />
       {/* Notice bar — always visible at bottom, scrolls all notices */}
       {notices.length > 0 && (() => {
         const text = notices.map(n => n.title).join('     •     ');

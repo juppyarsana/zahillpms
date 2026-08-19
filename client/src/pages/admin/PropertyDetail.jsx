@@ -12,6 +12,7 @@ const MODULE_LABELS = {
   in_room_media:   'In-Room Media',
   room_controller: 'Room Controller',
   insights:        'Insights',
+  activities:      'Activities',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };

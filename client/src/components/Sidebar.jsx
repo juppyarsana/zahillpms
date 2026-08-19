@@ -78,6 +78,7 @@ export default function Sidebar() {
         {can('guests') && hasModule('guest_crm')       && <SidebarLink to="/guests" icon="👤" label="Guests" />}
         {can('loyalty') && hasModule('guest_crm')      && <SidebarLink to="/loyalty" icon="⭐" label="Loyalty" />}
         {can('sales') && hasModule('sales')            && <SidebarLink to="/sales" icon="🛍" label="Sales" />}
+        {can('activities') && hasModule('activities')  && <SidebarLink to="/activities" icon="🥾" label="Activities" />}
         {user?.role === 'owner' && hasModule('financial') && <SidebarLink to="/night-audit" icon="🌙" label="Night Audit" />}
 
         {showRatesSection && (

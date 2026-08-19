@@ -107,7 +107,156 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Activity catalog, tour bookings, transport scheduling
 - Upsell revenue tracking
 - Can surface through In-Room Media tablet
-- Status: 🔵 Next
+- Status: ✅ Implemented (migration 037) — see write-up below
+
+### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
+
+> Scoped 2026-08-17 after a client conversation: their property takes many
+> group bookings placed by a *company*, not an individual — the defining
+> difference from Group Bookings (#9) isn't room count, it's **who pays
+> and when**. Revised the same day after checking a reference PMS
+> (guestpro.id, Indonesian market): instead of a standalone `companies`
+> table, generalize the **existing** `booking_sources` table (migration
+> 005/027 — already per-property, already the thing `NewBooking.jsx`'s
+> Source dropdown picks from) into a full "Agent" concept, matching
+> GuestPro's model. Company becomes one `source_type` among several
+> (`walkin`/`direct`/`booking_engine`/`ota`/`travel_agent`/`company`/
+> `wholesaler`), and the billing behavior is a separate `payment_status`
+> field on the same row:
+> 1. `normal` — guest pays the property directly (today's only behavior)
+> 2. `city_ledger` — guest pays the agent, agent remits to the property, AR posts automatically
+> 3. `city_ledger_payment` — same, but AR requires manual confirmation
+> 4. `commission` — guest pays the property, property pays the agent a commission
+> 5. `commission_and_city_ledger` — agent pays the property, then receives a commission back
+>
+> This reuses the exact UI/data flow staff already know (picking a Source
+> on a booking) instead of adding a parallel "Bill to Company" selector,
+> and it means travel-agent/OTA commission billing — a real need for a
+> Bali villa/glamping property selling through agents — rides the same
+> machinery for free instead of needing a second system later. Deliberately
+> **not** copying GuestPro's full accounting suite (chart of accounts,
+> journal entries, AR/AP account linkage) — Zahill has no general-ledger
+> module and doesn't need one for this; AR balance is just a derived sum
+> over folios, not a posted journal entry.
+
+- Migration: next available at time of implementation (037 as of this
+  writing — confirm against `server/db/migrations/`). Extends
+  `booking_sources` in place — no new table for the agent record itself:
+  - `source_type VARCHAR(20) DEFAULT 'direct'` (keep `is_ota` as-is for
+    the existing literal checks in `checkin.js`'s `OTA_SOURCES` array —
+    don't remove it, `source_type` is additive)
+  - `payment_status VARCHAR(30) NOT NULL DEFAULT 'normal'` (the 5 values above)
+  - `billing_address`, `tax_id` (NPWP), `contact_name`, `contact_email`,
+    `contact_phone`, `credit_terms_days`, `credit_limit` — nullable,
+    only relevant for `travel_agent`/`company`/`wholesaler` rows
+  - `commission_type` (`percent`/`amount`), `commission_value`
+  - No FK/schema change needed on `bookings` — `bookings.source` already
+    stores the `booking_sources.id` it was assigned at creation
+- New table `agent_commissions` (booking_id, source_id, property_id,
+  amount, status `unpaid`/`paid`, created_at) — simple ledger, not a
+  journal entry, computed at checkout/night-audit time from the source's
+  `commission_type`/`commission_value` when `payment_status` is
+  `commission` or `commission_and_city_ledger`
+- Folio/checkout: when a booking's source has `payment_status` of
+  `city_ledger` or `city_ledger_payment`, the settlement screen offers
+  "Bill to [Source Name]" instead of requiring guest payment — closes the
+  folio as `pending_agent_invoice` rather than needing a `payments` row
+- Extend `server/routes/settings.js`'s existing booking-source CRUD
+  (`POST`/`PATCH /api/settings/booking-sources/:id`) with the new fields,
+  plus new endpoints (same file or a new `agents.js` if it grows large):
+  - `GET /api/settings/booking-sources/:id/statement` — outstanding
+    balance + aging (current/30/60/90) across that source's bookings' folios
+  - `POST /api/settings/booking-sources/:id/invoice` — consolidated PDF
+    invoice across selected bookings/date range (reuses the existing
+    `pdfkit` invoice code, different source query), marks those folios `invoiced`
+  - `POST /api/settings/booking-sources/:id/payments` — record a payment
+    against the outstanding balance (may span multiple bookings — needs
+    an allocation strategy, oldest-first vs. manual)
+- `Settings.jsx` — Booking Sources management gains the new fields,
+  conditionally shown once `source_type` is `travel_agent`/`company`/
+  `wholesaler` (channels like `direct`/`walkin`/`ota` don't need them)
+- New tab or page — statement/aging view + "generate invoice" per agent,
+  `financial` module gated, owner-only (matches `reports`/`nightAudit` convention)
+- Reports — Accounts Receivable Aging (outstanding city-ledger balance by
+  agent, bucketed), extends the existing Reports page
+- **Indonesia-specific, confirm with client before building:** do
+  companies/agents need Faktur Pajak-formatted invoices (NPWP + VAT
+  breakout) instead of the current simple guest receipt? May need a
+  second invoice template.
+- **Open questions for client:** default credit terms (NET 15/30?);
+  hard-block bookings over `credit_limit` or just warn; negotiated/
+  discounted rates per agent (out of scope for v1 — flag for a later
+  pass); who allocates a payment across multiple outstanding bookings
+- Status: 🔵 Planned — not started, scope only
+
+### 14. Back Office (Purchasing, Inventory Cost Control, Accounts Payable, Cash & Bank, Recipe Costing)
+
+> Scoped 2026-08-17, validated against two independent references —
+> GuestPro (Indonesian-market PMS) and VHP (the client's own prior system,
+> via sindata.net) — which converge on the same component set despite
+> different grouping: Purchasing/PO, Inventory Cost Control, Accounts
+> Payable, Cash & Bank, General Ledger, Fixed Assets, plus an F&B-specific
+> Standard Recipe Management feature. Scoped to the operationally useful
+> pieces, not a full general-ledger rebuild — see "Explicitly out of
+> scope" below.
+>
+> **New module: `back_office`**, gated the standard way
+> (`server/modules.js` → `moduleGuard('back_office')`, `property_modules`
+> row per property — same mechanism as every existing module). **Default
+> off** — per the owner's modular-pricing goal, this is a paid-tier add-on
+> for properties with real purchasing/F&B-cost operations, not forced on
+> every client the way `reservations`/`financial` are. Not added to the
+> live `server/modules.js` table in `CLAUDE.md` yet since it doesn't exist
+> in code — that table only documents what's actually registered; update
+> it in the same commit that implements this.
+
+- New tables (migration: next available at implementation time — confirm
+  order against #13 if both land close together):
+  - `suppliers` (property_id, name, contact info, payment_terms_days)
+  - `purchase_orders` (property_id, supplier_id, status
+    `draft`/`pending_approval`/`approved`/`received`/`cancelled`,
+    requested_by, approved_by, created_at) + `purchase_order_items`
+    (product_id or raw-material line, quantity, unit_cost) — VHP's
+    "purchase request" approval step is modeled as an early status on
+    this same table rather than a separate PR entity, simpler until
+    proven insufficient
+  - `expenses` (property_id, category, amount, paid_via → cash/bank
+    account, description, receipt attachment, created_by, created_at)
+  - `cash_bank_accounts` (property_id, name, type cash/bank, running
+    balance) + `cash_bank_transactions` (account_id, amount, direction,
+    reference — expense / PO payment / manual adjustment)
+  - `ap_bills` (property_id, supplier_id, purchase_order_id nullable,
+    amount, status unpaid/paid, due_date) — simple derived-balance
+    accounts payable, same lightweight pattern as the AR side of #13, not
+    a full journal ledger
+  - `recipes` (product_id → the sellable POS item) + `recipe_ingredients`
+    (recipe_id, ingredient_product_id or raw-material row,
+    quantity_per_unit) — Standard Recipe Management; `salesService
+    .createSale` decrements ingredient stock via `stock_movements`
+    instead of/alongside the finished product's own stock when a recipe
+    exists for that product
+- Extends existing `stock_movements` (migration 036) with a nullable
+  `purchase_order_id` so PO receiving posts real stock-movement rows
+  instead of only the current manual restock/adjustment/waste types
+- New route files: `server/routes/purchasing.js` (suppliers, PO,
+  receiving), `server/routes/expenses.js` (expenses, cash & bank
+  accounts, AP bills), `server/routes/recipes.js` (recipe CRUD — this one
+  needs **both** `sales` and `back_office` modules enabled, since it
+  links a POS product to inventory cost — same two-module pattern
+  `/checkin` already uses for `reservations`+`front_desk`)
+- Frontend: new top-level "Back Office" nav section (one item, matching
+  how VHP brands it as a single module rather than GuestPro's two-way
+  split) with Purchasing / Expenses / Cash & Bank / Recipes tabs;
+  owner-only, same access pattern as `financial`
+- Reports: extend the existing Reports page with a Cost of Goods / F&B
+  cost report once recipes exist — ties sales revenue to ingredient cost
+  (VHP's "automatic F&B cost reconciliation")
+- **Explicitly out of scope for v1** (real bookkeeping-software
+  territory — recommend a separate accounting tool/bookkeeper for these
+  until a client specifically asks): full General Ledger with journal
+  entries and chart of accounts, monthly closing, budgeting, Fixed Assets
+  depreciation schedules
+- Status: 🔵 Planned — not started, scope only
 
 ---
 
@@ -375,10 +524,11 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | in_room_media    | ✅                 | —             |
 | room_controller  | ❌                 | Birdnest ✅, Zahill ❌ |
 | insights         | ✅                 | —             |
+| activities       | ✅                 | —             |
 
 ---
 
-## Next migration number: 037
+## Next migration number: 039
 
 ---
 
@@ -487,4 +637,194 @@ Per-property tax and service charge rates, applied on folio and invoice.
   its sibling succeeds), master folio rollup, and — critically — that the
   pre-existing single-booking create/view/checkin flow is byte-for-byte
   unaffected.
+
+---
+
+## ✅ Concierge / Activities (Phase D #11)
+
+> A schedulable, capacity-limited, staff-confirmed booking concept for
+> tours/transport/wellness — deliberately kept separate from two
+> pre-existing, unrelated concepts: `products.category='tour'` (a flat
+> instant-purchase POS item, unchanged) and `guest_board_cards.category
+> ='activity'` (static "things to do" info cards on the Guest Board CMS,
+> unchanged). Reused the guest self-ordering feature (F&B) as the closest
+> existing template — same shape: staff-managed catalog → guest browses on
+> the in-room tablet → server-priced order → revenue needs to land on the
+> guest's bill.
+
+- Migration 037: new `activities` (catalog: name, category
+  `tour`/`transport`/`wellness`/`other`, price, duration, capacity per
+  slot) and `activity_bookings` (schedule, participants, status
+  `requested`→`confirmed`→`completed`/`cancelled`/`no_show`,
+  `booked_via` `staff`/`guest_self`, nullable `booking_id` for walk-up/
+  day-visitor bookings with no room stay) tables. New `activities` module
+  (default **on** — a mainline feature, not a pricing-tier add-on like
+  Back Office). Seeded enabled for every existing property in the same
+  migration, not just new ones.
+- **Guest self-bookings always start at `status='requested'`, never
+  auto-confirmed** — capacity/guide/vehicle conflicts can't be verified
+  from a tablet the way a drink order can. Staff desk bookings (from the
+  new Activities page) skip straight to `confirmed`.
+- **Fixes the room-charge → folio gap, for this feature only.** F&B
+  room-charge sales (`salesService.createSale`) never post to
+  `folio_charges` — a pre-existing gap, left as-is there. But since
+  revenue tracking is an explicit goal here, `server/services/
+  activityBookingService.js` posts a real `folio_charges` row
+  (`type='activity'`, already a valid value from migration 028 — no folio
+  migration needed) when a booking is confirmed with
+  `payment_method='room_charge'`, and voids it if later
+  cancelled/no-showed.
+- Transport kept as a `category`, not a separate subsystem — a free-text
+  `pickup_location` on the booking row is enough for v1, same "kept
+  deliberately loose" call already made for restaurant tables.
+- New `server/routes/activities.js`: catalog CRUD (owner-only write,
+  any-staff read, same convention as `products.js`; no delete — toggle
+  `is_available` instead), `GET /bookings` (date/status/booking_id
+  filters), `GET /bookings/summary` (revenue by status, owner-only),
+  `POST /bookings` (staff desk booking, auto-confirmed), `PATCH
+  /bookings/:id/status`.
+- `server/routes/display.js` gained `GET /room/:roomId/activities` and
+  `POST /room/:roomId/activities/book` (both `authDisplay` +
+  `moduleGuard('activities')`, mirroring the existing menu/order pair
+  exactly — price always resolved server-side, never trusted from the
+  tablet). `GET /room/:roomId/state` gained an `activitiesEnabled` flag.
+- Frontend: new `client/src/pages/Activities.jsx` (`/activities`) with
+  Catalog and Bookings tabs (a revenue/pending-requests summary card for
+  owners); `BookingDetail.jsx` gained a read-only "Activities" tab; Room
+  Display gained a new "Activities" nav entry + `BookActivityTab.jsx`
+  (confirmation copy reads "Request sent — the front desk will confirm
+  shortly," not "Order placed!," since it isn't guaranteed yet).
+- No dedicated Reports page built (none existed to slot into —
+  `client/src/pages/Reports.jsx` doesn't exist; `server/routes/
+  reports.js`'s `/revenue` endpoint remains orphaned/unused by any
+  client, a pre-existing gap bigger than this feature). The Bookings tab's
+  summary card satisfies "upsell revenue tracking" instead.
+- Full module wiring completed per CLAUDE.md's documented "two places
+  must agree" bug class: `server/modules.js`, `server/index.js` mount,
+  `App.jsx` route (`RequireMenu`+`RequireModule`), `Sidebar.jsx`,
+  `App.jsx`'s `BottomNav()` `moreItems`, `PropertyDetail.jsx`'s
+  `MODULE_LABELS`, `AuthContext.jsx`'s `ORDERED_PATHS`, and
+  `SettingsRoles.jsx`'s `MENU_DEFS` (assignable menu key for
+  non-owner staff roles).
+- Verified: migration applied cleanly against the dev database (tables
+  created, `activities` module row seeded `true` for both Zahill and
+  Birdnest); `client` and `room-display` both build clean; backend module
+  tree (including the new route/service files) loads without error.
+  **Not yet verified live in a browser** — the running dev backend
+  (plain `node index.js`, no hot reload) needs a manual restart to pick
+  up the new routes; owner will do that and confirm.
 - Status: ✅ Implemented
+- Status: ✅ Implemented
+
+---
+
+## ✅ Guest Board ↔ Activities linking
+
+> Concierge/Activities (above) and Guest Board (`guest_board_cards`,
+> category `activity`) shipped as two disconnected concepts — staff had to
+> enter the same tour twice (once as a promotional card, once as a
+> bookable catalog item) with no link between them, risking price/
+> description drift. Worse, this also meant **guests saw two separate,
+> both-labeled-"Activities" menus** on Room Display — the Explore
+> promotional carousel, and a standalone catalog-browsing booking tab.
+> Caught during local testing after the first pass of this feature
+> shipped. Revised design, agreed with the owner: Guest Board becomes the
+> **single** guest-facing entry point for activities; the standalone
+> booking-catalog nav tab is removed entirely.
+
+- Migration 038: nullable `guest_board_cards.activity_id UUID REFERENCES
+  activities(id) ON DELETE SET NULL` + index.
+- `activities` stays the sole owner of commerce fields (price/duration/
+  capacity) — single-writer principle. `server/services/
+  activitiesService.js` holds the one `createActivity()`/
+  `setAvailability()` write path, shared by `routes/activities.js`'s own
+  `POST /` and the Guest Board paid-card path below (no duplicated
+  INSERT).
+- Guest Board card gets a Free/Paid toggle (`SettingsBoardCards.jsx`,
+  gated on `hasModule('activities')`). Toggling Paid on a not-yet-linked
+  card offers two paths:
+  - **Create new** — one field, price — calls `activitiesService
+    .createActivity()` (name/description from the card's title/body,
+    category defaults to `'tour'`), storing the new activity's id back
+    onto `activity_id`.
+  - **Link an existing activity** — a dropdown of catalog activities not
+    already linked to another card (`GET /api/activities`, filtered
+    client-side against every card's `activity_id`). Added specifically
+    for activities that already existed in the Catalog (created directly
+    via `/activities`, e.g. pre-dating this feature) with no card of
+    their own yet — without this, exposing them to guests would have
+    meant re-creating a duplicate.
+  - `server/routes/board.js`'s new `linkOrCreateActivity()` helper
+    handles both, rejecting a `link_activity_id` already claimed by
+    another card (409 `That activity is already linked to another
+    card`).
+  - Once linked (either path), price shows **read-only** with a "Manage
+    full details →" link into `/activities` — no further commerce-field
+    editing from Guest Board, ever.
+- Unlinking (Paid → Free on an already-linked card) never deletes the
+  `activities` row (an `ON DELETE RESTRICT` FK from `activity_bookings`
+  would block it anyway once there's booking history) — instead sets
+  `activities.is_available = false` and clears `activity_id`. Deleting a
+  linked card does the same deactivation before removing the card.
+- `server/routes/board.js`'s `GET /` and `routes/display.js`'s `GET /room/
+  :roomId/state` cards query both gained a `LEFT JOIN activities`; the
+  display endpoint only exposes `activity_id`/`activity_price` when the
+  linked activity is still `is_available = true`, so a deactivated link
+  silently stops showing a booking CTA without needing to touch the card.
+- **Room Display nav collapse** (the fix for the two-menus problem):
+  removed the standalone "Book Activities" sidebar nav entry and
+  `BookActivityTab.jsx`'s catalog-grid browsing mode entirely. It's now
+  reached only by tapping "Book Now" on a linked+available Guest Board
+  card (`ExploreTab.jsx`'s card slideshow shows price + the CTA), which
+  sets `GuestScreen.jsx`'s new `preselectedActivityId` state — that
+  renders `BookActivityTab` as a focused single-activity booking panel
+  (name/description/price + date/time/participants form for just that
+  one activity, with a "Back" button), overlaid on top of whatever tab
+  was showing underneath, regardless of `activeTab`. Deliberate
+  consequence: an activity with **no** linked Guest Board card is no
+  longer reachable by guests on Room Display at all — staff must link or
+  create a card to expose it. Staff still manage the full raw catalog via
+  `/activities` → Catalog tab as before; that page is unaffected.
+- Status: ✅ Implemented — not yet manually verified in a browser (owner
+  to confirm end-to-end: create a paid card via each path — new and
+  linked — book it from Room Display, unlink it, delete a linked card).
+
+---
+
+## ✅ Room Display "Your Orders" status tab
+
+> Both guest self-ordering (F&B) and guest activity booking end with a
+> 4–5 second confirmation toast and then nothing — no way for a guest to
+> check status afterward (is my order preparing? did the front desk
+> confirm my tour?) short of calling the front desk. Raised right after
+> the Guest Board ↔ Activities linking pass above, since that pass had
+> just made booking a lot easier to reach — but checking on it afterward
+> was still a dead end.
+
+- New `GET /api/display/room/:roomId/orders` (`authDisplay`, no module
+  guard — it's read-only, scoped to the guest's own current-stay
+  `booking_id`, so there's nothing to gate). Returns `sales`/`sale_items`
+  where `order_type='room_service'` (with `kitchen_status`) and
+  `activity_bookings` (with `status`) for that booking, in one call.
+- `GuestScreen.jsx` polls it every 15s, and also refetches immediately
+  after a successful order or booking via new `onOrderPlaced` (
+  `OrderFoodTab.jsx`) / `onBooked` (`BookActivityTab.jsx`) callback props,
+  so the nav entry doesn't wait up to 15s to appear right after a guest
+  orders something.
+- New "Your Orders" sidebar nav entry (`YourOrdersTab.jsx`) — appears
+  only once there's at least one order/booking for the stay, same
+  conditional-visibility convention already used for the Explore tabs
+  (only shown when there are cards) and Order Food (only shown when
+  `sales` is on). Shows food orders and activity bookings together in one
+  list, each with a status badge (New/Preparing/Ready/Served for food;
+  Requested/Confirmed/Completed/Cancelled/No-show for activities).
+- Small pulsing dot on the nav icon while anything is still "in flight"
+  (a food order not yet `served`, an activity not yet past
+  `requested`/`confirmed`) — new `zahill-pulse` keyframe in `index.css`,
+  reused via a `badge` prop on the existing `NavBtn` component.
+- Deliberately **not** built as a floating icon — considered and rejected
+  in favor of staying consistent with the sidebar-nav + conditional-
+  visibility pattern already established by Explore tabs and Order Food,
+  rather than introducing a new floating-UI positioning concern across
+  every screen.
+- Status: ✅ Implemented — not yet manually verified in a browser.

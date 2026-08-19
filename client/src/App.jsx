@@ -20,6 +20,7 @@ import Operations from './pages/Operations';
 import Allotment from './pages/Allotment';
 import Loyalty from './pages/Loyalty';
 import Sales from './pages/Sales';
+import Activities from './pages/Activities';
 import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
 import Users from './pages/Users';
@@ -51,6 +52,7 @@ function BottomNav() {
     can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
     can('operations') && hasModule('operations')         && { to: '/operations',                  icon: '🔧', label: 'Operations' },
     can('sales') && hasModule('sales')                   && { to: '/sales',                       icon: '🛍', label: 'Sales' },
+    can('activities') && hasModule('activities')         && { to: '/activities',                   icon: '🥾', label: 'Activities' },
     can('loyalty') && hasModule('guest_crm')              && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
     can('allotments') && hasModule('reservations')        && { to: '/allotment',                   icon: '📡', label: 'Channel' },
     can('pricing') && hasModule('reservations')           && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
@@ -224,6 +226,7 @@ export default function App() {
                   <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><RequireModule moduleName="reservations"><Allotment /></RequireModule></RequireMenu>} />
                   <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><RequireModule moduleName="guest_crm"><Loyalty /></RequireModule></RequireMenu>} />
                   <Route path="/sales"            element={<RequireMenu menuKey="sales"><RequireModule moduleName="sales"><Sales /></RequireModule></RequireMenu>} />
+                  <Route path="/activities"       element={<RequireMenu menuKey="activities"><RequireModule moduleName="activities"><Activities /></RequireModule></RequireMenu>} />
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />

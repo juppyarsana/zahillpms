@@ -11,6 +11,7 @@ export const MENU_DEFS = [
   { key: 'guests',           label: 'Guests',               group: 'Operations' },
   { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
   { key: 'sales',            label: 'Sales',                group: 'Operations' },
+  { key: 'activities',       label: 'Activities',           group: 'Operations' },
   { key: 'loyalty',          label: 'Loyalty',              group: 'Operations' },
   { key: 'allotments',       label: 'Allotments',           group: 'Operations' },
   { key: 'pricing',          label: 'Pricing',              group: 'Settings'   },

@@ -6,7 +6,9 @@ const mqttClient = require('../mqtt');
 const sse = require('../sse');
 const { getWeather } = require('../weather');
 const salesService = require('../services/salesService');
+const activityBookingService = require('../services/activityBookingService');
 const salesGate = moduleGuard('sales');
+const activitiesGate = moduleGuard('activities');
 
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
@@ -46,12 +48,15 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     const { rows: cardRows } = await db.query(
-      `SELECT id, title, body, category, meta, image_url
-       FROM guest_board_cards
-       WHERE active = true AND property_id = $1
+      `SELECT c.id, c.title, c.body, c.category, c.meta, c.image_url,
+              CASE WHEN a.is_available THEN a.id END AS activity_id,
+              CASE WHEN a.is_available THEN a.price END AS activity_price
+       FROM guest_board_cards c
+       LEFT JOIN activities a ON a.id = c.activity_id
+       WHERE c.active = true AND c.property_id = $1
        ORDER BY
-         CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
-         sort_order, id`,
+         CASE c.category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
+         c.sort_order, c.id`,
       [unit.property_id]
     );
 
@@ -64,9 +69,10 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     const { rows: moduleRows } = await db.query(
-      'SELECT is_enabled FROM property_modules WHERE property_id = $1 AND module = $2',
-      [unit.property_id, 'sales']
+      'SELECT module, is_enabled FROM property_modules WHERE property_id = $1 AND module = ANY($2)',
+      [unit.property_id, ['sales', 'activities']]
     );
+    const enabledModules = new Map(moduleRows.map(m => [m.module, m.is_enabled]));
 
     const weather = await getWeather();
 
@@ -78,7 +84,8 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       cards: cardRows,
       weather,
       property: propertyRows[0] || null,
-      orderingEnabled: moduleRows[0]?.is_enabled || false,
+      orderingEnabled: enabledModules.get('sales') || false,
+      activitiesEnabled: enabledModules.get('activities') || false,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -245,6 +252,116 @@ router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
     if (result.code === 'OUT_OF_STOCK') return res.status(409).json({ error: result.error, code: result.code, items: result.items });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json({ ok: true, total: result.sale.total_amount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/display/room/:roomId/activities — guest-bookable activity catalog
+router.get('/room/:roomId/activities', authDisplay, activitiesGate, async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const { rows: activities } = await db.query(
+      `SELECT id, name, category, description, price, duration_minutes
+       FROM activities
+       WHERE property_id = $1 AND is_available = true
+       ORDER BY sort_order, name`,
+      [req.propertyId]
+    );
+    res.json(activities);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/display/room/:roomId/activities/book — guest requests an activity
+// Body: { activity_id, scheduled_date, scheduled_time, num_participants, notes }
+// Always creates a 'requested' booking, never auto-confirmed — see
+// activityBookingService for why. Price is resolved server-side there, same
+// guest-device-reachable caution as the F&B order endpoint above.
+router.post('/room/:roomId/activities/book', authDisplay, activitiesGate, async (req, res) => {
+  const { roomId } = req.params;
+  const { activity_id, scheduled_date, scheduled_time, num_participants, notes } = req.body;
+  if (!activity_id || !scheduled_date) return res.status(400).json({ error: 'activity_id and scheduled_date required' });
+  try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT id FROM bookings
+       WHERE unit_id = $1 AND status IN ('confirmed', 'checked_in')
+         AND check_in_date <= CURRENT_DATE AND check_out_date >= CURRENT_DATE
+       ORDER BY check_in_date DESC LIMIT 1`,
+      [unitRows[0].id]
+    );
+    if (!bookingRows[0]) return res.status(404).json({ error: 'No active stay found for this room' });
+
+    const result = await activityBookingService.createBooking(req.propertyId, {
+      activityId: activity_id,
+      bookingId: bookingRows[0].id,
+      scheduledDate: scheduled_date,
+      scheduledTime: scheduled_time,
+      numParticipants: num_participants,
+      paymentMethod: 'room_charge',
+      notes,
+      bookedVia: 'guest_self',
+      autoConfirm: false,
+    });
+    if (result.code === 'CAPACITY_FULL') return res.status(409).json({ error: result.error, code: result.code });
+    if (result.error) return res.status(404).json({ error: result.error });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/display/room/:roomId/orders — guest's own food orders + activity
+// bookings for the current stay, so a placed order/request isn't a one-time
+// toast that vanishes — the guest can check back on status. Not module-gated
+// (read-only, scoped to the guest's own stay); each section is just empty if
+// that module was never on.
+router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT id FROM bookings
+       WHERE unit_id = $1 AND status IN ('confirmed', 'checked_in')
+         AND check_in_date <= CURRENT_DATE AND check_out_date >= CURRENT_DATE
+       ORDER BY check_in_date DESC LIMIT 1`,
+      [unitRows[0].id]
+    );
+    if (!bookingRows[0]) return res.json({ foodOrders: [], activityBookings: [] });
+    const bookingId = bookingRows[0].id;
+
+    const { rows: foodOrders } = await db.query(
+      `SELECT s.id, s.total_amount, s.kitchen_status, s.created_at,
+              COALESCE(json_agg(json_build_object('name', p.name, 'quantity', si.quantity) ORDER BY si.id) FILTER (WHERE si.id IS NOT NULL), '[]') AS items
+       FROM sales s
+       LEFT JOIN sale_items si ON si.sale_id = s.id
+       LEFT JOIN products p ON p.id = si.product_id
+       WHERE s.booking_id = $1 AND s.property_id = $2 AND s.order_type = 'room_service'
+       GROUP BY s.id
+       ORDER BY s.created_at DESC`,
+      [bookingId, req.propertyId]
+    );
+
+    const { rows: activityBookings } = await db.query(
+      `SELECT ab.id, ab.scheduled_date, ab.scheduled_time, ab.num_participants, ab.status, ab.total_amount, ab.created_at,
+              a.name AS activity_name
+       FROM activity_bookings ab
+       JOIN activities a ON a.id = ab.activity_id
+       WHERE ab.booking_id = $1 AND ab.property_id = $2
+       ORDER BY ab.created_at DESC`,
+      [bookingId, req.propertyId]
+    );
+
+    res.json({ foodOrders, activityBookings });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

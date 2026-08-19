@@ -230,6 +230,7 @@ export default function App() {
         weather={state.weather}
         cards={state.cards || []}
         orderingEnabled={state.orderingEnabled}
+        activitiesEnabled={state.activitiesEnabled}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}

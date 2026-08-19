@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import StayPanel from '../components/StayPanel';
 import RelayControls from '../components/RelayControls';
@@ -7,7 +7,11 @@ import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 import ExploreTab from '../components/ExploreTab';
 import OrderFoodTab from '../components/OrderFoodTab';
+import BookActivityTab from '../components/BookActivityTab';
+import YourOrdersTab from '../components/YourOrdersTab';
 import CallButton from '../components/CallButton';
+
+const ORDERS_POLL_MS = 15000;
 
 const EXPLORE_TABS = [
   { key: 'activity', icon: 'hiking',      label: 'Activities' },
@@ -15,10 +19,29 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('controls');
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
+  const [preselectedActivityId, setPreselectedActivityId] = useState(null);
+  const [orders, setOrders] = useState({ foodOrders: [], activityBookings: [] });
+
+  const handleBookActivity = (activityId) => {
+    setPreselectedActivityId(activityId);
+  };
+
+  const loadOrders = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/display/room/${roomId}/orders`);
+      setOrders(data);
+    } catch {}
+  }, [roomId]);
+
+  useEffect(() => {
+    loadOrders();
+    const interval = setInterval(loadOrders, ORDERS_POLL_MS);
+    return () => clearInterval(interval);
+  }, [loadOrders]);
 
   useEffect(() => {
     setLocalRelays(relays);
@@ -46,6 +69,11 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
 
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
+
+  const hasOrders = orders.foodOrders.length > 0 || orders.activityBookings.length > 0;
+  const hasActiveOrder =
+    orders.foodOrders.some(o => o.kitchen_status && o.kitchen_status !== 'served') ||
+    orders.activityBookings.some(b => ['requested', 'confirmed'].includes(b.status));
 
   return (
     <div className="w-screen h-dvh bg-bg-dark flex overflow-hidden relative">
@@ -81,6 +109,16 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
           )}
         </div>
 
+        {/* Your Orders — own section, separated from the display/explore menu above it */}
+        {hasOrders && (
+          <>
+            <div style={{ width: 32, height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px auto' }} />
+            <div style={{ width: '100%', padding: '0 8px' }}>
+              <NavBtn id="orders" active={activeTab === 'orders'} icon="receipt_long" label="Your Orders" badge={hasActiveOrder} onClick={() => setActiveTab('orders')} />
+            </div>
+          </>
+        )}
+
         <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
           <CallButton onClick={onCallFrontDesk} disabled={callActive} />
           <Clock compact />
@@ -89,7 +127,9 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
 
       {/* Main content */}
       <main className="flex-1 flex overflow-hidden">
-        {activeTab === 'controls' ? (
+        {preselectedActivityId ? (
+          <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
+        ) : activeTab === 'controls' ? (
           <>
             <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} />
             <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
@@ -119,12 +159,16 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
             </section>
           </>
         ) : activeTab === 'order' ? (
-          <OrderFoodTab roomId={roomId} />
+          <OrderFoodTab roomId={roomId} onOrderPlaced={loadOrders} />
+        ) : activeTab === 'orders' ? (
+          <YourOrdersTab foodOrders={orders.foodOrders} activityBookings={orders.activityBookings} onRefresh={loadOrders} />
         ) : (
           <ExploreTab
             weather={weather}
             cards={cards}
             activeCategory={activeTab}
+            activitiesEnabled={activitiesEnabled}
+            onBookActivity={handleBookActivity}
           />
         )}
       </main>
@@ -132,7 +176,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
   );
 }
 
-function NavBtn({ active, icon, label, onClick }) {
+function NavBtn({ active, icon, label, badge, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -147,7 +191,16 @@ function NavBtn({ active, icon, label, onClick }) {
         borderRadius: 10, transition: 'color 0.2s, background 0.2s',
       }}
     >
-      <span className={`material-symbols-outlined text-xl${active ? ' filled' : ''}`}>{icon}</span>
+      <span style={{ position: 'relative' }}>
+        <span className={`material-symbols-outlined text-xl${active ? ' filled' : ''}`}>{icon}</span>
+        {badge && (
+          <span style={{
+            position: 'absolute', top: -2, right: -4, width: 7, height: 7,
+            borderRadius: '50%', background: '#fb923c',
+            animation: 'zahill-pulse 1.6s ease-in-out infinite',
+          }} />
+        )}
+      </span>
       {label}
       {active && (
         <span style={{

@@ -11,6 +11,7 @@ const ORDERED_PATHS = [
   { key: 'guests',        path: '/guests' },
   { key: 'operations',    path: '/operations' },
   { key: 'sales',         path: '/sales' },
+  { key: 'activities',    path: '/activities' },
   { key: 'loyalty',       path: '/loyalty' },
   { key: 'allotments',    path: '/allotment' },
 ];

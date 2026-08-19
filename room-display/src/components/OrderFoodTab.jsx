@@ -8,7 +8,7 @@ const CONFIRMATION_MS = 4000;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
-export default function OrderFoodTab({ roomId }) {
+export default function OrderFoodTab({ roomId, onOrderPlaced }) {
   const [menu, setMenu] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState([]);
@@ -55,6 +55,7 @@ export default function OrderFoodTab({ roomId }) {
       });
       setCart([]);
       setConfirmed(true);
+      onOrderPlaced?.();
       setTimeout(() => setConfirmed(false), CONFIRMATION_MS);
     } catch (err) {
       const data = err.response?.data;

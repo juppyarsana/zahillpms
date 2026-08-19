@@ -10,6 +10,7 @@ module.exports = {
   in_room_media:   { label: 'In-Room Media',   routes: ['board', 'display'] },
   room_controller: { label: 'Room Controller', routes: ['iot', 'calls'] },
   insights:        { label: 'Insights',        routes: ['insights'] },
+  activities:      { label: 'Activities',      routes: ['activities'] },
 };
 
 // Core routes — always on, no module guard:

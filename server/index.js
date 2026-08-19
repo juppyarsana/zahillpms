@@ -86,6 +86,7 @@ app.use('/api/tables', auth, moduleGuard('sales'), require('./routes/tables'));
 app.use('/api/board', auth, moduleGuard('in_room_media'), require('./routes/board'));
 app.use('/api/iot', auth, moduleGuard('room_controller'), require('./routes/iot'));
 app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insights'));
+app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/activities'));
 
 // /api/calls mixes three auth mechanisms (staff auth, authDisplay for the
 // room's own call actions, authQueryToken for the staff SSE stream) — a
