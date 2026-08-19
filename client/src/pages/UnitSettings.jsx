@@ -35,6 +35,7 @@ export default function UnitSettings() {
       base_rate: unit.base_rate,
       max_guests: unit.max_guests,
       status: unit.status,
+      controller_id: unit.controller_id || '',
     });
     setError('');
     setMsg('');
@@ -134,6 +135,18 @@ export default function UnitSettings() {
                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">
+                    Room ID <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                      (for Room Display / TV Display / calling — not shown to guests, leave blank to unassign)
+                    </span>
+                  </label>
+                  <input
+                    className="form-input" placeholder="e.g. 101" maxLength={10}
+                    value={form.controller_id} onChange={e => set('controller_id', e.target.value)}
+                    style={{ maxWidth: 200 }}
+                  />
+                </div>
                 {error && <div className="alert alert-error">{error}</div>}
                 <div className="flex gap-2">
                   <button className="btn btn-primary" onClick={() => save(unit.id)}>Save</button>
@@ -158,6 +171,7 @@ export default function UnitSettings() {
                   <div style={{ fontWeight: 700, fontSize: 16 }}>{unit.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                     {unit.type} · {fmtIDR(unit.base_rate)}/night · Max {unit.max_guests} guests
+                    {unit.controller_id && <> · Room ID: <strong>{unit.controller_id}</strong></>}
                   </div>
                   {unit.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{unit.description}</div>}
                 </div>

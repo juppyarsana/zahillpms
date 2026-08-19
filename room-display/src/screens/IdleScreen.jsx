@@ -6,7 +6,7 @@ import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 import CallButton from '../components/CallButton';
 
-export default function IdleScreen({ unit, controller, relays = [], property, roomId, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function IdleScreen({ unit, controller, relays = [], property, roomId, roomControllerEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -30,8 +30,8 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
   };
 
   const navItems = [
-    { id: 'idle',     icon: 'home',         label: 'Home'     },
-    { id: 'controls', icon: 'auto_fix_high', label: 'Controls' },
+    { id: 'idle', icon: 'home', label: 'Home' },
+    ...(roomControllerEnabled ? [{ id: 'controls', icon: 'auto_fix_high', label: 'Controls' }] : []),
   ];
 
   return (
@@ -100,9 +100,10 @@ function IdleView({ unit, controller, property }) {
     return () => clearInterval(id);
   }, []);
 
-  const h     = time.getHours().toString().padStart(2, '0');
+  const hours24 = time.getHours();
+  const h     = (hours24 % 12 || 12).toString().padStart(2, '0');
   const m     = time.getMinutes().toString().padStart(2, '0');
-  const ampm  = time.getHours() >= 12 ? 'PM' : 'AM';
+  const ampm  = hours24 >= 12 ? 'PM' : 'AM';
   const dateStr = time.toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });

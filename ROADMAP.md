@@ -922,3 +922,43 @@ Per-property tax and service charge rates, applied on folio and invoice.
   back to unit-name-only for a vacant room calling, e.g. from
   `IdleScreen` — no guest to name). Threaded through `answerCall()` so
   the "On call" banner keeps showing it after answering, too.
+
+---
+
+## ✅ Decouple Room ID (controller_id) from the room_controller module
+
+> Raised while onboarding a client without ESP32 relay hardware: they had
+> no way to assign a Room ID at all, since the only UI/API for it
+> (`SettingsRoomControllers.jsx` → `PUT /api/iot/units/:unitId/controller`)
+> sits entirely behind `room_controller`, which correctly defaults off for
+> hardware-less properties. But Room Display, TV Display, Kitchen Display,
+> and calling all identify a physical device by `controller_id` regardless
+> of whether there's any ESP32 attached — so a property with the module off
+> couldn't configure *any* of its guest-facing displays. Separately caught:
+> Room Display's relay/RGB/IR "Controls" tab showed unconditionally even
+> after disabling `room_controller` for a property in Superadmin.
+
+- `PUT /api/units/:id` (`server/routes/units.js`, always-on, no module
+  guard) now also accepts `controller_id` — same validation/clear
+  semantics as the gated `iot.js` endpoint (trim, max 10 chars, empty
+  string clears it, unique-constraint violation → 409). `undefined` in the
+  body leaves the column untouched, matching the existing COALESCE
+  pattern for the other editable fields.
+- New "Room ID" field on `/units` (`UnitSettings.jsx`) — editable from a
+  page every owner can already reach, no module dependency. The gated
+  `SettingsRoomControllers.jsx` page keeps its own controller-assignment
+  UI too (writes the same column) — left in place since hardware-owning
+  clients configuring relay labels still want it there; harmless overlap.
+- `GET /room/:roomId/state` (`server/routes/display.js`) gained a
+  `roomControllerEnabled` flag, same pattern as `orderingEnabled`/
+  `activitiesEnabled`. Room Display's `GuestScreen.jsx`/`IdleScreen.jsx`
+  now gate the Controls nav entry and content on it, and compute a
+  sensible default initial tab (`controls` → `order` → first Explore
+  category, whichever is actually visible) instead of hardcoding
+  `'controls'` as the default regardless of whether it'll even show.
+- Found and fixed the same duplicated 12-hour-clock formatting bug
+  (raw `getHours()` shown next to an AM/PM suffix, e.g. "13:44 PM") a
+  third time, in `IdleScreen.jsx`'s inline clock — missed in the earlier
+  pass through `Clock.jsx`/`tv-display`'s `App.jsx` since this one was a
+  separate un-shared copy of the same logic.
+- Status: ✅ Implemented — not yet manually verified in a browser.

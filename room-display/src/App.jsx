@@ -220,11 +220,24 @@ export default function App() {
 
   if (error && !state) {
     return (
-      <div className="w-screen h-dvh flex flex-col items-center justify-center bg-bg-dark gap-4">
-        <img src="/logo.png" alt="Zahill" style={{ width: 64, height: 64, objectFit: 'contain', opacity: 0.3 }} />
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-600">{error}</p>
-        <p className="text-[10px] text-slate-700 uppercase tracking-widest">Room {roomId}</p>
-      </div>
+      <>
+        <div className="w-screen h-dvh flex flex-col items-center justify-center bg-bg-dark gap-4">
+          <img
+            src="/logo.png" alt="Zahill"
+            style={{ width: 64, height: 64, objectFit: 'contain', opacity: 0.3, cursor: 'pointer' }}
+            onClick={handleDebugClick}
+          />
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-600">{error}</p>
+          <p className="text-[10px] text-slate-700 uppercase tracking-widest">Room {roomId}</p>
+        </div>
+        {showDebugMenu && (
+          <DebugMenu
+            onLogout={handleLogout}
+            onChangeRoom={handleChangeRoom}
+            onClose={() => setShowDebugMenu(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -239,6 +252,7 @@ export default function App() {
           relays={state.relays}
           property={state.property}
           roomId={roomId}
+          roomControllerEnabled={state.roomControllerEnabled}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
           onCallFrontDesk={handlePlaceCall}
@@ -277,6 +291,7 @@ export default function App() {
         cards={state.cards || []}
         orderingEnabled={state.orderingEnabled}
         activitiesEnabled={state.activitiesEnabled}
+        roomControllerEnabled={state.roomControllerEnabled}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}

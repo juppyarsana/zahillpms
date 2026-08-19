@@ -19,8 +19,15 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
-  const [activeTab, setActiveTab] = useState('controls');
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+  // Only show explore tabs that have cards
+  const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
+  // Controls only exists at all when the property has room_controller on —
+  // pick the first thing that's actually visible as the initial tab instead
+  // of defaulting to a tab that's about to be hidden.
+  const defaultTab = roomControllerEnabled ? 'controls' : orderingEnabled ? 'order' : (visibleExploreTabs[0]?.key || 'controls');
+
+  const [activeTab, setActiveTab] = useState(defaultTab);
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
   const [preselectedActivityId, setPreselectedActivityId] = useState(null);
@@ -67,9 +74,6 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
     try { await api.post(`/display/room/${roomId}/ir`, { slot }); } catch {}
   };
 
-  // Only show explore tabs that have cards
-  const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
-
   const hasOrders = orders.foodOrders.length > 0 || orders.activityBookings.length > 0;
   const hasActiveOrder =
     orders.foodOrders.some(o => o.kitchen_status && o.kitchen_status !== 'served') ||
@@ -88,7 +92,9 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
 
         {/* Controls — top zone */}
         <div style={{ width: '100%', padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <NavBtn id="controls" active={activeTab === 'controls'} icon="auto_fix_high" label="Controls" onClick={() => setActiveTab('controls')} />
+          {roomControllerEnabled && (
+            <NavBtn id="controls" active={activeTab === 'controls'} icon="auto_fix_high" label="Controls" onClick={() => setActiveTab('controls')} />
+          )}
           {orderingEnabled && (
             <NavBtn id="order" active={activeTab === 'order'} icon="restaurant_menu" label="Order Food" onClick={() => setActiveTab('order')} />
           )}
@@ -129,7 +135,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
       <main className="flex-1 flex overflow-hidden">
         {preselectedActivityId ? (
           <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
-        ) : activeTab === 'controls' ? (
+        ) : activeTab === 'controls' && roomControllerEnabled ? (
           <>
             <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} />
             <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">

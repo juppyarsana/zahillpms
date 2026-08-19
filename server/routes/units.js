@@ -41,8 +41,19 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 });
 
 // PUT /api/units/:id  (owner only)
+// controller_id is intentionally editable here, not just under
+// /api/iot (which is gated behind the room_controller module) — Room
+// Display/TV Display/Kitchen Display/calling all key off it regardless of
+// whether a property has ESP32 relay hardware, so assigning it can't
+// depend on that module being on. `undefined` leaves it untouched;
+// `''`/null clears it (mirrors routes/iot.js's controller-assignment
+// endpoint, which keeps working for hardware-owning properties too).
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests, status } = req.body;
+  const { name, type, description, base_rate, max_guests, status, controller_id } = req.body;
+  const controllerIdProvided = controller_id !== undefined;
+  const controllerIdValue = controllerIdProvided
+    ? (controller_id ? String(controller_id).trim().slice(0, 10) : null)
+    : null;
   try {
     const { rows } = await db.query(
       `UPDATE units SET
@@ -51,14 +62,17 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
         description = COALESCE($3, description),
         base_rate = COALESCE($4, base_rate),
         max_guests = COALESCE($5, max_guests),
-        status = COALESCE($6, status)
-       WHERE id = $7 AND property_id = $8 RETURNING *`,
-      [name, type, description, base_rate, max_guests, status, req.params.id, req.propertyId]
+        status = COALESCE($6, status),
+        controller_id = CASE WHEN $9 THEN $7 ELSE controller_id END
+       WHERE id = $8 AND property_id = $10 RETURNING *`,
+      [name, type, description, base_rate, max_guests, status, controllerIdValue, req.params.id, controllerIdProvided, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
     res.json(rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.code === '23505' ? 409 : 500).json({
+      error: err.code === '23505' ? 'That controller ID is already assigned to another unit' : err.message,
+    });
   }
 });
 
