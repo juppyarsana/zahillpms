@@ -895,9 +895,12 @@ Per-property tax and service charge rates, applied on folio and invoice.
   arrives (silently no-ops if so). In practice a human needs a moment to
   notice and react, which is normally enough time — same accepted
   tradeoff the original implementation already made for room->staff.
-- Status: ✅ Implemented — not yet manually verified in a browser (owner
-  to confirm end-to-end on two real devices/tabs: place a call each
-  direction, answer, mute, hang up, and let one ring out unanswered).
+- Status: ✅ Implemented and **verified live in production 2026-08-20**
+  (real Room Display tablet + staff browser). Room -> staff direction
+  worked as built. Staff -> room direction initially failed silently on
+  Answer — found and fixed a real bug in the same session, see the
+  dedicated section below ("Fix: staff-initiated call Answer button did
+  nothing on an occupied room").
 - **Follow-up, same day:** added a second entry point — `BookingDetail.jsx`
   now has a "Call Room" action too (calls `useCall()`'s `callRoom()`
   directly against `booking.unit_id`, no picker needed since the booking
@@ -967,7 +970,11 @@ Per-property tax and service charge rates, applied on folio and invoice.
   never be reached from it — a tablet landing there was stuck with no way
   back to Setup short of manually clearing app storage. Logo is now
   tappable there too (`App.jsx`), same as every other screen.
-- Status: ✅ Implemented — not yet manually verified in a browser.
+- Status: ✅ Implemented — Room ID assignment via `/units` **confirmed
+  working in production 2026-08-20** (it's what made the two-way calling
+  test below possible at all). Controls-tab hiding and the stuck-error-
+  screen tap fix specifically were not re-tested this session — still
+  worth a manual check next time someone's on that tablet.
 
 ---
 
@@ -1008,7 +1015,37 @@ Per-property tax and service charge rates, applied on folio and invoice.
   entry so Superadmin's module toggle list shows a real label instead of
   the raw key — the toggle list itself needed no other changes, it already
   renders whatever rows exist in `property_modules` for that property.
-- Status: ✅ Implemented — not yet manually verified in a browser (owner
-  to confirm: disable `room_controller` for a test property, confirm
-  calling still works; disable `calling` specifically, confirm the Call
-  buttons disappear everywhere and Room Controllers settings still work).
+- Status: ✅ Implemented — core flow **confirmed working in production
+  2026-08-20** ("Call Front Desk" no longer 403s; the full two-way call
+  test below passed). Not specifically isolation-tested: disabling
+  `room_controller` alone (confirm calling still works) and disabling
+  `calling` alone (confirm Call buttons disappear everywhere, Room
+  Controllers settings page still unaffected) — worth a quick check
+  next time, low risk either way since the code path is simple.
+
+---
+
+## ✅ Fix: staff-initiated call Answer button did nothing on an occupied room
+
+> Found via a live end-to-end test on a real tablet: staff called a room
+> with an active guest booking, the tablet correctly showed the ringing
+> "Incoming Call" screen, but tapping the green Answer button did
+> nothing — no mic permission prompt, no screen change at all. Declining
+> (red button) worked fine. Ruled out mic-permission and secure-context
+> (HTTPS confirmed, permission re-granted and tested) before finding the
+> real bug by re-reading the code.
+
+- Root cause: `room-display/src/App.jsx` renders `<CallOverlay>` in two
+  places — once under the vacant/`IdleScreen` branch, once under the
+  occupied/`GuestScreen` branch. Only the `IdleScreen` one had
+  `onAnswer={handleAnswerIncoming}` wired up; the `GuestScreen` one was
+  missing it entirely, so `onClick={onAnswer}` on the Answer button was
+  `onClick={undefined}` for any room with an active booking. Explains the
+  exact symptom precisely — execution never reached `callClient
+  .createAnswer()`'s `getUserMedia` call, hence no permission prompt.
+- One-line fix, both `<CallOverlay>` instances now pass `onAnswer`.
+- Status: ✅ Fixed and **verified working in production 2026-08-20**
+  after redeploy — full two-way call cycle (staff calls occupied room,
+  guest answers, both directions confirmed) now works end-to-end.
+  Idle-room answering was not separately re-tested (it already had the
+  prop and was presumably fine, but wasn't the room under test).
