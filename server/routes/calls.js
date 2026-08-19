@@ -5,7 +5,7 @@ const auth = require('../middleware/auth');
 const authQueryToken = require('../middleware/authQueryToken');
 const moduleGuard = require('../middleware/moduleGuard');
 const sse = require('../sse');
-const gate = moduleGuard('room_controller');
+const gate = moduleGuard('calling');
 
 const staffChannel = (propertyId) => `staff:broadcast:${propertyId}`;
 const RING_TIMEOUT_MS = 45_000;

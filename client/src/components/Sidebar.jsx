@@ -91,7 +91,7 @@ export default function Sidebar() {
           </SidebarSection>
         )}
 
-        {hasModule('room_controller') && (
+        {hasModule('calling') && (
           <button
             className="sidebar-link"
             style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}

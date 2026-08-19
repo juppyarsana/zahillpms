@@ -528,7 +528,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 040
+## Next migration number: 041
 
 ---
 
@@ -961,4 +961,54 @@ Per-property tax and service charge rates, applied on folio and invoice.
   third time, in `IdleScreen.jsx`'s inline clock — missed in the earlier
   pass through `Clock.jsx`/`tv-display`'s `App.jsx` since this one was a
   separate un-shared copy of the same logic.
+- Also fixed a dead end this surfaced during testing: Room Display's
+  "Room not found" error screen (reached after a stale/wrong Room ID) had
+  no interactive element at all, so the usual 5-tap-logo debug menu could
+  never be reached from it — a tablet landing there was stuck with no way
+  back to Setup short of manually clearing app storage. Logo is now
+  tappable there too (`App.jsx`), same as every other screen.
 - Status: ✅ Implemented — not yet manually verified in a browser.
+
+---
+
+## ✅ Split `calling` out of the `room_controller` module
+
+> Landed same day as the Room ID decoupling above, after actually hitting
+> the next layer of the same problem in production: "Call Front Desk"
+> 403'd with "Module not enabled for this property" because
+> `routes/calls.js` was still entirely gated by `room_controller`, even
+> though calling has zero ESP32/MQTT dependency — it only ever used
+> `controller_id` as a room identifier. A hardware-less client could now
+> set a Room ID (previous fix) but still couldn't get calling.
+
+- Migration 040: seeds a new `calling` module, enabled `true`, for every
+  existing property. New properties get it automatically via
+  `seedPropertyDefaults.js`'s existing "enable everything except
+  `room_controller`" default — no special-casing needed since `calling`
+  isn't `room_controller`.
+- `server/modules.js`: `room_controller`'s `routes` list is now just
+  `['iot']` (relay/RGB/IR only); new `calling: { label: 'Calling', routes:
+  ['calls'] }` entry.
+- `routes/calls.js`'s `const gate = moduleGuard(...)` now points at
+  `'calling'` instead of `'room_controller'` — the only line that actually
+  changes call-gating behavior; everything else was rewiring the flag
+  through UI.
+- Rewired every `hasModule('room_controller')` check that was actually
+  about calling specifically (not relay hardware) to `hasModule('calling')`:
+  `Sidebar.jsx`'s "Call a Room" entry, `BookingDetail.jsx`'s "Call Room"
+  action. Left `Sidebar.jsx`'s Room Controllers *settings link* and
+  `App.jsx`'s `/settings/room-controllers` route alone — those are
+  genuinely about the ESP32 config page, correctly still gated by
+  `room_controller`.
+- `GET /room/:roomId/state` gained a `callingEnabled` flag (same pattern
+  as `roomControllerEnabled`); Room Display's `CallButton` (`GuestScreen
+  .jsx`, `IdleScreen.jsx`) is now hidden when it's off, instead of showing
+  a button that would 403 on tap.
+- `PropertyDetail.jsx`'s `MODULE_LABELS` gained a `calling: 'Calling'`
+  entry so Superadmin's module toggle list shows a real label instead of
+  the raw key — the toggle list itself needed no other changes, it already
+  renders whatever rows exist in `property_modules` for that property.
+- Status: ✅ Implemented — not yet manually verified in a browser (owner
+  to confirm: disable `room_controller` for a test property, confirm
+  calling still works; disable `calling` specifically, confirm the Call
+  buttons disappear everywhere and Room Controllers settings still work).

@@ -19,7 +19,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
   // Controls only exists at all when the property has room_controller on —
@@ -126,7 +126,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         )}
 
         <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
-          <CallButton onClick={onCallFrontDesk} disabled={callActive} />
+          {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
           <Clock compact />
         </div>
       </aside>

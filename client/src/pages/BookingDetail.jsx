@@ -308,7 +308,7 @@ export default function BookingDetail() {
             <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
           )}
           <ActionMenu items={[
-            hasModule('room_controller') && { label: 'Call Room', icon: '📞', onClick: callRoomAction },
+            hasModule('calling') && { label: 'Call Room', icon: '📞', onClick: callRoomAction },
             booking.guest_whatsapp && { label: 'WhatsApp Guest', icon: '💬', onClick: waLink },
             ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
               { label: 'Amend Dates', icon: '📅', onClick: openAmend },

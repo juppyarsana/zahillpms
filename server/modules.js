@@ -8,9 +8,10 @@ module.exports = {
   operations:      { label: 'Operations',      routes: ['tasks'] },
   sales:           { label: 'Sales',           routes: ['products', 'sales', 'tables'] },
   in_room_media:   { label: 'In-Room Media',   routes: ['board', 'display'] },
-  room_controller: { label: 'Room Controller', routes: ['iot', 'calls'] },
+  room_controller: { label: 'Room Controller', routes: ['iot'] },
   insights:        { label: 'Insights',        routes: ['insights'] },
   activities:      { label: 'Activities',      routes: ['activities'] },
+  calling:         { label: 'Calling',         routes: ['calls'] },
 };
 
 // Core routes — always on, no module guard:

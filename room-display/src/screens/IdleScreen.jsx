@@ -6,7 +6,7 @@ import IRControls from '../components/IRControls';
 import Clock from '../components/Clock';
 import CallButton from '../components/CallButton';
 
-export default function IdleScreen({ unit, controller, relays = [], property, roomId, roomControllerEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function IdleScreen({ unit, controller, relays = [], property, roomId, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -70,7 +70,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
           })}
         </nav>
         <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
-          <CallButton onClick={onCallFrontDesk} disabled={callActive} />
+          {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
           <Clock compact />
         </div>
       </aside>

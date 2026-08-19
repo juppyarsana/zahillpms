@@ -253,6 +253,7 @@ export default function App() {
           property={state.property}
           roomId={roomId}
           roomControllerEnabled={state.roomControllerEnabled}
+          callingEnabled={state.callingEnabled}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
           onCallFrontDesk={handlePlaceCall}
@@ -292,6 +293,7 @@ export default function App() {
         orderingEnabled={state.orderingEnabled}
         activitiesEnabled={state.activitiesEnabled}
         roomControllerEnabled={state.roomControllerEnabled}
+        callingEnabled={state.callingEnabled}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}

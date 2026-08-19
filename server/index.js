@@ -91,7 +91,7 @@ app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/ac
 // /api/calls mixes three auth mechanisms (staff auth, authDisplay for the
 // room's own call actions, authQueryToken for the staff SSE stream) — a
 // blanket `auth` here would 401 every authDisplay-protected room endpoint.
-// moduleGuard('room_controller') is applied per-route inside routes/calls.js instead.
+// moduleGuard('calling') is applied per-route inside routes/calls.js instead.
 app.use('/api/calls', require('./routes/calls'));
 
 // /api/kitchen — kitchen-display/ kiosk app, authDisplay (device token) on

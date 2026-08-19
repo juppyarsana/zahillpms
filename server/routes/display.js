@@ -70,7 +70,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
 
     const { rows: moduleRows } = await db.query(
       'SELECT module, is_enabled FROM property_modules WHERE property_id = $1 AND module = ANY($2)',
-      [unit.property_id, ['sales', 'activities', 'room_controller']]
+      [unit.property_id, ['sales', 'activities', 'room_controller', 'calling']]
     );
     const enabledModules = new Map(moduleRows.map(m => [m.module, m.is_enabled]));
 
@@ -87,6 +87,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       orderingEnabled: enabledModules.get('sales') || false,
       activitiesEnabled: enabledModules.get('activities') || false,
       roomControllerEnabled: enabledModules.get('room_controller') || false,
+      callingEnabled: enabledModules.get('calling') || false,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

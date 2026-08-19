@@ -13,6 +13,7 @@ const MODULE_LABELS = {
   room_controller: 'Room Controller',
   insights:        'Insights',
   activities:      'Activities',
+  calling:         'Calling',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };
