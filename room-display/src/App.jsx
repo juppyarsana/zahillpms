@@ -309,6 +309,7 @@ export default function App() {
       <CallOverlay
         callState={callState}
         onCancel={handleCancelCall}
+        onAnswer={handleAnswerIncoming}
         onHangup={handleHangup}
         onMuteToggle={handleMuteToggle}
         muted={muted}
