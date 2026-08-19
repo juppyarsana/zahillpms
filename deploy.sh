@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+# Everything lives inside main() and runs via `main "$@"` at the very bottom.
+# Why: this script does `git pull` on itself partway through. Bash reads a
+# script from disk as it executes, rather than loading the whole file
+# upfront — if git pull rewrites deploy.sh mid-run, bash's read position can
+# fall out of sync with the new file's content, silently skipping whatever
+# changed after that point (this is exactly how the kitchen-display build
+# step went missing after it was added). A function body is fully parsed
+# into memory before any of it runs, so it keeps executing correctly even
+# if the file on disk changes underneath it.
+main() {
+
 echo ""
 echo "══════════════════════════════════════"
 echo "  Zahill PMS — Deploy"
@@ -85,3 +96,7 @@ echo "════════════════════════�
 echo "  Deploy complete!"
 echo "══════════════════════════════════════"
 echo ""
+
+}
+
+main "$@"
