@@ -22,12 +22,8 @@ const EXPLORE_TABS = [
 export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
-  // Controls only exists at all when the property has room_controller on —
-  // pick the first thing that's actually visible as the initial tab instead
-  // of defaulting to a tab that's about to be hidden.
-  const defaultTab = roomControllerEnabled ? 'controls' : orderingEnabled ? 'order' : (visibleExploreTabs[0]?.key || 'controls');
 
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [activeTab, setActiveTab] = useState('home');
   const [localRelays, setLocalRelays] = useState(relays);
   const [pendingRelays, setPendingRelays] = useState(new Set());
   const [preselectedActivityId, setPreselectedActivityId] = useState(null);
@@ -92,6 +88,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
 
         {/* Controls — top zone */}
         <div style={{ width: '100%', padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <NavBtn id="home" active={activeTab === 'home'} icon="home" label="Home" onClick={() => setActiveTab('home')} />
           {roomControllerEnabled && (
             <NavBtn id="controls" active={activeTab === 'controls'} icon="auto_fix_high" label="Controls" onClick={() => setActiveTab('controls')} />
           )}
@@ -135,35 +132,37 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
       <main className="flex-1 flex overflow-hidden">
         {preselectedActivityId ? (
           <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
-        ) : activeTab === 'controls' && roomControllerEnabled ? (
+        ) : activeTab === 'home' ? (
           <>
             <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} />
-            <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
-              <div className="h-full flex flex-col gap-6">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-3xl font-extralight text-white mb-1">Room Controls</h2>
-                    <p className="text-slate-500 text-sm">Manage lighting, ambiance, and climate.</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {controller && (
-                      <>
-                        <span className="w-2 h-2 rounded-full" style={{ background: controller.connected ? '#22c55e' : '#475569' }} />
-                        <span className="text-[10px] uppercase tracking-widest text-slate-600">
-                          {controller.connected ? 'Online' : 'Offline'}
-                        </span>
-                      </>
-                    )}
-                  </div>
+            <HomeWelcome booking={booking} weather={weather} />
+          </>
+        ) : activeTab === 'controls' && roomControllerEnabled ? (
+          <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
+            <div className="h-full flex flex-col gap-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-3xl font-extralight text-white mb-1">Room Controls</h2>
+                  <p className="text-slate-500 text-sm">Manage lighting, ambiance, and climate.</p>
                 </div>
-                <RelayControls relays={localRelays} onToggle={handleRelayToggle} pendingNums={pendingRelays} large />
-                <div className="grid grid-cols-2 gap-5">
-                  <RGBPicker onSet={handleRGB} currentRgb={controller?.rgb} />
-                  <IRControls onSend={handleIR} large />
+                <div className="flex items-center gap-2">
+                  {controller && (
+                    <>
+                      <span className="w-2 h-2 rounded-full" style={{ background: controller.connected ? '#22c55e' : '#475569' }} />
+                      <span className="text-[10px] uppercase tracking-widest text-slate-600">
+                        {controller.connected ? 'Online' : 'Offline'}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
-            </section>
-          </>
+              <RelayControls relays={localRelays} onToggle={handleRelayToggle} pendingNums={pendingRelays} large />
+              <div className="grid grid-cols-2 gap-5">
+                <RGBPicker onSet={handleRGB} currentRgb={controller?.rgb} />
+                <IRControls onSend={handleIR} large />
+              </div>
+            </div>
+          </section>
         ) : activeTab === 'order' ? (
           <OrderFoodTab roomId={roomId} onOrderPlaced={loadOrders} />
         ) : activeTab === 'orders' ? (
@@ -179,6 +178,43 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         )}
       </main>
     </div>
+  );
+}
+
+function HomeWelcome({ booking, weather }) {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hours24 = time.getHours();
+  const h = (hours24 % 12 || 12).toString().padStart(2, '0');
+  const m = time.getMinutes().toString().padStart(2, '0');
+  const ampm = hours24 >= 12 ? 'PM' : 'AM';
+  const dateStr = time.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const firstName = booking.guest_name?.split(' ')[0] || 'Guest';
+
+  return (
+    <section className="flex-1 p-10 bg-bg-dark overflow-y-auto flex items-center justify-center">
+      <div className="flex flex-col items-center gap-8 text-center">
+        <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-700">{dateStr}</p>
+        <div className="flex items-end gap-3 leading-none">
+          <span className="text-8xl font-extralight text-white tracking-tighter">{h}:{m}</span>
+          <span className="text-2xl font-bold mb-2" style={{ color: '#c9a227' }}>{ampm}</span>
+        </div>
+        <h1 className="text-3xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>
+          Welcome, {firstName}
+        </h1>
+        {weather?.today && (
+          <div className="glass-card rounded-2xl px-6 py-3 flex items-center gap-3">
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#c9a227' }}>{weather.today.icon || 'partly_cloudy_day'}</span>
+            <span className="text-2xl font-light text-white">{weather.today.temp}°C</span>
+            <span className="text-xs uppercase tracking-widest text-slate-500">{weather.today.desc}</span>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

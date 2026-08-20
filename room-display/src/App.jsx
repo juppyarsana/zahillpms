@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
 import callClient from './callClient';
+import ringtone from './ringtone';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
@@ -30,6 +31,12 @@ export default function App() {
   const callIdRef = useRef(null);
   const pendingOfferRef = useRef(null);
   const connectingTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (callState.status === 'incoming') ringtone.start();
+    else ringtone.stop();
+    return () => ringtone.stop();
+  }, [callState.status]);
 
   const handleDebugClick = useCallback(() => {
     setDebugClicks(prev => {
