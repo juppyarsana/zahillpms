@@ -48,6 +48,17 @@ export default function CallBanner() {
     );
   }
 
+  if (activeCall?.status === 'failed') {
+    return (
+      <div style={bannerStyle('#991b1b')}>
+        <span style={{ fontSize: 18 }}>📞</span>
+        <span style={{ fontWeight: 700 }}>
+          {activeCall.error || 'Call failed'} — {callerLabel(activeCall)}
+        </span>
+      </div>
+    );
+  }
+
   if (activeCall) {
     return (
       <div style={bannerStyle('#166534')}>

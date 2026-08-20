@@ -6,6 +6,11 @@ import { useAuth } from './AuthContext';
 
 const CallContext = createContext(null);
 
+const CONNECTING_TIMEOUT_MS = 25_000;
+const OFFER_WAIT_MS = 5_000;
+const END_TOAST_MS = 2500;
+const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
+
 export function CallProvider({ children }) {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState(null); // { callId, unitName, roomId }
@@ -16,6 +21,39 @@ export function CallProvider({ children }) {
   const pendingIce = useRef(new Map());      // callId -> [candidates]
   const activeCallRef = useRef(null);
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+  const connectingTimeoutRef = useRef(null);
+
+  const clearConnectingTimeout = useCallback(() => {
+    if (connectingTimeoutRef.current) {
+      clearTimeout(connectingTimeoutRef.current);
+      connectingTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Mirrors the room-display side (App.jsx): a call stuck in
+  // 'calling'/'connecting' past the timeout below, or one whose peer
+  // connection reports failed/disconnected, is treated as a lost cause and
+  // surfaced as a brief 'failed' banner instead of hanging forever.
+  const endCallLocally = useCallback((callId, finalStatus, errorMessage) => {
+    clearConnectingTimeout();
+    callClient.close();
+    setMuted(false);
+    pendingOffers.current.delete(callId);
+    pendingIce.current.delete(callId);
+    setActiveCall(prev => (prev?.callId === callId ? { ...prev, status: finalStatus, error: errorMessage } : prev));
+    setTimeout(() => {
+      setActiveCall(prev => (prev?.callId === callId ? null : prev));
+    }, END_TOAST_MS);
+  }, [clearConnectingTimeout]);
+
+  const startConnectingTimeout = useCallback((callId) => {
+    clearConnectingTimeout();
+    connectingTimeoutRef.current = setTimeout(() => {
+      if (activeCallRef.current?.callId === callId) {
+        endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
+      }
+    }, CONNECTING_TIMEOUT_MS);
+  }, [clearConnectingTimeout, endCallLocally]);
 
   useEffect(() => {
     if (incomingCall) ringtone.start();
@@ -54,6 +92,7 @@ export function CallProvider({ children }) {
         setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
         setActiveCall(prev => {
           if (prev?.callId !== msg.callId) return prev;
+          clearConnectingTimeout();
           callClient.close();
           setMuted(false);
           return null;
@@ -62,7 +101,7 @@ export function CallProvider({ children }) {
     };
     evtSource.onerror = () => {};
     return () => evtSource.close();
-  }, [user]);
+  }, [user, clearConnectingTimeout]);
 
   const answerCall = useCallback(async (callId) => {
     const call = incomingCall;
@@ -77,9 +116,21 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
     setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'connecting' });
 
-    const offerSdp = pendingOffers.current.get(callId);
+    // Offer is sent async right after the ring notification — poll briefly
+    // rather than silently no-op, so a slow signal doesn't leave the call
+    // stuck (mirrors room-display App.jsx's handleAnswerIncoming).
+    let offerSdp = pendingOffers.current.get(callId);
+    const pollStart = Date.now();
+    while (!offerSdp && Date.now() - pollStart < OFFER_WAIT_MS) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      if (activeCallRef.current?.callId !== callId) return; // call ended/cancelled while waiting
+      offerSdp = pendingOffers.current.get(callId);
+    }
+    if (!offerSdp) {
+      endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
+      return;
+    }
     pendingOffers.current.delete(callId);
-    if (!offerSdp) return;
 
     const answerSdp = await callClient.createAnswer(offerSdp, {
       onIceCandidate: (candidate) => {
@@ -87,10 +138,14 @@ export function CallProvider({ children }) {
       },
       onConnectionStateChange: (connState) => {
         if (connState === 'connected') {
+          clearConnectingTimeout();
           setActiveCall(prev => (prev?.callId === callId ? { ...prev, status: 'connected' } : prev));
+        } else if (['failed', 'disconnected', 'closed'].includes(connState)) {
+          endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
         }
       },
     });
+    startConnectingTimeout(callId);
 
     for (const candidate of pendingIce.current.get(callId) || []) {
       callClient.addIceCandidate(candidate);
@@ -98,7 +153,7 @@ export function CallProvider({ children }) {
     pendingIce.current.delete(callId);
 
     await api.post(`/api/calls/${callId}/signal`, { roomId: call.roomId, payload: { kind: 'answer', sdp: answerSdp } });
-  }, [incomingCall]);
+  }, [incomingCall, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 
   const dismissIncoming = useCallback(() => setIncomingCall(null), []);
 
@@ -117,26 +172,32 @@ export function CallProvider({ children }) {
         },
         onConnectionStateChange: (connState) => {
           if (connState === 'connected') {
+            clearConnectingTimeout();
             setActiveCall(prev => (prev?.callId === data.callId ? { ...prev, status: 'connected' } : prev));
+          } else if (['failed', 'disconnected', 'closed'].includes(connState)) {
+            endCallLocally(data.callId, 'failed', CONNECT_FAILED_MESSAGE);
           }
         },
       });
+      startConnectingTimeout(data.callId);
       await api.post(`/api/calls/${data.callId}/signal`, { roomId: data.roomId, payload: { kind: 'offer', sdp: offer } });
     } catch (err) {
+      clearConnectingTimeout();
       callClient.close();
       setActiveCall(null);
       try { await api.post(`/api/calls/${data.callId}/end`); } catch {}
       throw err;
     }
-  }, [incomingCall]);
+  }, [incomingCall, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 
   const endCall = useCallback(async () => {
     const call = activeCallRef.current;
+    clearConnectingTimeout();
     callClient.close();
     setMuted(false);
     setActiveCall(null);
     if (call) { try { await api.post(`/api/calls/${call.callId}/end`); } catch {} }
-  }, []);
+  }, [clearConnectingTimeout]);
 
   const toggleMute = useCallback(() => {
     setMuted(prev => {

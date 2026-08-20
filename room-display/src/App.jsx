@@ -12,6 +12,9 @@ const POLL_MS = 10_000;
 const END_TOAST_MS = 2500;
 const DEBUG_CLICK_THRESHOLD = 5;
 const DEBUG_CLICK_TIMEOUT = 3000;
+const CONNECTING_TIMEOUT_MS = 25_000;
+const OFFER_WAIT_MS = 5_000;
+const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
 
 export default function App() {
   const [roomId, setRoomId] = useState(() => localStorage.getItem('roomId'));
@@ -26,6 +29,7 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const callIdRef = useRef(null);
   const pendingOfferRef = useRef(null);
+  const connectingTimeoutRef = useRef(null);
 
   const handleDebugClick = useCallback(() => {
     setDebugClicks(prev => {
@@ -89,14 +93,35 @@ export default function App() {
     };
   }, [fetchState]);
 
-  const endCallLocally = useCallback((finalStatus) => {
+  const clearConnectingTimeout = useCallback(() => {
+    if (connectingTimeoutRef.current) {
+      clearTimeout(connectingTimeoutRef.current);
+      connectingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const endCallLocally = useCallback((finalStatus, errorMessage) => {
+    clearConnectingTimeout();
     callClient.close();
     callIdRef.current = null;
     pendingOfferRef.current = null;
     setMuted(false);
-    setCallState({ status: finalStatus, callId: null });
+    setCallState({ status: finalStatus, callId: null, error: errorMessage });
     setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
-  }, []);
+  }, [clearConnectingTimeout]);
+
+  // Bounds how long a call may sit in 'calling'/'connecting' before ICE
+  // negotiation is considered a lost cause — otherwise a failed negotiation
+  // that never fires 'failed'/'disconnected' (seen in practice on some
+  // networks) leaves the overlay stuck on "Connecting…" forever.
+  const startConnectingTimeout = useCallback((id) => {
+    clearConnectingTimeout();
+    connectingTimeoutRef.current = setTimeout(() => {
+      if (callIdRef.current === id) {
+        endCallLocally('failed', CONNECT_FAILED_MESSAGE);
+      }
+    }, CONNECTING_TIMEOUT_MS);
+  }, [clearConnectingTimeout, endCallLocally]);
 
   // Call signaling — separate SSE channel from the room-state one above,
   // since call payloads carry real data rather than a "go refetch" ping.
@@ -145,28 +170,34 @@ export default function App() {
         },
         onConnectionStateChange: (connState) => {
           if (connState === 'connected' && callIdRef.current === data.callId) {
+            clearConnectingTimeout();
             setCallState({ status: 'connected', callId: data.callId });
+          } else if (['failed', 'disconnected', 'closed'].includes(connState) && callIdRef.current === data.callId) {
+            endCallLocally('failed', CONNECT_FAILED_MESSAGE);
           }
         },
       });
+      startConnectingTimeout(data.callId);
       await api.post(`/calls/${data.callId}/signal-from-room`, { payload: { kind: 'offer', sdp: offer } });
     } catch (err) {
       console.error('[Call] place call failed:', err);
+      clearConnectingTimeout();
       callClient.close();
       callIdRef.current = null;
       setCallState({ status: 'failed', callId: null, error: err.response?.data?.error || err.message || 'Call failed' });
       setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
     }
-  }, [roomId, callState.status]);
+  }, [roomId, callState.status, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 
   const handleCancelCall = useCallback(async () => {
     const id = callIdRef.current;
+    clearConnectingTimeout();
     callClient.close();
     callIdRef.current = null;
     pendingOfferRef.current = null;
     setCallState({ status: 'idle', callId: null });
     if (id) { try { await api.post(`/calls/${id}/end-from-room`); } catch {} }
-  }, []);
+  }, [clearConnectingTimeout]);
 
   const handleHangup = useCallback(async () => {
     const id = callIdRef.current;
@@ -176,10 +207,9 @@ export default function App() {
 
   // Guest answers a call placed by staff — mirrors CallContext.jsx's
   // answerCall on the staff side. The offer may not have arrived yet (it's
-  // sent async, right after the ring notification); if so this silently
-  // no-ops once, same accepted race as the staff-side equivalent — in
-  // practice a human needs a moment to notice and tap Answer, which is
-  // almost always enough time for the offer to land first.
+  // sent async, right after the ring notification), so poll briefly rather
+  // than silently no-op — a human tapping Answer is almost always faster
+  // than the offer, but a slow signal shouldn't leave the call stuck.
   const handleAnswerIncoming = useCallback(async () => {
     const id = callIdRef.current;
     if (!id || callState.status !== 'incoming') return;
@@ -187,24 +217,38 @@ export default function App() {
       await api.post(`/calls/${id}/answer-from-room`);
       setCallState(prev => (prev.callId === id ? { ...prev, status: 'connecting' } : prev));
 
-      const offerSdp = pendingOfferRef.current;
-      if (!offerSdp) return;
+      let offerSdp = pendingOfferRef.current;
+      const pollStart = Date.now();
+      while (!offerSdp && Date.now() - pollStart < OFFER_WAIT_MS) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (callIdRef.current !== id) return; // call ended/cancelled while waiting
+        offerSdp = pendingOfferRef.current;
+      }
+      if (!offerSdp) {
+        endCallLocally('failed', CONNECT_FAILED_MESSAGE);
+        return;
+      }
+
       const answer = await callClient.createAnswer(offerSdp, {
         onIceCandidate: (candidate) => {
           api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'ice', candidate } }).catch(() => {});
         },
         onConnectionStateChange: (connState) => {
           if (connState === 'connected' && callIdRef.current === id) {
+            clearConnectingTimeout();
             setCallState(prev => (prev.callId === id ? { ...prev, status: 'connected' } : prev));
+          } else if (['failed', 'disconnected', 'closed'].includes(connState) && callIdRef.current === id) {
+            endCallLocally('failed', CONNECT_FAILED_MESSAGE);
           }
         },
       });
+      startConnectingTimeout(id);
       await api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'answer', sdp: answer } });
     } catch (err) {
       console.error('[Call] answer failed:', err);
-      endCallLocally('failed');
+      endCallLocally('failed', CONNECT_FAILED_MESSAGE);
     }
-  }, [callState.status, endCallLocally]);
+  }, [callState.status, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 
   const handleMuteToggle = useCallback(() => {
     setMuted(prev => {
