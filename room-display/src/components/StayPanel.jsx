@@ -3,7 +3,7 @@ function fmt(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-export default function StayPanel({ unit, booking, relays, controller, property }) {
+export default function StayPanel({ unit, booking, relays, controller, property, roomControllerEnabled }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const checkIn  = new Date(booking.check_in_date);
@@ -73,37 +73,39 @@ export default function StayPanel({ unit, booking, relays, controller, property 
         </div>
       </div>
 
-      {/* Active devices */}
-      <div className="mt-auto">
-        <div className="flex items-center justify-between text-[10px] text-slate-600 mb-3 uppercase tracking-widest font-bold">
-          <span>Active Devices</span>
-          {controller?.connected && (
-            <span style={{ color: '#c9a227' }}>{activeRelays.length} On</span>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {!controller?.connected ? (
-            <div className="flex items-center gap-2 text-slate-700">
-              <span className="material-symbols-outlined text-sm">wifi_off</span>
-              <span className="text-[10px] uppercase tracking-wider">Controller offline</span>
-            </div>
-          ) : activeRelays.length === 0 ? (
-            <span className="text-[10px] uppercase tracking-wider text-slate-700">All off</span>
-          ) : (
-            activeRelays.map(r => (
-              <div
-                key={r.relay_num}
-                className="w-10 h-10 glass-card rounded-lg flex items-center justify-center text-slate-300"
-                title={r.label || `Relay ${r.relay_num}`}
-              >
-                <span className="material-symbols-outlined text-lg">
-                  {r.icon || 'power'}
-                </span>
+      {/* Active devices — only relevant when the property actually has room_controller hardware */}
+      {roomControllerEnabled && (
+        <div className="mt-auto">
+          <div className="flex items-center justify-between text-[10px] text-slate-600 mb-3 uppercase tracking-widest font-bold">
+            <span>Active Devices</span>
+            {controller?.connected && (
+              <span style={{ color: '#c9a227' }}>{activeRelays.length} On</span>
+            )}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {!controller?.connected ? (
+              <div className="flex items-center gap-2 text-slate-700">
+                <span className="material-symbols-outlined text-sm">wifi_off</span>
+                <span className="text-[10px] uppercase tracking-wider">Controller offline</span>
               </div>
-            ))
-          )}
+            ) : activeRelays.length === 0 ? (
+              <span className="text-[10px] uppercase tracking-wider text-slate-700">All off</span>
+            ) : (
+              activeRelays.map(r => (
+                <div
+                  key={r.relay_num}
+                  className="w-10 h-10 glass-card rounded-lg flex items-center justify-center text-slate-300"
+                  title={r.label || `Relay ${r.relay_num}`}
+                >
+                  <span className="material-symbols-outlined text-lg">
+                    {r.icon || 'power'}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

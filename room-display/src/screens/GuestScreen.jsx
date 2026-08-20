@@ -134,7 +134,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
           <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
         ) : activeTab === 'home' ? (
           <>
-            <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} />
+            <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} roomControllerEnabled={roomControllerEnabled} />
             <HomeWelcome booking={booking} weather={weather} />
           </>
         ) : activeTab === 'controls' && roomControllerEnabled ? (
