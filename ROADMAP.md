@@ -183,13 +183,37 @@ Per-property tax and service charge rates, applied on folio and invoice.
   companies/agents need Faktur Pajak-formatted invoices (NPWP + VAT
   breakout) instead of the current simple guest receipt? May need a
   second invoice template.
-- **Open questions for client:** default credit terms (NET 15/30?);
-  hard-block bookings over `credit_limit` or just warn; negotiated/
-  discounted rates per agent (out of scope for v1 — flag for a later
-  pass); who allocates a payment across multiple outstanding bookings
-- Status: 🔵 Planned — not started, scope only
-
-### 14. Back Office (Purchasing, Inventory Cost Control, Accounts Payable, Cash & Bank, Recipe Costing)
+- **Client decisions (locked 2026-08-31):** credit limit = **warn only**, never
+  hard-block (warning lands in Slice B with the AR-outstanding query);
+  Faktur Pajak invoice = **deferred** (Slice C extends the existing pdfkit
+  invoice with agent name/NPWP/billing address; a dedicated ID tax-invoice
+  template only if a client demands it); agent lump-sum payment allocation =
+  **auto oldest-first, with manual adjustment allowed** (Slice C); negotiated
+  per-agent rates still out of scope for v1.
+- **Sliced for delivery:**
+  - **Slice A — ✅ Implemented 2026-08-31 (migration 041).** `booking_sources`
+    generalized: `source_type`, `payment_status`, `billing_address`, `tax_id`
+    (NPWP), `contact_name`/`email`/`phone`, `credit_terms_days`, `credit_limit`,
+    `commission_type`/`commission_value` — all additive, `bookings.source` and
+    `is_ota` untouched, existing rows backfilled (`ota` where `is_ota`, `walkin`
+    for the walk-in row, else `direct`). `settings.js` `POST`/`PUT
+    /booking-sources` accept + validate the new fields (`parseAgentFields`
+    helper); `seedPropertyDefaults.js` clones `source_type`/`payment_status` for
+    new properties. `Settings.jsx` Booking Sources card gains a Source Type
+    select + a conditional "Agent Billing" sub-form + row badges; `NewBooking.jsx`
+    shows a muted billing-arrangement note when a non-`normal` source is picked.
+    **No behavior change to booking creation or checkout.**
+  - **Slice B — not started.** City-ledger checkout: when a booking's source has
+    `payment_status` `city_ledger`/`city_ledger_payment`, settlement closes the
+    folio as billed-to-agent (`pending_agent_invoice`) instead of requiring guest
+    payment. New `agent_commissions` ledger computed at checkout/night-audit for
+    `commission`/`commission_and_city_ledger`. Credit-limit warning at booking
+    creation + checkout (needs the AR-outstanding sum).
+  - **Slice C — not started.** `GET /api/settings/booking-sources/:id/statement`
+    (outstanding balance + aging), `POST .../invoice` (consolidated PDF),
+    `POST .../payments` (record against balance, auto oldest-first + manual
+    adjust). New per-agent statement/aging page (`financial`, owner-only).
+    Reports page gains AR Aging. (Purchasing, Inventory Cost Control, Accounts Payable, Cash & Bank, Recipe Costing)
 
 > Scoped 2026-08-17, validated against two independent references —
 > GuestPro (Indonesian-market PMS) and VHP (the client's own prior system,
@@ -528,7 +552,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 041
+## Next migration number: 042
 
 ---
 

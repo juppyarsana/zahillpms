@@ -3,6 +3,27 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 
+// Staff-facing heads-up when the chosen source is an agent with a non-standard
+// billing arrangement. Informational only — booking creation is unchanged; the
+// actual city-ledger / commission settlement flow lands in a later slice.
+function SourceBillingNote({ source }) {
+  if (!source || !source.payment_status || source.payment_status === 'normal') return null;
+  const ps = source.payment_status;
+  const cityLedger = ps === 'city_ledger' || ps === 'city_ledger_payment' || ps === 'commission_and_city_ledger';
+  const commission = ps === 'commission' || ps === 'commission_and_city_ledger';
+  const commissionText = commission && source.commission_value
+    ? ` Commission to ${source.label}: ${source.commission_value}${source.commission_type === 'amount' ? ' IDR' : '%'}.`
+    : '';
+  const msg = cityLedger
+    ? `Billed to ${source.label} — settled via the agent statement, not collected from the guest at checkout.${commissionText}`
+    : `Property pays ${source.label} a commission on this booking.${commissionText}`;
+  return (
+    <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>
+      {msg}
+    </div>
+  );
+}
+
 function sourceMatchesAllotment(source, allotmentChannel) {
   if (allotmentChannel === 'buffer') return false;
   if (source === 'walkin') return allotmentChannel === 'direct';
@@ -255,6 +276,7 @@ export default function NewBooking() {
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
+            <SourceBillingNote source={sources.find(s => s.id === form.source)} />
           </div>
         </div>
 

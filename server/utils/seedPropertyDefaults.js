@@ -65,8 +65,8 @@ async function seedPropertyDefaults(propertyId) {
   // checks, etc.) so a namespaced id silently breaks that everywhere except
   // Zahill, whose rows predate multi-tenancy and kept their bare ids.
   await db.query(
-    `INSERT INTO booking_sources (id, label, is_ota, color, is_active, sort_order, property_id)
-     SELECT id, label, is_ota, color, is_active, sort_order, $1::uuid
+    `INSERT INTO booking_sources (id, label, is_ota, color, is_active, sort_order, source_type, payment_status, property_id)
+     SELECT id, label, is_ota, color, is_active, sort_order, source_type, payment_status, $1::uuid
      FROM booking_sources WHERE property_id IS NULL
      ON CONFLICT DO NOTHING`,
     [propertyId]

@@ -9,6 +9,119 @@ const AUTO_COLORS = [
   '#C9A227','#9A3412','#0D9488','#C2410C','#6D28D9',
 ];
 
+const SOURCE_TYPES = [
+  { value: 'direct',         label: 'Direct' },
+  { value: 'walkin',         label: 'Walk-in' },
+  { value: 'booking_engine', label: 'Booking Engine' },
+  { value: 'ota',            label: 'OTA' },
+  { value: 'travel_agent',   label: 'Travel Agent' },
+  { value: 'company',        label: 'Company' },
+  { value: 'wholesaler',     label: 'Wholesaler' },
+];
+const SOURCE_TYPE_LABEL = Object.fromEntries(SOURCE_TYPES.map(t => [t.value, t.label]));
+const AGENT_TYPES = ['travel_agent', 'company', 'wholesaler'];
+
+const PAYMENT_STATUSES = [
+  { value: 'normal',                      label: 'Normal — guest pays the property directly' },
+  { value: 'city_ledger',                 label: 'City ledger — agent is invoiced, AR posts automatically' },
+  { value: 'city_ledger_payment',         label: 'City ledger — agent is invoiced, AR needs manual confirmation' },
+  { value: 'commission',                  label: 'Commission — guest pays property, property pays agent a commission' },
+  { value: 'commission_and_city_ledger',  label: 'City ledger + commission — agent pays property, then gets a commission back' },
+];
+const PAYMENT_STATUS_SHORT = {
+  normal: 'Normal',
+  city_ledger: 'City ledger',
+  city_ledger_payment: 'City ledger (manual)',
+  commission: 'Commission',
+  commission_and_city_ledger: 'City ledger + commission',
+};
+const HAS_COMMISSION = new Set(['commission', 'commission_and_city_ledger']);
+
+// Shared source-type + agent-billing fields, used by both the add and edit forms.
+function SourceAgentFields({ form, set }) {
+  const sourceType = form.source_type || 'direct';
+  const isAgent = AGENT_TYPES.includes(sourceType);
+  const paymentStatus = form.payment_status || 'normal';
+
+  return (
+    <>
+      <div className="form-group">
+        <label className="form-label">Source Type</label>
+        <select className="form-select" value={sourceType} onChange={e => set('source_type', e.target.value)}>
+          {SOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+      </div>
+
+      {isAgent && (
+        <div style={{ borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
+          <div className="card-title" style={{ fontSize: 13, marginBottom: 10 }}>Agent Billing</div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Contact Name</label>
+              <input className="form-input" value={form.contact_name || ''} onChange={e => set('contact_name', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Contact Email</label>
+              <input className="form-input" type="email" value={form.contact_email || ''} onChange={e => set('contact_email', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Contact Phone</label>
+              <input className="form-input" value={form.contact_phone || ''} onChange={e => set('contact_phone', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Billing Address</label>
+            <textarea className="form-input" rows={2} value={form.billing_address || ''} onChange={e => set('billing_address', e.target.value)} />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Tax ID (NPWP)</label>
+              <input className="form-input" value={form.tax_id || ''} onChange={e => set('tax_id', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Credit Terms (days)</label>
+              <input className="form-input" type="number" min={0} value={form.credit_terms_days ?? ''}
+                onChange={e => set('credit_terms_days', e.target.value)} style={{ maxWidth: 120 }} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Credit Limit (IDR)</label>
+              <input className="form-input" type="number" min={0} value={form.credit_limit ?? ''}
+                onChange={e => set('credit_limit', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Payment Arrangement</label>
+            <select className="form-select" value={paymentStatus} onChange={e => set('payment_status', e.target.value)}>
+              {PAYMENT_STATUSES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </div>
+
+          {HAS_COMMISSION.has(paymentStatus) && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Commission Type</label>
+                <select className="form-select" value={form.commission_type || 'percent'} onChange={e => set('commission_type', e.target.value)}>
+                  <option value="percent">Percent (%)</option>
+                  <option value="amount">Fixed amount (IDR)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Commission Value</label>
+                <input className="form-input" type="number" min={0} value={form.commission_value ?? ''}
+                  onChange={e => set('commission_value', e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Settings() {
   const { sources, paymentMethods, reload } = useSettings();
 
@@ -18,12 +131,23 @@ export default function Settings() {
   const [addForm, setAddForm] = useState({});
   const [error, setError] = useState('');
 
+  const AGENT_FIELDS = [
+    'source_type', 'payment_status', 'billing_address', 'tax_id', 'contact_name',
+    'contact_email', 'contact_phone', 'credit_terms_days', 'credit_limit',
+    'commission_type', 'commission_value',
+  ];
+
   function startEdit(type, item) {
     setEditingId(`${type}:${item.id}`);
-    setEditForm(type === 'source'
-      ? { label: item.label, is_ota: item.is_ota, color: item.color, sort_order: item.sort_order }
-      : { label: item.label, sort_order: item.sort_order }
-    );
+    if (type === 'source') {
+      const f = { label: item.label, is_ota: item.is_ota, color: item.color, sort_order: item.sort_order };
+      for (const k of AGENT_FIELDS) f[k] = item[k] ?? '';
+      f.source_type = item.source_type || 'direct';
+      f.payment_status = item.payment_status || 'normal';
+      setEditForm(f);
+    } else {
+      setEditForm({ label: item.label, sort_order: item.sort_order });
+    }
     setError('');
   }
 
@@ -60,7 +184,7 @@ export default function Settings() {
     if (type === 'source') {
       const used = new Set(sources.map(s => s.color?.toLowerCase()));
       const autoColor = AUTO_COLORS.find(c => !used.has(c.toLowerCase())) || AUTO_COLORS[0];
-      setAddForm({ color: autoColor, is_ota: false });
+      setAddForm({ color: autoColor, is_ota: false, source_type: 'direct', payment_status: 'normal' });
     } else {
       setAddForm({});
     }
@@ -97,7 +221,7 @@ export default function Settings() {
       <div className="page-header">
         <div>
           <div className="page-title">Booking Sources & Methods</div>
-          <div className="page-subtitle">Configure payment channels and payment methods</div>
+          <div className="page-subtitle">Configure booking channels, agents, and payment methods</div>
         </div>
       </div>
 
@@ -106,6 +230,7 @@ export default function Settings() {
         <div className="card-title">Booking Sources</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
           Channels guests book through. Mark OTA sources — their check-in flow will skip the payment gate since payment is handled by the platform.
+          Set a source type of Travel Agent, Company, or Wholesaler to record billing details and a payment arrangement (city ledger / commission).
         </p>
 
         {sources.map(s => (
@@ -131,7 +256,8 @@ export default function Settings() {
                       onChange={e => setEdit('sort_order', parseInt(e.target.value) || 0)} style={{ maxWidth: 80 }} />
                   </div>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>
+                <SourceAgentFields form={editForm} set={setEdit} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '12px 0', cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!editForm.is_ota} onChange={e => setEdit('is_ota', e.target.checked)} />
                   OTA channel — payment managed by platform
                 </label>
@@ -143,11 +269,21 @@ export default function Settings() {
               </div>
             ) : (
               <div style={rowStyle}>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
                   <div style={{ width: 14, height: 14, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
                   <span style={{ fontWeight: 600 }}>{s.label}</span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({s.id})</span>
                   {s.is_ota && <span className="badge badge-blue" style={{ fontSize: 10, padding: '2px 6px' }}>OTA</span>}
+                  {AGENT_TYPES.includes(s.source_type) && (
+                    <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>
+                      {SOURCE_TYPE_LABEL[s.source_type]}
+                    </span>
+                  )}
+                  {s.payment_status && s.payment_status !== 'normal' && (
+                    <span className="badge badge-blue" style={{ fontSize: 10, padding: '2px 6px' }}>
+                      {PAYMENT_STATUS_SHORT[s.payment_status]}
+                    </span>
+                  )}
                   {!s.is_active && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Inactive</span>}
                 </div>
                 <div className="flex gap-2">
@@ -183,7 +319,8 @@ export default function Settings() {
                 </div>
               </div>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>
+            <SourceAgentFields form={addForm} set={setAdd} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '12px 0', cursor: 'pointer' }}>
               <input type="checkbox" checked={!!addForm.is_ota} onChange={e => setAdd('is_ota', e.target.checked)} />
               OTA channel — payment managed by platform
             </label>

@@ -108,7 +108,55 @@ router.get('/branding', auth, async (req, res) => {
   }
 });
 
-// ── Booking Sources ──────────────────────────────────────────────────────────
+// ── Booking Sources (also the per-property agent registry — see migration 041) ──
+
+const SOURCE_TYPES = ['walkin', 'direct', 'booking_engine', 'ota', 'travel_agent', 'company', 'wholesaler'];
+const PAYMENT_STATUSES = ['normal', 'city_ledger', 'city_ledger_payment', 'commission', 'commission_and_city_ledger'];
+const COMMISSION_TYPES = ['percent', 'amount'];
+
+// Normalises + validates the agent-billing fields shared by POST and PUT.
+// Returns { values } on success or { error } with a 400 message.
+function parseAgentFields(body) {
+  const out = {};
+
+  if (body.source_type !== undefined && body.source_type !== null && body.source_type !== '') {
+    if (!SOURCE_TYPES.includes(body.source_type)) return { error: `source_type must be one of ${SOURCE_TYPES.join(', ')}` };
+    out.source_type = body.source_type;
+  }
+  if (body.payment_status !== undefined && body.payment_status !== null && body.payment_status !== '') {
+    if (!PAYMENT_STATUSES.includes(body.payment_status)) return { error: `payment_status must be one of ${PAYMENT_STATUSES.join(', ')}` };
+    out.payment_status = body.payment_status;
+  }
+  if (body.commission_type !== undefined) {
+    const v = body.commission_type === '' ? null : body.commission_type;
+    if (v !== null && !COMMISSION_TYPES.includes(v)) return { error: `commission_type must be one of ${COMMISSION_TYPES.join(', ')}` };
+    out.commission_type = v;
+  }
+
+  // Free-text fields: '' → null
+  for (const f of ['billing_address', 'tax_id', 'contact_name', 'contact_email', 'contact_phone']) {
+    if (body[f] !== undefined) out[f] = body[f] === '' || body[f] === null ? null : String(body[f]).trim();
+  }
+
+  // Numeric fields: '' → null, otherwise finite and >= 0
+  if (body.credit_terms_days !== undefined) {
+    if (body.credit_terms_days === '' || body.credit_terms_days === null) out.credit_terms_days = null;
+    else {
+      const n = parseInt(body.credit_terms_days, 10);
+      if (!Number.isInteger(n) || n < 0) return { error: 'credit_terms_days must be a non-negative integer' };
+      out.credit_terms_days = n;
+    }
+  }
+  for (const f of ['credit_limit', 'commission_value']) {
+    if (body[f] === undefined) continue;
+    if (body[f] === '' || body[f] === null) { out[f] = null; continue; }
+    const n = parseFloat(body[f]);
+    if (!Number.isFinite(n) || n < 0) return { error: `${f} must be a non-negative number` };
+    out[f] = n;
+  }
+
+  return { values: out };
+}
 
 router.get('/booking-sources', auth, async (req, res) => {
   try {
@@ -122,11 +170,18 @@ router.get('/booking-sources', auth, async (req, res) => {
 router.post('/booking-sources', auth, async (req, res) => {
   const { id, label, is_ota, color, sort_order } = req.body;
   if (!id || !label) return res.status(400).json({ error: 'id and label are required' });
+  const agent = parseAgentFields(req.body);
+  if (agent.error) return res.status(400).json({ error: agent.error });
+
+  const cols = ['id', 'label', 'is_ota', 'color', 'sort_order', 'property_id'];
+  const vals = [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0, req.propertyId];
+  for (const [k, v] of Object.entries(agent.values)) { cols.push(k); vals.push(v); }
+  const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+
   try {
     const { rows } = await db.query(
-      `INSERT INTO booking_sources (id, label, is_ota, color, sort_order, property_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0, req.propertyId]
+      `INSERT INTO booking_sources (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+      vals
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -138,16 +193,30 @@ router.post('/booking-sources', auth, async (req, res) => {
 
 router.put('/booking-sources/:id', auth, async (req, res) => {
   const { label, is_ota, color, is_active, sort_order } = req.body;
+  const agent = parseAgentFields(req.body);
+  if (agent.error) return res.status(400).json({ error: agent.error });
+
+  const sets = [
+    'label      = COALESCE($1, label)',
+    'is_ota     = COALESCE($2, is_ota)',
+    'color      = COALESCE($3, color)',
+    'is_active  = COALESCE($4, is_active)',
+    'sort_order = COALESCE($5, sort_order)',
+  ];
+  const vals = [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null];
+  // Agent-billing fields: an explicit key in the body overwrites (including to NULL),
+  // an absent key is left untouched.
+  for (const [k, v] of Object.entries(agent.values)) {
+    vals.push(v);
+    sets.push(`${k} = $${vals.length}`);
+  }
+  vals.push(req.params.id, req.propertyId);
+
   try {
     const { rows } = await db.query(
-      `UPDATE booking_sources SET
-        label      = COALESCE($1, label),
-        is_ota     = COALESCE($2, is_ota),
-        color      = COALESCE($3, color),
-        is_active  = COALESCE($4, is_active),
-        sort_order = COALESCE($5, sort_order)
-       WHERE id = $6 AND property_id = $7 RETURNING *`,
-      [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null, req.params.id, req.propertyId]
+      `UPDATE booking_sources SET ${sets.join(', ')}
+       WHERE id = $${vals.length - 1} AND property_id = $${vals.length} RETURNING *`,
+      vals
     );
     if (!rows[0]) return res.status(404).json({ error: 'Source not found' });
     res.json(rows[0]);
