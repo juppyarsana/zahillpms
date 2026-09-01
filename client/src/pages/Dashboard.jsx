@@ -112,6 +112,144 @@ function UnitCard({ unit }) {
   );
 }
 
+/* ─── compact unit status board ────────────────────────── */
+
+const TILE_BG = {
+  occupied:    '#F97316',
+  arriving:    '#3B82F6',
+  available:   '#22C55E',
+  maintenance: '#DC2626',
+  blocked:     '#9CA3AF',
+};
+
+// mirrors UnitCard's branch order
+function tileState(u) {
+  if (u.status === 'maintenance') return 'maintenance';
+  if (u.status === 'blocked')     return 'blocked';
+  if (u.status === 'occupied' && u.guest_name) return 'occupied';
+  if (u.arriving_guest_name)      return 'arriving';
+  return 'available';
+}
+
+const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
+function typeRank(t) {
+  const i = TYPE_ORDER.findIndex(x => (t || '').includes(x));
+  return i === -1 ? 99 : i;
+}
+function groupUnitsByType(units) {
+  const m = new Map();
+  for (const u of units) {
+    const k = u.type || 'Other';
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(u);
+  }
+  return [...m.entries()]
+    .map(([type, list]) => ({
+      type,
+      list: list.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+    }))
+    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.type.localeCompare(b.type));
+}
+// strip the leading type word so a "Deluxe 101" tile just reads "101"
+function shortRoomName(name, type) {
+  const w = (type || '').split(/\s+/)[0];
+  return w && name.startsWith(w) ? (name.slice(w.length).trim() || name) : name;
+}
+
+function UnitPopover({ unit, anchor, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onClose, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onClose, true);
+    };
+  }, [onClose]);
+
+  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+    return (
+      <div className="modal-backdrop" onClick={onClose}>
+        <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-body"><UnitCard unit={unit} /></div>
+        </div>
+      </div>
+    );
+  }
+
+  const W = 300, H = 200, pad = 8;
+  const left = Math.min(Math.max(anchor.left, pad), window.innerWidth - W - pad);
+  const top = anchor.bottom + H + pad > window.innerHeight ? anchor.top - H - 6 : anchor.bottom + 6;
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={onClose} />
+      <div className="card" style={{ position: 'fixed', top, left, width: W, zIndex: 200, boxShadow: 'var(--shadow-md)', padding: 12 }}
+        onClick={e => e.stopPropagation()}>
+        <UnitCard unit={unit} />
+      </div>
+    </>
+  );
+}
+
+function UnitStatusBoard({ units, arrivals, departures }) {
+  const [selected, setSelected] = useState(null); // { unit, anchor }
+
+  useEffect(() => {
+    if (selected && !units.some(u => u.id === selected.unit.id)) setSelected(null);
+  }, [units, selected]);
+
+  const groups = groupUnitsByType(units);
+  const counts = {
+    occupied:  units.filter(u => tileState(u) === 'occupied').length,
+    arriving:  arrivals.length,
+    departing: departures.length,
+    available: units.filter(u => tileState(u) === 'available').length,
+    offline:   units.filter(u => ['maintenance', 'blocked'].includes(tileState(u))).length,
+  };
+
+  const strip = [
+    ['#F97316', counts.occupied, 'Occupied'],
+    ['#3B82F6', counts.arriving, 'Arriving today'],
+    ['#92400E', counts.departing, 'Departing today'],
+    ['#22C55E', counts.available, 'Available'],
+    ['#9CA3AF', counts.offline, 'Maint / blocked'],
+  ];
+
+  return (
+    <div>
+      <div className="unit-summary-strip">
+        {strip.map(([dot, n, label]) => (
+          <span key={label} className="unit-summary-item">
+            <span className="unit-summary-dot" style={{ background: dot }} />
+            <b>{n}</b> {label}
+          </span>
+        ))}
+      </div>
+
+      {groups.map(g => (
+        <div key={g.type} className="unit-tile-group">
+          <div className="unit-tile-group-label">{g.type} · {g.list.length}</div>
+          <div className="unit-tile-grid">
+            {g.list.map(u => (
+              <button
+                key={u.id}
+                className={`unit-tile${selected?.unit.id === u.id ? ' selected' : ''}`}
+                style={{ background: TILE_BG[tileState(u)] }}
+                title={u.name}
+                onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
+              >
+                {shortRoomName(u.name, u.type)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {selected && <UnitPopover unit={selected.unit} anchor={selected.anchor} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}
+
 /* ─── task icon map ────────────────────────────────────── */
 const TASK_ICONS = {
   housekeeping: { emoji: '🧹', bg: '#FEF3C7' },
@@ -667,30 +805,17 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Live Unit Status — full width ── */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">Live Unit Status</div>
+        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} />
+      </div>
+
       {/* ── Two-column section ── */}
       <div className="grid-2" style={{ gap: 16 }}>
 
-        {/* ── LEFT: Live Unit Status ── */}
+        {/* ── LEFT: Today's Activity ── */}
         <div className="card">
-          <div className="card-title">Live Unit Status</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {occupancy.units.map((u, idx) => {
-              const isLast = idx === occupancy.units.length - 1;
-              const isOdd  = occupancy.units.length % 2 !== 0;
-              return (
-                <div key={u.id} style={isLast && isOdd ? { gridColumn: 'span 2' } : {}}>
-                  <UnitCard unit={u} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── RIGHT: Activity + Revenue stacked ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Today's Activity */}
-          <div className="card">
             <div className="card-title">Today's Activity</div>
 
             {tasks.length === 0 && arrivals_today.length === 0 && departures_today.length === 0 ? (
@@ -755,7 +880,10 @@ export default function Dashboard() {
                 View all tasks →
               </Link>
             </div>
-          </div>
+        </div>
+
+        {/* ── RIGHT: Revenue + Night Audit ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Revenue — Last 7 Days */}
           <div className="card">
