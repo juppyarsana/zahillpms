@@ -1,6 +1,41 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-08-11
+Last updated: 2026-09-02
+
+---
+
+## 🔖 Session handoff — 2026-09-02 (PC → laptop)
+
+Everything below is committed + pushed to `origin/dev` (through commit `2f0697f`).
+Local DB is at **migration 044**. Run `git pull` + `npm run migrate` on the laptop.
+
+**Shipped this session:**
+- **Agent Accounts / Direct Billing #13 — Slices B & C** (migrations 042–043). City-ledger
+  checkout + `agent_commissions`; per-agent statement / AR aging / agent payments (auto
+  oldest-first, editable) / consolidated invoice PDF at `/agents`. Verified live in the API.
+- **Dashboard + Reservations calendar rework for 35 rooms** — compact tile board + popover;
+  frozen-header calendar with collapsible room-type groups, a type filter, denser rows, and
+  the per-cell perf cliff removed. Several follow-up polish commits (sticky group label,
+  scroll drift, taller day-header with weekday).
+- **Rate plans ("arrangements") + bed config + room/F&B revenue split** (migration 044, both
+  slices). `rate_plans` (RO/BB seeded), `units.bed_config`, `bookings.rate_plan_id` +
+  `room_revenue`/`fnb_revenue` (NET). Per-night `folio_charges` auto-posting via
+  `roomChargeService` (night audit / checkout / amend / cancel). **Reports now show NET room
+  revenue** (one-time visible drop). Owner CRUD at `/settings/rate-plans`.
+
+**Not done / next:**
+- Rate plans + calendar rework **not yet clicked through in a real browser** — service +
+  HTTP layers tested, but do a manual pass. See the verification checklists in each ROADMAP
+  section.
+- Cutover: run `node server/scripts/backfillRoomCharges.js` once against prod for any
+  currently-checked-in bookings (posts their elapsed folio nights). Idempotent.
+- Agent Accounts Slice C not browser-verified either (record-payment / generate-invoice modals).
+- TURN server for calls still deferred (known gap).
+
+**Demo data on the PC's local DB** (not on the laptop until re-seeded — the scripts are
+gitignored under `server/scripts/`): 35 rooms (Deluxe 101–125 / Suite 201–204 / Glamping
+301–303 / Villa 801–803), 16 sample Sept bookings, and BB rate plan set to Rp 100k/pax/night.
+Re-create with `seedRooms.js` / `seedBookings.js` / `agentDemo.js` if needed.
 
 ---
 
