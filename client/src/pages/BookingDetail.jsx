@@ -30,6 +30,8 @@ export default function BookingDetail() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [billToAgent, setBillToAgent] = useState(false);
+  const [checkoutCredit, setCheckoutCredit] = useState(null);
   const [transferring, setTransferring] = useState(false);
   const [transferUnits, setTransferUnits] = useState([]);
   const [transferTarget, setTransferTarget] = useState(null);
@@ -147,10 +149,24 @@ export default function BookingDetail() {
     }
   }
 
+  function openCheckout() {
+    setCheckingOut(true);
+    setCheckoutNotes('');
+    setCheckoutCredit(null);
+    const src = sources.find(s => s.id === booking.source);
+    const cityLedger = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(src?.payment_status);
+    setBillToAgent(cityLedger);
+    if (src && src.credit_limit != null) {
+      api.get(`/api/settings/booking-sources/${src.id}/credit-check?amount=0`)
+        .then(r => setCheckoutCredit(r.data))
+        .catch(() => {});
+    }
+  }
+
   async function doCheckout() {
     setCheckoutLoading(true);
     try {
-      await api.put(`/api/checkin/checkout/${id}/complete`, { condition_notes: checkoutNotes });
+      await api.put(`/api/checkin/checkout/${id}/complete`, { condition_notes: checkoutNotes, bill_to_agent: billToAgent });
       setCheckingOut(false);
       load();
     } catch (err) {
@@ -282,6 +298,8 @@ export default function BookingDetail() {
 
   const deposit = booking.payments?.find(p => p.type === 'deposit');
   const balance = booking.payments?.find(p => p.type === 'balance');
+  const bookingSource = sources.find(s => s.id === booking.source);
+  const cityLedgerSource = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(bookingSource?.payment_status);
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
@@ -301,7 +319,7 @@ export default function BookingDetail() {
             );
           })()}
           {booking.status === 'checked_in' && (
-            <button className="btn btn-primary" onClick={() => { setCheckingOut(true); setCheckoutNotes(''); }}>Check Out</button>
+            <button className="btn btn-primary" onClick={openCheckout}>Check Out</button>
           )}
           {booking.status === 'pending' &&
             parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
@@ -741,9 +759,25 @@ export default function BookingDetail() {
               <div style={{ fontSize: 13, marginBottom: 12 }}>
                 <strong>{booking.unit_name}</strong> · Check-out {booking.check_out_date?.slice(0,10)}
               </div>
-              {balance && !balance.status === 'received' && parseFloat(balance.amount) > 0 && (
+              {cityLedgerSource && (
+                <div style={{ marginBottom: 12, fontSize: 13, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '10px 12px' }}>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={billToAgent} onChange={e => setBillToAgent(e.target.checked)} />
+                    <span>
+                      Bill <strong>{bookingSource?.label || 'the agent'}</strong> for this stay — the folio closes as
+                      billed-to-agent (settled later via the agent statement) instead of collecting from the guest.
+                    </span>
+                  </label>
+                </div>
+              )}
+              {!cityLedgerSource && balance && balance.status !== 'received' && parseFloat(balance.amount) > 0 && (
                 <div className="alert alert-error" style={{ marginBottom: 12 }}>
                   ⚠ Balance of <strong>{fmtIDR(balance.amount)}</strong> not received. Collect before completing check-out.
+                </div>
+              )}
+              {checkoutCredit && checkoutCredit.would_exceed && (
+                <div style={{ marginBottom: 12, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>
+                  ⚠ {checkoutCredit.label} is over its credit limit — {fmtIDR(checkoutCredit.current_outstanding)} outstanding vs {fmtIDR(checkoutCredit.credit_limit)} limit.
                 </div>
               )}
               <div className="form-group">

@@ -24,6 +24,19 @@ function SourceBillingNote({ source }) {
   );
 }
 
+// Warn-only heads-up when a booking would push an agent source past its
+// credit limit. Never blocks submission (client decision, locked 2026-08-31).
+function CreditLimitNote({ check }) {
+  if (!check || !check.would_exceed) return null;
+  const fmt = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+  return (
+    <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>
+      ⚠ {check.label} would be over its credit limit — {fmt(check.projected_outstanding)} projected vs {fmt(check.credit_limit)} limit
+      ({fmt(check.over_by)} over). The booking is still allowed; settle the agent statement to bring the balance down.
+    </div>
+  );
+}
+
 function sourceMatchesAllotment(source, allotmentChannel) {
   if (allotmentChannel === 'buffer') return false;
   if (source === 'walkin') return allotmentChannel === 'direct';
@@ -92,6 +105,7 @@ export default function NewBooking() {
   const [priceSuggestions, setPriceSuggestions] = useState([]);
   const [availabilities, setAvailabilities] = useState([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [creditCheck, setCreditCheck] = useState(null);
 
   const isGroup = rooms.length > 1;
 
@@ -134,6 +148,17 @@ export default function NewBooking() {
     : form.discount_type === 'fixed' ? Math.min(dValue, groupTotal)
     : Math.round(groupTotal * dValue / 100);
   const netAmt = groupTotal - discountAmt;
+
+  useEffect(() => {
+    const src = sources.find(s => s.id === form.source);
+    if (!src || src.credit_limit == null) { setCreditCheck(null); return; }
+    const t = setTimeout(() => {
+      api.get(`/api/settings/booking-sources/${form.source}/credit-check?amount=${netAmt}`)
+        .then(r => setCreditCheck(r.data))
+        .catch(() => setCreditCheck(null));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form.source, netAmt, sources]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -277,6 +302,7 @@ export default function NewBooking() {
               ))}
             </select>
             <SourceBillingNote source={sources.find(s => s.id === form.source)} />
+            <CreditLimitNote check={creditCheck} />
           </div>
         </div>
 

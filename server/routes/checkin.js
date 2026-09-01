@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const agentBilling = require('../services/agentBillingService');
 const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
@@ -148,12 +149,22 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
 
 // PUT /api/checkout/:bookingId/complete
 router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
-  const { condition_notes } = req.body;
+  const { condition_notes, bill_to_agent } = req.body;
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
     if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    // Agent billing: mark the folio billed-to-agent (city ledger) and/or post
+    // the agent commission, all inside this checkout transaction.
+    const settlement = await agentBilling.settleCheckout(client, {
+      propertyId: req.propertyId,
+      bookingId: req.params.bookingId,
+      billToAgent: !!bill_to_agent,
+      actorUserId: req.user.id,
+    });
+    if (settlement.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: settlement.error }); }
 
     await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
     await client.query("UPDATE units SET status = 'available' WHERE id = $1 AND property_id = $2", [booking.unit_id, req.propertyId]);
@@ -173,7 +184,12 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     await recalcGuestTier(client, booking.guest_id, req.propertyId);
 
     await client.query('COMMIT');
-    res.json({ message: 'Check-out complete', booking_id: req.params.bookingId });
+    res.json({
+      message: 'Check-out complete',
+      booking_id: req.params.bookingId,
+      folio_status: settlement.folio_status,
+      commission_posted: settlement.commission_posted,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

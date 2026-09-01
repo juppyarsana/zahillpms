@@ -3,6 +3,7 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const modules = require('../modules');
+const agentBilling = require('../services/agentBillingService');
 
 const ownerOnly = [auth, requireRole('owner')];
 
@@ -220,6 +221,38 @@ router.put('/booking-sources/:id', auth, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Source not found' });
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Credit-limit check for an agent source (Slice B). Warn-only — the client
+// shows a heads-up, it never blocks. `amount` is the prospective new
+// booking's net total; omit (or 0) to just read the current outstanding.
+router.get('/booking-sources/:id/credit-check', auth, async (req, res) => {
+  try {
+    const { rows: [source] } = await db.query(
+      'SELECT id, label, credit_limit FROM booking_sources WHERE id = $1 AND property_id = $2',
+      [req.params.id, req.propertyId]
+    );
+    if (!source) return res.status(404).json({ error: 'Source not found' });
+
+    const amount = Math.max(0, parseFloat(req.query.amount) || 0);
+    const current_outstanding = await agentBilling.getSourceOutstanding(req.propertyId, source.id);
+    const projected_outstanding = Math.round((current_outstanding + amount) * 100) / 100;
+    const credit_limit = source.credit_limit == null ? null : parseFloat(source.credit_limit);
+    const would_exceed = credit_limit != null && projected_outstanding > credit_limit;
+
+    res.json({
+      source_id: source.id,
+      label: source.label,
+      credit_limit,
+      current_outstanding,
+      amount,
+      projected_outstanding,
+      would_exceed,
+      over_by: would_exceed ? Math.round((projected_outstanding - credit_limit) * 100) / 100 : 0,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

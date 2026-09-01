@@ -4,59 +4,12 @@ const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
+const { loadFolio, round2 } = require('../services/folioService');
 
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
-function round2(n) {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
 function fmtIDR(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
-}
-
-// Shared by GET /:bookingId and GET /:bookingId/invoice
-async function loadFolio(bookingId, propertyId) {
-  const bookingQ = db.query(
-    `SELECT b.id, b.check_in_date, b.check_out_date, g.name as guest_name, u.name as unit_name
-     FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
-     WHERE b.id = $1 AND b.property_id = $2`,
-    [bookingId, propertyId]
-  );
-  const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, u.name as posted_by_name
-     FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
-     WHERE fc.booking_id = $1 AND fc.is_voided = false
-     ORDER BY fc.posted_at`,
-    [bookingId]
-  );
-  const settingsQ = db.query(
-    `SELECT tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email, logo_url
-     FROM property_settings WHERE property_id = $1`,
-    [propertyId]
-  );
-  const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [bookingId]);
-
-  const [{ rows: [booking] }, { rows: charges }, { rows: [settings] }, { rows: payments }] =
-    await Promise.all([bookingQ, chargesQ, settingsQ, paymentsQ]);
-
-  if (!booking) return null;
-
-  const subtotal = round2(charges.reduce((sum, c) => sum + parseFloat(c.amount), 0));
-  const tax_rate = parseFloat(settings?.tax_rate ?? 0);
-  const service_charge_rate = parseFloat(settings?.service_charge_rate ?? 0);
-  const service_charge_amount = round2(subtotal * service_charge_rate / 100);
-  // Indonesian hotel practice: VAT (PB1) is charged on room + service charge combined.
-  const tax_amount = round2((subtotal + service_charge_amount) * tax_rate / 100);
-  const total = round2(subtotal + service_charge_amount + tax_amount);
-  const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
-  const balance_due = round2(total - receivedTotal);
-
-  return {
-    booking, charges, payments,
-    subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
-    property: settings || {},
-  };
 }
 
 // GET /api/folio/group/:groupId — master folio: aggregates each room's own

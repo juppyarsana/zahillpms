@@ -203,12 +203,24 @@ Per-property tax and service charge rates, applied on folio and invoice.
     select + a conditional "Agent Billing" sub-form + row badges; `NewBooking.jsx`
     shows a muted billing-arrangement note when a non-`normal` source is picked.
     **No behavior change to booking creation or checkout.**
-  - **Slice B — not started.** City-ledger checkout: when a booking's source has
-    `payment_status` `city_ledger`/`city_ledger_payment`, settlement closes the
-    folio as billed-to-agent (`pending_agent_invoice`) instead of requiring guest
-    payment. New `agent_commissions` ledger computed at checkout/night-audit for
-    `commission`/`commission_and_city_ledger`. Credit-limit warning at booking
-    creation + checkout (needs the AR-outstanding sum).
+  - **Slice B — ✅ Implemented 2026-09-01 (migration 042).** New nullable
+    `bookings.folio_status` (`pending_agent_invoice`) + `agent_commissions`
+    ledger table (`booking_id` unique, one row per booking). New
+    `server/services/agentBillingService.js` — `settleCheckout(client, …)`
+    (transaction-participant, called from `checkin.js`'s `PUT
+    /checkout/:bookingId/complete`, which gained an optional `bill_to_agent`
+    body flag) sets `folio_status` for `city_ledger`/`city_ledger_payment`
+    sources and posts a commission (`INSERT … ON CONFLICT (booking_id) DO
+    NOTHING`) for `commission`/`commission_and_city_ledger` sources; commission
+    is computed **at checkout only** (single code path — night audit doesn't
+    run checkouts). `loadFolio` extracted to `server/services/folioService.js`
+    and now `LEFT JOIN`s `booking_sources` (exposes `source_payment_status`).
+    Credit-limit check: `GET /api/settings/booking-sources/:id/credit-check?amount=`
+    → `agentBillingService.getSourceOutstanding` (derived AR sum over folios);
+    surfaced as a **non-blocking** amber note in `NewBooking.jsx` and the
+    `BookingDetail.jsx` checkout modal (which also got a "Bill to {agent}"
+    checkbox for city-ledger sources, and a fix for a dead-condition bug that
+    stopped the "balance not received" warning ever rendering).
   - **Slice C — not started.** `GET /api/settings/booking-sources/:id/statement`
     (outstanding balance + aging), `POST .../invoice` (consolidated PDF),
     `POST .../payments` (record against balance, auto oldest-first + manual
@@ -552,7 +564,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 042
+## Next migration number: 043
 
 ---
 
