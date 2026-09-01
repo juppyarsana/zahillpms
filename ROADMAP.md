@@ -221,11 +221,22 @@ Per-property tax and service charge rates, applied on folio and invoice.
     `BookingDetail.jsx` checkout modal (which also got a "Bill to {agent}"
     checkbox for city-ledger sources, and a fix for a dead-condition bug that
     stopped the "balance not received" warning ever rendering).
-  - **Slice C — not started.** `GET /api/settings/booking-sources/:id/statement`
-    (outstanding balance + aging), `POST .../invoice` (consolidated PDF),
-    `POST .../payments` (record against balance, auto oldest-first + manual
-    adjust). New per-agent statement/aging page (`financial`, owner-only).
-    Reports page gains AR Aging. (Purchasing, Inventory Cost Control, Accounts Payable, Cash & Bank, Recipe Costing)
+  - **Slice C — ✅ Implemented 2026-09-02 (migration 043).** New `agent_invoices`,
+    `agent_payments`, `agent_payment_allocations` tables + `bookings.agent_invoice_id`;
+    `bookings.folio_status` now also uses the `'invoiced'` / `'paid'` values Slice B
+    reserved. New `server/services/agentStatementService.js` (per-booking ledger,
+    aging buckets, record/edit/void payment with auto oldest-first allocation,
+    consolidated invoice creation) + `server/services/agentInvoicePdf.js`
+    (one-line-per-booking pdfkit invoice, `folio.js` left untouched). New
+    `server/routes/agents.js` — `GET /api/agents` (AR aging list),
+    `GET /api/agents/:sourceId` (full statement), `POST .../payments`,
+    `PATCH/DELETE /api/agents/payments/:id`, `POST .../invoices`,
+    `GET /api/agents/invoices/:id/pdf`, `PATCH /api/agents/commissions/:id`
+    — mounted `auth + moduleGuard('financial')`, owner-only per handler.
+    New `client/src/pages/Agents.jsx` (`/agents` aging list → `/agents/:sourceId`
+    statement with Record Payment / Generate Invoice modals) — nav link in
+    `Sidebar.jsx`, "Statement →" per-agent link in `Settings.jsx`. **AR Aging
+    lives on this page, not a separate Reports page** (no `Reports.jsx` existed).
 
 > Scoped 2026-08-17, validated against two independent references —
 > GuestPro (Indonesian-market PMS) and VHP (the client's own prior system,
@@ -564,7 +575,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 043
+## Next migration number: 044
 
 ---
 

@@ -31,6 +31,7 @@ import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsBoardCards from './pages/SettingsBoardCards';
 import NightAudit from './pages/NightAudit';
+import Agents from './pages/Agents';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
@@ -237,6 +238,8 @@ export default function App() {
                   <Route path="/settings/board"   element={<RequireOwner><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireOwner>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
                   <Route path="/night-audit"      element={<RequireOwner><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireOwner>} />
+                  <Route path="/agents"          element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
+                  <Route path="/agents/:sourceId" element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                 </Routes>
               </Layout>
             </CallProvider>

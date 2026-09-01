@@ -83,6 +83,7 @@ export default function Sidebar() {
         {can('sales') && hasModule('sales')            && <SidebarLink to="/sales" icon="🛍" label="Sales" />}
         {can('activities') && hasModule('activities')  && <SidebarLink to="/activities" icon="🥾" label="Activities" />}
         {user?.role === 'owner' && hasModule('financial') && <SidebarLink to="/night-audit" icon="🌙" label="Night Audit" />}
+        {user?.role === 'owner' && hasModule('financial') && <SidebarLink to="/agents" icon="🧾" label="Agent AR" />}
 
         {showRatesSection && (
           <SidebarSection id="rates" label="Rates & Channels" defaultOpen>

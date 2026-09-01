@@ -4,6 +4,19 @@ function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+// The one place the folio money formula lives. Indonesian hotel practice:
+// service charge on the subtotal, then VAT (PB1) on subtotal + service charge.
+// Reused by loadFolio and by agentStatementService (per-booking agent AR).
+function computeFolioTotals(subtotal, taxRate, serviceChargeRate) {
+  const sub = round2(subtotal);
+  const service_charge_rate = parseFloat(serviceChargeRate ?? 0);
+  const tax_rate = parseFloat(taxRate ?? 0);
+  const service_charge_amount = round2(sub * service_charge_rate / 100);
+  const tax_amount = round2((sub + service_charge_amount) * tax_rate / 100);
+  const total = round2(sub + service_charge_amount + tax_amount);
+  return { subtotal: sub, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total };
+}
+
 // Loads a booking's folio: charges, payments, and the derived money totals
 // (subtotal → service charge → tax → total → balance_due). Shared by
 // routes/folio.js (GET /:bookingId, GET /:bookingId/invoice, the group
@@ -44,13 +57,9 @@ async function loadFolio(bookingId, propertyId) {
 
   if (!booking) return null;
 
-  const subtotal = round2(charges.reduce((sum, c) => sum + parseFloat(c.amount), 0));
-  const tax_rate = parseFloat(settings?.tax_rate ?? 0);
-  const service_charge_rate = parseFloat(settings?.service_charge_rate ?? 0);
-  const service_charge_amount = round2(subtotal * service_charge_rate / 100);
-  // Indonesian hotel practice: VAT (PB1) is charged on room + service charge combined.
-  const tax_amount = round2((subtotal + service_charge_amount) * tax_rate / 100);
-  const total = round2(subtotal + service_charge_amount + tax_amount);
+  const rawSubtotal = charges.reduce((sum, c) => sum + parseFloat(c.amount), 0);
+  const { subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
+    computeFolioTotals(rawSubtotal, settings?.tax_rate, settings?.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
 
@@ -61,4 +70,4 @@ async function loadFolio(bookingId, propertyId) {
   };
 }
 
-module.exports = { loadFolio, round2 };
+module.exports = { loadFolio, round2, computeFolioTotals };

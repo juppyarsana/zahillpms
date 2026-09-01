@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
 
@@ -123,6 +124,7 @@ function SourceAgentFields({ form, set }) {
 }
 
 export default function Settings() {
+  const nav = useNavigate();
   const { sources, paymentMethods, reload } = useSettings();
 
   const [editingId, setEditingId] = useState(EDITING_NONE); // 'source:direct' | 'method:cash'
@@ -287,6 +289,9 @@ export default function Settings() {
                   {!s.is_active && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Inactive</span>}
                 </div>
                 <div className="flex gap-2">
+                  {AGENT_TYPES.includes(s.source_type) && (
+                    <button className="btn btn-sm btn-secondary" onClick={() => nav(`/agents/${s.id}`)}>Statement →</button>
+                  )}
                   <button className="btn btn-sm btn-secondary" onClick={() => startEdit('source', s)}>Edit</button>
                   <button className="btn btn-sm btn-secondary" onClick={() => toggleActive('source', s.id, s.is_active)}>
                     {s.is_active ? 'Deactivate' : 'Activate'}
