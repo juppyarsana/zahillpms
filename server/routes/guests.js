@@ -70,7 +70,8 @@ router.get('/:id', auth, async (req, res) => {
     if (!guest) return res.status(404).json({ error: 'Guest not found' });
 
     const totalNights = stays.reduce((sum, s) => sum + (s.nights || 0), 0);
-    const totalSpend = stays.reduce((sum, s) => sum + parseFloat(s.total_amount || 0), 0);
+    const totalSpend = stays.reduce((sum, s) =>
+      sum + parseFloat(s.room_revenue ?? s.total_amount ?? 0) + parseFloat(s.fnb_revenue || 0), 0);
 
     res.json({ ...guest, preferences: prefs, stay_history: stays, lifetime: { stays: stays.length, nights: totalNights, spend: totalSpend } });
   } catch (err) {

@@ -1,7 +1,7 @@
 // Maps each module to its route file names. Used by middleware/moduleGuard.js
 // and the GET /api/settings/modules endpoint (frontend nav visibility).
 module.exports = {
-  reservations:    { label: 'Reservations',    routes: ['bookings', 'checkin', 'allotments', 'pricing'] },
+  reservations:    { label: 'Reservations',    routes: ['bookings', 'checkin', 'allotments', 'pricing', 'ratePlans'] },
   front_desk:      { label: 'Front Desk',      routes: ['checkin'] },
   guest_crm:       { label: 'Guest CRM',       routes: ['guests', 'loyalty'] },
   financial:       { label: 'Financial',       routes: ['payments', 'reports', 'nightAudit', 'folio'] },

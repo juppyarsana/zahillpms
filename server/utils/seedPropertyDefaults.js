@@ -100,6 +100,14 @@ async function seedPropertyDefaults(propertyId) {
     );
   }
 
+  // Default rate plans — RO (default) + BB. Owner prices breakfast in Settings.
+  await db.query(
+    `INSERT INTO rate_plans (property_id, code, name, includes_breakfast, meal_price, is_default, sort_order)
+     VALUES ($1,'RO','Room Only',false,0,true,0), ($1,'BB','Bed & Breakfast',true,0,false,1)
+     ON CONFLICT (property_id, code) DO NOTHING`,
+    [propertyId]
+  );
+
   // Seed all modules — all enabled by default except room_controller
   const moduleEntries = Object.keys(MODULES).map(module => ({
     module,

@@ -73,6 +73,7 @@ app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/bo
 app.use('/api/checkin', auth, moduleGuard('front_desk'), require('./routes/checkin'));
 app.use('/api/allotments', auth, moduleGuard('reservations'), require('./routes/allotments'));
 app.use('/api/pricing', auth, moduleGuard('reservations'), require('./routes/pricing'));
+app.use('/api/rate-plans', auth, moduleGuard('reservations'), require('./routes/ratePlans'));
 app.use('/api/guests', auth, moduleGuard('guest_crm'), require('./routes/guests'));
 app.use('/api/loyalty', auth, moduleGuard('guest_crm'), require('./routes/loyalty'));
 app.use('/api/payments', auth, moduleGuard('financial'), require('./routes/payments'));

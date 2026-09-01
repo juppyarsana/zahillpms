@@ -4,9 +4,17 @@ import api from '../services/api';
 const STATUS_OPTIONS = ['available', 'occupied', 'maintenance', 'blocked'];
 const STATUS_BADGE = { available: 'green', occupied: 'yellow', maintenance: 'red', blocked: 'gray' };
 
+const BED_CONFIGS = [
+  ['double', 'Double bed'],
+  ['twin', 'Twin beds'],
+  ['twin_or_double', 'Twin or double'],
+  ['other', 'Other'],
+];
+const bedLabel = v => { const m = BED_CONFIGS.find(b => b[0] === v); return m ? m[1] : (v || '—'); };
+
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
-const EMPTY_UNIT = { name: '', type: '', description: '', base_rate: '', max_guests: 2 };
+const EMPTY_UNIT = { name: '', type: '', description: '', base_rate: '', max_guests: 2, bed_config: 'double' };
 
 export default function UnitSettings() {
   const [units, setUnits] = useState([]);
@@ -35,6 +43,7 @@ export default function UnitSettings() {
       base_rate: unit.base_rate,
       max_guests: unit.max_guests,
       status: unit.status,
+      bed_config: unit.bed_config || 'double',
       controller_id: unit.controller_id || '',
     });
     setError('');
@@ -129,11 +138,19 @@ export default function UnitSettings() {
                     <input className="form-input" type="number" min={1} max={10} value={form.max_guests} onChange={e => set('max_guests', parseInt(e.target.value))} />
                   </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select className="form-select" value={form.status} onChange={e => set('status', e.target.value)}>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select className="form-select" value={form.status} onChange={e => set('status', e.target.value)}>
+                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Bed Configuration</label>
+                    <select className="form-select" value={form.bed_config || 'double'} onChange={e => set('bed_config', e.target.value)}>
+                      {BED_CONFIGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">
@@ -170,7 +187,7 @@ export default function UnitSettings() {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>{unit.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {unit.type} · {fmtIDR(unit.base_rate)}/night · Max {unit.max_guests} guests
+                    {unit.type} · {fmtIDR(unit.base_rate)}/night · Max {unit.max_guests} guests · {bedLabel(unit.bed_config || 'double')}
                     {unit.controller_id && <> · Room ID: <strong>{unit.controller_id}</strong></>}
                   </div>
                   {unit.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{unit.description}</div>}
@@ -210,6 +227,12 @@ export default function UnitSettings() {
               <div className="form-group">
                 <label className="form-label">Max Guests</label>
                 <input className="form-input" type="number" min={1} max={10} value={addForm.max_guests} onChange={e => setA('max_guests', parseInt(e.target.value))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Bed Configuration</label>
+                <select className="form-select" value={addForm.bed_config} onChange={e => setA('bed_config', e.target.value)}>
+                  {BED_CONFIGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
               </div>
             </div>
             {addError && <div className="alert alert-error">{addError}</div>}

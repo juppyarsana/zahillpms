@@ -82,12 +82,18 @@ function AllotmentNote({ allotment, source, checkIn, sources }) {
   );
 }
 
-const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '' };
+const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '' };
+
+const BED_PREFS = [
+  ['', 'No preference'],
+  ['double', 'Double bed'],
+  ['twin', 'Twin beds'],
+];
 
 export default function NewBooking() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
-  const { sources } = useSettings();
+  const { sources, ratePlans } = useSettings();
   const [units, setUnits] = useState([]);
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
@@ -113,6 +119,13 @@ export default function NewBooking() {
     api.get('/api/units').then(r => setUnits(r.data));
   }, []);
 
+  // Default every room's rate plan to the property default once plans load.
+  const defaultRatePlanId = (ratePlans.find(p => p.is_default) || ratePlans[0])?.id || '';
+  useEffect(() => {
+    if (!defaultRatePlanId) return;
+    setRooms(rs => rs.map(r => r.rate_plan_id ? r : { ...r, rate_plan_id: defaultRatePlanId }));
+  }, [defaultRatePlanId]);
+
   useEffect(() => {
     if (guestSearch.length >= 2) {
       api.get(`/api/guests?search=${encodeURIComponent(guestSearch)}`).then(r => setGuests(r.data));
@@ -122,15 +135,16 @@ export default function NewBooking() {
   }, [guestSearch]);
 
   const unitIdsKey = rooms.map(r => r.unit_id).join(',');
+  const suggestKey = rooms.map(r => `${r.unit_id}:${r.rate_plan_id}:${r.num_guests}`).join(',');
 
   useEffect(() => {
     if (!form.check_in_date || !form.check_out_date) { setPriceSuggestions([]); return; }
     Promise.all(rooms.map(r => r.unit_id
-      ? api.get(`/api/pricing/suggest?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`).then(res => res.data).catch(() => null)
+      ? api.get(`/api/pricing/suggest?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}&rate_plan_id=${r.rate_plan_id || ''}&num_guests=${r.num_guests || 1}`).then(res => res.data).catch(() => null)
       : Promise.resolve(null)
     )).then(setPriceSuggestions);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unitIdsKey, form.check_in_date, form.check_out_date]);
+  }, [suggestKey, form.check_in_date, form.check_out_date]);
 
   useEffect(() => {
     if (!form.check_in_date || !form.check_out_date || form.check_out_date <= form.check_in_date) { setAvailabilities([]); return; }
@@ -193,6 +207,8 @@ export default function NewBooking() {
           deposit_amount,
           discount_type: form.discount_type || null,
           discount_value: dValue,
+          rate_plan_id: room.rate_plan_id || null,
+          bed_preference: room.bed_preference || null,
         });
         nav(`/reservations/${res.data.id}`);
       } else {
@@ -206,7 +222,7 @@ export default function NewBooking() {
           group_discount_type: form.discount_type || null,
           group_discount_value: dValue,
           group_deposit_amount: deposit_amount,
-          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount })),
+          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null })),
         });
         nav(`/reservations/group/${res.data.group.id}`);
       }
@@ -309,7 +325,8 @@ export default function NewBooking() {
         {rooms.map((room, i) => {
           const priceSuggestion = priceSuggestions[i];
           const availability = availabilities[i];
-          const suggestedTotal = priceSuggestion?.suggested_total || 0;
+          const suggestedTotal = priceSuggestion?.grand_total || 0;
+          const unit = units.find(u => u.id === room.unit_id);
           return (
             <div className="card mb-3" key={i}>
               <div className="card-title flex" style={{ justifyContent: 'space-between' }}>
@@ -323,12 +340,33 @@ export default function NewBooking() {
                   <label className="form-label">Unit *</label>
                   <select className="form-select" value={room.unit_id} onChange={e => setRoom(i, 'unit_id', e.target.value)} required>
                     <option value="">Select unit…</option>
-                    {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {units.map(u => <option key={u.id} value={u.id}>{u.name}{u.type ? ` · ${u.type}` : ''}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Number of Guests</label>
-                  <input className="form-input" type="number" min={1} max={10} value={room.num_guests} onChange={e => setRoom(i, 'num_guests', parseInt(e.target.value))} />
+                  <input className="form-input" type="number" min={1} max={10} value={room.num_guests} onChange={e => setRoom(i, 'num_guests', parseInt(e.target.value) || 1)} />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Rate Plan</label>
+                  <select className="form-select" value={room.rate_plan_id} onChange={e => setRoom(i, 'rate_plan_id', e.target.value)}>
+                    {ratePlans.length === 0 && <option value="">Room Only</option>}
+                    {ratePlans.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Bed Preference</label>
+                  <select className="form-select" value={room.bed_preference} onChange={e => setRoom(i, 'bed_preference', e.target.value)}>
+                    {BED_PREFS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                  {unit?.bed_config && unit.bed_config !== 'twin_or_double' && room.bed_preference && room.bed_preference !== unit.bed_config && (
+                    <div style={{ fontSize: 11, color: '#92400e', marginTop: 3 }}>
+                      This room is set up as {unit.bed_config === 'twin' ? 'twin' : 'double'} — staff may need to reconfigure it.
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -362,23 +400,24 @@ export default function NewBooking() {
               )}
 
               <div className="form-group">
-                <label className="form-label">Total Amount (IDR)</label>
+                <label className="form-label">Total Amount (IDR) — what the guest pays, incl. tax &amp; service</label>
                 <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
                   onChange={e => setRoom(i, 'total_amount', e.target.value)} />
-                {priceSuggestion && !room.total_amount && suggestedTotal > 0 && (
-                  <div style={{ marginTop: 6 }}>
+                {priceSuggestion && suggestedTotal > 0 && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)' }}>
                     {priceSuggestion.period && (
-                      <div style={{ fontSize: 12, marginBottom: 4 }}>
-                        <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600 }}>
-                          {priceSuggestion.period.name}
-                        </span>
-                        {' '}applied · Rp {Number(priceSuggestion.rate_per_night).toLocaleString('id-ID')}/night
-                      </div>
+                      <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600, marginRight: 6 }}>
+                        {priceSuggestion.period.name}
+                      </span>
                     )}
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
-                      Use Rp {Number(suggestedTotal).toLocaleString('id-ID')}
-                      {!priceSuggestion.period && ' (base rate)'}
-                    </button>
+                    Room Rp {Number(priceSuggestion.room_rate_per_night).toLocaleString('id-ID')}/night
+                    {priceSuggestion.meal_per_night > 0 && <> · {priceSuggestion.rate_plan?.name || 'Breakfast'} Rp {Number(priceSuggestion.meal_per_night).toLocaleString('id-ID')}/night ({room.num_guests} guest{room.num_guests > 1 ? 's' : ''})</>}
+                    {' · '}<strong>Grand total Rp {Number(suggestedTotal).toLocaleString('id-ID')}</strong>
+                    {!room.total_amount && (
+                      <button type="button" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }} onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
+                        Use this
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

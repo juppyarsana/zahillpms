@@ -89,6 +89,7 @@ export default function Sidebar() {
           <SidebarSection id="rates" label="Rates & Channels" defaultOpen>
             {can('allotments') && <SidebarLink to="/allotment" icon="📡" label="Channel" />}
             {can('pricing')    && <SidebarLink to="/pricing"   icon="💰" label="Pricing" />}
+            {user?.role === 'owner' && hasModule('reservations') && <SidebarLink to="/settings/rate-plans" icon="🍳" label="Rate Plans" />}
           </SidebarSection>
         )}
 

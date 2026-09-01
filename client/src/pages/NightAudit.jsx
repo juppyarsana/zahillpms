@@ -28,7 +28,7 @@ function ExpandedRow({ run }) {
 
   return (
     <tr>
-      <td colSpan={7} style={{ padding: '0 16px 16px', background: '#F9FAFB' }}>
+      <td colSpan={8} style={{ padding: '0 16px 16px', background: '#F9FAFB' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, paddingTop: 12 }}>
 
           <div>
@@ -151,7 +151,7 @@ export default function NightAudit() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                {['Date', 'Triggered by', 'Occupied', 'Room Revenue', 'Other Revenue', 'No-shows', 'Pmt Due'].map(h => (
+                {['Date', 'Triggered by', 'Occupied', 'Room Rev (net)', 'F&B Rev (net)', 'Other Rev', 'No-shows', 'Pmt Due'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700,
                     color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                     {h}
@@ -187,6 +187,7 @@ export default function NightAudit() {
                       {run.units_occupied ?? '—'}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>{fmtIDR(run.room_revenue)}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13 }}>{fmtIDR(run.fnb_revenue)}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>{fmtIDR(run.ancillary_revenue)}</td>
                     <td style={{ padding: '12px 16px' }}>
                       {noShowCount > 0

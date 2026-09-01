@@ -67,9 +67,12 @@ router.get('/summary', auth, async (req, res) => {
       `, [req.propertyId]),
       db.query(`
         SELECT
-          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings
+          (SELECT COALESCE(SUM(COALESCE(room_revenue, total_amount)), 0) FROM bookings
            WHERE property_id = $1 AND status IN ('checked_in','checked_out')
              AND DATE_TRUNC('month', check_in_date) = DATE_TRUNC('month', NOW())) as room_revenue_mtd,
+          (SELECT COALESCE(SUM(fnb_revenue), 0) FROM bookings
+           WHERE property_id = $1 AND status IN ('checked_in','checked_out')
+             AND DATE_TRUNC('month', check_in_date) = DATE_TRUNC('month', NOW())) as fnb_revenue_mtd,
           (SELECT COALESCE(SUM(total_amount), 0) FROM sales
            WHERE property_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())) as ancillary_revenue_mtd
       `, [req.propertyId]),

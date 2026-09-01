@@ -70,7 +70,7 @@ Not every property needs every feature (e.g. a property with no ESP32 hardware s
 
 | Module | Routes gated | Default |
 |---|---|---|
-| `reservations` | bookings, checkin, allotments, pricing | ✅ on |
+| `reservations` | bookings, checkin, allotments, pricing, ratePlans | ✅ on |
 | `front_desk` | checkin | ✅ on |
 | `guest_crm` | guests, loyalty | ✅ on |
 | `financial` | payments, reports, nightAudit, folio | ✅ on |
@@ -200,7 +200,7 @@ One backend, one database, many properties. The client app, Room Display, and TV
 - `public` — unauthenticated endpoints callable pre-login/pre-JWT (e.g. property branding lookup by slug for the login screen)
 - `admin` — superadmin: property CRUD, module toggles, per-property user management (separate `authSuperAdmin` layer)
 - `units`, `users`, `settings`, `dashboard`, `display` — core, always on
-- `bookings`, `checkin`, `allotments`, `pricing` — reservations + front desk
+- `bookings`, `checkin`, `allotments`, `pricing`, `ratePlans` — reservations + front desk (`ratePlans` = the "arrangement" per booking: RO/BB/HB/FB + a flat net per-pax-per-night meal price; owner CRUD at `/settings/rate-plans`)
 - `guests`, `loyalty` — guest CRM
 - `payments`, `reports`, `nightAudit`, `folio`, `agents` — financial (`agents` = Agent Accounts / Direct Billing #13: per-agent statement, AR aging, agent payments + allocations, consolidated invoice PDF; owner-only per handler)
 - `tasks` — operations kanban
@@ -258,8 +258,9 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 041 | Agent Accounts / Direct Billing (Phase D #13, Slice A) — `booking_sources` generalized with `source_type` (walkin/direct/booking_engine/ota/travel_agent/company/wholesaler), `payment_status` (normal/city_ledger/city_ledger_payment/commission/commission_and_city_ledger), and agent billing fields (contact, NPWP `tax_id`, `billing_address`, `credit_terms_days`, `credit_limit`, `commission_type`/`commission_value`). Additive only — `bookings.source` unchanged, `is_ota` kept. |
 | 042 | Agent Accounts / Direct Billing (Phase D #13, Slice B) — nullable `bookings.folio_status` (`pending_agent_invoice`), new `agent_commissions` ledger (`booking_id` unique). City-ledger checkout + commission posting via `server/services/agentBillingService.js`; `loadFolio` extracted to `server/services/folioService.js`. Additive only. |
 | 043 | Agent Accounts / Direct Billing (Phase D #13, Slice C) — `agent_invoices`, `agent_payments`, `agent_payment_allocations` tables + `bookings.agent_invoice_id`. `folio_status` now also uses `'invoiced'`/`'paid'`. Statement/aging/payments/consolidated-invoice via `server/services/agentStatementService.js` + `server/routes/agents.js` + `client/src/pages/Agents.jsx`. Additive only. |
+| 044 | Rate plans ("arrangements") + bed config + room/F&B net revenue split (**Slice 1**). New `rate_plans` (RO/BB/HB/FB per property, flat `meal_price` net per pax/night, one `is_default`). `units.bed_config`, `bookings.bed_preference` (double/twin/twin_or_double/other). `bookings.rate_plan_id` + `room_revenue`/`fnb_revenue` (NET, post-discount; `computeFolioTotals(room_revenue+fnb_revenue).total ≈ total_amount−discount`). `folio_charges.service_date` + partial unique index (for Slice 2 per-night posting). `night_audit_runs.fnb_revenue`. Backfill: `room_revenue = (total_amount−discount)/F`. **Reports/dashboard/night-audit/loyalty room-revenue now NET** (visible drop vs the old gross `total_amount` sum). |
 
-**Next migration number: 044** (keep `ROADMAP.md` in sync when you add one).
+**Next migration number: 045** (keep `ROADMAP.md` in sync when you add one).
 
 ---
 

@@ -16,7 +16,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
   const { roomId } = req.params;
   try {
     const { rows: unitRows } = await db.query(
-      `SELECT u.id, u.name, u.controller_id, u.property_id,
+      `SELECT u.id, u.name, u.controller_id, u.property_id, u.bed_config,
               rcs.connected, rcs.rgb, rcs.last_seen
        FROM units u
        LEFT JOIN room_controller_status rcs ON rcs.controller_id = u.controller_id
@@ -27,7 +27,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     const unit = unitRows[0];
 
     const { rows: bookingRows } = await db.query(
-      `SELECT b.id, g.name AS guest_name, b.check_in_date, b.check_out_date, b.num_guests, b.special_requests
+      `SELECT b.id, g.name AS guest_name, b.check_in_date, b.check_out_date, b.num_guests, b.special_requests, b.bed_preference
        FROM bookings b
        JOIN guests g ON g.id = b.guest_id
        WHERE b.unit_id = $1
@@ -77,7 +77,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     const weather = await getWeather();
 
     res.json({
-      unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id },
+      unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id, bed_config: unit.bed_config },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
       booking: bookingRows[0] || null,
       relays: relayRows,

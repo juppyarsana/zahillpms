@@ -24,15 +24,20 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+const BED_CONFIGS = ['double', 'twin', 'twin_or_double', 'other'];
+
 // POST /api/units  (owner only)
 router.post('/', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests } = req.body;
+  const { name, type, description, base_rate, max_guests, bed_config } = req.body;
   if (!name) return res.status(400).json({ error: 'Unit name is required' });
+  if (bed_config && !BED_CONFIGS.includes(bed_config)) {
+    return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
+  }
   try {
     const { rows } = await db.query(
-      `INSERT INTO units (name, type, description, base_rate, max_guests, property_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [name, type || '', description || '', base_rate || 0, max_guests || 2, req.propertyId]
+      `INSERT INTO units (name, type, description, base_rate, max_guests, bed_config, property_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, type || '', description || '', base_rate || 0, max_guests || 2, bed_config || 'double', req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -49,11 +54,14 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 // `''`/null clears it (mirrors routes/iot.js's controller-assignment
 // endpoint, which keeps working for hardware-owning properties too).
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests, status, controller_id } = req.body;
+  const { name, type, description, base_rate, max_guests, status, controller_id, bed_config } = req.body;
   const controllerIdProvided = controller_id !== undefined;
   const controllerIdValue = controllerIdProvided
     ? (controller_id ? String(controller_id).trim().slice(0, 10) : null)
     : null;
+  if (bed_config && !BED_CONFIGS.includes(bed_config)) {
+    return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
+  }
   try {
     const { rows } = await db.query(
       `UPDATE units SET
@@ -63,9 +71,10 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
         base_rate = COALESCE($4, base_rate),
         max_guests = COALESCE($5, max_guests),
         status = COALESCE($6, status),
+        bed_config = COALESCE($11, bed_config),
         controller_id = CASE WHEN $9 THEN $7 ELSE controller_id END
        WHERE id = $8 AND property_id = $10 RETURNING *`,
-      [name, type, description, base_rate, max_guests, status, controllerIdValue, req.params.id, controllerIdProvided, req.propertyId]
+      [name, type, description, base_rate, max_guests, status, controllerIdValue, req.params.id, controllerIdProvided, req.propertyId, bed_config || null]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
     res.json(rows[0]);

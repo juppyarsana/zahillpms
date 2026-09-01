@@ -2,12 +2,41 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
+const { computeFolioTotals, round2 } = require('../services/folioService');
+const ratePlanService = require('../services/ratePlanService');
+
+// Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
+async function grossFactor(client, propertyId) {
+  const { rows: [s] } = await client.query(
+    'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]
+  );
+  const tax = parseFloat(s?.tax_rate ?? 0) / 100;
+  const sc = parseFloat(s?.service_charge_rate ?? 0) / 100;
+  return { F: (1 + sc) * (1 + tax), tax_rate: s?.tax_rate ?? 0, service_charge_rate: s?.service_charge_rate ?? 0 };
+}
+
+const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
+
+// Split a stay's gross post-discount total into NET room + NET meal amounts.
+// meal is rate-plan-derived and fixed; room absorbs the rest.
+function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue }) {
+  const mealNet = round2(ratePlanService.mealNetPerNight(ratePlan, numGuests) * nights);
+  let roomNet;
+  if (clientRoomRevenue !== undefined && clientRoomRevenue !== null && clientRoomRevenue !== '') {
+    roomNet = round2(parseFloat(clientRoomRevenue));
+  } else {
+    roomNet = round2(grossNet / F - mealNet);
+  }
+  if (roomNet < 0) roomNet = 0;
+  return { roomNet, mealNet };
+}
 
 // GET /api/bookings
 router.get('/', auth, async (req, res) => {
   const { month, year, unit_id, status, group_id } = req.query;
   let query = `
     SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, u.name as unit_name,
+           u.bed_config, rp.code as rate_plan_code, rp.name as rate_plan_name,
            EXISTS(
              SELECT 1 FROM checkin_records cr
              WHERE cr.booking_id = b.id
@@ -17,6 +46,7 @@ router.get('/', auth, async (req, res) => {
     FROM bookings b
     JOIN guests g ON b.guest_id = g.id
     JOIN units u ON b.unit_id = u.id
+    LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
     WHERE b.property_id = $1
   `;
   const params = [req.propertyId];
@@ -42,7 +72,7 @@ router.get('/today/arrivals', auth, async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality,
-             u.name as unit_name,
+             u.name as unit_name, u.bed_config, rp.code as rate_plan_code,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
              )) as deposit_paid,
@@ -52,6 +82,7 @@ router.get('/today/arrivals', auth, async (req, res) => {
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
+      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       WHERE b.property_id = $1
         AND b.check_in_date <= CURRENT_DATE
         AND b.status IN ('confirmed','deposit_paid','pending')
@@ -250,7 +281,8 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const bookingQ = db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.email as guest_email,
-             u.name as unit_name,
+             u.name as unit_name, u.bed_config,
+             rp.code as rate_plan_code, rp.name as rate_plan_name,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
              )) as deposit_paid,
@@ -258,6 +290,7 @@ router.get('/:id', auth, async (req, res) => {
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
+      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
     const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [req.params.id]);
     const notesQ = db.query(`
@@ -281,9 +314,12 @@ router.get('/:id', auth, async (req, res) => {
 
 // POST /api/bookings
 router.post('/', auth, async (req, res) => {
-  const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, discount_type, discount_value } = req.body;
+  const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, discount_type, discount_value, rate_plan_id, bed_preference, room_revenue } = req.body;
   if (!guest_id || !unit_id || !check_in_date || !check_out_date) {
     return res.status(400).json({ error: 'guest_id, unit_id, check_in_date, check_out_date required' });
+  }
+  if (bed_preference && !BED_PREFS.includes(bed_preference)) {
+    return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
   const client = await db.pool.connect();
   try {
@@ -316,17 +352,29 @@ router.post('/', auth, async (req, res) => {
     let discountAmount = 0;
     if (dType === 'fixed')      discountAmount = Math.min(dValue, total);
     if (dType === 'percentage') discountAmount = Math.round(total * dValue / 100);
-    const net = total - discountAmount;
 
+    // Rate plan + room/F&B net split
+    const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
+    const guests = Math.max(1, parseInt(num_guests, 10) || 1);
+    const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
+    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+    const { roomNet, mealNet } = splitRevenue({
+      grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, clientRoomRevenue: room_revenue,
+    });
+    // Store total_amount consistently with the split (pre-discount gross rack).
+    const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
+    const storedTotal = round2(payable + discountAmount);
+
+    const net = payable;
     const depositAmount = deposit_amount !== undefined
       ? Math.min(parseFloat(deposit_amount), net)
       : Math.round(net * 0.3);
-    const balanceAmount = net - depositAmount;
+    const balanceAmount = round2(net - depositAmount);
 
     const { rows } = await client.query(
-      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', total_amount || 0, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId]
+      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet]
     );
     const booking = rows[0];
     if (depositAmount > 0) {
@@ -399,6 +447,14 @@ router.post('/group', auth, async (req, res) => {
       }
     }
 
+    if (rooms.some(r => r.bed_preference && !BED_PREFS.includes(r.bed_preference))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
+    }
+
+    const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
+    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+
     const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
 
     const gdType = group_discount_type || null;
@@ -441,10 +497,17 @@ router.post('/group', auth, async (req, res) => {
       // their own prorated discount_amount/deposit_amount — that amount won't
       // self-reconcile if recomputed against this one room's total in
       // isolation, which is intentional, not a bug to "fix" later.
+      const roomGuests = Math.max(1, parseInt(s.room.num_guests, 10) || 1);
+      const roomPlan = await ratePlanService.resolveForBooking(req.propertyId, s.room.rate_plan_id || null);
+      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests) * nights);
+      let roomRevNet = round2(s.roomNet / F) - mealNet;
+      if (roomRevNet < 0) roomRevNet = 0;
+      const roomStoredTotal = round2(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total + s.discountShare);
+
       const { rows: [booking] } = await client.query(
-        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
-        [guest_id, s.room.unit_id, check_in_date, check_out_date, s.room.num_guests || 1, source || 'direct', s.roomTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id]
+        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+        [guest_id, s.room.unit_id, check_in_date, check_out_date, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet]
       );
       if (s.depositShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
@@ -666,7 +729,10 @@ router.put('/:id/no-show', auth, async (req, res) => {
 
 // PUT /api/bookings/:id
 router.put('/:id', auth, async (req, res) => {
-  const { num_guests, source, total_amount, special_requests, internal_notes, status } = req.body;
+  const { num_guests, source, total_amount, special_requests, internal_notes, status, rate_plan_id, bed_preference } = req.body;
+  if (bed_preference !== undefined && bed_preference !== null && bed_preference !== '' && !BED_PREFS.includes(bed_preference)) {
+    return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
+  }
   try {
     const { rows } = await db.query(
       `UPDATE bookings SET
@@ -676,9 +742,13 @@ router.put('/:id', auth, async (req, res) => {
         special_requests = COALESCE($4, special_requests),
         internal_notes = COALESCE($5, internal_notes),
         status = COALESCE($6, status),
+        rate_plan_id = COALESCE($9, rate_plan_id),
+        bed_preference = CASE WHEN $10::text IS NULL THEN bed_preference
+                             WHEN $10 = '' THEN NULL ELSE $10 END,
         updated_at = NOW()
        WHERE id = $7 AND property_id = $8 RETURNING *`,
-      [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId]
+      [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId,
+        rate_plan_id || null, bed_preference === undefined ? null : bed_preference]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Booking not found' });
     res.json(rows[0]);

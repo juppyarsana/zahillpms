@@ -800,7 +800,10 @@ export default function Dashboard() {
             {fmtIDR(revenue?.room_revenue_mtd)}
           </div>
           <div style={{ marginTop: 4 }}>
-            <span style={{ fontSize: 11, color: '#6B7280' }}>room revenue MTD</span>
+            <span style={{ fontSize: 11, color: '#6B7280' }}>
+              net room revenue MTD
+              {parseFloat(revenue?.fnb_revenue_mtd || 0) > 0 && ` · + ${fmtIDR(revenue.fnb_revenue_mtd)} F&B`}
+            </span>
           </div>
         </div>
       </div>

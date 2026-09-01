@@ -2,6 +2,8 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
+const { computeFolioTotals } = require('../services/folioService');
+const ratePlanService = require('../services/ratePlanService');
 
 // GET /api/pricing/periods
 router.get('/periods', auth, async (req, res) => {
@@ -16,10 +18,11 @@ router.get('/periods', auth, async (req, res) => {
   }
 });
 
-// GET /api/pricing/suggest?unit_id=&check_in=&check_out=
-// Returns suggested total and which period was applied
+// GET /api/pricing/suggest?unit_id=&check_in=&check_out=&rate_plan_id=&num_guests=
+// Returns the suggested NET room rate, the rate plan's NET meal supplement,
+// and the grossed-up grand total (what the guest pays incl. service charge & VAT).
 router.get('/suggest', auth, async (req, res) => {
-  const { unit_id, check_in, check_out } = req.query;
+  const { unit_id, check_in, check_out, rate_plan_id, num_guests } = req.query;
   if (!unit_id || !check_in || !check_out) {
     return res.status(400).json({ error: 'unit_id, check_in, check_out required' });
   }
@@ -54,13 +57,34 @@ router.get('/suggest', auth, async (req, res) => {
         rate_per_night = parseFloat(unit.base_rate) * parseFloat(period.value);
       }
     }
+    rate_per_night = Math.round(rate_per_night);
+
+    // Rate plan meal supplement (NET, per person per night)
+    const plan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
+    const guests = Math.max(1, parseInt(num_guests, 10) || 1);
+    const meal_per_night = ratePlanService.mealNetPerNight(plan, guests);
+
+    const room_total = rate_per_night * nights;         // NET
+    const meal_total = Math.round(meal_per_night * nights); // NET
+
+    const { rows: [settings] } = await db.query(
+      'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1',
+      [req.propertyId]
+    );
+    const gross = computeFolioTotals(room_total + meal_total, settings?.tax_rate, settings?.service_charge_rate);
 
     res.json({
       nights,
       base_rate: parseFloat(unit.base_rate),
-      rate_per_night: Math.round(rate_per_night),
-      suggested_total: Math.round(rate_per_night * nights),
+      rate_per_night,                       // back-compat: NET room rate/night
+      room_rate_per_night: rate_per_night,  // NET
+      room_total,                           // NET
+      meal_per_night,                       // NET
+      meal_total,                           // NET
+      grand_total: gross.total,             // GROSS — what the guest pays
+      suggested_total: room_total,          // back-compat (was rate_per_night * nights)
       period: period ? { name: period.name, type: period.type, value: period.value, color: period.color } : null,
+      rate_plan: plan ? { id: plan.id, code: plan.code, name: plan.name, meal_price: parseFloat(plan.meal_price) } : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

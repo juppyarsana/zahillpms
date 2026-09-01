@@ -1,12 +1,13 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 
-const SettingsContext = createContext({ sources: [], paymentMethods: [], branding: null, reload: () => {} });
+const SettingsContext = createContext({ sources: [], paymentMethods: [], branding: null, ratePlans: [], reload: () => {} });
 
 export function SettingsProvider({ children }) {
   const [sources, setSources] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [branding, setBranding] = useState(null);
+  const [ratePlans, setRatePlans] = useState([]);
 
   async function load() {
     try {
@@ -19,12 +20,17 @@ export function SettingsProvider({ children }) {
       setPaymentMethods(p.data);
       setBranding(b.data);
     } catch {}
+    // rate-plans is behind the reservations module — keep it off the critical path
+    try {
+      const rp = await api.get('/api/rate-plans?active=1');
+      setRatePlans(rp.data);
+    } catch { setRatePlans([]); }
   }
 
   useEffect(() => { load(); }, []);
 
   return (
-    <SettingsContext.Provider value={{ sources, paymentMethods, branding, reload: load }}>
+    <SettingsContext.Provider value={{ sources, paymentMethods, branding, ratePlans, reload: load }}>
       {children}
     </SettingsContext.Provider>
   );

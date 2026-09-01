@@ -8,9 +8,13 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
   const year = parseInt(req.query.year) || new Date().getFullYear();
   try {
+    // Room / F&B revenue are the NET (pre service charge & VAT) split stored
+    // on the booking. COALESCE(room_revenue, total_amount) covers any row a
+    // migration backfill somehow missed.
     const roomQ = db.query(`
       SELECT
-        COALESCE(SUM(total_amount), 0) as room_revenue,
+        COALESCE(SUM(COALESCE(room_revenue, total_amount)), 0) as room_revenue,
+        COALESCE(SUM(fnb_revenue), 0) as fnb_revenue,
         COUNT(*) as bookings_count,
         COALESCE(SUM(nights), 0) as total_nights
       FROM bookings
@@ -27,7 +31,7 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
     `, [month, year, req.propertyId]);
 
     const dailyQ = db.query(`
-      SELECT d::date as date, COALESCE(SUM(b.total_amount / NULLIF(b.nights,0)), 0) as room_revenue
+      SELECT d::date as date, COALESCE(SUM(COALESCE(b.room_revenue, b.total_amount) / NULLIF(b.nights,0)), 0) as room_revenue
       FROM generate_series(
         MAKE_DATE($2::int, $1::int, 1),
         MAKE_DATE($2::int, $1::int, 1) + INTERVAL '1 month' - INTERVAL '1 day',
@@ -40,7 +44,8 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
     `, [month, year, req.propertyId]);
 
     const sourceQ = db.query(`
-      SELECT source, COUNT(*) as count, COALESCE(SUM(total_amount), 0) as revenue
+      SELECT source, COUNT(*) as count,
+        COALESCE(SUM(COALESCE(room_revenue, total_amount) + fnb_revenue), 0) as revenue
       FROM bookings
       WHERE property_id = $3
         AND EXTRACT(MONTH FROM check_in_date) = $1
@@ -51,11 +56,15 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
 
     const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }] = await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ]);
 
+    const roomRev = parseFloat(room.room_revenue);
+    const fnbRev = parseFloat(room.fnb_revenue);
+    const ancRev = parseFloat(ancillary.ancillary_revenue);
     res.json({
       month, year,
-      room_revenue: parseFloat(room.room_revenue),
-      ancillary_revenue: parseFloat(ancillary.ancillary_revenue),
-      total_revenue: parseFloat(room.room_revenue) + parseFloat(ancillary.ancillary_revenue),
+      room_revenue: roomRev,
+      fnb_revenue: fnbRev,
+      ancillary_revenue: ancRev,
+      total_revenue: roomRev + fnbRev + ancRev,
       bookings_count: parseInt(room.bookings_count),
       total_nights: parseInt(room.total_nights),
       daily_revenue: daily,

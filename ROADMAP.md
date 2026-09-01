@@ -575,7 +575,38 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 044
+## Next migration number: 045
+
+---
+
+## ⏳ Rate Plans ("arrangements") + Bed Config + Room/F&B Revenue Split
+
+Client came from **VHP**, which sells the same room with or without breakfast
+("arrangement") and decomposes the sold rate into Room / Breakfast components so
+reports show room and F&B revenue separately. Scoped 2026-09-02 against Mews
+(rate + included product → nightly negative-adjust to accommodation + positive to
+F&B), Opera (package allowances — too heavy), Little Hotelier (per-person extra).
+
+**Model:** `bookings.room_revenue` + `fnb_revenue` = NET (pre service charge & VAT),
+post-discount; `total_amount` stays pre-discount gross. Invariant
+`computeFolioTotals(room_revenue + fnb_revenue).total ≈ total_amount − discount_amount`.
+
+- **Slice 1 — ⏳ (migration 044).** `rate_plans` table (RO/BB seeded, HB/FB addable;
+  flat `meal_price` net per pax/night; one `is_default`) + owner CRUD at
+  `/settings/rate-plans` (`server/routes/ratePlans.js`, `server/services/ratePlanService.js`,
+  `client/src/pages/SettingsRatePlans.jsx`). `units.bed_config` + `bookings.bed_preference`
+  (double/twin/twin_or_double/other), surfaced in Unit Settings, New Booking, Booking
+  Detail, Check-In, calendar tooltip, Room Display. `GET /api/pricing/suggest` gains
+  `rate_plan_id`/`num_guests` → returns net room + net meal + gross grand total.
+  `POST /api/bookings` (+group) store the split. **Reports / dashboard / night audit /
+  loyalty room-revenue switched to `SUM(room_revenue)` (NET)** — a visible one-time drop
+  vs the old gross `SUM(total_amount)`. Backfill: `room_revenue = (total_amount − discount)/F`.
+- **Slice 2 — not started.** `server/services/roomChargeService.js` — per-night auto-posting
+  of `folio_charges` `type='room'` + `type='fnb'` (idempotent via `folio_charges.service_date`
+  + partial unique index, both added in migration 044). Hooks: night audit (per-booking txn),
+  checkout catch-up + early-departure void, `PUT /:id/dates` repost, cancel/no-show void.
+  Invoice PDF groups Accommodation / F&B. Fixes the pre-existing gap where a normal stay's
+  folio never contained the room charge. `agentBillingService.getSourceOutstanding` gross-fix.
 
 ---
 

@@ -202,7 +202,7 @@ async function recalcGuestTier(client, guestId, propertyId) {
   const { rows: stats } = await client.query(`
     SELECT
       COALESCE(SUM(nights), 0) as total_nights,
-      COALESCE(SUM(total_amount), 0) as total_spend,
+      COALESCE(SUM(COALESCE(room_revenue, total_amount) + fnb_revenue), 0) as total_spend,
       COUNT(*) as total_visits
     FROM bookings
     WHERE guest_id = $1 AND property_id = $2 AND status = 'checked_out'

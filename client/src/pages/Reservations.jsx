@@ -245,7 +245,7 @@ export default function Reservations() {
           key={key}
           className={`cal-cell${todayCls}`}
           style={{ background: bg, color: tc, ...doneStyle }}
-          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}`}
+          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}${info.booking.rate_plan_code && info.booking.rate_plan_code !== 'RO' ? ` · ${info.booking.rate_plan_code}` : ''}${info.booking.bed_preference ? ` · ${info.booking.bed_preference} bed` : ''}`}
           onClick={() => nav(`/reservations/${info.booking.id}`)}
         >
           <div style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: dot, border: '1.5px solid rgba(255,255,255,0.9)' }} />

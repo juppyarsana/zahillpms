@@ -23,7 +23,7 @@ async function getBusinessDate() {
 }
 
 async function sendAuditEmail(businessDate, data) {
-  const { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated } = data;
+  const { unitsOccupied, noShows, roomRevenue, fnbRevenue = 0, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated } = data;
 
   const gmailUser = process.env.GMAIL_USER;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
@@ -41,7 +41,7 @@ async function sendAuditEmail(businessDate, data) {
   });
 
   const fmtIDR = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
-  const totalRevenue = Number(roomRevenue) + Number(ancillaryRevenue);
+  const totalRevenue = Number(roomRevenue) + Number(fnbRevenue) + Number(ancillaryRevenue);
 
   const fmtDateLong = str => {
     const [y, m, d] = str.split('-').map(Number);
@@ -119,10 +119,13 @@ async function sendAuditEmail(businessDate, data) {
             <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
               <tr>
                 ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
-                ${statCard('Room Revenue', fmtIDR(roomRevenue), '#111827')}
+                ${statCard('Room Revenue (net)', fmtIDR(roomRevenue), '#111827')}
               </tr>
               <tr>
+                ${statCard('F&B Revenue (net)', fmtIDR(fnbRevenue), '#111827')}
                 ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
+              </tr>
+              <tr>
                 ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
               </tr>
             </table>
@@ -257,13 +260,16 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   );
   if (noShows.length) console.log(`[Night Audit] Flagged ${noShows.length} no-show(s)`);
 
-  // 3. Room revenue tally (nightly rate × 1 night for each checked-in booking)
+  // 3. Room + F&B revenue tally (one night's NET share per checked-in booking)
   const { rows: roomRows } = await db.query(
-    `SELECT COALESCE(SUM(total_amount::numeric / GREATEST(nights, 1)), 0) AS room_revenue
+    `SELECT
+       COALESCE(SUM(COALESCE(room_revenue, total_amount)::numeric / GREATEST(nights, 1)), 0) AS room_revenue,
+       COALESCE(SUM(fnb_revenue::numeric / GREATEST(nights, 1)), 0) AS fnb_revenue
      FROM bookings WHERE status = 'checked_in' AND property_id = $1`,
     [propertyId]
   );
   const roomRevenue = parseFloat(roomRows[0].room_revenue);
+  const fnbRevenue = parseFloat(roomRows[0].fnb_revenue);
 
   // 4. Ancillary revenue tally
   const { rows: ancillaryRows } = await db.query(
@@ -337,17 +343,17 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   );
   const unitsOccupied = parseInt(occRows[0].count);
 
-  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow`;
+  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow`;
 
   // 10. Write audit log
   await db.query(
     `INSERT INTO night_audit_runs
        (id, business_date, triggered_by, units_occupied, no_shows,
-        room_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary, property_id)
-     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        room_revenue, fnb_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary, property_id)
+     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       businessDate, triggeredBy, unitsOccupied,
-      JSON.stringify(noShows), roomRevenue, ancillaryRevenue,
+      JSON.stringify(noShows), roomRevenue, fnbRevenue, ancillaryRevenue,
       JSON.stringify(pendingBalances), JSON.stringify(arrivingToday), tasksCreated, summary, propertyId,
     ]
   );
@@ -356,7 +362,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
 
   // 11. Owner email — best-effort, never blocks or fails the audit
   try {
-    await sendAuditEmail(businessDate, { unitsOccupied, noShows, roomRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
+    await sendAuditEmail(businessDate, { unitsOccupied, noShows, roomRevenue, fnbRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
   } catch (err) {
     console.error('[Night Audit] Email failed (audit still complete):', err.message);
   }

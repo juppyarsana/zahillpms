@@ -384,6 +384,23 @@ export default function BookingDetail() {
           <div className="flex-between" style={{ marginBottom: 6 }}>
             <span className="text-muted">Guests</span><span>{booking.num_guests}</span>
           </div>
+          {(booking.rate_plan_code || booking.rate_plan_name) && (
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Rate Plan</span>
+              <span>{booking.rate_plan_code}{booking.rate_plan_name ? ` — ${booking.rate_plan_name}` : ''}</span>
+            </div>
+          )}
+          <div className="flex-between" style={{ marginBottom: 6 }}>
+            <span className="text-muted">Bed</span>
+            <span>
+              {booking.bed_preference
+                ? `${booking.bed_preference === 'twin' ? 'Twin' : booking.bed_preference === 'double' ? 'Double' : booking.bed_preference} (requested)`
+                : booking.bed_config === 'twin' ? 'Twin'
+                : booking.bed_config === 'twin_or_double' ? 'Twin or double'
+                : booking.bed_config === 'other' ? '—'
+                : 'Double'}
+            </span>
+          </div>
           <div className="flex-between" style={{ marginBottom: 6 }}>
             <span className="text-muted">Source</span>
             <SourceBadge sourceId={booking.source} />
@@ -397,6 +414,11 @@ export default function BookingDetail() {
 
       <div className="card mt-3">
         <div className="card-title">Payment Tracking</div>
+        {parseFloat(booking.fnb_revenue || 0) > 0 && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+            Net revenue split — Room {fmtIDR(booking.room_revenue)} · F&amp;B {fmtIDR(booking.fnb_revenue)}
+          </div>
+        )}
         {parseFloat(booking.discount_amount) > 0 && (
           <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--cream, #fffbeb)', border: '1px solid var(--border)', borderRadius: 8 }}>
             <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>

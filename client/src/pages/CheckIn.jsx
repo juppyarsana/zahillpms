@@ -242,6 +242,10 @@ export default function CheckIn() {
                     <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
                     <div className="text-muted" style={{ fontSize: 11 }}>
                       {b.unit_name} · {b.num_guests} pax · {b.nationality}
+                      {b.rate_plan_code && b.rate_plan_code !== 'RO' && <span> · {b.rate_plan_code}</span>}
+                      {(b.bed_preference || (b.bed_config && b.bed_config !== 'double')) && (
+                        <span> · 🛏 {b.bed_preference === 'twin' || (!b.bed_preference && b.bed_config === 'twin') ? 'Twin' : b.bed_preference === 'double' ? 'Double' : b.bed_config === 'twin_or_double' ? 'Twin/Double' : ''}</span>
+                      )}
                       {isOverdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
                     </div>
                     {isOverdue && (
