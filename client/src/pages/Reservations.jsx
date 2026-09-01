@@ -358,7 +358,10 @@ export default function Reservations() {
                 <div className="cal-corner" />
                 {dayArr.map(d => (
                   <div key={`h${d}`} className={`cal-dhdr${isToday(d) ? ' today' : ''}`}>
-                    {isToday(d) ? <><b>{d}</b><br /><span style={{ fontWeight: 400, fontSize: 8 }}>Today</span></> : d}
+                    <span className="cal-dhdr-date">{d}</span>
+                    <span className="cal-dhdr-dow">
+                      {isToday(d) ? 'Today' : new Date(year, month - 1, d).toLocaleDateString('en', { weekday: 'short' })}
+                    </span>
                   </div>
                 ))}
 

@@ -413,11 +413,15 @@ tr:hover td { background: #FAFAF8; }
 .cal-scroll      { overflow: auto; max-height: calc(100dvh - 250px); position: relative; background: var(--white); border-radius: var(--radius-lg); --cal-label-w: 132px; }
 .cal-grid        { display: grid; gap: 2px; width: max-content; padding: 0 8px 8px 0; }
 
-.cal-corner      { position: sticky; top: 0; left: 0; z-index: 4; background: var(--white); }
-.cal-dhdr        { position: sticky; top: 0; z-index: 3; background: var(--white); text-align: center;
-                   font-size: 9px; font-weight: 700; color: var(--text-muted); padding: 4px 0; line-height: 1.2; }
-.cal-dhdr.today  { color: var(--green-dark); }
-.cal-dhdr.today b { font-size: 11px; }
+.cal-corner      { position: sticky; top: 0; left: 0; z-index: 4; background: var(--white); border-bottom: 1px solid var(--border); }
+.cal-dhdr        { position: sticky; top: 0; z-index: 3; background: var(--white);
+                   display: flex; flex-direction: column; align-items: center; justify-content: center;
+                   min-height: 46px; padding: 4px 2px; line-height: 1.1; border-bottom: 1px solid var(--border); }
+.cal-dhdr-date   { font-size: 14px; font-weight: 800; color: var(--text); }
+.cal-dhdr-dow    { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 2px; }
+.cal-dhdr.today  { background: var(--green-light); }
+.cal-dhdr.today .cal-dhdr-date,
+.cal-dhdr.today .cal-dhdr-dow { color: var(--green-dark); }
 
 .cal-rowlabel    { position: sticky; left: 0; z-index: 2; background: var(--white); display: flex; align-items: center;
                    gap: 4px; padding: 0 8px; font-size: 11px; font-weight: 700; white-space: nowrap;
