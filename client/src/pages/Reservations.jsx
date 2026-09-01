@@ -368,8 +368,10 @@ export default function Reservations() {
                   return (
                     <Fragment key={g.type}>
                       <button className="cal-group-hdr" onClick={() => toggleGroup(g.type)}>
-                        <span style={{ display: 'inline-block', width: 10 }}>{isCol ? '▸' : '▾'}</span>
-                        {g.type} ({g.list.length})
+                        <span className="cal-group-hdr-label">
+                          <span style={{ display: 'inline-block', width: 10 }}>{isCol ? '▸' : '▾'}</span>
+                          {g.type} ({g.list.length})
+                        </span>
                       </button>
                       {!isCol && g.list.map(unit => (
                         <Fragment key={unit.id}>

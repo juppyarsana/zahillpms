@@ -424,10 +424,12 @@ tr:hover td { background: #FAFAF8; }
                    border-right: 1px solid var(--border); box-shadow: 2px 0 4px rgba(0,0,0,0.05); }
 
 .cal-group-hdr   { grid-column: 1 / -1; position: sticky; left: 0; z-index: 2; display: flex; align-items: center;
-                   gap: 6px; width: 100%; padding: 5px 8px; border: none; font-family: inherit; cursor: pointer;
+                   width: 100%; padding: 0; border: none; font-family: inherit; cursor: pointer;
                    background: var(--bg-subtle); color: var(--text-muted);
                    font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
-.cal-group-hdr:hover { color: var(--text); }
+.cal-group-hdr-label { position: sticky; left: 0; display: inline-flex; align-items: center; gap: 6px;
+                   padding: 5px 12px 5px 8px; background: var(--bg-subtle); box-shadow: 4px 0 6px -2px rgba(0,0,0,0.12); }
+.cal-group-hdr:hover .cal-group-hdr-label { color: var(--text); }
 
 .cal-cell        { height: 32px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
                    font-size: 9px; font-weight: 700; cursor: pointer; overflow: hidden; white-space: nowrap;
