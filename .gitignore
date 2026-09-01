@@ -49,3 +49,6 @@ Thumbs.db
 stickers/
 designs/
 *.pptx
+
+# Local dev/demo data-seeding scripts (throwaway fixtures, not onboarding tools)
+server/scripts/
