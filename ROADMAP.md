@@ -579,7 +579,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## ⏳ Rate Plans ("arrangements") + Bed Config + Room/F&B Revenue Split
+## ✅ Rate Plans ("arrangements") + Bed Config + Room/F&B Revenue Split
 
 Client came from **VHP**, which sells the same room with or without breakfast
 ("arrangement") and decomposes the sold rate into Room / Breakfast components so
@@ -601,12 +601,16 @@ post-discount; `total_amount` stays pre-discount gross. Invariant
   `POST /api/bookings` (+group) store the split. **Reports / dashboard / night audit /
   loyalty room-revenue switched to `SUM(room_revenue)` (NET)** — a visible one-time drop
   vs the old gross `SUM(total_amount)`. Backfill: `room_revenue = (total_amount − discount)/F`.
-- **Slice 2 — not started.** `server/services/roomChargeService.js` — per-night auto-posting
-  of `folio_charges` `type='room'` + `type='fnb'` (idempotent via `folio_charges.service_date`
-  + partial unique index, both added in migration 044). Hooks: night audit (per-booking txn),
-  checkout catch-up + early-departure void, `PUT /:id/dates` repost, cancel/no-show void.
-  Invoice PDF groups Accommodation / F&B. Fixes the pre-existing gap where a normal stay's
-  folio never contained the room charge. `agentBillingService.getSourceOutstanding` gross-fix.
+- **Slice 2 — ⏳ (migration 044, same as Slice 1).** `server/services/roomChargeService.js`
+  (`postNight`/`postStay`/`voidFrom`/`voidAll`/`repostStay`, all transaction-participant &
+  idempotent). Night audit posts one `room` + one `fnb` `folio_charges` row per in-house
+  booking per night (per-booking txn, per-booking try/catch). Checkout: catch-up post +
+  early-departure void, committed before the checkout txn. `PUT /:id/dates` reposts;
+  `PUT /:id` reposts on rate-plan / guest-count change; cancel + no-show + group-cancel void.
+  Invoice PDF + Booking Detail folio tab group Accommodation / F&B / Other.
+  `agentBillingService.getSourceOutstanding` grosses folio charges up (net→gross) so unpaid
+  city-ledger AR is right. A normal stay's folio total now ≈ `total_amount − discount`
+  (was ~0). Cutover: `server/scripts/backfillRoomCharges.js` (one-off, run post-deploy).
 
 ---
 

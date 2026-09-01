@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
+const roomCharge = require('../services/roomChargeService');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
 async function grossFactor(client, propertyId) {
@@ -548,6 +549,7 @@ router.delete('/group/:groupId', auth, async (req, res) => {
        RETURNING *`,
       [req.params.groupId, req.propertyId]
     );
+    for (const b of bookings) await roomCharge.voidAll(client, b.id, req.user.id);
     await client.query('COMMIT');
     res.json({ group, bookings });
   } catch (err) {
@@ -694,6 +696,11 @@ router.put('/:id/dates', auth, async (req, res) => {
       [check_in_date, check_out_date, req.params.id, req.propertyId]
     );
 
+    // Re-spread the (unchanged) net room/F&B totals over the new night count
+    // and re-post the folio nights.
+    const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    await roomCharge.repostStay(client, fresh, req.user.id);
+
     await client.query('COMMIT');
     const { rows: [updated] } = await db.query(`
       SELECT b.*, g.name as guest_name, u.name as unit_name
@@ -721,6 +728,7 @@ router.put('/:id/no-show', auth, async (req, res) => {
       "UPDATE bookings SET status = 'no_show', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
       [req.params.id, req.propertyId]
     );
+    await roomCharge.voidAll(db, req.params.id, req.user.id);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -733,8 +741,13 @@ router.put('/:id', auth, async (req, res) => {
   if (bed_preference !== undefined && bed_preference !== null && bed_preference !== '' && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
+  const client = await db.pool.connect();
   try {
-    const { rows } = await db.query(
+    await client.query('BEGIN');
+    const { rows: [before] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    const { rows } = await client.query(
       `UPDATE bookings SET
         num_guests = COALESCE($1, num_guests),
         source = COALESCE($2, source),
@@ -750,10 +763,35 @@ router.put('/:id', auth, async (req, res) => {
       [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId,
         rate_plan_id || null, bed_preference === undefined ? null : bed_preference]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Booking not found' });
-    res.json(rows[0]);
+    let booking = rows[0];
+
+    // Rate plan or guest count changed → recompute the net F&B portion,
+    // keep the grand total (room + F&B) fixed by having room absorb the delta,
+    // then re-post the folio nights.
+    const planChanged = rate_plan_id && rate_plan_id !== before.rate_plan_id;
+    const guestsChanged = num_guests !== undefined && parseInt(num_guests, 10) !== before.num_guests;
+    if (planChanged || guestsChanged) {
+      const plan = await ratePlanService.resolveForBooking(req.propertyId, booking.rate_plan_id);
+      const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
+      const grossNet = round2(parseFloat(before.room_revenue ?? before.total_amount) + parseFloat(before.fnb_revenue || 0));
+      const newFnb = round2(ratePlanService.mealNetPerNight(plan, guests) * booking.nights);
+      let newRoom = round2(grossNet - newFnb);
+      if (newRoom < 0) newRoom = 0;
+      const { rows: [b2] } = await client.query(
+        'UPDATE bookings SET room_revenue = $1, fnb_revenue = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
+        [newRoom, newFnb, req.params.id]
+      );
+      booking = b2;
+      await roomCharge.repostStay(client, booking, req.user.id);
+    }
+
+    await client.query('COMMIT');
+    res.json(booking);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -765,6 +803,7 @@ router.delete('/:id', auth, async (req, res) => {
       [req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Booking not found' });
+    await roomCharge.voidAll(db, req.params.id, req.user.id);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

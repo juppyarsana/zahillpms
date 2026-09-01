@@ -190,6 +190,11 @@ export default function GroupDetail() {
                 </div>
               ))}
               <div className="divider" />
+              {folio.by_type && (folio.by_type.room + folio.by_type.fnb) > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  Net revenue — Room {fmtIDR(folio.by_type.room)} · F&amp;B {fmtIDR(folio.by_type.fnb)}
+                </div>
+              )}
               <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                 <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
               </div>

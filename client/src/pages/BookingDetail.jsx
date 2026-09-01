@@ -548,22 +548,50 @@ export default function BookingDetail() {
 
           {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
             <>
-              <div style={{ marginBottom: 10 }}>
-                {folio.charges.map(c => (
-                  <div key={c.id} className="flex-between" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{c.description}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(c.unit_price)}
-                        {c.posted_by_name && ` · ${c.posted_by_name}`}
-                      </div>
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>
-                      <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c.id)}>🗑️</button>
-                    </div>
+              {(() => {
+                const roomSum = folio.charges.filter(c => c.type === 'room').reduce((s, c) => s + parseFloat(c.amount), 0);
+                const fnbSum = folio.charges.filter(c => c.type === 'fnb').reduce((s, c) => s + parseFloat(c.amount), 0);
+                if (roomSum + fnbSum === 0) return null;
+                return (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    Net revenue — Room {fmtIDR(roomSum)} · F&amp;B {fmtIDR(fnbSum)}
                   </div>
-                ))}
+                );
+              })()}
+              <div style={{ marginBottom: 10 }}>
+                {[
+                  ['Accommodation', c => c.type === 'room'],
+                  ['Food & Beverage', c => c.type === 'fnb'],
+                  ['Other', c => c.type !== 'room' && c.type !== 'fnb'],
+                ].map(([groupLabel, match]) => {
+                  const lines = folio.charges.filter(match);
+                  if (!lines.length) return null;
+                  const grouped = folio.charges.some(c => c.type === 'room' || c.type === 'fnb');
+                  return (
+                    <div key={groupLabel}>
+                      {grouped && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '10px 0 2px' }}>
+                          {groupLabel}
+                        </div>
+                      )}
+                      {lines.map(c => (
+                        <div key={c.id} className="flex-between" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{c.description}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(c.unit_price)}
+                              {c.posted_by_name && ` · ${c.posted_by_name}`}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>
+                            <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c.id)}>🗑️</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
                 {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0' }}>No charges posted yet.</div>}
               </div>
 

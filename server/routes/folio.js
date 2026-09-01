@@ -29,6 +29,8 @@ router.get('/group/:groupId', auth, async (req, res) => {
     );
     const folios = await Promise.all(bookingRows.map(b => loadFolio(b.id, req.propertyId)));
     const sum = key => round2(folios.reduce((s, f) => s + f[key], 0));
+    const byType = type => round2(folios.reduce((s, f) =>
+      s + f.charges.filter(c => c.type === type).reduce((cs, c) => cs + parseFloat(c.amount), 0), 0));
 
     res.json({
       group_id: group.id,
@@ -42,6 +44,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
       tax_amount: sum('tax_amount'),
       total: sum('total'),
       balance_due: sum('balance_due'),
+      by_type: { room: byType('room'), fnb: byType('fnb') },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -158,19 +161,41 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
     doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).strokeColor('#ccc').stroke();
 
     let y = tableTop + 22;
-    doc.font('Helvetica').fontSize(10);
-    for (const c of charges) {
+
+    // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb) → Other.
+    const GROUPS = [
+      { key: 'Accommodation', match: c => c.type === 'room' },
+      { key: 'Food & Beverage', match: c => c.type === 'fnb' },
+      { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' },
+    ];
+    const renderLine = c => {
       if (y > 720) { doc.addPage(); y = 50; }
+      doc.font('Helvetica').fontSize(10).fillColor('#000');
       doc.text(c.description, colX.desc, y, { width: 240 });
       doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
       doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
       doc.text(fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
-      y += 18;
-    }
+      y += 16;
+    };
+
+    const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb');
     if (charges.length === 0) {
-      doc.fillColor('#888').text('No charges posted', colX.desc, y);
+      doc.font('Helvetica').fontSize(10).fillColor('#888').text('No charges posted', colX.desc, y);
       doc.fillColor('#000');
       y += 18;
+    } else if (!anyGrouped) {
+      for (const c of charges) renderLine(c);
+    } else {
+      for (const g of GROUPS) {
+        const lines = charges.filter(g.match);
+        if (!lines.length) continue;
+        if (y > 715) { doc.addPage(); y = 50; }
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#555').text(g.key.toUpperCase(), colX.desc, y);
+        doc.fillColor('#000');
+        y += 15;
+        for (const c of lines) renderLine(c);
+        y += 4;
+      }
     }
 
     doc.moveTo(50, y + 4).lineTo(550, y + 4).strokeColor('#ccc').stroke();

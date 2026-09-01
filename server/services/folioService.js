@@ -39,10 +39,10 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, u.name as posted_by_name
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
-     ORDER BY fc.posted_at`,
+     ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
     [bookingId]
   );
   const settingsQ = db.query(

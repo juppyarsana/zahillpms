@@ -1,5 +1,6 @@
 const db = require('../db');
 const nodemailer = require('nodemailer');
+const roomChargeService = require('../services/roomChargeService');
 
 function nextDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z');
@@ -260,6 +261,46 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   );
   if (noShows.length) console.log(`[Night Audit] Flagged ${noShows.length} no-show(s)`);
 
+  // 2b. Post the just-closed night's room + F&B folio charges for every
+  // in-house booking. Each booking runs in its own transaction so one bad
+  // row can't abort the audit; postNight is idempotent (existence check +
+  // uq_folio_charges_night), so a full re-run — even after a partial crash —
+  // posts nothing new.
+  const { rows: inHouse } = await db.query(
+    `SELECT b.id, b.check_in_date, b.check_out_date, b.room_revenue, b.total_amount, b.fnb_revenue,
+            rp.code AS rate_plan_code
+     FROM bookings b
+     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+     WHERE b.property_id = $1 AND b.status = 'checked_in'
+       AND b.check_in_date <= $2 AND b.check_out_date > $2`,
+    [propertyId, businessDate]
+  );
+  let folioPosted = 0, folioFailed = 0;
+  for (const bk of inHouse) {
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const nights = roomChargeService.stayNights(bk.check_in_date, bk.check_out_date);
+      const idx = Math.max(0, nights.indexOf(businessDate));
+      const r = await roomChargeService.postNight(client, {
+        bookingId: bk.id,
+        serviceDate: businessDate,
+        roomNet: roomChargeService.nightlyAmount(bk.room_revenue ?? bk.total_amount, nights.length, idx),
+        mealNet: roomChargeService.nightlyAmount(bk.fnb_revenue, nights.length, idx),
+        ratePlanCode: bk.rate_plan_code || 'RO',
+      });
+      await client.query('COMMIT');
+      if (r.roomPosted || r.fnbPosted) folioPosted++;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      folioFailed++;
+      console.error(`[Night Audit] Folio post failed for booking ${bk.id}:`, err.message);
+    } finally {
+      client.release();
+    }
+  }
+  if (inHouse.length) console.log(`[Night Audit] Folio: ${folioPosted} booking(s) posted, ${folioFailed} failed`);
+
   // 3. Room + F&B revenue tally (one night's NET share per checked-in booking)
   const { rows: roomRows } = await db.query(
     `SELECT
@@ -343,7 +384,8 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   );
   const unitsOccupied = parseInt(occRows[0].count);
 
-  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow`;
+  const folioNote = inHouse.length ? ` · ${folioPosted} folio night(s) posted${folioFailed ? ` (${folioFailed} failed)` : ''}` : '';
+  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow${folioNote}`;
 
   // 10. Write audit log
   await db.query(

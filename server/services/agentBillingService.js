@@ -81,16 +81,22 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
 
 // Standalone (own pool query) — called from the credit-check GET route, not
 // from within another transaction. AR outstanding for a source = derived sum
-// over folios (posted charges minus received payments) across that source's
-// still-active bookings. Matches CLAUDE.md: "AR balance is just a derived sum
-// over folios, not a posted journal entry."
+// over folios across that source's still-active bookings. Folio charges are
+// stored NET, so they are grossed up by the property's service charge + VAT
+// (matching folioService.computeFolioTotals, approximated as a single
+// factor) before subtracting the received (gross) payments.
 async function getSourceOutstanding(propertyId, sourceId) {
   const { rows: [row] } = await db.query(
     `SELECT COALESCE(SUM(GREATEST(0,
-       (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false)
+       ROUND(
+         (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false)
+         * (1 + COALESCE(ps.service_charge_rate, 0) / 100.0)
+         * (1 + COALESCE(ps.tax_rate, 0) / 100.0)
+       , 2)
        - (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = b.id AND status = 'received')
      )), 0) AS outstanding
      FROM bookings b
+     JOIN property_settings ps ON ps.property_id = b.property_id
      WHERE b.property_id = $1 AND b.source = $2
        AND b.status NOT IN ('cancelled', 'no_show')`,
     [propertyId, sourceId]

@@ -2,7 +2,13 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const agentBilling = require('../services/agentBillingService');
+const roomCharge = require('../services/roomChargeService');
 const multer = require('multer');
+
+// Today's calendar date in WITA (UTC+8) as YYYY-MM-DD.
+function todayWITA() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+}
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
@@ -150,6 +156,29 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
 // PUT /api/checkout/:bookingId/complete
 router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   const { condition_notes, bill_to_agent } = req.body;
+
+  // Folio catch-up must be committed BEFORE the checkout transaction opens,
+  // because agentBilling.settleCheckout reads the folio via the pool (not the
+  // txn client) to compute the commission base.
+  {
+    const c = await db.pool.connect();
+    try {
+      await c.query('BEGIN');
+      const { rows: [b] } = await c.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
+      if (b) {
+        const checkoutDay = todayWITA();
+        await roomCharge.postStay(c, b, { upToDate: checkoutDay, actorUserId: req.user.id });
+        await roomCharge.voidFrom(c, b.id, checkoutDay, req.user.id); // early departure
+      }
+      await c.query('COMMIT');
+    } catch (err) {
+      await c.query('ROLLBACK');
+      console.error('[checkout] folio catch-up failed:', err.message);
+    } finally {
+      c.release();
+    }
+  }
+
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
