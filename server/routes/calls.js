@@ -236,6 +236,40 @@ router.post('/:id/signal-from-room', authDisplay, gate, async (req, res) => {
   }
 });
 
+// GET /api/calls/pending — polling fallback for the staff calls SSE stream.
+// A room-to-staff call that arrived while every staff session's SSE
+// connection was silently dead would otherwise just ring out unnoticed —
+// CallContext.jsx polls this every ~10s so an incoming call is never
+// missed purely because of a dead push connection, same guarantee the
+// Room Display state poll already gives incoming staff-to-room calls.
+router.get('/pending', auth, gate, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT c.id, u.name AS unit_name, u.controller_id AS room_id
+       FROM calls c JOIN units u ON u.id = c.unit_id
+       WHERE u.property_id = $1 AND c.status = 'ringing' AND c.direction = 'room_to_staff'
+       ORDER BY c.created_at ASC LIMIT 1`,
+      [req.propertyId]
+    );
+    if (!rows[0]) return res.json(null);
+    const call = rows[0];
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT g.name AS guest_name
+       FROM bookings b JOIN guests g ON g.id = b.guest_id
+       WHERE b.unit_id = (SELECT unit_id FROM calls WHERE id = $1)
+         AND b.status IN ('confirmed', 'checked_in')
+         AND b.check_in_date <= CURRENT_DATE AND b.check_out_date >= CURRENT_DATE
+       ORDER BY b.check_in_date DESC LIMIT 1`,
+      [call.id]
+    );
+
+    res.json({ callId: call.id, unitName: call.unit_name, roomId: call.room_id, guestName: bookingRows[0]?.guest_name || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/calls/room/:roomId/stream — SSE for the room tablet
 router.get('/room/:roomId/stream', authDisplay, gate, async (req, res) => {
   const { roomId } = req.params;
@@ -250,8 +284,10 @@ router.get('/room/:roomId/stream', authDisplay, gate, async (req, res) => {
   const key = 'room:' + roomId;
   sse.addClient(key, res);
 
+  // Real `data:` event, not an SSE comment (invisible to onmessage) — lets
+  // the client detect a silently-dead connection and force a reconnect.
   const heartbeat = setInterval(() => {
-    try { res.write(': heartbeat\n\n'); } catch {}
+    try { res.write('data: {"type":"heartbeat"}\n\n'); } catch {}
   }, 25_000);
 
   req.on('close', () => {
@@ -271,8 +307,10 @@ router.get('/staff/stream', authQueryToken, gate, (req, res) => {
   const key = staffChannel(req.user.propertyId);
   sse.addClient(key, res);
 
+  // Real `data:` event, not an SSE comment (invisible to onmessage) — lets
+  // the client detect a silently-dead connection and force a reconnect.
   const heartbeat = setInterval(() => {
-    try { res.write(': heartbeat\n\n'); } catch {}
+    try { res.write('data: {"type":"heartbeat"}\n\n'); } catch {}
   }, 25_000);
 
   req.on('close', () => {

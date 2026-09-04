@@ -3,6 +3,7 @@ import api from '../services/api';
 import callClient from '../services/callClient';
 import ringtone from '../services/ringtone';
 import { useAuth } from './AuthContext';
+import useResilientEventSource from '../hooks/useResilientEventSource';
 
 const CallContext = createContext(null);
 
@@ -10,6 +11,7 @@ const CONNECTING_TIMEOUT_MS = 25_000;
 const OFFER_WAIT_MS = 5_000;
 const END_TOAST_MS = 2500;
 const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
+const PENDING_POLL_MS = 10_000;
 
 export function CallProvider({ children }) {
   const { user } = useAuth();
@@ -21,6 +23,8 @@ export function CallProvider({ children }) {
   const pendingIce = useRef(new Map());      // callId -> [candidates]
   const activeCallRef = useRef(null);
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+  const incomingCallRef = useRef(null);
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
   const connectingTimeoutRef = useRef(null);
 
   const clearConnectingTimeout = useCallback(() => {
@@ -61,54 +65,62 @@ export function CallProvider({ children }) {
     return () => ringtone.stop();
   }, [incomingCall]);
 
+  const staffStreamUrl = user ? `/api/calls/staff/stream?token=${encodeURIComponent(localStorage.getItem('token'))}` : null;
+  useResilientEventSource(staffStreamUrl, (msg) => {
+    if (msg.type === 'incoming_call') {
+      // Busy — already on a call, so don't hijack this session's screen
+      // with a second incoming-call prompt (answering it would silently
+      // drop the first call, since there's one shared WebRTC connection).
+      // The call still rings through normally to any other free staff.
+      if (activeCallRef.current) return;
+      // Also don't clobber an already-ringing incoming call this session
+      // hasn't answered/dismissed yet — first one wins here too.
+      setIncomingCall(prev => prev || { callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
+    } else if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
+      pendingOffers.current.set(msg.callId, msg.payload.sdp);
+    } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
+      if (activeCallRef.current?.callId === msg.callId) callClient.handleAnswer(msg.payload.sdp);
+    } else if (msg.type === 'signal' && msg.payload?.kind === 'ice') {
+      if (activeCallRef.current?.callId === msg.callId) {
+        callClient.addIceCandidate(msg.payload.candidate);
+      } else {
+        const list = pendingIce.current.get(msg.callId) || [];
+        list.push(msg.payload.candidate);
+        pendingIce.current.set(msg.callId, list);
+      }
+    } else if (msg.type === 'answered_from_room') {
+      setActiveCall(prev => (prev?.callId === msg.callId && prev.status === 'calling' ? { ...prev, status: 'connecting' } : prev));
+    } else if (msg.type === 'call_taken') {
+      setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
+    } else if (msg.type === 'ended' || msg.type === 'missed') {
+      setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
+      setActiveCall(prev => {
+        if (prev?.callId !== msg.callId) return prev;
+        clearConnectingTimeout();
+        callClient.close();
+        setMuted(false);
+        return null;
+      });
+    }
+  });
+
+  // Polling fallback for the staff calls SSE stream — a room-to-staff call
+  // that arrived while this session's push connection was silently dead
+  // would otherwise just ring out unnoticed. Same guarantee the Room
+  // Display state poll gives incoming staff-to-room calls.
   useEffect(() => {
     if (!user) return;
-    const token = localStorage.getItem('token');
-    const evtSource = new EventSource(`/api/calls/staff/stream?token=${encodeURIComponent(token)}`);
-
-    evtSource.onmessage = (e) => {
-      let msg;
-      try { msg = JSON.parse(e.data); } catch { return; }
-
-      if (msg.type === 'incoming_call') {
-        // Busy — already on a call, so don't hijack this session's screen
-        // with a second incoming-call prompt (answering it would silently
-        // drop the first call, since there's one shared WebRTC connection).
-        // The call still rings through normally to any other free staff.
-        if (activeCallRef.current) return;
-        // Also don't clobber an already-ringing incoming call this session
-        // hasn't answered/dismissed yet — first one wins here too.
-        setIncomingCall(prev => prev || { callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
-      } else if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
-        pendingOffers.current.set(msg.callId, msg.payload.sdp);
-      } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
-        if (activeCallRef.current?.callId === msg.callId) callClient.handleAnswer(msg.payload.sdp);
-      } else if (msg.type === 'signal' && msg.payload?.kind === 'ice') {
-        if (activeCallRef.current?.callId === msg.callId) {
-          callClient.addIceCandidate(msg.payload.candidate);
-        } else {
-          const list = pendingIce.current.get(msg.callId) || [];
-          list.push(msg.payload.candidate);
-          pendingIce.current.set(msg.callId, list);
+    const id = setInterval(async () => {
+      if (activeCallRef.current || incomingCallRef.current) return; // busy or already showing one
+      try {
+        const { data } = await api.get('/api/calls/pending');
+        if (data && data.callId !== incomingCallRef.current?.callId) {
+          setIncomingCall({ callId: data.callId, unitName: data.unitName, roomId: data.roomId, guestName: data.guestName });
         }
-      } else if (msg.type === 'answered_from_room') {
-        setActiveCall(prev => (prev?.callId === msg.callId && prev.status === 'calling' ? { ...prev, status: 'connecting' } : prev));
-      } else if (msg.type === 'call_taken') {
-        setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
-      } else if (msg.type === 'ended' || msg.type === 'missed') {
-        setIncomingCall(prev => (prev?.callId === msg.callId ? null : prev));
-        setActiveCall(prev => {
-          if (prev?.callId !== msg.callId) return prev;
-          clearConnectingTimeout();
-          callClient.close();
-          setMuted(false);
-          return null;
-        });
-      }
-    };
-    evtSource.onerror = () => {};
-    return () => evtSource.close();
-  }, [user, clearConnectingTimeout]);
+      } catch { /* best-effort — next tick retries */ }
+    }, PENDING_POLL_MS);
+    return () => clearInterval(id);
+  }, [user]);
 
   const answerCall = useCallback(async (callId) => {
     const call = incomingCall;

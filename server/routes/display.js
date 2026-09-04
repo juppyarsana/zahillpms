@@ -87,6 +87,20 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
 
     const weather = await getWeather();
 
+    // Polling fallback for the calls SSE stream — a staff-to-room call that
+    // arrived while the room's calls SSE connection was silently dead would
+    // otherwise just ring out and get marked missed with the tablet never
+    // showing anything. This is the same "state poll doubles as a
+    // guarantee" pattern the `message` field above already uses.
+    const { rows: incomingCallRows } = await db.query(
+      `SELECT c.id, u_staff.name AS staff_name
+       FROM calls c
+       LEFT JOIN users u_staff ON u_staff.id = c.initiated_by
+       WHERE c.unit_id = $1 AND c.status = 'ringing' AND c.direction = 'staff_to_room'
+       ORDER BY c.created_at ASC LIMIT 1`,
+      [unit.id]
+    );
+
     res.json({
       unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id, bed_config: unit.bed_config },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
@@ -94,6 +108,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       relays: relayRows,
       cards: cardRows,
       message: messageRows[0] || null,
+      incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
       weather,
       property: propertyRows[0] || null,
       orderingEnabled: enabledModules.get('sales') || false,
@@ -122,9 +137,12 @@ router.get('/room/:roomId/stream', authDisplay, async (req, res) => {
 
   sse.addClient(roomId, res);
 
-  // Keep-alive comment every 25s to survive Nginx / proxy idle timeouts
+  // Heartbeat every 25s — survives Nginx/proxy idle timeouts AND, sent as a
+  // real `data:` event (not an SSE comment, which onmessage never sees),
+  // lets the client detect a silently-dead connection and force a reconnect
+  // instead of trusting the browser's own retry to notice in time.
   const heartbeat = setInterval(() => {
-    try { res.write(': heartbeat\n\n'); } catch {}
+    try { res.write('data: {"type":"heartbeat"}\n\n'); } catch {}
   }, 25_000);
 
   req.on('close', () => {

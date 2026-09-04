@@ -1214,3 +1214,65 @@ post-discount; `total_amount` stays pre-discount gross. Invariant
   both entry points (BookingDetail and the Dashboard popover). Not yet
   tested on a real physical tablet — only in a headless browser against
   the dev server.
+
+---
+
+## ✅ Connectivity resilience for calls (SSE hardening + polling fallback)
+
+> Raised directly, going into the first real client deployment: "how do we
+> make sure it's really connected, not stale/cached — if idle for a long
+> time, will a message or call still work?" Investigated first rather than
+> assuming — found messages already had a safety net (the state poll
+> re-fetches independently of SSE every 10s) but calls didn't, since the
+> calls SSE stream was the *only* way either side learned about one. Every
+> SSE stream in the app also had `onerror = () => {}` — a literal no-op —
+> so a silently-dead connection (mobile network handoff, a router dropping
+> an idle NAT mapping) had zero chance of being noticed and reconnected.
+> Asked for the tradeoff between hardening the SSE layer vs. adding a
+> polling fallback (mirroring messages); decided to do both rather than
+> pick one, given the stakes of a first production client.
+
+- **Hardened every SSE connection** via a new `useResilientEventSource`
+  hook — separate copies in each app (`room-display/src/
+  useResilientEventSource.js`, `client/src/hooks/
+  useResilientEventSource.js`, no shared package between them). Server
+  heartbeats changed from an SSE *comment* (`: heartbeat\n\n`, invisible
+  to `onmessage` per the EventSource spec) to a real `data:
+  {"type":"heartbeat"}` event every 25s, on all three streams
+  (`routes/display.js`'s room state stream, `routes/calls.js`'s room
+  stream and staff stream) — the client genuinely could not tell
+  heartbeats were arriving before this. The hook tracks time since the
+  last event (message or heartbeat) and force-reconnects, with capped
+  exponential backoff, on: 40s of silence, any `onerror`, the tab
+  becoming visible again, and the browser's `online` event. All three SSE
+  call sites (room-display's `App.jsx` ×2, client's `CallContext.jsx`)
+  now go through this hook instead of a raw `new EventSource(...)`.
+- **Added a polling fallback for calls**, giving them the same guarantee
+  messages already had: `GET /room/:roomId/state` gained an
+  `incomingCall` field (oldest `ringing` `staff_to_room` call for that
+  unit); new `GET /api/calls/pending` (staff, property-wide) gives the
+  same for `room_to_staff`. The existing 10s state poll on Room Display,
+  and a new 10s poll added to `CallContext.jsx`, adopt a call the poll
+  found that SSE hasn't already delivered — guarded by `callIdRef` /
+  `incomingCallRef` so it can never double-fire once SSE does catch up.
+- **Verified the guarantee actually holds, not just that the code
+  compiles**: for both directions, inserted a `ringing` call row directly
+  into the database with deliberately **no** SSE push sent at all, then
+  confirmed the polling fallback alone surfaced the correct incoming-call
+  UI within the poll window (screenshots taken both sides). Separately
+  confirmed normal SSE push still delivers in ~30-40ms after the hook
+  refactor — a real message sent through the actual API arrived
+  near-instantly — so the hardening didn't regress the common case.
+- **Known residual risk, called out rather than glossed over:** this
+  bounds "notices an incoming call" to ~10-40s worst case, not
+  zero-latency-always. WebRTC signaling *during* an already-answered call
+  (offer/answer/ICE exchange) is still SSE-only with no polling
+  equivalent — a connection that dies mid-call still relies on the
+  pre-existing 25s `CONNECTING_TIMEOUT_MS` cutoff to surface as "Could
+  not connect" rather than this pass's fallback. This pass guarantees
+  "the guest/staff always finds out a call is happening," not that an
+  in-progress call itself can never drop.
+- Status: ✅ Implemented and verified via direct database-level fault
+  injection (not just normal-path testing) this session. Not yet tested
+  against a real degraded network (only simulated by bypassing SSE
+  entirely at the database level) or on a real physical tablet.
