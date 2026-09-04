@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import { SourceBadge } from '../context/SettingsContext';
+import CountrySelect from '../components/CountrySelect';
 
 const PREF_ICONS  = { dietary: '🍽', room: '🛏', habit: '💡', special: '⭐' };
 const PREF_CLASS  = { dietary: 'pref-food', room: 'pref-room', habit: 'pref-habit', special: 'pref-special' };
@@ -87,7 +88,7 @@ export default function GuestProfile() {
           <div className="card-title">Edit Profile</div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={form.name||''} onChange={e=>setForm(f=>({...f,name:e.target.value}))} /></div>
-            <div className="form-group"><label className="form-label">Nationality</label><input className="form-input" value={form.nationality||''} onChange={e=>setForm(f=>({...f,nationality:e.target.value}))} /></div>
+            <div className="form-group"><label className="form-label">Nationality</label><CountrySelect value={form.nationality||''} onChange={v=>setForm(f=>({...f,nationality:v}))} /></div>
             <div className="form-group"><label className="form-label">WhatsApp</label><input className="form-input" value={form.whatsapp||''} onChange={e=>setForm(f=>({...f,whatsapp:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email||''} onChange={e=>setForm(f=>({...f,email:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">Birthday</label><input className="form-input" type="date" value={form.birthday||''} onChange={e=>setForm(f=>({...f,birthday:e.target.value}))} /></div>

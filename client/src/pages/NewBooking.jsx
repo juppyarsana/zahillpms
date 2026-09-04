@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import CountrySelect from '../components/CountrySelect';
 
 // Staff-facing heads-up when the chosen source is an agent with a non-standard
 // billing arrangement. Informational only — booking creation is unchanged; the
@@ -288,7 +289,7 @@ export default function NewBooking() {
               </div>
               <div className="form-group">
                 <label className="form-label">Nationality</label>
-                <input className="form-input" value={newGuest.nationality} onChange={e => setNewGuest(g=>({...g,nationality:e.target.value}))} />
+                <CountrySelect value={newGuest.nationality} onChange={v => setNewGuest(g=>({...g,nationality:v}))} />
               </div>
               <div className="form-group">
                 <label className="form-label">Email</label>

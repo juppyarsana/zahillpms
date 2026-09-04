@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
+import CountrySelect from '../components/CountrySelect';
 
 const EMPTY_FORM = {
   name: '', nationality: '', whatsapp: '', email: '',
@@ -186,7 +187,7 @@ export default function Guests() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Nationality</label>
-                  <input className="form-input" value={form.nationality} onChange={e => set('nationality', e.target.value)} />
+                  <CountrySelect value={form.nationality} onChange={v => set('nationality', v)} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">WhatsApp</label>
