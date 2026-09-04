@@ -1,7 +1,14 @@
 import { useState } from 'react';
+import { getThemeOverride, setThemeOverride } from '../theme';
 
 export default function DebugMenu({ onLogout, onChangeRoom, onClose }) {
   const [newRoomId, setNewRoomId] = useState('');
+  const [themeOverride, setThemeOverrideState] = useState(getThemeOverride());
+
+  const chooseTheme = (v) => {
+    setThemeOverride(v);
+    setThemeOverrideState(v);
+  };
 
   const handleChangeRoom = () => {
     if (newRoomId.trim()) {
@@ -36,6 +43,22 @@ export default function DebugMenu({ onLogout, onChangeRoom, onClose }) {
             >
               Change
             </button>
+          </div>
+        </div>
+
+        {/* Theme override */}
+        <div className="mb-4">
+          <label className="block text-sm text-slate-300 mb-2">Theme (auto = day/night by clock)</label>
+          <div className="flex gap-2">
+            {[['', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, label]) => (
+              <button
+                key={v || 'auto'}
+                onClick={() => chooseTheme(v)}
+                className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${themeOverride === v ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 

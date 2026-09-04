@@ -55,35 +55,35 @@ function useSwipeAndHold(onNext, onPrev, onPause, onResume) {
   return ref;
 }
 
-function WeatherStrip({ weather }) {
+function WeatherStrip({ weather, location }) {
   if (!weather) return (
-    <div style={{ padding: '10px 36px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 }}>
-      <span style={{ fontSize: 11, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Weather unavailable</span>
+    <div style={{ padding: '10px 36px', borderBottom: '1px solid var(--border-soft)', flexShrink: 0 }}>
+      <span style={{ fontSize: 11, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Weather unavailable</span>
     </div>
   );
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0,
-      padding: '10px 36px 9px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0,
+      padding: '10px 36px 9px', borderBottom: '1px solid var(--border-soft)', flexShrink: 0,
     }}>
       {/* Today */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#334155', marginRight: 4 }}>Today</span>
-        <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#c9a227' }}>{pickIcon(weather.today.icon)}</span>
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)', marginRight: 4 }}>Today</span>
+        <span className="material-symbols-outlined text-accent" style={{ fontSize: 24 }}>{pickIcon(weather.today.icon)}</span>
         <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1 }}>{weather.today.temp}°C</span>
         <div>
-          <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{weather.today.desc}</div>
-          <div style={{ fontSize: 9, color: '#2a3441', textTransform: 'uppercase', letterSpacing: '0.18em' }}>Kintamani · Bali</div>
+          <div style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{weather.today.desc}</div>
+          {location && <div style={{ fontSize: 9, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.18em' }}>{location}</div>}
         </div>
       </div>
       {/* Separator */}
-      <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', margin: '0 28px' }} />
+      <div style={{ width: 1, height: 32, background: 'var(--border)', margin: '0 28px' }} />
       {/* Tomorrow */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#334155', marginRight: 4 }}>Tomorrow</span>
-        <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#64748b' }}>{pickIcon(weather.tomorrow.icon)}</span>
-        <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1, color: '#94a3b8' }}>{weather.tomorrow.temp}°C</span>
-        <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{weather.tomorrow.desc}</div>
+        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)', marginRight: 4 }}>Tomorrow</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 24, color: 'var(--text-dim)' }}>{pickIcon(weather.tomorrow.icon)}</span>
+        <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1, color: 'var(--text-muted)' }}>{weather.tomorrow.temp}°C</span>
+        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{weather.tomorrow.desc}</div>
       </div>
     </div>
   );
@@ -149,15 +149,19 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
   if (items.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <span className="material-symbols-outlined" style={{ fontSize: 48, color: '#2a3441' }}>inbox</span>
-        <p style={{ fontSize: 12, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.15em' }}>No cards yet</p>
+        <span className="material-symbols-outlined" style={{ fontSize: 48, color: 'var(--text-ghost)' }}>inbox</span>
+        <p style={{ fontSize: 12, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>No cards yet</p>
       </div>
     );
   }
 
   const card = items[Math.min(current, items.length - 1)];
-  const TAG_COLORS = { activity: '#4ade80', dining: '#fb923c', property: '#c9a227', notice: '#818cf8' };
-  const tagColor = TAG_COLORS[category] || '#c9a227';
+  // Status categories keep fixed hues; 'property' (and any unknown) rides the brand accent.
+  const TAG_COLORS = { activity: '#4ade80', dining: '#fb923c', notice: '#818cf8' };
+  const tagColor = TAG_COLORS[category];
+  const tagStyle = tagColor
+    ? { background: `${tagColor}20`, color: tagColor, border: `1px solid ${tagColor}40` }
+    : { background: 'rgb(var(--accent-rgb) / 0.13)', color: 'var(--accent)', border: '1px solid rgb(var(--accent-rgb) / 0.25)' };
 
   return (
     <div ref={swipeRef} style={{ flex: 1, position: 'relative', overflow: 'hidden', userSelect: 'none' }}>
@@ -172,7 +176,7 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
             filter: 'brightness(0.5)',
           }} />
         ) : (
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #0a0d12 0%, #111827 100%)' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #0a0d12 0%, #1c2536 100%)' }} />
         )}
         {/* Gradient overlay */}
         <div style={{
@@ -186,7 +190,7 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
               display: 'inline-flex', alignItems: 'center', gap: 6,
               fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em',
               padding: '6px 14px', borderRadius: 20, marginBottom: 20, width: 'fit-content',
-              background: `${tagColor}20`, color: tagColor, border: `1px solid ${tagColor}40`,
+              ...tagStyle,
             }}>
               {category}
             </div>
@@ -207,7 +211,7 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
                   onClick={() => onBookActivity?.(card.activity_id)}
                   style={{
                     padding: '10px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                    background: '#c9a227', color: '#0a0d12', fontSize: 12, fontWeight: 700,
+                    background: 'var(--accent)', color: 'var(--accent-contrast)', fontSize: 12, fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.12em',
                   }}
                 >
@@ -223,11 +227,11 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
       {paused && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          background: 'rgba(5,7,10,0.7)', border: '1px solid rgba(201,162,39,0.3)',
+          background: 'rgba(5,7,10,0.7)', border: '1px solid rgb(var(--accent-rgb) / 0.4)',
           borderRadius: '50%', width: 64, height: 64,
           display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 10,
         }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#c9a227' }}>pause</span>
+          <span className="material-symbols-outlined text-accent" style={{ fontSize: 28 }}>pause</span>
         </div>
       )}
 
@@ -251,18 +255,18 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
 
       {/* Progress bar */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.03)' }}>
-        <div ref={barRef} style={{ height: '100%', background: '#c9a227', width: '0%' }} />
+        <div ref={barRef} style={{ height: '100%', background: 'var(--accent)', width: '0%' }} />
       </div>
     </div>
   );
 }
 
-export default function ExploreTab({ weather, cards = [], activeCategory, onCategoryChange, activitiesEnabled, onBookActivity }) {
+export default function ExploreTab({ weather, cards = [], activeCategory, onCategoryChange, activitiesEnabled, onBookActivity, location }) {
   const notices = cards.filter(c => c.category === 'notice');
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <WeatherStrip weather={weather} />
+      <WeatherStrip weather={weather} location={location} />
       <CardSlideshow cards={cards} category={activeCategory} activitiesEnabled={activitiesEnabled} onBookActivity={onBookActivity} />
       {/* Notice bar — always visible at bottom, scrolls all notices */}
       {notices.length > 0 && (() => {
@@ -297,12 +301,12 @@ export default function ExploreTab({ weather, cards = [], activeCategory, onCate
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {cards.filter(c => c.category === activeCategory).map((_, i) => (
             <div key={i} style={{
-              borderRadius: 3, height: 5, background: '#2a3441',
+              borderRadius: 3, height: 5, background: 'var(--text-ghost)',
               width: 6, transition: 'all 0.35s ease',
             }} />
           ))}
         </div>
-        <div style={{ fontSize: 10, color: '#2a3441', textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 700 }}>
+        <div style={{ fontSize: 10, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.18em', fontWeight: 700 }}>
           {cards.filter(c => c.category === activeCategory).length} card{cards.filter(c => c.category === activeCategory).length !== 1 ? 's' : ''}
         </div>
       </div>

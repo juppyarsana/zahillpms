@@ -12,7 +12,7 @@ export default function Clock({ large, compact }) {
 
   if (compact) {
     const h24 = hours24.toString().padStart(2, '0');
-    return <p className="text-slate-700 text-xs font-mono">{h24}:{m}</p>;
+    return <p className="text-ghost text-xs font-mono">{h24}:{m}</p>;
   }
 
   // getHours() is 24-hour — convert to 12-hour before pairing with AM/PM,
@@ -22,15 +22,15 @@ export default function Clock({ large, compact }) {
 
   if (large) {
     return (
-      <p className="text-3xl font-light text-white tracking-tighter">
-        {h}:{m} <span className="text-sm font-bold" style={{ color: '#c9a227' }}>{ampm}</span>
+      <p className="text-3xl font-light text-ink tracking-tighter">
+        {h}:{m} <span className="text-sm font-bold text-accent">{ampm}</span>
       </p>
     );
   }
 
   return (
-    <p className="text-2xl font-light text-white tracking-tighter">
-      {h}:{m} <span className="text-xs font-bold" style={{ color: '#c9a227' }}>{ampm}</span>
+    <p className="text-2xl font-light text-ink tracking-tighter">
+      {h}:{m} <span className="text-xs font-bold text-accent">{ampm}</span>
     </p>
   );
 }

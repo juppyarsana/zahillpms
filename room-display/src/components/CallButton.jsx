@@ -5,8 +5,8 @@ export default function CallButton({ onClick, disabled }) {
       disabled={disabled}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-        background: 'rgba(220,38,38,0.12)', border: 'none', cursor: disabled ? 'default' : 'pointer',
-        color: '#f87171', fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
+        background: 'var(--danger-soft)', border: 'none', cursor: disabled ? 'default' : 'pointer',
+        color: 'var(--danger-text)', fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
         textTransform: 'uppercase', letterSpacing: '0.1em',
         padding: '10px 4px', width: '100%', borderRadius: 10,
         opacity: disabled ? 0.4 : 1,

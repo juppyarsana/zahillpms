@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
 import callClient from './callClient';
 import ringtone from './ringtone';
+import { applyAccent } from './theme';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
@@ -37,6 +38,11 @@ export default function App() {
     else ringtone.stop();
     return () => ringtone.stop();
   }, [callState.status]);
+
+  // Per-property accent — reapplied whenever branding changes
+  useEffect(() => {
+    if (state?.property?.brand_color) applyAccent(state.property.brand_color);
+  }, [state?.property?.brand_color]);
 
   const handleDebugClick = useCallback(() => {
     setDebugClicks(prev => {
@@ -272,14 +278,14 @@ export default function App() {
   if (error && !state) {
     return (
       <>
-        <div className="w-screen h-dvh flex flex-col items-center justify-center bg-bg-dark gap-4">
+        <div className="w-screen h-dvh flex flex-col items-center justify-center bg-app-deep gap-4">
           <img
-            src="/logo.png" alt="Zahill"
+            src="/logo.png" alt=""
             style={{ width: 64, height: 64, objectFit: 'contain', opacity: 0.3, cursor: 'pointer' }}
             onClick={handleDebugClick}
           />
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-600">{error}</p>
-          <p className="text-[10px] text-slate-700 uppercase tracking-widest">Room {roomId}</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-faint">{error}</p>
+          <p className="text-[10px] text-ghost uppercase tracking-widest">Room {roomId}</p>
         </div>
         {showDebugMenu && (
           <DebugMenu
@@ -303,6 +309,7 @@ export default function App() {
           relays={state.relays}
           property={state.property}
           roomId={roomId}
+          online={!error}
           roomControllerEnabled={state.roomControllerEnabled}
           callingEnabled={state.callingEnabled}
           onRefresh={fetchState}
@@ -339,6 +346,7 @@ export default function App() {
         controller={state.controller}
         property={state.property}
         roomId={roomId}
+        online={!error}
         weather={state.weather}
         cards={state.cards || []}
         orderingEnabled={state.orderingEnabled}

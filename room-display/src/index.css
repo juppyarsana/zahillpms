@@ -1,11 +1,80 @@
 @import "tailwindcss";
 
-@theme {
-  --color-primary: #c9a227;
-  --color-bg-dark: #0d0709;
-  --color-sidebar-dark: #120a0d;
-  --color-pane-dark: #170e12;
+/* ============================================================
+   Theme tokens
+   ------------------------------------------------------------
+   Every color in the app resolves to one of these semantic
+   vars. Two token sets — dark + light (warm paper) — selected
+   by `data-theme` on <html> (see src/theme.js). `--accent` /
+   `--accent-rgb` / `--accent-contrast` are injected at runtime
+   from the property's brand_color (see App.jsx), so they are
+   intentionally NOT redefined per theme.
+   ============================================================ */
 
+:root,
+:root[data-theme="dark"] {
+  --bg:          #0d0709;
+  --bg-deep:     #05070a;
+  --sidebar:     #120a0d;
+  --pane:        #170e12;
+
+  --surface:     rgba(255, 255, 255, 0.03);
+  --surface-2:   rgba(255, 255, 255, 0.06);
+  --border:      rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(255, 255, 255, 0.05);
+
+  --text:        #f1f5f9;
+  --text-muted:  #94a3b8;
+  --text-dim:    #64748b;
+  --text-faint:  #475569;
+  --text-ghost:  #334155;
+
+  --overlay:     rgba(5, 7, 10, 0.92);
+  --scrim:       rgba(0, 0, 0, 0.9);
+  --danger:      #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.12);
+  --danger-text: #f87171;
+  --ok:          #22c55e;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg:          #f4ecdb;
+  --bg-deep:     #ece1cb;
+  --sidebar:     #ede2cd;
+  --pane:        #faf5ea;
+
+  --surface:     rgba(255, 255, 255, 0.55);
+  --surface-2:   rgba(255, 255, 255, 0.85);
+  --border:      rgba(74, 52, 28, 0.14);
+  --border-soft: rgba(74, 52, 28, 0.08);
+
+  --text:        #2b2118;
+  --text-muted:  #6a5c47;
+  --text-dim:    #8a7a62;
+  --text-faint:  #ab9a80;
+  --text-ghost:  #c4b49a;
+
+  --overlay:     rgba(244, 236, 219, 0.9);
+  --scrim:       rgba(120, 100, 70, 0.35);
+  --danger:      #b3261e;
+  --danger-soft: rgba(179, 38, 30, 0.12);
+  --danger-text: #b3261e;
+  --ok:          #1f8a4c;
+
+  color-scheme: light;
+}
+
+/* Accent — overwritten at runtime from brand_color; these are the
+   platform defaults so an unbranded property still renders. */
+:root {
+  --accent:          #c9a227;
+  --accent-rgb:      201 162 39;
+  --accent-contrast: #0a0d12;
+}
+
+@theme {
   --font-display: 'Manrope', sans-serif;
   --font-brand: 'Playfair Display', serif;
 }
@@ -18,10 +87,13 @@
     height: 100%;
     width: 100%;
     overflow: hidden;
-    background-color: #05070a;
-    color: #f1f5f9;
+    background-color: var(--bg-deep);
+    color: var(--text);
     font-family: 'Manrope', sans-serif;
     -webkit-font-smoothing: antialiased;
+  }
+  html {
+    transition: background-color 0.6s ease, color 0.6s ease;
   }
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
@@ -34,10 +106,36 @@
   }
 }
 
+/* Semantic color utilities — used in place of Tailwind's fixed
+   palette (text-white / text-slate-* / bg-*) so everything tracks
+   the active theme. */
+@layer utilities {
+  .bg-app       { background-color: var(--bg); }
+  .bg-app-deep  { background-color: var(--bg-deep); }
+  .bg-sidebar   { background-color: var(--sidebar); }
+  .bg-pane      { background-color: var(--pane); }
+  .bg-surface   { background-color: var(--surface); }
+  .bg-surface-2 { background-color: var(--surface-2); }
+  .bg-accent    { background-color: var(--accent); }
+
+  .text-ink     { color: var(--text); }
+  .text-muted   { color: var(--text-muted); }
+  .text-dim     { color: var(--text-dim); }
+  .text-faint   { color: var(--text-faint); }
+  .text-ghost   { color: var(--text-ghost); }
+  .text-accent  { color: var(--accent); }
+
+  .border-app      { border-color: var(--border); }
+  .border-app-soft { border-color: var(--border-soft); }
+  .border-accent   { border-color: var(--accent); }
+
+  .accent-tint  { background-color: rgb(var(--accent-rgb) / 0.12); }
+}
+
 @utility glass-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
 }
 
 @utility filled {

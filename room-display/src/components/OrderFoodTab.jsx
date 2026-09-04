@@ -74,10 +74,10 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
 
   if (confirmed) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-bg-dark gap-6">
-        <span className="material-symbols-outlined" style={{ fontSize: 96, color: '#c9a227' }}>check_circle</span>
-        <h2 className="text-4xl font-extralight text-white">Order placed!</h2>
-        <p className="text-slate-400 text-sm">Our team is on it — it'll be with you shortly.</p>
+      <div className="flex-1 flex flex-col items-center justify-center bg-app gap-6">
+        <span className="material-symbols-outlined text-accent" style={{ fontSize: 96 }}>check_circle</span>
+        <h2 className="text-4xl font-extralight text-ink">Order placed!</h2>
+        <p className="text-muted text-sm">Our team is on it — it'll be with you shortly.</p>
       </div>
     );
   }
@@ -85,20 +85,20 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Menu */}
-      <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
+      <section className="flex-1 p-10 bg-app overflow-y-auto">
         <div className="mb-6">
-          <h2 className="text-3xl font-extralight text-white mb-1">Order Food</h2>
-          <p className="text-slate-500 text-sm">Browse the menu and we'll bring it right to your room.</p>
+          <h2 className="text-3xl font-extralight text-ink mb-1">Order Food</h2>
+          <p className="text-dim text-sm">Browse the menu and we'll bring it right to your room.</p>
         </div>
 
-        {loading && <p className="text-slate-500 text-sm">Loading menu…</p>}
-        {!loading && menu.length === 0 && <p className="text-slate-500 text-sm">Nothing on the menu right now.</p>}
+        {loading && <p className="text-dim text-sm">Loading menu…</p>}
+        {!loading && menu.length === 0 && <p className="text-dim text-sm">Nothing on the menu right now.</p>}
 
         {grouped.map(({ cat, items }) => (
           <div key={cat} className="mb-8">
             <div className="flex items-center gap-2 mb-4">
-              <span className="material-symbols-outlined text-lg" style={{ color: '#c9a227' }}>{CATEGORY_ICONS[cat]}</span>
-              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{CATEGORY_LABELS[cat]}</h3>
+              <span className="material-symbols-outlined text-lg text-accent">{CATEGORY_ICONS[cat]}</span>
+              <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted">{CATEGORY_LABELS[cat]}</h3>
             </div>
             <div className="grid grid-cols-3 gap-4">
               {items.map(p => (
@@ -106,11 +106,10 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
                   key={p.id}
                   onClick={() => addToCart(p)}
                   className="glass-card rounded-2xl p-5 text-left flex flex-col gap-2"
-                  style={{ border: '1px solid rgba(255,255,255,0.05)' }}
                 >
-                  <span className="text-white text-sm font-medium">{p.name}</span>
-                  {p.description && <span className="text-slate-500 text-xs">{p.description}</span>}
-                  <span className="mt-auto pt-2" style={{ color: '#c9a227', fontSize: 15, fontWeight: 600 }}>{fmtIDR(p.price)}</span>
+                  <span className="text-ink text-sm font-medium">{p.name}</span>
+                  {p.description && <span className="text-dim text-xs">{p.description}</span>}
+                  <span className="mt-auto pt-2 text-accent" style={{ fontSize: 15, fontWeight: 600 }}>{fmtIDR(p.price)}</span>
                 </button>
               ))}
             </div>
@@ -119,43 +118,43 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
       </section>
 
       {/* Cart */}
-      <aside className="w-[380px] shrink-0 border-l border-white/5 p-8 flex flex-col" style={{ background: 'rgba(14,17,23,0.5)' }}>
-        <h3 className="text-xs font-bold uppercase tracking-[0.3em] mb-5" style={{ color: '#c9a227' }}>Your Order</h3>
+      <aside className="w-[380px] shrink-0 border-l border-app-soft p-8 flex flex-col bg-pane">
+        <h3 className="text-xs font-bold uppercase tracking-[0.3em] mb-5 text-accent">Your Order</h3>
 
         {cart.length === 0 ? (
-          <p className="text-slate-600 text-sm text-center mt-10">Tap an item to add it here.</p>
+          <p className="text-faint text-sm text-center mt-10">Tap an item to add it here.</p>
         ) : (
           <div className="flex-1 overflow-y-auto flex flex-col gap-3">
             {cart.map(i => (
               <div key={i.product_id} className="glass-card rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-white text-sm">{i.name}</p>
-                  <p className="text-slate-500 text-xs">{fmtIDR(i.price)}</p>
+                  <p className="text-ink text-sm">{i.name}</p>
+                  <p className="text-dim text-xs">{fmtIDR(i.price)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button onClick={() => setQty(i.product_id, i.quantity - 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>−</button>
-                  <span className="text-white text-sm w-4 text-center">{i.quantity}</span>
-                  <button onClick={() => setQty(i.product_id, i.quantity + 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>+</button>
+                  <button onClick={() => setQty(i.product_id, i.quantity - 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-muted bg-surface-2">−</button>
+                  <span className="text-ink text-sm w-4 text-center">{i.quantity}</span>
+                  <button onClick={() => setQty(i.product_id, i.quantity + 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-muted bg-surface-2">+</button>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {error && <p className="text-xs mt-4" style={{ color: '#f87171' }}>{error}</p>}
+        {error && <p className="text-xs mt-4" style={{ color: 'var(--danger-text)' }}>{error}</p>}
 
-        <div className="mt-auto pt-5 border-t border-white/5">
+        <div className="mt-auto pt-5 border-t border-app-soft">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-slate-400 text-sm">Total</span>
-            <span className="text-white text-xl font-light">{fmtIDR(cartTotal)}</span>
+            <span className="text-muted text-sm">Total</span>
+            <span className="text-ink text-xl font-light">{fmtIDR(cartTotal)}</span>
           </div>
           <button
             onClick={placeOrder}
             disabled={cart.length === 0 || placing}
             className="w-full py-3.5 rounded-xl text-sm font-bold uppercase tracking-widest"
             style={{
-              background: cart.length === 0 || placing ? 'rgba(255,255,255,0.06)' : '#c9a227',
-              color: cart.length === 0 || placing ? '#475569' : '#0a0d12',
+              background: cart.length === 0 || placing ? 'var(--surface-2)' : 'var(--accent)',
+              color: cart.length === 0 || placing ? 'var(--text-faint)' : 'var(--accent-contrast)',
               cursor: cart.length === 0 || placing ? 'default' : 'pointer',
             }}
           >

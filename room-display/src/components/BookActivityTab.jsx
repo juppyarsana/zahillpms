@@ -66,90 +66,90 @@ export default function BookActivityTab({ roomId, activityId, onBack, onBooked }
 
   if (confirmed) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-bg-dark gap-6">
-        <span className="material-symbols-outlined" style={{ fontSize: 96, color: '#c9a227' }}>check_circle</span>
-        <h2 className="text-4xl font-extralight text-white">Request sent!</h2>
-        <p className="text-slate-400 text-sm">The front desk will confirm your booking shortly.</p>
+      <div className="flex-1 flex flex-col items-center justify-center bg-app gap-6">
+        <span className="material-symbols-outlined text-accent" style={{ fontSize: 96 }}>check_circle</span>
+        <h2 className="text-4xl font-extralight text-ink">Request sent!</h2>
+        <p className="text-muted text-sm">The front desk will confirm your booking shortly.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-bg-dark overflow-y-auto">
+    <div className="flex-1 flex items-center justify-center bg-app overflow-y-auto">
       <div className="w-full flex flex-col gap-5" style={{ maxWidth: 440, padding: '40px 24px' }}>
         <button
           onClick={onBack}
-          className="flex items-center gap-1 text-slate-500 text-xs font-bold uppercase tracking-widest"
+          className="flex items-center gap-1 text-dim text-xs font-bold uppercase tracking-widest"
           style={{ background: 'none', border: 'none', cursor: 'pointer', width: 'fit-content' }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>arrow_back</span> Back
         </button>
 
-        {loading && <p className="text-slate-500 text-sm">Loading…</p>}
-        {!loading && notFound && <p className="text-slate-500 text-sm">This activity is no longer available.</p>}
+        {loading && <p className="text-dim text-sm">Loading…</p>}
+        {!loading && notFound && <p className="text-dim text-sm">This activity is no longer available.</p>}
 
         {activity && (
           <>
             <div>
-              <h2 className="text-2xl font-extralight text-white mb-1">{activity.name}</h2>
-              {activity.description && <p className="text-slate-500 text-sm">{activity.description}</p>}
-              <p className="mt-2" style={{ color: '#c9a227', fontSize: 16, fontWeight: 600 }}>
+              <h2 className="text-2xl font-extralight text-ink mb-1">{activity.name}</h2>
+              {activity.description && <p className="text-dim text-sm">{activity.description}</p>}
+              <p className="mt-2 text-accent" style={{ fontSize: 16, fontWeight: 600 }}>
                 {fmtIDR(activity.price)} / person{activity.duration_minutes ? ` · ${activity.duration_minutes} min` : ''}
               </p>
             </div>
 
             <label className="flex flex-col gap-1">
-              <span className="text-slate-400 text-xs uppercase tracking-widest">Date</span>
+              <span className="text-muted text-xs uppercase tracking-widest">Date</span>
               <input
                 type="date" min={TODAY()} value={scheduledDate}
                 onChange={e => setScheduledDate(e.target.value)}
-                className="rounded-lg px-3 py-2 text-sm text-white"
-                style={{ background: 'rgba(255,255,255,0.06)', border: 'none' }}
+                className="rounded-lg px-3 py-2 text-sm text-ink"
+                style={{ background: 'var(--surface-2)', border: 'none' }}
               />
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-slate-400 text-xs uppercase tracking-widest">Preferred Time (optional)</span>
+              <span className="text-muted text-xs uppercase tracking-widest">Preferred Time (optional)</span>
               <input
                 type="time" value={scheduledTime}
                 onChange={e => setScheduledTime(e.target.value)}
-                className="rounded-lg px-3 py-2 text-sm text-white"
-                style={{ background: 'rgba(255,255,255,0.06)', border: 'none' }}
+                className="rounded-lg px-3 py-2 text-sm text-ink"
+                style={{ background: 'var(--surface-2)', border: 'none' }}
               />
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-slate-400 text-xs uppercase tracking-widest">Participants</span>
+              <span className="text-muted text-xs uppercase tracking-widest">Participants</span>
               <div className="flex items-center gap-3">
-                <button onClick={() => setParticipants(p => Math.max(1, p - 1))} className="w-7 h-7 rounded-full flex items-center justify-center text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>−</button>
-                <span className="text-white text-sm w-4 text-center">{participants}</span>
-                <button onClick={() => setParticipants(p => p + 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>+</button>
+                <button onClick={() => setParticipants(p => Math.max(1, p - 1))} className="w-7 h-7 rounded-full flex items-center justify-center text-muted bg-surface-2">−</button>
+                <span className="text-ink text-sm w-4 text-center">{participants}</span>
+                <button onClick={() => setParticipants(p => p + 1)} className="w-7 h-7 rounded-full flex items-center justify-center text-muted bg-surface-2">+</button>
               </div>
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-slate-400 text-xs uppercase tracking-widest">Notes (optional)</span>
+              <span className="text-muted text-xs uppercase tracking-widest">Notes (optional)</span>
               <textarea
                 value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-                className="rounded-lg px-3 py-2 text-sm text-white resize-none"
-                style={{ background: 'rgba(255,255,255,0.06)', border: 'none' }}
+                className="rounded-lg px-3 py-2 text-sm text-ink resize-none"
+                style={{ background: 'var(--surface-2)', border: 'none' }}
               />
             </label>
 
-            {error && <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>}
+            {error && <p className="text-xs" style={{ color: 'var(--danger-text)' }}>{error}</p>}
 
-            <div className="pt-3 border-t border-white/5">
+            <div className="pt-3 border-t border-app-soft">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-slate-400 text-sm">Estimated Total</span>
-                <span className="text-white text-xl font-light">{fmtIDR(activity.price * participants)}</span>
+                <span className="text-muted text-sm">Estimated Total</span>
+                <span className="text-ink text-xl font-light">{fmtIDR(activity.price * participants)}</span>
               </div>
               <button
                 onClick={submitRequest}
                 disabled={submitting}
                 className="w-full py-3.5 rounded-xl text-sm font-bold uppercase tracking-widest"
                 style={{
-                  background: submitting ? 'rgba(255,255,255,0.06)' : '#c9a227',
-                  color: submitting ? '#475569' : '#0a0d12',
+                  background: submitting ? 'var(--surface-2)' : 'var(--accent)',
+                  color: submitting ? 'var(--text-faint)' : 'var(--accent-contrast)',
                   cursor: submitting ? 'default' : 'pointer',
                 }}
               >

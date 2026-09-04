@@ -15,86 +15,85 @@ export default function StayPanel({ unit, booking, relays, controller, property,
 
   return (
     <section
-      className="w-[420px] shrink-0 flex flex-col border-r border-white/5 p-10"
-      style={{ background: 'rgba(14,17,23,0.5)' }}
+      className="w-[420px] shrink-0 flex flex-col border-r border-app-soft p-10 bg-pane"
     >
       <header className="mb-5">
-        <p className="text-xs font-bold uppercase tracking-[0.3em] mb-1" style={{ color: '#c9a227' }}>Reservation</p>
-        <h2 className="text-3xl font-extralight text-white leading-tight">Your Stay</h2>
-        <p className="text-slate-400 mt-1 text-sm">Welcome, {booking.guest_name}</p>
+        <p className="text-xs font-bold uppercase tracking-[0.3em] mb-1 text-accent">Reservation</p>
+        <h2 className="text-3xl font-extralight text-ink leading-tight">Your Stay</h2>
+        <p className="text-muted mt-1 text-sm">Welcome, {booking.guest_name}</p>
       </header>
 
       {/* Unit card */}
-      <div className="relative h-40 rounded-3xl overflow-hidden mb-5 flex items-end" style={{ background: 'rgba(255,255,255,0.03)' }}>
+      <div className="relative h-40 rounded-3xl overflow-hidden mb-5 flex items-end bg-surface">
         <div className="absolute inset-0 flex items-center justify-center opacity-10">
-          <span className="material-symbols-outlined" style={{ fontSize: '9rem', color: '#c9a227' }}>home</span>
+          <span className="material-symbols-outlined text-accent" style={{ fontSize: '9rem' }}>home</span>
         </div>
         <div
           className="absolute inset-0 flex flex-col justify-end p-6"
-          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.2) 60%, transparent 100%)' }}
+          style={{ background: 'linear-gradient(to top, var(--scrim) 0%, transparent 100%)' }}
         >
           <span
-            className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest text-black mb-3 w-fit"
-            style={{ background: 'rgba(201,162,39,0.9)' }}
+            className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest mb-3 w-fit bg-accent"
+            style={{ color: 'var(--accent-contrast)' }}
           >
             {unit.name}
           </span>
-          <h3 className="text-xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>{property?.name || 'ZHP PMS'}</h3>
-          <p className="text-xs text-slate-400 mt-0.5">Kintamani · Bali</p>
+          <h3 className="text-xl text-ink" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>{property?.name || ''}</h3>
+          {property?.location && <p className="text-xs text-muted mt-0.5">{property.location}</p>}
         </div>
       </div>
 
       {/* Check-in / Check-out */}
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="glass-card p-5 rounded-2xl">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-4">Check-in</p>
-          <p className="text-3xl font-light text-white">{fmt(booking.check_in_date)}</p>
-          <p className="text-[11px] mt-2" style={{ color: '#c9a227' }}>After 14:00</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-dim mb-4">Check-in</p>
+          <p className="text-3xl font-light text-ink">{fmt(booking.check_in_date)}</p>
+          <p className="text-[11px] mt-2 text-accent">After 14:00</p>
         </div>
         <div className="glass-card p-5 rounded-2xl">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-4">Check-out</p>
-          <p className="text-3xl font-light text-white">{fmt(booking.check_out_date)}</p>
-          <p className="text-[11px] mt-2" style={{ color: '#c9a227' }}>Before 12:00</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-dim mb-4">Check-out</p>
+          <p className="text-3xl font-light text-ink">{fmt(booking.check_out_date)}</p>
+          <p className="text-[11px] mt-2 text-accent">Before 12:00</p>
         </div>
       </div>
 
       {/* Stay duration */}
       <div className="glass-card rounded-2xl px-5 py-3 flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-xl" style={{ color: '#c9a227' }}>nights_stay</span>
+          <span className="material-symbols-outlined text-xl text-accent">nights_stay</span>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Duration</p>
-            <p className="text-white text-sm">{totalNights} night{totalNights !== 1 ? 's' : ''}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-dim">Duration</p>
+            <p className="text-ink text-sm">{totalNights} night{totalNights !== 1 ? 's' : ''}</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Remaining</p>
-          <p className="font-bold" style={{ color: '#c9a227' }}>{nightsLeft} night{nightsLeft !== 1 ? 's' : ''}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-dim">Remaining</p>
+          <p className="font-bold text-accent">{nightsLeft} night{nightsLeft !== 1 ? 's' : ''}</p>
         </div>
       </div>
 
       {/* Active devices — only relevant when the property actually has room_controller hardware */}
       {roomControllerEnabled && (
         <div className="mt-auto">
-          <div className="flex items-center justify-between text-[10px] text-slate-600 mb-3 uppercase tracking-widest font-bold">
+          <div className="flex items-center justify-between text-[10px] text-faint mb-3 uppercase tracking-widest font-bold">
             <span>Active Devices</span>
             {controller?.connected && (
-              <span style={{ color: '#c9a227' }}>{activeRelays.length} On</span>
+              <span className="text-accent">{activeRelays.length} On</span>
             )}
           </div>
           <div className="flex gap-2 flex-wrap">
             {!controller?.connected ? (
-              <div className="flex items-center gap-2 text-slate-700">
+              <div className="flex items-center gap-2 text-ghost">
                 <span className="material-symbols-outlined text-sm">wifi_off</span>
                 <span className="text-[10px] uppercase tracking-wider">Controller offline</span>
               </div>
             ) : activeRelays.length === 0 ? (
-              <span className="text-[10px] uppercase tracking-wider text-slate-700">All off</span>
+              <span className="text-[10px] uppercase tracking-wider text-ghost">All off</span>
             ) : (
               activeRelays.map(r => (
                 <div
                   key={r.relay_num}
-                  className="w-10 h-10 glass-card rounded-lg flex items-center justify-center text-slate-300"
+                  className="w-10 h-10 glass-card rounded-lg flex items-center justify-center text-muted"
                   title={r.label || `Relay ${r.relay_num}`}
                 >
                   <span className="material-symbols-outlined text-lg">

@@ -19,7 +19,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'home',        label: 'Property'   },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
 
@@ -76,14 +76,14 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
     orders.activityBookings.some(b => ['requested', 'confirmed'].includes(b.status));
 
   return (
-    <div className="w-screen h-dvh bg-bg-dark flex overflow-hidden relative">
-      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
-      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgba(201,162,39,0.05)' }} />
+    <div className="w-screen h-dvh bg-app flex overflow-hidden relative">
+      <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgb(var(--accent-rgb) / 0.05)' }} />
+      <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgb(var(--accent-rgb) / 0.05)' }} />
 
       {/* Sidebar */}
-      <aside className="w-20 bg-sidebar-dark border-r border-white/5 flex flex-col items-center py-8 z-20 shrink-0">
+      <aside className="w-20 bg-sidebar border-r border-app-soft flex flex-col items-center py-8 z-20 shrink-0">
         <div className="mb-6" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src={property?.logo_url || '/logo.png'} alt={property?.name || 'ZHP PMS'} style={{ width: 52, height: 52, objectFit: 'contain' }} />
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 52, height: 52, objectFit: 'contain' }} />
         </div>
 
         {/* Controls — top zone */}
@@ -98,7 +98,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         </div>
 
         {/* Separator */}
-        <div style={{ width: 32, height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px auto' }} />
+        <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '12px auto' }} />
 
         {/* Explore tabs — bottom zone, grows to fill space */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%', padding: '0 8px', flex: 1 }}>
@@ -106,7 +106,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
             <NavBtn key={t.key} id={t.key} active={activeTab === t.key} icon={t.icon} label={t.label} onClick={() => setActiveTab(t.key)} />
           ))}
           {visibleExploreTabs.length === 0 && (
-            <div style={{ fontSize: 9, color: '#2a3441', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 0' }}>
+            <div style={{ fontSize: 9, color: 'var(--text-ghost)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 0' }}>
               No content
             </div>
           )}
@@ -115,7 +115,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         {/* Your Orders — own section, separated from the display/explore menu above it */}
         {hasOrders && (
           <>
-            <div style={{ width: 32, height: 1, background: 'rgba(255,255,255,0.07)', margin: '12px auto' }} />
+            <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '12px auto' }} />
             <div style={{ width: '100%', padding: '0 8px' }}>
               <NavBtn id="orders" active={activeTab === 'orders'} icon="receipt_long" label="Your Orders" badge={hasActiveOrder} onClick={() => setActiveTab('orders')} />
             </div>
@@ -138,18 +138,18 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
             <HomeWelcome booking={booking} weather={weather} />
           </>
         ) : activeTab === 'controls' && roomControllerEnabled ? (
-          <section className="flex-1 p-10 bg-bg-dark overflow-y-auto">
+          <section className="flex-1 p-10 bg-app overflow-y-auto">
             <div className="h-full flex flex-col gap-6">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-extralight text-white mb-1">Room Controls</h2>
-                  <p className="text-slate-500 text-sm">Manage lighting, ambiance, and climate.</p>
+                  <h2 className="text-3xl font-extralight text-ink mb-1">Room Controls</h2>
+                  <p className="text-dim text-sm">Manage lighting, ambiance, and climate.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {controller && (
                     <>
-                      <span className="w-2 h-2 rounded-full" style={{ background: controller.connected ? '#22c55e' : '#475569' }} />
-                      <span className="text-[10px] uppercase tracking-widest text-slate-600">
+                      <span className="w-2 h-2 rounded-full" style={{ background: controller.connected ? 'var(--ok)' : 'var(--text-faint)' }} />
+                      <span className="text-[10px] uppercase tracking-widest text-faint">
                         {controller.connected ? 'Online' : 'Offline'}
                       </span>
                     </>
@@ -174,6 +174,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
             activeCategory={activeTab}
             activitiesEnabled={activitiesEnabled}
             onBookActivity={handleBookActivity}
+            location={property?.location}
           />
         )}
       </main>
@@ -196,21 +197,21 @@ function HomeWelcome({ booking, weather }) {
   const firstName = booking.guest_name?.split(' ')[0] || 'Guest';
 
   return (
-    <section className="flex-1 p-10 bg-bg-dark overflow-y-auto flex items-center justify-center">
+    <section className="flex-1 p-10 bg-app overflow-y-auto flex items-center justify-center">
       <div className="flex flex-col items-center gap-8 text-center">
-        <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-700">{dateStr}</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-ghost">{dateStr}</p>
         <div className="flex items-end gap-3 leading-none">
-          <span className="text-8xl font-extralight text-white tracking-tighter">{h}:{m}</span>
-          <span className="text-2xl font-bold mb-2" style={{ color: '#c9a227' }}>{ampm}</span>
+          <span className="text-8xl font-extralight text-ink tracking-tighter">{h}:{m}</span>
+          <span className="text-2xl font-bold mb-2 text-accent">{ampm}</span>
         </div>
-        <h1 className="text-3xl text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>
+        <h1 className="text-3xl text-ink" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>
           Welcome, {firstName}
         </h1>
         {weather?.today && (
           <div className="glass-card rounded-2xl px-6 py-3 flex items-center gap-3">
-            <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#c9a227' }}>{weather.today.icon || 'partly_cloudy_day'}</span>
-            <span className="text-2xl font-light text-white">{weather.today.temp}°C</span>
-            <span className="text-xs uppercase tracking-widest text-slate-500">{weather.today.desc}</span>
+            <span className="material-symbols-outlined text-accent" style={{ fontSize: 28 }}>{weather.today.icon || 'partly_cloudy_day'}</span>
+            <span className="text-2xl font-light text-ink">{weather.today.temp}°C</span>
+            <span className="text-xs uppercase tracking-widest text-dim">{weather.today.desc}</span>
           </div>
         )}
       </div>
@@ -224,9 +225,9 @@ function NavBtn({ active, icon, label, badge, onClick }) {
       onClick={onClick}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-        background: active ? 'rgba(201,162,39,0.12)' : 'none',
+        background: active ? 'rgb(var(--accent-rgb) / 0.12)' : 'none',
         border: 'none', cursor: 'pointer',
-        color: active ? '#c9a227' : '#64748b',
+        color: active ? 'var(--accent)' : 'var(--text-dim)',
         fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
         textTransform: 'uppercase', letterSpacing: '0.1em',
         padding: '10px 4px', width: '100%', position: 'relative',
@@ -240,14 +241,14 @@ function NavBtn({ active, icon, label, badge, onClick }) {
             position: 'absolute', top: -2, right: -4, width: 7, height: 7,
             borderRadius: '50%', background: '#fb923c',
             animation: 'zahill-pulse 1.6s ease-in-out infinite',
-          }} />
+          }} aria-hidden />
         )}
       </span>
       {label}
       {active && (
         <span style={{
           position: 'absolute', right: -8, top: '25%', bottom: '25%',
-          width: 3, background: '#c9a227', borderRadius: '2px 0 0 2px',
+          width: 3, background: 'var(--accent)', borderRadius: '2px 0 0 2px',
         }} />
       )}
     </button>
