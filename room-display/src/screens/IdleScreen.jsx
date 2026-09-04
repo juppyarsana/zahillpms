@@ -3,7 +3,6 @@ import api from '../api';
 import RelayControls from '../components/RelayControls';
 import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
-import Clock from '../components/Clock';
 import CallButton from '../components/CallButton';
 
 export default function IdleScreen({ unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
@@ -76,7 +75,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
         </nav>
         <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
           {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
-          <Clock compact />
+          <p className="text-ghost text-xs font-mono">{__APP_COMMIT__}</p>
         </div>
       </aside>
 

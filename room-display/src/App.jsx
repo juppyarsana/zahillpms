@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import api from './api';
 import callClient from './callClient';
 import ringtone from './ringtone';
+import alarmSound from './alarm';
 import { applyAccent } from './theme';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
@@ -9,6 +10,7 @@ import GuestScreen from './screens/GuestScreen';
 import DebugMenu from './components/DebugMenu';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallOverlay from './components/CallOverlay';
+import AlarmOverlay from './components/AlarmOverlay';
 
 const POLL_MS = 10_000;
 const END_TOAST_MS = 2500;
@@ -33,11 +35,49 @@ export default function App() {
   const pendingOfferRef = useRef(null);
   const connectingTimeoutRef = useRef(null);
 
+  // Alarm — a local, on-device wake-up (no staff/front-desk call involved).
+  // Device-local, same convention as roomId/displayToken. One-shot: rings
+  // once at the set time, then auto-disables.
+  const [alarmTime, setAlarmTime] = useState(() => localStorage.getItem('alarmTime') || '');
+  const [alarmEnabled, setAlarmEnabled] = useState(() => localStorage.getItem('alarmEnabled') === 'true');
+  const [alarmRinging, setAlarmRinging] = useState(false);
+  const alarmFiredKeyRef = useRef(null);
+
   useEffect(() => {
     if (callState.status === 'incoming') ringtone.start();
     else ringtone.stop();
     return () => ringtone.stop();
   }, [callState.status]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = new Date();
+      const key = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      if (alarmEnabled && key === alarmTime) {
+        if (alarmFiredKeyRef.current !== key) {
+          alarmFiredKeyRef.current = key;
+          setAlarmRinging(true);
+          alarmSound.start();
+        }
+      } else {
+        alarmFiredKeyRef.current = null;
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [alarmEnabled, alarmTime]);
+
+  const handleSetAlarm = useCallback((time, enabled) => {
+    setAlarmTime(time);
+    setAlarmEnabled(enabled);
+    localStorage.setItem('alarmTime', time);
+    localStorage.setItem('alarmEnabled', String(enabled));
+  }, []);
+
+  const handleDismissAlarm = useCallback(() => {
+    setAlarmRinging(false);
+    alarmSound.stop();
+    handleSetAlarm(alarmTime, false);
+  }, [alarmTime, handleSetAlarm]);
 
   // Per-property accent — reapplied whenever branding changes
   useEffect(() => {
@@ -353,10 +393,14 @@ export default function App() {
         activitiesEnabled={state.activitiesEnabled}
         roomControllerEnabled={state.roomControllerEnabled}
         callingEnabled={state.callingEnabled}
+        operationsEnabled={state.operationsEnabled}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}
         callActive={callState.status !== 'idle'}
+        alarmTime={alarmTime}
+        alarmEnabled={alarmEnabled}
+        onSetAlarm={handleSetAlarm}
       />
       {showDebugMenu && (
         <DebugMenu
@@ -373,6 +417,7 @@ export default function App() {
         onMuteToggle={handleMuteToggle}
         muted={muted}
       />
+      <AlarmOverlay ringing={alarmRinging} time={alarmTime} onDismiss={handleDismissAlarm} />
       <UpdatePrompt />
     </>
   );

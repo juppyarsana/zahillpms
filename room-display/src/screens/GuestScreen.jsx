@@ -4,12 +4,10 @@ import StayPanel from '../components/StayPanel';
 import RelayControls from '../components/RelayControls';
 import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
-import Clock from '../components/Clock';
 import ExploreTab from '../components/ExploreTab';
 import OrderFoodTab from '../components/OrderFoodTab';
 import BookActivityTab from '../components/BookActivityTab';
 import YourOrdersTab from '../components/YourOrdersTab';
-import CallButton from '../components/CallButton';
 
 const ORDERS_POLL_MS = 15000;
 
@@ -19,7 +17,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'spa',         label: 'Resort'     },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function GuestScreen({ unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, operationsEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive, alarmTime, alarmEnabled, onSetAlarm }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
 
@@ -112,20 +110,26 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         </nav>
 
         <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
-          {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
-          <Clock compact />
+          <p className="text-ghost text-xs font-mono">{__APP_COMMIT__}</p>
         </div>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        <TopBar booking={booking} online={online} />
+        <TopBar booking={booking} online={online} weather={weather} />
         <div className="flex-1 flex overflow-hidden">
         {preselectedActivityId ? (
           <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
         ) : activeTab === 'home' ? (
           <>
-            <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} roomControllerEnabled={roomControllerEnabled} />
+            <StayPanel
+              unit={unit} booking={booking} relays={localRelays} controller={controller} property={property}
+              roomControllerEnabled={roomControllerEnabled}
+              roomId={roomId}
+              operationsEnabled={operationsEnabled}
+              callingEnabled={callingEnabled} onCallFrontDesk={onCallFrontDesk} callActive={callActive}
+              alarmTime={alarmTime} alarmEnabled={alarmEnabled} onSetAlarm={onSetAlarm}
+            />
             <HomeWelcome booking={booking} weather={weather} property={property} />
             <EveningHighlight cards={cards} activitiesEnabled={activitiesEnabled} onBook={handleBookActivity} />
           </>
@@ -161,12 +165,10 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
           <YourOrdersTab foodOrders={orders.foodOrders} activityBookings={orders.activityBookings} onRefresh={loadOrders} />
         ) : (
           <ExploreTab
-            weather={weather}
             cards={cards}
             activeCategory={activeTab}
             activitiesEnabled={activitiesEnabled}
             onBookActivity={handleBookActivity}
-            location={property?.location}
           />
         )}
         </div>
@@ -175,20 +177,37 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
   );
 }
 
-function TopBar({ booking, online }) {
+function TopBar({ online, weather }) {
   const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
-    <div className="shrink-0 flex items-center justify-between px-10 py-4 border-b border-app-soft">
-      <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-dim flex items-center gap-2">
+    <div className="shrink-0 flex items-center justify-between px-10 py-4 border-b border-app-soft gap-6">
+      <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-dim flex items-center gap-2 shrink-0">
         <span className="w-1.5 h-1.5 rounded-full bg-accent" />
         {dateStr}
       </p>
+      {weather?.today && weather?.tomorrow && (
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)' }}>Today</span>
+            <span className="material-symbols-outlined text-accent" style={{ fontSize: 20 }}>{weather.today.icon || 'partly_cloudy_day'}</span>
+            <span style={{ fontSize: 16, fontWeight: 300 }}>{weather.today.temp}°C</span>
+            <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{weather.today.desc}</span>
+          </div>
+          <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 20px' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)' }}>Tomorrow</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 20, color: 'var(--text-dim)' }}>{weather.tomorrow.icon || 'partly_cloudy_day'}</span>
+            <span style={{ fontSize: 16, fontWeight: 300, color: 'var(--text-muted)' }}>{weather.tomorrow.temp}°C</span>
+            <span style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{weather.tomorrow.desc}</span>
+          </div>
+        </div>
+      )}
       <span
-        className="w-9 h-9 rounded-full flex items-center justify-center glass-card"
-        title={online ? 'Connected' : 'Reconnecting…'}
+        className="w-9 h-9 rounded-full flex items-center justify-center glass-card shrink-0"
+        title={online ? 'Connected to PMS' : 'Reconnecting to PMS…'}
       >
         <span className="material-symbols-outlined text-lg" style={{ color: online ? 'var(--text-muted)' : 'var(--text-ghost)' }}>
-          {online ? 'wifi' : 'wifi_off'}
+          {online ? 'cloud_done' : 'cloud_off'}
         </span>
       </span>
     </div>

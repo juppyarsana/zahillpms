@@ -9,6 +9,7 @@ const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
 const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
+const opsGate = moduleGuard('operations');
 
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
@@ -71,7 +72,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
 
     const { rows: moduleRows } = await db.query(
       'SELECT module, is_enabled FROM property_modules WHERE property_id = $1 AND module = ANY($2)',
-      [unit.property_id, ['sales', 'activities', 'room_controller', 'calling']]
+      [unit.property_id, ['sales', 'activities', 'room_controller', 'calling', 'operations']]
     );
     const enabledModules = new Map(moduleRows.map(m => [m.module, m.is_enabled]));
 
@@ -89,6 +90,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       activitiesEnabled: enabledModules.get('activities') || false,
       roomControllerEnabled: enabledModules.get('room_controller') || false,
       callingEnabled: enabledModules.get('calling') || false,
+      operationsEnabled: enabledModules.get('operations') || false,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -185,6 +187,53 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
       console.warn('[DISPLAY] MQTT publish failed:', mqttErr.message);
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/display/room/:roomId/housekeeping — guest self-service housekeeping
+// requests, surfaced on the Operations kanban as a real task.
+// Body: { type: 'dnd' | 'clean', action?: 'request' | 'cancel', task_id? }
+// 'clean' is one-shot — staff just mark it done whenever they get to it, no
+// guest-side cancel. 'dnd' is a toggle: 'request' opens a task, 'cancel'
+// marks that same task done — the device round-trips task_id through its
+// own localStorage (see QuickActions.jsx), same convention as roomId/token.
+router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res) => {
+  const { roomId } = req.params;
+  const { type, action, task_id } = req.body;
+  if (!['dnd', 'clean'].includes(type)) return res.status(400).json({ error: 'type must be dnd or clean' });
+  try {
+    const { rows: unitRows } = await db.query('SELECT id, name FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+    const unit = unitRows[0];
+
+    if (type === 'clean') {
+      const { rows } = await db.query(
+        `INSERT INTO tasks (title, type, priority, unit_id, property_id)
+         VALUES ($1, 'guest_request', 'medium', $2, $3) RETURNING id`,
+        [`Please clean room — ${unit.name}`, unit.id, req.propertyId]
+      );
+      return res.status(201).json({ ok: true, task_id: rows[0].id });
+    }
+
+    if (action === 'cancel') {
+      if (!task_id) return res.status(400).json({ error: 'task_id required to cancel' });
+      const { rows } = await db.query(
+        `UPDATE tasks SET status = 'done', updated_at = NOW()
+         WHERE id = $1 AND unit_id = $2 AND property_id = $3 RETURNING id`,
+        [task_id, unit.id, req.propertyId]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Task not found' });
+      return res.json({ ok: true });
+    }
+
+    const { rows } = await db.query(
+      `INSERT INTO tasks (title, type, priority, unit_id, property_id)
+       VALUES ($1, 'guest_request', 'high', $2, $3) RETURNING id`,
+      [`Do Not Disturb — ${unit.name}`, unit.id, req.propertyId]
+    );
+    res.status(201).json({ ok: true, task_id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

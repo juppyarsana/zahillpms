@@ -2,10 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 const DURATION = 7000;
 
-function pickIcon(icon) {
-  return icon || 'partly_cloudy_day';
-}
-
 function useSwipeAndHold(onNext, onPrev, onPause, onResume) {
   const ref = useRef(null);
   const touchStartX = useRef(0);
@@ -53,40 +49,6 @@ function useSwipeAndHold(onNext, onPrev, onPause, onResume) {
   }, [onNext, onPrev, onPause, onResume]);
 
   return ref;
-}
-
-function WeatherStrip({ weather, location }) {
-  if (!weather) return (
-    <div style={{ padding: '10px 36px', borderBottom: '1px solid var(--border-soft)', flexShrink: 0 }}>
-      <span style={{ fontSize: 11, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>Weather unavailable</span>
-    </div>
-  );
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0,
-      padding: '10px 36px 9px', borderBottom: '1px solid var(--border-soft)', flexShrink: 0,
-    }}>
-      {/* Today */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)', marginRight: 4 }}>Today</span>
-        <span className="material-symbols-outlined text-accent" style={{ fontSize: 24 }}>{pickIcon(weather.today.icon)}</span>
-        <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1 }}>{weather.today.temp}°C</span>
-        <div>
-          <div style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{weather.today.desc}</div>
-          {location && <div style={{ fontSize: 9, color: 'var(--text-ghost)', textTransform: 'uppercase', letterSpacing: '0.18em' }}>{location}</div>}
-        </div>
-      </div>
-      {/* Separator */}
-      <div style={{ width: 1, height: 32, background: 'var(--border)', margin: '0 28px' }} />
-      {/* Tomorrow */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em', color: 'var(--text-ghost)', marginRight: 4 }}>Tomorrow</span>
-        <span className="material-symbols-outlined" style={{ fontSize: 24, color: 'var(--text-dim)' }}>{pickIcon(weather.tomorrow.icon)}</span>
-        <span style={{ fontSize: 22, fontWeight: 200, lineHeight: 1, color: 'var(--text-muted)' }}>{weather.tomorrow.temp}°C</span>
-        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{weather.tomorrow.desc}</div>
-      </div>
-    </div>
-  );
 }
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -261,12 +223,11 @@ function CardSlideshow({ cards, category, activitiesEnabled, onBookActivity }) {
   );
 }
 
-export default function ExploreTab({ weather, cards = [], activeCategory, onCategoryChange, activitiesEnabled, onBookActivity, location }) {
+export default function ExploreTab({ cards = [], activeCategory, onCategoryChange, activitiesEnabled, onBookActivity }) {
   const notices = cards.filter(c => c.category === 'notice');
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <WeatherStrip weather={weather} location={location} />
       <CardSlideshow cards={cards} category={activeCategory} activitiesEnabled={activitiesEnabled} onBookActivity={onBookActivity} />
       {/* Notice bar — always visible at bottom, scrolls all notices */}
       {notices.length > 0 && (() => {

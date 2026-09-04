@@ -38,7 +38,7 @@ function ChBadge({ source }) {
 }
 
 /* ─── unit status card ─────────────────────────────────── */
-function UnitCard({ unit }) {
+function UnitCard({ unit, flags }) {
   const isOccupied = unit.status === 'occupied' && unit.guest_name;
   const isArriving = !!unit.arriving_guest_name;
   const isMaint    = unit.status === 'maintenance';
@@ -70,6 +70,22 @@ function UnitCard({ unit }) {
         {isMaint  && <span style={{ background: '#FEE2E2', color: '#991B1B', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Maintenance</span>}
         {isBlocked && <span style={{ background: '#F3F4F6', color: '#374151', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Blocked</span>}
       </div>
+
+      {/* guest request flags — set from Room Display's DND / Clean Room widget */}
+      {(flags?.dnd || flags?.clean) && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {flags.dnd && (
+            <span style={{ background: '#EDE9FE', color: '#5B21B6', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+              🔕 Do Not Disturb
+            </span>
+          )}
+          {flags.clean && (
+            <span style={{ background: '#FEF3C7', color: '#92400E', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+              🧹 Clean requested
+            </span>
+          )}
+        </div>
+      )}
 
       {/* status line */}
       {isOccupied && (
@@ -122,6 +138,37 @@ const TILE_BG = {
   blocked:     '#9CA3AF',
 };
 
+// Icons so status doesn't rely on color alone — small but legible at tile size.
+const TILE_ICON = {
+  occupied:    '🛏',
+  arriving:    '🔑',
+  available:   '✓',
+  maintenance: '🔧',
+  blocked:     '🔒',
+};
+
+// DND / Clean Room requests come from Room Display as `guest_request` tasks
+// (server/routes/display.js's /housekeeping endpoint) with fixed title
+// prefixes — matching on those avoids a schema change just to tag intent.
+// DND is a room *state* the guest controls (cleared automatically when they
+// turn it off), not a task for staff to complete — so it's surfaced only as
+// passive status on the room tile, never in the actionable requests banner.
+function isDndTask(t) {
+  return t.title.startsWith('Do Not Disturb');
+}
+
+function unitRequestFlags(guestRequests) {
+  const map = new Map();
+  for (const t of guestRequests) {
+    if (!t.unit_id) continue;
+    const flags = map.get(t.unit_id) || { dnd: false, clean: false };
+    if (isDndTask(t)) flags.dnd = true;
+    else if (t.title.startsWith('Please clean room')) flags.clean = true;
+    map.set(t.unit_id, flags);
+  }
+  return map;
+}
+
 // mirrors UnitCard's branch order
 function tileState(u) {
   if (u.status === 'maintenance') return 'maintenance';
@@ -156,7 +203,7 @@ function shortRoomName(name, type) {
   return w && name.startsWith(w) ? (name.slice(w.length).trim() || name) : name;
 }
 
-function UnitPopover({ unit, anchor, onClose }) {
+function UnitPopover({ unit, anchor, flags, onClose }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -171,13 +218,14 @@ function UnitPopover({ unit, anchor, onClose }) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
         <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-          <div className="modal-body"><UnitCard unit={unit} /></div>
+          <div className="modal-body"><UnitCard unit={unit} flags={flags} /></div>
         </div>
       </div>
     );
   }
 
-  const W = 300, H = 200, pad = 8;
+  const H = flags ? 240 : 200;
+  const W = 300, pad = 8;
   const left = Math.min(Math.max(anchor.left, pad), window.innerWidth - W - pad);
   const top = anchor.bottom + H + pad > window.innerHeight ? anchor.top - H - 6 : anchor.bottom + 6;
   return (
@@ -185,13 +233,13 @@ function UnitPopover({ unit, anchor, onClose }) {
       <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={onClose} />
       <div className="card" style={{ position: 'fixed', top, left, width: W, zIndex: 200, boxShadow: 'var(--shadow-md)', padding: 12 }}
         onClick={e => e.stopPropagation()}>
-        <UnitCard unit={unit} />
+        <UnitCard unit={unit} flags={flags} />
       </div>
     </>
   );
 }
 
-function UnitStatusBoard({ units, arrivals, departures }) {
+function UnitStatusBoard({ units, arrivals, departures, guestRequests = [] }) {
   const [selected, setSelected] = useState(null); // { unit, anchor }
 
   useEffect(() => {
@@ -199,12 +247,14 @@ function UnitStatusBoard({ units, arrivals, departures }) {
   }, [units, selected]);
 
   const groups = groupUnitsByType(units);
+  const requestFlags = unitRequestFlags(guestRequests);
   const counts = {
     occupied:  units.filter(u => tileState(u) === 'occupied').length,
     arriving:  arrivals.length,
     departing: departures.length,
     available: units.filter(u => tileState(u) === 'available').length,
     offline:   units.filter(u => ['maintenance', 'blocked'].includes(tileState(u))).length,
+    requests:  requestFlags.size,
   };
 
   const strip = [
@@ -213,6 +263,7 @@ function UnitStatusBoard({ units, arrivals, departures }) {
     ['#92400E', counts.departing, 'Departing today'],
     ['#22C55E', counts.available, 'Available'],
     ['#9CA3AF', counts.offline, 'Maint / blocked'],
+    ...(counts.requests > 0 ? [['#7C3AED', counts.requests, 'Guest request']] : []),
   ];
 
   return (
@@ -230,22 +281,40 @@ function UnitStatusBoard({ units, arrivals, departures }) {
         <div key={g.type} className="unit-tile-group">
           <div className="unit-tile-group-label">{g.type} · {g.list.length}</div>
           <div className="unit-tile-grid">
-            {g.list.map(u => (
-              <button
-                key={u.id}
-                className={`unit-tile${selected?.unit.id === u.id ? ' selected' : ''}`}
-                style={{ background: TILE_BG[tileState(u)] }}
-                title={u.name}
-                onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
-              >
-                {shortRoomName(u.name, u.type)}
-              </button>
-            ))}
+            {g.list.map(u => {
+              const flags = requestFlags.get(u.id);
+              const state = tileState(u);
+              return (
+                <button
+                  key={u.id}
+                  className={`unit-tile${selected?.unit.id === u.id ? ' selected' : ''}`}
+                  style={{ background: TILE_BG[state] }}
+                  title={`${u.name}${flags?.dnd ? ' · Do Not Disturb' : ''}${flags?.clean ? ' · Clean requested' : ''}`}
+                  onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
+                >
+                  <span className="unit-tile-icon">{TILE_ICON[state]}</span>
+                  <span className="unit-tile-num">{shortRoomName(u.name, u.type)}</span>
+                  {flags && (
+                    <span className="unit-tile-badges">
+                      {flags.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
+                      {flags.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}
 
-      {selected && <UnitPopover unit={selected.unit} anchor={selected.anchor} onClose={() => setSelected(null)} />}
+      {selected && (
+        <UnitPopover
+          unit={selected.unit}
+          anchor={selected.anchor}
+          flags={requestFlags.get(selected.unit.id)}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
@@ -675,6 +744,7 @@ export default function Dashboard() {
   const [trends,         setTrends]        = useState({});
   const [holidays,       setHolidays]      = useState([]);
   const [aiSummary,      setAiSummary]     = useState(null);
+  const [guestRequests,  setGuestRequests] = useState([]);
 
   async function load() {
     try {
@@ -699,6 +769,7 @@ export default function Dashboard() {
         return new Date(t.due_time).toLocaleDateString('en-CA') === todayStr;
       });
       setTasks(todayTasks.slice(0, 5));
+      setGuestRequests(tasksRes.data.filter(t => t.type === 'guest_request' && t.status !== 'done'));
       setMonthBookings(bookingsRes.data);
 
       // estimate pending total from confirmed bookings with no received deposit
@@ -713,6 +784,13 @@ export default function Dashboard() {
     const id = setInterval(load, 30_000);
     return () => clearInterval(id);
   }, []);
+
+  async function handleResolveRequest(taskId) {
+    try {
+      await api.put(`/api/tasks/${taskId}`, { status: 'done' });
+      setGuestRequests(prev => prev.filter(t => t.id !== taskId));
+    } catch {}
+  }
 
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading dashboard…</div>;
   if (!data)   return <div className="alert alert-error">Failed to load dashboard</div>;
@@ -737,6 +815,33 @@ export default function Dashboard() {
           </span>
         </div>
       </div>
+
+      {/* ── Alert banner for actionable guest requests (Clean Room) ──
+           DND is excluded — it's a room state shown passively on the Live
+           Unit Status tile/popover, not a task for staff to mark done. */}
+      {(() => {
+        const actionable = guestRequests.filter(t => !isDndTask(t));
+        if (actionable.length === 0) return null;
+        return (
+          <div className="alert alert-warn" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+              🔔 {actionable.length} guest request{actionable.length !== 1 ? 's' : ''} need{actionable.length === 1 ? 's' : ''} attention
+            </div>
+            {actionable.map(t => (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 13 }}>🧹 {t.title}</span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                  onClick={() => handleResolveRequest(t.id)}
+                >
+                  Mark Done
+                </button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* ── Alert banner if a holiday is coming up ── */}
       {holidays.length > 0 && (
@@ -811,7 +916,7 @@ export default function Dashboard() {
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">Live Unit Status</div>
-        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} />
+        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} guestRequests={guestRequests} />
       </div>
 
       {/* ── Two-column section ── */}

@@ -395,10 +395,14 @@ tr:hover td { background: #FAFAF8; }
 .unit-tile-group        { margin-top: 12px; }
 .unit-tile-group:first-of-type { margin-top: 4px; }
 .unit-tile-group-label  { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
-.unit-tile-grid         { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 6px; }
-.unit-tile              { height: 40px; border-radius: 6px; border: none; color: #fff; font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; transition: transform 0.1s; }
+.unit-tile-grid         { display: grid; grid-template-columns: repeat(auto-fill, 52px); gap: 7px; }
+.unit-tile              { position: relative; height: 50px; border-radius: 7px; border: none; color: #fff; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1; transition: transform 0.1s; }
 .unit-tile:hover        { transform: scale(1.07); }
 .unit-tile.selected     { outline: 2px solid var(--text); outline-offset: 1px; }
+.unit-tile-icon         { font-size: 12px; opacity: 0.9; }
+.unit-tile-num          { font-size: 11px; font-weight: 800; }
+.unit-tile-badges       { position: absolute; top: -5px; right: -5px; display: flex; gap: 1px; }
+.unit-tile-badge        { width: 16px; height: 16px; border-radius: 50%; background: #1F2937; border: 1.5px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 
 /* ── Kanban ── */
 .kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
