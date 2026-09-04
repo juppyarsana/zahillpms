@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { useCall } from '../context/CallContext';
 import api from '../services/api';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -39,6 +40,23 @@ function ChBadge({ source }) {
 
 /* ─── unit status card ─────────────────────────────────── */
 function UnitCard({ unit, flags }) {
+  const { hasModule } = useAuth();
+  const { callRoom } = useCall();
+  const [calling, setCalling] = useState(false);
+  const [callError, setCallError] = useState('');
+
+  async function handleCallRoom(e) {
+    e.stopPropagation();
+    setCallError('');
+    setCalling(true);
+    try {
+      await callRoom({ id: unit.id, name: unit.name });
+    } catch (err) {
+      setCallError(err.response?.data?.error || err.message || 'Could not place call');
+    }
+    setCalling(false);
+  }
+
   const isOccupied = unit.status === 'occupied' && unit.guest_name;
   const isArriving = !!unit.arriving_guest_name;
   const isMaint    = unit.status === 'maintenance';
@@ -123,6 +141,22 @@ function UnitCard({ unit, flags }) {
 
       {(isMaint || isBlocked) && (
         <div style={{ fontSize: 11, color: '#6B7280' }}>Unit not available for booking</div>
+      )}
+
+      {/* Call Room — same eligibility as Sidebar's "Call a Room" / CallRoomModal:
+          the calling module on, and a Room Display tablet actually assigned. */}
+      {hasModule('calling') && unit.controller_id && (
+        <>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ width: '100%', marginTop: 10, fontSize: 12 }}
+            disabled={calling}
+            onClick={handleCallRoom}
+          >
+            📞 {calling ? 'Calling…' : 'Call Room'}
+          </button>
+          {callError && <div style={{ color: '#DC2626', fontSize: 11, marginTop: 6 }}>{callError}</div>}
+        </>
       )}
     </div>
   );

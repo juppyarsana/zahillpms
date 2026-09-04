@@ -71,7 +71,14 @@ export function CallProvider({ children }) {
       try { msg = JSON.parse(e.data); } catch { return; }
 
       if (msg.type === 'incoming_call') {
-        setIncomingCall({ callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
+        // Busy — already on a call, so don't hijack this session's screen
+        // with a second incoming-call prompt (answering it would silently
+        // drop the first call, since there's one shared WebRTC connection).
+        // The call still rings through normally to any other free staff.
+        if (activeCallRef.current) return;
+        // Also don't clobber an already-ringing incoming call this session
+        // hasn't answered/dismissed yet — first one wins here too.
+        setIncomingCall(prev => prev || { callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
       } else if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
         pendingOffers.current.set(msg.callId, msg.payload.sdp);
       } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
@@ -106,6 +113,10 @@ export function CallProvider({ children }) {
   const answerCall = useCallback(async (callId) => {
     const call = incomingCall;
     if (!call || call.callId !== callId) return;
+    // Defense-in-depth against the same busy/hijack scenario the SSE handler
+    // above already guards against — shouldn't be reachable, but answering
+    // here would silently drop whatever call is currently active.
+    if (activeCallRef.current) return;
     try {
       await api.post(`/api/calls/${callId}/answer`);
     } catch {

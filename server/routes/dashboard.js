@@ -15,7 +15,7 @@ router.get('/summary', auth, async (req, res) => {
       revenueQ,
     ] = await Promise.all([
       db.query(`
-        SELECT u.id, u.name, u.status, u.type,
+        SELECT u.id, u.name, u.status, u.type, u.controller_id,
           b.id as booking_id, b.source, b.num_guests,
           b.check_in_date, b.check_out_date,
           (b.check_out_date - CURRENT_DATE) as nights_left,
