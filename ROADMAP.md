@@ -1203,6 +1203,15 @@ post-discount; `total_amount` stays pre-discount gross. Invariant
   `MessageOverlay.jsx`, full-screen, must-dismiss. `POST
   /room/:roomId/message/:messageId/dismiss` marks it read; the next
   poll/SSE tick picks up the next unread one if any.
+- **Notification chime added same session** — a guest not looking at the
+  tablet had no way to notice a silent full-screen overlay appear. New
+  `room-display/src/notification.js`, a one-shot two-tone chime (NOT a
+  loop like `ringtone.js`/`alarm.js`, which need an active response — a
+  message doesn't). `App.jsx` tracks the last-seen message id in a ref
+  and only plays on a genuine change, so repeated polls of the same
+  still-unread message stay silent. Verified live by spying on
+  `AudioContext` construction: exactly one call when a new message
+  arrives, zero over 20+s of subsequent polling of the same message.
 - **Deliberately not built:** any automated trigger. Checkout reminder
   (new scheduled job, same pattern as the existing night-audit/guest-comm
   cron jobs) and order-ready (hook into Kitchen Display's `PATCH

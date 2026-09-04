@@ -3,6 +3,7 @@ import api from './api';
 import callClient from './callClient';
 import ringtone from './ringtone';
 import alarmSound from './alarm';
+import notification from './notification';
 import { applyAccent } from './theme';
 import SetupScreen from './screens/SetupScreen';
 import IdleScreen from './screens/IdleScreen';
@@ -155,6 +156,12 @@ export default function App() {
   // Front-desk message — full-screen until dismissed, oldest-unread served
   // first by the backend so a burst of sends doesn't skip any of them.
   const [dismissingMessage, setDismissingMessage] = useState(false);
+  const lastMessageIdRef = useRef(null);
+  useEffect(() => {
+    const id = state?.message?.id || null;
+    if (id && id !== lastMessageIdRef.current) notification.play();
+    lastMessageIdRef.current = id;
+  }, [state?.message?.id]);
   const handleDismissMessage = useCallback(async () => {
     if (!state?.message) return;
     setDismissingMessage(true);
