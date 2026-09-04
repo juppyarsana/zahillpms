@@ -160,7 +160,7 @@ router.post('/units/:unitId/request-status', auth, async (req, res) => {
 // PUT /api/iot/units/:unitId/controller — assign or clear controller_id
 router.put('/units/:unitId/controller', auth, async (req, res) => {
   const { controller_id } = req.body;
-  const value = controller_id ? String(controller_id).trim().slice(0, 10) : null;
+  const value = controller_id ? String(controller_id).trim().slice(0, 32) : null;
   try {
     const { rows } = await db.query(
       'UPDATE units SET controller_id = $1 WHERE id = $2 AND property_id = $3 RETURNING id, name, controller_id',
@@ -170,7 +170,7 @@ router.put('/units/:unitId/controller', auth, async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     res.status(err.code === '23505' ? 409 : 500).json({
-      error: err.code === '23505' ? 'That controller ID is already assigned to another unit' : err.message,
+      error: err.code === '23505' ? 'That Room ID is already assigned to another unit' : err.message,
     });
   }
 });

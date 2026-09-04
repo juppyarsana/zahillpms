@@ -155,11 +155,11 @@ export default function UnitSettings() {
                 <div className="form-group">
                   <label className="form-label">
                     Room ID <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
-                      (for Room Display / TV Display / calling — not shown to guests, leave blank to unassign)
+                      (for Room Display / TV Display / calling — not shown to guests, defaults to the room name, leave blank to unassign)
                     </span>
                   </label>
                   <input
-                    className="form-input" placeholder="e.g. 101" maxLength={10}
+                    className="form-input" placeholder="e.g. 101" maxLength={32}
                     value={form.controller_id} onChange={e => set('controller_id', e.target.value)}
                     style={{ maxWidth: 200 }}
                   />

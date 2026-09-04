@@ -610,7 +610,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 045
+## Next migration number: 046
 
 ---
 

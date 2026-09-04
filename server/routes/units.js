@@ -28,19 +28,32 @@ const BED_CONFIGS = ['double', 'twin', 'twin_or_double', 'other'];
 
 // POST /api/units  (owner only)
 router.post('/', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests, bed_config } = req.body;
+  const { name, type, description, base_rate, max_guests, bed_config, controller_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Unit name is required' });
   if (bed_config && !BED_CONFIGS.includes(bed_config)) {
     return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
   }
+  // Room ID (controller_id) defaults to the room name — every kiosk
+  // display keys off it and it's almost always just the room number.
+  // A caller-supplied value overrides; an explicit '' / null opts out.
+  const rawRoomId = controller_id !== undefined ? controller_id : name;
+  const roomId = rawRoomId ? String(rawRoomId).trim().slice(0, 32) : null;
   try {
     const { rows } = await db.query(
-      `INSERT INTO units (name, type, description, base_rate, max_guests, bed_config, property_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, type || '', description || '', base_rate || 0, max_guests || 2, bed_config || 'double', req.propertyId]
+      `INSERT INTO units (name, type, description, base_rate, max_guests, bed_config, controller_id, property_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [name, type || '', description || '', base_rate || 0, max_guests || 2, bed_config || 'double', roomId, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
+    if (err.code === '23505') {
+      const dupRoomId = err.constraint === 'units_controller_id_property_unique';
+      return res.status(409).json({
+        error: dupRoomId
+          ? 'That Room ID is already assigned to another unit'
+          : 'A unit with that name already exists',
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -57,7 +70,7 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
   const { name, type, description, base_rate, max_guests, status, controller_id, bed_config } = req.body;
   const controllerIdProvided = controller_id !== undefined;
   const controllerIdValue = controllerIdProvided
-    ? (controller_id ? String(controller_id).trim().slice(0, 10) : null)
+    ? (controller_id ? String(controller_id).trim().slice(0, 32) : null)
     : null;
   if (bed_config && !BED_CONFIGS.includes(bed_config)) {
     return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
@@ -80,7 +93,7 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
     res.json(rows[0]);
   } catch (err) {
     res.status(err.code === '23505' ? 409 : 500).json({
-      error: err.code === '23505' ? 'That controller ID is already assigned to another unit' : err.message,
+      error: err.code === '23505' ? 'That Room ID is already assigned to another unit' : err.message,
     });
   }
 });
