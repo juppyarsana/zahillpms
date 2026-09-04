@@ -74,7 +74,7 @@ export default function StayPanel({ unit, booking, relays, controller, property,
 
       {/* Active devices — only relevant when the property actually has room_controller hardware */}
       {roomControllerEnabled && (
-        <div className="mt-auto">
+        <div className="mt-2 glass-card rounded-2xl px-5 py-4">
           <div className="flex items-center justify-between text-[10px] text-faint mb-3 uppercase tracking-widest font-bold">
             <span>Active Devices</span>
             {controller?.connected && (

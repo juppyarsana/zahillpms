@@ -41,19 +41,24 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
       <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgb(var(--accent-rgb) / 0.05)' }} />
 
       {/* Sidebar */}
-      <aside className="w-20 bg-sidebar border-r border-app-soft flex flex-col items-center py-8 z-20 shrink-0">
-        <div className="mb-10" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 52, height: 52, objectFit: 'contain' }} />
+      <aside className="w-24 bg-sidebar border-r border-app-soft flex flex-col items-center py-7 z-20 shrink-0">
+        <div className="shrink-0" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 50, height: 50, objectFit: 'contain' }} />
         </div>
-        <nav className="flex flex-col gap-8 flex-1">
+        <nav className="flex-1 min-h-0 w-full flex flex-col justify-center gap-1" style={{ padding: '0 8px' }}>
           {navItems.map(item => {
             const active = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className="flex flex-col items-center gap-1.5 w-full relative transition-colors"
-                style={{ color: active ? 'var(--accent)' : 'var(--text-dim)' }}
+                className="flex flex-col items-center gap-1.5 w-full relative transition-all"
+                style={{
+                  color: active ? 'var(--accent)' : 'var(--text-dim)',
+                  background: active ? 'rgb(var(--accent-rgb) / 0.14)' : 'none',
+                  borderRadius: 14, padding: '12px 4px',
+                  boxShadow: active ? 'inset 0 0 0 1px rgb(var(--accent-rgb) / 0.28), 0 4px 14px rgb(var(--accent-rgb) / 0.12)' : 'none',
+                }}
               >
                 <span className={`material-symbols-outlined text-2xl${active ? ' filled' : ''}`}>
                   {item.icon}
@@ -61,15 +66,15 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
                 <span className="text-[9px] font-bold uppercase tracking-wider">{item.label}</span>
                 {active && (
                   <span
-                    className="absolute right-0 rounded-l"
-                    style={{ background: 'var(--accent)', top: '20%', bottom: '20%', width: '3px' }}
+                    className="absolute rounded-l"
+                    style={{ background: 'var(--accent)', right: -8, top: '25%', bottom: '25%', width: '3px' }}
                   />
                 )}
               </button>
             );
           })}
         </nav>
-        <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+        <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
           {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
           <Clock compact />
         </div>

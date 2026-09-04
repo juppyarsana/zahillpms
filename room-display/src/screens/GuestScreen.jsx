@@ -15,8 +15,8 @@ const ORDERS_POLL_MS = 15000;
 
 const EXPLORE_TABS = [
   { key: 'activity', icon: 'hiking',      label: 'Activities' },
-  { key: 'dining',   icon: 'restaurant',  label: 'Dining'     },
-  { key: 'property', icon: 'home',        label: 'Property'   },
+  { key: 'dining',   icon: 'restaurant',  label: 'Venues'     },
+  { key: 'property', icon: 'spa',         label: 'Resort'     },
 ];
 
 export default function GuestScreen({ unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
@@ -81,61 +81,53 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
       <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full blur-[120px] pointer-events-none" style={{ background: 'rgb(var(--accent-rgb) / 0.05)' }} />
 
       {/* Sidebar */}
-      <aside className="w-20 bg-sidebar border-r border-app-soft flex flex-col items-center py-8 z-20 shrink-0">
-        <div className="mb-6" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 52, height: 52, objectFit: 'contain' }} />
+      <aside className="w-24 bg-sidebar border-r border-app-soft flex flex-col items-center py-7 z-20 shrink-0">
+        <div className="shrink-0" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 50, height: 50, objectFit: 'contain' }} />
         </div>
 
-        {/* Controls — top zone */}
-        <div style={{ width: '100%', padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <NavBtn id="home" active={activeTab === 'home'} icon="home" label="Home" onClick={() => setActiveTab('home')} />
+        {/* Nav — vertically centered in the rail */}
+        <nav className="flex-1 min-h-0 w-full flex flex-col justify-center gap-1 overflow-y-auto" style={{ padding: '0 8px' }}>
+          <NavBtn id="home" active={activeTab === 'home'} icon="king_bed" label="Stay" onClick={() => setActiveTab('home')} />
           {roomControllerEnabled && (
-            <NavBtn id="controls" active={activeTab === 'controls'} icon="auto_fix_high" label="Controls" onClick={() => setActiveTab('controls')} />
+            <NavBtn id="controls" active={activeTab === 'controls'} icon="tune" label="Controls" onClick={() => setActiveTab('controls')} />
           )}
           {orderingEnabled && (
-            <NavBtn id="order" active={activeTab === 'order'} icon="restaurant_menu" label="Order Food" onClick={() => setActiveTab('order')} />
+            <NavBtn id="order" active={activeTab === 'order'} icon="restaurant_menu" label="Dining" onClick={() => setActiveTab('order')} />
           )}
-        </div>
 
-        {/* Separator */}
-        <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '12px auto' }} />
-
-        {/* Explore tabs — bottom zone, grows to fill space */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%', padding: '0 8px', flex: 1 }}>
+          {visibleExploreTabs.length > 0 && (
+            <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '10px auto' }} />
+          )}
           {visibleExploreTabs.map(t => (
             <NavBtn key={t.key} id={t.key} active={activeTab === t.key} icon={t.icon} label={t.label} onClick={() => setActiveTab(t.key)} />
           ))}
-          {visibleExploreTabs.length === 0 && (
-            <div style={{ fontSize: 9, color: 'var(--text-ghost)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 0' }}>
-              No content
-            </div>
-          )}
-        </div>
 
-        {/* Your Orders — own section, separated from the display/explore menu above it */}
-        {hasOrders && (
-          <>
-            <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '12px auto' }} />
-            <div style={{ width: '100%', padding: '0 8px' }}>
+          {hasOrders && (
+            <>
+              <div style={{ width: 32, height: 1, background: 'var(--border)', margin: '10px auto' }} />
               <NavBtn id="orders" active={activeTab === 'orders'} icon="receipt_long" label="Your Orders" badge={hasActiveOrder} onClick={() => setActiveTab('orders')} />
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </nav>
 
-        <div className="mt-auto w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+        <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
           {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
           <Clock compact />
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+        <TopBar booking={booking} online={online} />
+        <div className="flex-1 flex overflow-hidden">
         {preselectedActivityId ? (
           <BookActivityTab roomId={roomId} activityId={preselectedActivityId} onBack={() => setPreselectedActivityId(null)} onBooked={loadOrders} />
         ) : activeTab === 'home' ? (
           <>
             <StayPanel unit={unit} booking={booking} relays={localRelays} controller={controller} property={property} roomControllerEnabled={roomControllerEnabled} />
-            <HomeWelcome booking={booking} weather={weather} />
+            <HomeWelcome booking={booking} weather={weather} property={property} />
+            <EveningHighlight cards={cards} activitiesEnabled={activitiesEnabled} onBook={handleBookActivity} />
           </>
         ) : activeTab === 'controls' && roomControllerEnabled ? (
           <section className="flex-1 p-10 bg-app overflow-y-auto">
@@ -177,12 +169,64 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
             location={property?.location}
           />
         )}
+        </div>
       </main>
     </div>
   );
 }
 
-function HomeWelcome({ booking, weather }) {
+function TopBar({ booking, online }) {
+  const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return (
+    <div className="shrink-0 flex items-center justify-between px-10 py-4 border-b border-app-soft">
+      <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-dim flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+        {dateStr}
+      </p>
+      <span
+        className="w-9 h-9 rounded-full flex items-center justify-center glass-card"
+        title={online ? 'Connected' : 'Reconnecting…'}
+      >
+        <span className="material-symbols-outlined text-lg" style={{ color: online ? 'var(--text-muted)' : 'var(--text-ghost)' }}>
+          {online ? 'wifi' : 'wifi_off'}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+// Promotes the soonest bookable activity that's surfaced on a Guest Board
+// card. No schedule-time data yet (see CLAUDE.md) — soft "this evening"
+// label for now.
+function EveningHighlight({ cards = [], activitiesEnabled, onBook }) {
+  if (!activitiesEnabled) return null;
+  const card = cards.find(c => c.category === 'activity' && c.activity_id);
+  if (!card) return null;
+  return (
+    <div
+      className="absolute glass-card rounded-2xl p-5 flex items-center gap-4"
+      style={{ right: 24, bottom: 24, maxWidth: 520, boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
+    >
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 accent-tint">
+        <span className="material-symbols-outlined text-accent">star</span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent mb-0.5">Featured · This Evening</p>
+        <p className="text-ink text-sm font-medium truncate">{card.title}</p>
+        {card.body && <p className="text-dim text-xs line-clamp-2">{card.body}</p>}
+      </div>
+      <button
+        onClick={() => onBook(card.activity_id)}
+        className="shrink-0 rounded-xl px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest"
+        style={{ background: 'var(--accent)', color: 'var(--accent-contrast)' }}
+      >
+        Reserve
+      </button>
+    </div>
+  );
+}
+
+function HomeWelcome({ booking, weather, property }) {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000);
@@ -204,9 +248,12 @@ function HomeWelcome({ booking, weather }) {
           <span className="text-8xl font-extralight text-ink tracking-tighter">{h}:{m}</span>
           <span className="text-2xl font-bold mb-2 text-accent">{ampm}</span>
         </div>
-        <h1 className="text-3xl text-ink" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>
-          Welcome, {firstName}
-        </h1>
+        <div className="flex flex-col items-center gap-2">
+          <h1 className="text-3xl text-ink" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700 }}>
+            {property?.name ? `Welcome to ${property.name}, ${firstName}` : `Welcome, ${firstName}`}
+          </h1>
+          {property?.location && <p className="text-xs uppercase tracking-[0.3em] text-faint">{property.location}</p>}
+        </div>
         {weather?.today && (
           <div className="glass-card rounded-2xl px-6 py-3 flex items-center gap-3">
             <span className="material-symbols-outlined text-accent" style={{ fontSize: 28 }}>{weather.today.icon || 'partly_cloudy_day'}</span>
@@ -225,13 +272,14 @@ function NavBtn({ active, icon, label, badge, onClick }) {
       onClick={onClick}
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-        background: active ? 'rgb(var(--accent-rgb) / 0.12)' : 'none',
+        background: active ? 'rgb(var(--accent-rgb) / 0.14)' : 'none',
         border: 'none', cursor: 'pointer',
         color: active ? 'var(--accent)' : 'var(--text-dim)',
         fontFamily: 'inherit', fontSize: 9, fontWeight: 700,
         textTransform: 'uppercase', letterSpacing: '0.1em',
-        padding: '10px 4px', width: '100%', position: 'relative',
-        borderRadius: 10, transition: 'color 0.2s, background 0.2s',
+        padding: '12px 4px', width: '100%', position: 'relative',
+        borderRadius: 14, transition: 'color 0.2s, background 0.2s, box-shadow 0.2s',
+        boxShadow: active ? 'inset 0 0 0 1px rgb(var(--accent-rgb) / 0.28), 0 4px 14px rgb(var(--accent-rgb) / 0.12)' : 'none',
       }}
     >
       <span style={{ position: 'relative' }}>
