@@ -610,7 +610,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 046
+## Next migration number: 047
 
 ---
 
@@ -1166,3 +1166,51 @@ post-discount; `total_amount` stays pre-discount gross. Invariant
   guest answers, both directions confirmed) now works end-to-end.
   Idle-room answering was not separately re-tested (it already had the
   prop and was presumably fine, but wasn't the room under test).
+
+---
+
+## ✅ Guest Messages — front desk → room tablet (manual send, migration 046)
+
+> Raised directly: "send a message from front desk to be seen in room
+> display, e.g. to remind checkout, or when an order is complete — manual
+> or automatically triggered." Discussed scope before building: automatic
+> triggers (checkout reminder, order-ready) and delivery UX (full-screen
+> vs. passive banner) were both open questions. Decided manual-only for
+> this pass, and full-screen must-dismiss (matching the existing
+> incoming-call/alarm treatment) over a passive banner+badge.
+
+- New `guest_messages` table — `unit_id`, `booking_id` (nullable),
+  `body`, `sent_by` (nullable so a future automated trigger can reuse the
+  same row shape), `read_at`. Deliberately **not** the email/SMTP Guest
+  Communication system (`email_templates` etc.) — that's built for formal
+  comms and would be heavy machinery for a quick on-screen nudge.
+- `server/services/guestMessageService.js` — single `sendMessage()` write
+  path (insert + `sse.notify()` the room's existing state-stream channel,
+  same one relay/order/call updates already ride, so delivery is instant
+  without any new real-time plumbing). Written this way specifically so
+  an automated trigger, when built, has one function to call rather than
+  a second insert path to keep in sync.
+- Staff: `POST /api/bookings/:id/message` → "Send Message" action in
+  `BookingDetail.jsx` (next to Call Room) and a matching shortcut in the
+  Dashboard's Live Unit Status room popover (`UnitCard`, gated on
+  `unit.booking_id` — no point messaging an empty room). Both share one
+  modal with two quick-fill template buttons (🔑 Check-in Welcome /
+  🧳 Check-out Reminder) from `client/src/lib/messageTemplates.js`, so the
+  two entry points can't drift in wording.
+- Room Display: `GET /room/:roomId/state` gained a `message` field — the
+  oldest unread message for that unit (`ORDER BY created_at ASC LIMIT 1`,
+  so a burst of sends is served in order, never skipped). New
+  `MessageOverlay.jsx`, full-screen, must-dismiss. `POST
+  /room/:roomId/message/:messageId/dismiss` marks it read; the next
+  poll/SSE tick picks up the next unread one if any.
+- **Deliberately not built:** any automated trigger. Checkout reminder
+  (new scheduled job, same pattern as the existing night-audit/guest-comm
+  cron jobs) and order-ready (hook into Kitchen Display's `PATCH
+  /api/kitchen/:id/status` → `served`) were both raised as natural first
+  candidates — revisit once manual sending has been used for a while and
+  timing/wording preferences are clearer. Don't build unprompted.
+- Status: ✅ Implemented and verified end-to-end this session (staff
+  send → SSE push → full-screen overlay → dismiss → marked read), via
+  both entry points (BookingDetail and the Dashboard popover). Not yet
+  tested on a real physical tablet — only in a headless browser against
+  the dev server.

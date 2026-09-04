@@ -11,6 +11,7 @@ import DebugMenu from './components/DebugMenu';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallOverlay from './components/CallOverlay';
 import AlarmOverlay from './components/AlarmOverlay';
+import MessageOverlay from './components/MessageOverlay';
 
 const POLL_MS = 10_000;
 const END_TOAST_MS = 2500;
@@ -145,6 +146,19 @@ export default function App() {
       evtSource.close();
     };
   }, [fetchState]);
+
+  // Front-desk message — full-screen until dismissed, oldest-unread served
+  // first by the backend so a burst of sends doesn't skip any of them.
+  const [dismissingMessage, setDismissingMessage] = useState(false);
+  const handleDismissMessage = useCallback(async () => {
+    if (!state?.message) return;
+    setDismissingMessage(true);
+    try {
+      await api.post(`/display/room/${roomId}/message/${state.message.id}/dismiss`);
+    } catch { /* best-effort — stays unread server-side, next poll retries naturally */ }
+    setDismissingMessage(false);
+    fetchState();
+  }, [state?.message, roomId, fetchState]);
 
   const clearConnectingTimeout = useCallback(() => {
     if (connectingTimeoutRef.current) {
@@ -372,6 +386,7 @@ export default function App() {
           onMuteToggle={handleMuteToggle}
           muted={muted}
         />
+        <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
         <UpdatePrompt />
       </>
     );
@@ -418,6 +433,7 @@ export default function App() {
         muted={muted}
       />
       <AlarmOverlay ringing={alarmRinging} time={alarmTime} onDismiss={handleDismissAlarm} />
+      <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
       <UpdatePrompt />
     </>
   );

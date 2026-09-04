@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { useCall } from '../context/CallContext';
+import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 import api from '../services/api';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -44,6 +45,10 @@ function UnitCard({ unit, flags }) {
   const { callRoom } = useCall();
   const [calling, setCalling] = useState(false);
   const [callError, setCallError] = useState('');
+  const [messaging, setMessaging] = useState(false);
+  const [messageBody, setMessageBody] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageError, setMessageError] = useState('');
 
   async function handleCallRoom(e) {
     e.stopPropagation();
@@ -55,6 +60,26 @@ function UnitCard({ unit, flags }) {
       setCallError(err.response?.data?.error || err.message || 'Could not place call');
     }
     setCalling(false);
+  }
+
+  function openMessage(e) {
+    e.stopPropagation();
+    setMessageError('');
+    setMessageBody('');
+    setMessaging(true);
+  }
+
+  async function handleSendMessage() {
+    if (!messageBody.trim()) return;
+    setSendingMessage(true);
+    setMessageError('');
+    try {
+      await api.post(`/api/bookings/${unit.booking_id}/message`, { body: messageBody.trim() });
+      setMessaging(false);
+    } catch (err) {
+      setMessageError(err.response?.data?.error || 'Failed to send message');
+    }
+    setSendingMessage(false);
   }
 
   const isOccupied = unit.status === 'occupied' && unit.guest_name;
@@ -144,19 +169,78 @@ function UnitCard({ unit, flags }) {
       )}
 
       {/* Call Room — same eligibility as Sidebar's "Call a Room" / CallRoomModal:
-          the calling module on, and a Room Display tablet actually assigned. */}
-      {hasModule('calling') && unit.controller_id && (
-        <>
-          <button
-            className="btn btn-secondary btn-sm"
-            style={{ width: '100%', marginTop: 10, fontSize: 12 }}
-            disabled={calling}
-            onClick={handleCallRoom}
-          >
-            📞 {calling ? 'Calling…' : 'Call Room'}
-          </button>
-          {callError && <div style={{ color: '#DC2626', fontSize: 11, marginTop: 6 }}>{callError}</div>}
-        </>
+          the calling module on, and a Room Display tablet actually assigned.
+          Send Message — needs an actual checked-in booking to attach to (no
+          point messaging an empty room's tablet). */}
+      {(hasModule('calling') && unit.controller_id) || unit.booking_id ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {hasModule('calling') && unit.controller_id && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1, fontSize: 12 }}
+              disabled={calling}
+              onClick={handleCallRoom}
+            >
+              📞 {calling ? 'Calling…' : 'Call Room'}
+            </button>
+          )}
+          {unit.booking_id && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1, fontSize: 12 }}
+              onClick={openMessage}
+            >
+              ✉️ Message
+            </button>
+          )}
+        </div>
+      ) : null}
+      {callError && <div style={{ color: '#DC2626', fontSize: 11, marginTop: 6 }}>{callError}</div>}
+
+      {messaging && (
+        <div className="modal-backdrop" onClick={e => e.stopPropagation()}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Send Message — {unit.name}</div>
+              <button className="btn btn-icon" onClick={() => setMessaging(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                Shown full-screen on the room's tablet until the guest dismisses it.
+              </div>
+              <div className="form-group">
+                <label className="form-label">Message</label>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => setMessageBody(checkinTemplate(unit.guest_name))}>
+                    🔑 Check-in Welcome
+                  </button>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => setMessageBody(checkoutTemplate(unit.guest_name))}>
+                    🧳 Check-out Reminder
+                  </button>
+                </div>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="e.g. Friendly reminder: check-out is at 12:00 today"
+                  value={messageBody}
+                  onChange={e => setMessageBody(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              {messageError && <div className="alert alert-error">{messageError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setMessaging(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSendMessage}
+                disabled={sendingMessage || !messageBody.trim()}
+              >
+                {sendingMessage ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

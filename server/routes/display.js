@@ -76,6 +76,15 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
     const enabledModules = new Map(moduleRows.map(m => [m.module, m.is_enabled]));
 
+    // Oldest unread message first — so a burst of sends doesn't skip earlier
+    // ones; the next poll picks up the next one after this one's dismissed.
+    const { rows: messageRows } = await db.query(
+      `SELECT id, body, created_at FROM guest_messages
+       WHERE unit_id = $1 AND read_at IS NULL
+       ORDER BY created_at ASC LIMIT 1`,
+      [unit.id]
+    );
+
     const weather = await getWeather();
 
     res.json({
@@ -84,6 +93,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       booking: bookingRows[0] || null,
       relays: relayRows,
       cards: cardRows,
+      message: messageRows[0] || null,
       weather,
       property: propertyRows[0] || null,
       orderingEnabled: enabledModules.get('sales') || false,
@@ -234,6 +244,25 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
       [`Do Not Disturb — ${unit.name}`, unit.id, req.propertyId]
     );
     res.status(201).json({ ok: true, task_id: rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/display/room/:roomId/message/:messageId/dismiss — guest dismisses
+// a front-desk message shown on the full-screen overlay
+router.post('/room/:roomId/message/:messageId/dismiss', authDisplay, async (req, res) => {
+  const { roomId, messageId } = req.params;
+  try {
+    const { rows: unitRows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+    if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
+    const { rows } = await db.query(
+      `UPDATE guest_messages SET read_at = NOW()
+       WHERE id = $1 AND unit_id = $2 AND property_id = $3 RETURNING id`,
+      [messageId, unitRows[0].id, req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Message not found' });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

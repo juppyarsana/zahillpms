@@ -5,6 +5,7 @@ const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer'
 const { computeFolioTotals, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
+const guestMessageService = require('../services/guestMessageService');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
 async function grossFactor(client, propertyId) {
@@ -730,6 +731,26 @@ router.put('/:id/no-show', auth, async (req, res) => {
     );
     await roomCharge.voidAll(db, req.params.id, req.user.id);
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bookings/:id/message — send a guest-facing message to the
+// booking's room, shown full-screen on Room Display until dismissed.
+router.post('/:id/message', auth, async (req, res) => {
+  const { body } = req.body;
+  if (!body || !body.trim()) return res.status(400).json({ error: 'body required' });
+  try {
+    const { rows: [booking] } = await db.query(
+      'SELECT id, unit_id FROM bookings WHERE id = $1 AND property_id = $2',
+      [req.params.id, req.propertyId]
+    );
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const message = await guestMessageService.sendMessage(req.propertyId, {
+      unitId: booking.unit_id, bookingId: booking.id, body: body.trim(), sentBy: req.user.id,
+    });
+    res.status(201).json(message);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

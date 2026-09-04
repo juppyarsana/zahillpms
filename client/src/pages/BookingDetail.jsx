@@ -5,6 +5,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
+import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -42,6 +43,9 @@ export default function BookingDetail() {
   const [amendAvailability, setAmendAvailability] = useState(null);
   const [amendChecking, setAmendChecking] = useState(false);
   const [amendLoading, setAmendLoading] = useState(false);
+  const [messaging, setMessaging] = useState(false);
+  const [messageBody, setMessageBody] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
@@ -282,6 +286,23 @@ export default function BookingDetail() {
     }
   }
 
+  function openMessage() {
+    setMessageBody('');
+    setMessaging(true);
+  }
+
+  async function doSendMessage() {
+    if (!messageBody.trim()) return;
+    setSendingMessage(true);
+    try {
+      await api.post(`/api/bookings/${id}/message`, { body: messageBody.trim() });
+      setMessaging(false);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to send message');
+    }
+    setSendingMessage(false);
+  }
+
   function waLink() {
     const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Zahill Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
@@ -327,6 +348,7 @@ export default function BookingDetail() {
           )}
           <ActionMenu items={[
             hasModule('calling') && { label: 'Call Room', icon: '📞', onClick: callRoomAction },
+            { label: 'Send Message', icon: '✉️', onClick: openMessage },
             booking.guest_whatsapp && { label: 'WhatsApp Guest', icon: '💬', onClick: waLink },
             ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
               { label: 'Amend Dates', icon: '📅', onClick: openAmend },
@@ -738,6 +760,51 @@ export default function BookingDetail() {
                 }
               >
                 {amendLoading ? 'Saving…' : 'Save New Dates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messaging && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Send Message — {booking.unit_name}</div>
+              <button className="btn btn-icon" onClick={() => setMessaging(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                Shown full-screen on the room's tablet until the guest dismisses it.
+              </div>
+              <div className="form-group">
+                <label className="form-label">Message</label>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => setMessageBody(checkinTemplate(booking.guest_name))}>
+                    🔑 Check-in Welcome
+                  </button>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => setMessageBody(checkoutTemplate(booking.guest_name))}>
+                    🧳 Check-out Reminder
+                  </button>
+                </div>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="e.g. Friendly reminder: check-out is at 12:00 today"
+                  value={messageBody}
+                  onChange={e => setMessageBody(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setMessaging(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={doSendMessage}
+                disabled={sendingMessage || !messageBody.trim()}
+              >
+                {sendingMessage ? 'Sending…' : 'Send'}
               </button>
             </div>
           </div>
