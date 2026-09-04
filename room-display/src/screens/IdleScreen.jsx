@@ -78,7 +78,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
       {/* Main content */}
       <main className="flex-1 overflow-hidden">
         {activeTab === 'idle' ? (
-          <IdleView unit={unit} controller={controller} property={property} />
+          <IdleView unit={unit} controller={controller} property={property} roomControllerEnabled={roomControllerEnabled} />
         ) : (
           <ControlsView
             relays={localRelays}
@@ -93,7 +93,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
   );
 }
 
-function IdleView({ unit, controller, property }) {
+function IdleView({ unit, controller, property, roomControllerEnabled }) {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000);
@@ -130,7 +130,7 @@ function IdleView({ unit, controller, property }) {
           <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Ready for Guests</span>
         </div>
 
-        {controller && !controller.connected && (
+        {roomControllerEnabled && controller && !controller.connected && (
           <p className="text-[10px] uppercase tracking-widest text-slate-700 mt-2">Room controller offline</p>
         )}
       </div>
