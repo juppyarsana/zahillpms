@@ -18,6 +18,7 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.png', 'logo.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
       workbox: {
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
