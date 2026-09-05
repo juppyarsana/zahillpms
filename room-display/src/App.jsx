@@ -10,6 +10,7 @@ import IdleScreen from './screens/IdleScreen';
 import GuestScreen from './screens/GuestScreen';
 import DebugMenu from './components/DebugMenu';
 import UpdatePrompt from './components/UpdatePrompt';
+import InstallPrompt from './components/InstallPrompt';
 import CallOverlay from './components/CallOverlay';
 import AlarmOverlay from './components/AlarmOverlay';
 import MessageOverlay from './components/MessageOverlay';
@@ -330,7 +331,12 @@ export default function App() {
   }, []);
 
   if (!roomId || !displayToken) {
-    return <SetupScreen onSetup={handleSetup} />;
+    return (
+      <>
+        <SetupScreen onSetup={handleSetup} />
+        <InstallPrompt />
+      </>
+    );
   }
 
   if (error && !state) {
@@ -392,6 +398,7 @@ export default function App() {
         />
         <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
         <UpdatePrompt />
+        <InstallPrompt />
       </>
     );
   }
@@ -439,6 +446,7 @@ export default function App() {
       <AlarmOverlay ringing={alarmRinging} time={alarmTime} onDismiss={handleDismissAlarm} />
       <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
       <UpdatePrompt />
+      <InstallPrompt />
     </>
   );
 }
