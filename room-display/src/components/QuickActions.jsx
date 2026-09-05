@@ -60,30 +60,30 @@ export default function QuickActions({
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2.5">
       {callingEnabled && (
         <button
           onClick={onCallFrontDesk}
           disabled={callActive}
           className="w-full flex items-center justify-center gap-2.5 rounded-2xl"
           style={{
-            padding: '10px 0', border: 'none', cursor: callActive ? 'default' : 'pointer',
+            padding: '14px 0', border: 'none', cursor: callActive ? 'default' : 'pointer',
             background: 'var(--danger)', color: '#fff',
             boxShadow: callActive ? 'none' : '0 6px 18px rgba(179,38,30,0.35)',
             opacity: callActive ? 0.5 : 1, transition: 'opacity 0.2s',
           }}
         >
-          <span className="material-symbols-outlined filled" style={{ fontSize: 20 }}>call</span>
+          <span className="material-symbols-outlined filled" style={{ fontSize: 22 }}>call</span>
           <span className="text-sm font-extrabold uppercase tracking-widest">{callActive ? 'Calling…' : 'Call Front Desk'}</span>
         </button>
       )}
 
       {operationsEnabled && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-3">
           <button
             onClick={toggleDnd}
             disabled={dndBusy}
-            className="rounded-2xl px-3 py-2 flex flex-col items-center gap-1"
+            className="rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5"
             style={{
               background: dndTaskId ? 'var(--accent)' : 'var(--surface)',
               border: '1px solid var(--border)',
@@ -91,26 +91,26 @@ export default function QuickActions({
               cursor: dndBusy ? 'default' : 'pointer',
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 19 }}>do_not_disturb_on</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>do_not_disturb_on</span>
             <span className="text-[10px] font-bold uppercase tracking-wider">{dndTaskId ? 'DND On' : 'Do Not Disturb'}</span>
           </button>
           <button
             onClick={requestClean}
             disabled={cleanBusy || cleanRequested}
-            className="glass-card rounded-2xl px-3 py-2 flex flex-col items-center gap-1 text-ink"
+            className="glass-card rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5 text-ink"
             style={{ cursor: cleanBusy || cleanRequested ? 'default' : 'pointer' }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: 19 }}>cleaning_services</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 24 }}>cleaning_services</span>
             <span className="text-[10px] font-bold uppercase tracking-wider">{cleanRequested ? 'Requested' : 'Clean Room'}</span>
           </button>
         </div>
       )}
 
-      <div className="glass-card rounded-2xl px-4 py-2 flex items-center justify-between gap-3">
+      <div className="glass-card rounded-2xl px-4 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3.5">
-          <span className="material-symbols-outlined text-accent" style={{ fontSize: 20 }}>alarm</span>
+          <span className="material-symbols-outlined text-accent" style={{ fontSize: 22 }}>alarm</span>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-dim mb-0.5">Alarm</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-dim mb-1">Alarm</p>
             <button
               onClick={() => setPickerOpen(true)}
               style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 14, fontWeight: 700, padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
