@@ -73,7 +73,14 @@ export default function useResilientEventSource(url, onMessage) {
       if (Date.now() - lastEventAt > STALE_MS) forceReconnect();
     }, WATCHDOG_MS);
 
-    const onVisible = () => { if (document.visibilityState === 'visible') forceReconnect(); };
+    // Only reconnect on wake if the connection has actually gone stale (same
+    // check the watchdog uses) — reconnecting unconditionally on every tab
+    // wake tears down a perfectly healthy connection, which silently drops
+    // anything in flight on it (e.g. a call's offer/ICE candidates arriving
+    // right as the tab regains focus).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastEventAt > STALE_MS) forceReconnect();
+    };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('online', forceReconnect);
 
