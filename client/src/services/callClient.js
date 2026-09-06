@@ -18,12 +18,24 @@ function configure({ fetchTurnServers: fn } = {}) {
 }
 
 async function getIceServers() {
-  if (!fetchTurnServers) return STUN_SERVERS;
+  if (!fetchTurnServers) return { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
   try {
     const turnServers = await fetchTurnServers();
-    return turnServers?.length ? [...STUN_SERVERS, ...turnServers] : STUN_SERVERS;
+    // Relay candidates are always the lowest ICE priority, so a mixed
+    // host+srflx+relay candidate list means the one pair that can actually
+    // work across a restrictive NAT sits behind a pile of guaranteed-to-fail
+    // ones — coturn's own logs showed the answering side never even got as
+    // far as attempting its relay candidate before the browser gave up.
+    // Forcing relay-only when TURN is actually available removes every
+    // other pair from consideration, so there's nothing to work through
+    // first. Falls back to 'all' (STUN + host, same as before any of this)
+    // if TURN isn't configured/reachable, so a TURN outage doesn't also
+    // break same-network calling.
+    return turnServers?.length
+      ? { iceServers: [...STUN_SERVERS, ...turnServers], iceTransportPolicy: 'relay' }
+      : { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
   } catch {
-    return STUN_SERVERS;
+    return { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
   }
 }
 
@@ -36,8 +48,8 @@ function getRemoteAudioEl() {
   return remoteAudioEl;
 }
 
-function setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers }) {
-  pc = new RTCPeerConnection({ iceServers });
+function setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy }) {
+  pc = new RTCPeerConnection({ iceServers, iceTransportPolicy });
   pc.onicecandidate = (e) => {
     if (e.candidate) onIceCandidate?.(e.candidate.toJSON());
   };
@@ -51,8 +63,8 @@ async function createOffer({ onIceCandidate, onConnectionStateChange }) {
   remoteDescSet = false;
   pendingCandidates = [];
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const iceServers = await getIceServers();
-  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers });
+  const { iceServers, iceTransportPolicy } = await getIceServers();
+  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   const offer = await pc.createOffer();
@@ -64,8 +76,8 @@ async function createAnswer(offerSdp, { onIceCandidate, onConnectionStateChange 
   remoteDescSet = false;
   pendingCandidates = [];
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const iceServers = await getIceServers();
-  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers });
+  const { iceServers, iceTransportPolicy } = await getIceServers();
+  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
