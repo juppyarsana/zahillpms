@@ -53,6 +53,19 @@ export default function App() {
     return () => ringtone.stop();
   }, [callState.status]);
 
+  // TURN credentials are minted fresh per call (short-lived) rather than
+  // fetched once — see server/services/turnCredentials.js. Falls back to
+  // STUN-only if the endpoint 404s/errors or TURN isn't configured yet.
+  useEffect(() => {
+    if (!roomId) return;
+    callClient.configure({
+      fetchTurnServers: async () => {
+        const { data } = await api.get(`/calls/room/${roomId}/turn-credentials`);
+        return data.iceServers;
+      },
+    });
+  }, [roomId]);
+
   useEffect(() => {
     const id = setInterval(() => {
       const now = new Date();

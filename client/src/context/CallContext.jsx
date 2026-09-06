@@ -27,6 +27,18 @@ export function CallProvider({ children }) {
   useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
   const connectingTimeoutRef = useRef(null);
 
+  // TURN credentials are minted fresh per call (short-lived) rather than
+  // fetched once — see services/turnCredentials.js. Falls back to STUN-only
+  // if the endpoint 404s/errors or TURN isn't configured on the server yet.
+  useEffect(() => {
+    callClient.configure({
+      fetchTurnServers: async () => {
+        const { data } = await api.get('/api/calls/turn-credentials');
+        return data.iceServers;
+      },
+    });
+  }, []);
+
   const clearConnectingTimeout = useCallback(() => {
     if (connectingTimeoutRef.current) {
       clearTimeout(connectingTimeoutRef.current);

@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const authQueryToken = require('../middleware/authQueryToken');
 const moduleGuard = require('../middleware/moduleGuard');
 const sse = require('../sse');
+const { getTurnCredentials } = require('../services/turnCredentials');
 const gate = moduleGuard('calling');
 
 const staffChannel = (propertyId) => `staff:broadcast:${propertyId}`;
@@ -39,6 +40,24 @@ async function markMissed(callId) {
   if (unit?.controller_id) sse.notify('room:' + unit.controller_id, { type: 'missed', callId });
   if (unit?.property_id) sse.notify(staffChannel(unit.property_id), { type: 'missed', callId });
 }
+
+// GET /api/calls/turn-credentials — staff side. Short-lived (1h) TURN
+// credentials, minted fresh per request rather than a static secret shipped
+// in the bundle — see services/turnCredentials.js. Returns an empty list
+// (STUN-only fallback) until TURN_SECRET/TURN_URLS are configured.
+router.get('/turn-credentials', auth, gate, (req, res) => {
+  const creds = getTurnCredentials(req.propertyId);
+  res.json({ iceServers: creds ? [creds] : [] });
+});
+
+// GET /api/calls/room/:roomId/turn-credentials — room display side
+router.get('/room/:roomId/turn-credentials', authDisplay, gate, async (req, res) => {
+  const { roomId } = req.params;
+  const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
+  if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
+  const creds = getTurnCredentials(req.propertyId);
+  res.json({ iceServers: creds ? [creds] : [] });
+});
 
 // POST /api/calls — room places a call
 // Body: { roomId } (controller_id)

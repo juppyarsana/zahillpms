@@ -1,14 +1,31 @@
 // Thin WebRTC wrapper for either side of a call — offering (placing a call)
-// or answering (receiving one). Public STUN only, no TURN — assumes caller
-// and callee are on the same hotel network. Cross-network calling is a
-// known limitation.
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// or answering (receiving one). STUN alone only works when both sides can
+// reach each other directly, which fails across a NAT/firewall boundary
+// (e.g. a MikroTik between the property and staff off-site) — the app
+// injects a TURN-credential fetcher via configure() to cover that case;
+// without one, calling stays STUN-only same as before.
+const STUN_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 let pc = null;
 let localStream = null;
 let remoteAudioEl = null;
 let remoteDescSet = false;
 let pendingCandidates = [];
+let fetchTurnServers = null;
+
+function configure({ fetchTurnServers: fn } = {}) {
+  fetchTurnServers = fn || null;
+}
+
+async function getIceServers() {
+  if (!fetchTurnServers) return STUN_SERVERS;
+  try {
+    const turnServers = await fetchTurnServers();
+    return turnServers?.length ? [...STUN_SERVERS, ...turnServers] : STUN_SERVERS;
+  } catch {
+    return STUN_SERVERS;
+  }
+}
 
 function getRemoteAudioEl() {
   if (!remoteAudioEl) {
@@ -19,8 +36,8 @@ function getRemoteAudioEl() {
   return remoteAudioEl;
 }
 
-function setupPeerConnection({ onIceCandidate, onConnectionStateChange }) {
-  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+function setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers }) {
+  pc = new RTCPeerConnection({ iceServers });
   pc.onicecandidate = (e) => {
     if (e.candidate) onIceCandidate?.(e.candidate.toJSON());
   };
@@ -34,7 +51,8 @@ async function createOffer({ onIceCandidate, onConnectionStateChange }) {
   remoteDescSet = false;
   pendingCandidates = [];
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  setupPeerConnection({ onIceCandidate, onConnectionStateChange });
+  const iceServers = await getIceServers();
+  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   const offer = await pc.createOffer();
@@ -46,7 +64,8 @@ async function createAnswer(offerSdp, { onIceCandidate, onConnectionStateChange 
   remoteDescSet = false;
   pendingCandidates = [];
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  setupPeerConnection({ onIceCandidate, onConnectionStateChange });
+  const iceServers = await getIceServers();
+  setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
   await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
@@ -94,4 +113,4 @@ function close() {
   }
 }
 
-export default { createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
+export default { configure, createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
