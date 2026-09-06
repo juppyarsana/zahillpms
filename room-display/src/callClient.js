@@ -90,8 +90,13 @@ async function handleAnswer(answerSdp) {
 }
 
 async function addIceCandidate(candidate) {
-  if (!pc) return;
-  if (!remoteDescSet) { pendingCandidates.push(candidate); return; }
+  // A candidate can arrive before pc even exists yet — the answering side
+  // doesn't create it until after a human taps "Answer" plus an async
+  // getUserMedia + TURN-credential fetch chain, while the caller starts
+  // sending candidates immediately. Queue rather than drop in both cases;
+  // createOffer/createAnswer flush this same queue once pc exists and the
+  // remote description is set.
+  if (!pc || !remoteDescSet) { pendingCandidates.push(candidate); return; }
   try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
 }
 
