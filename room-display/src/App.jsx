@@ -20,7 +20,12 @@ const POLL_MS = 10_000;
 const END_TOAST_MS = 2500;
 const DEBUG_CLICK_THRESHOLD = 5;
 const DEBUG_CLICK_TIMEOUT = 3000;
-const CONNECTING_TIMEOUT_MS = 25_000;
+// Relay candidates are always tried last by design (lowest ICE priority —
+// host > srflx > relay), and with several candidates per side there's a real
+// pair matrix to work through before ICE gets to the one pair that can
+// actually succeed across a restrictive NAT. 25s was cutting this off before
+// the relay pair got its turn; give it more room.
+const CONNECTING_TIMEOUT_MS = 45_000;
 const OFFER_WAIT_MS = 5_000;
 const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
 
