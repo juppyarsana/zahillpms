@@ -24,7 +24,7 @@ export default function GuestProfile() {
   async function load() {
     const r = await api.get(`/api/guests/${id}`);
     setGuest(r.data);
-    setForm({ name: r.data.name, nationality: r.data.nationality, whatsapp: r.data.whatsapp, email: r.data.email, birthday: r.data.birthday?.slice(0,10)||'', anniversary: r.data.anniversary?.slice(0,10)||'', notes: r.data.notes||'' });
+    setForm({ name: r.data.name, nationality: r.data.nationality, id_number: r.data.id_number||'', whatsapp: r.data.whatsapp, email: r.data.email, birthday: r.data.birthday?.slice(0,10)||'', anniversary: r.data.anniversary?.slice(0,10)||'', notes: r.data.notes||'' });
   }
 
   useEffect(() => { load(); }, [id]);
@@ -89,6 +89,7 @@ export default function GuestProfile() {
           <div className="form-row">
             <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={form.name||''} onChange={e=>setForm(f=>({...f,name:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">Nationality</label><CountrySelect value={form.nationality||''} onChange={v=>setForm(f=>({...f,nationality:v}))} /></div>
+            <div className="form-group"><label className="form-label">ID / Passport No.</label><input className="form-input" value={form.id_number||''} onChange={e=>setForm(f=>({...f,id_number:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">WhatsApp</label><input className="form-input" value={form.whatsapp||''} onChange={e=>setForm(f=>({...f,whatsapp:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email||''} onChange={e=>setForm(f=>({...f,email:e.target.value}))} /></div>
             <div className="form-group"><label className="form-label">Birthday</label><input className="form-input" type="date" value={form.birthday||''} onChange={e=>setForm(f=>({...f,birthday:e.target.value}))} /></div>
@@ -102,6 +103,7 @@ export default function GuestProfile() {
           <div className="card">
             <div className="card-title">Contact</div>
             <div className="flex-between" style={{ marginBottom: 6 }}><span className="text-muted">Nationality</span><span>{guest.nationality||'—'}</span></div>
+            <div className="flex-between" style={{ marginBottom: 6 }}><span className="text-muted">ID / Passport No.</span><span>{guest.id_number||'—'}</span></div>
             <div className="flex-between" style={{ marginBottom: 6 }}><span className="text-muted">WhatsApp</span><span>{guest.whatsapp||'—'}</span></div>
             <div className="flex-between" style={{ marginBottom: 6 }}><span className="text-muted">Email</span><span>{guest.email||'—'}</span></div>
             <div className="flex-between" style={{ marginBottom: 6 }}><span className="text-muted">Birthday</span><span>{guest.birthday?.slice(0,10)||'—'}</span></div>

@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const PDFDocument = require('pdfkit');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
@@ -6,6 +7,7 @@ const { computeFolioTotals, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
+const { renderGuestReport } = require('../services/guestReportPdf');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
 async function grossFactor(client, propertyId) {
@@ -33,11 +35,11 @@ function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomReve
   return { roomNet, mealNet };
 }
 
-// GET /api/bookings
-router.get('/', auth, async (req, res) => {
-  const { month, year, unit_id, status, group_id } = req.query;
+// Shared by GET / (JSON list) and GET /guest-report/pdf, so the exported
+// report always matches exactly what the list view is currently showing.
+function buildBookingsQuery(propertyId, { month, year, unit_id, status, source, group_id, q, date_from, date_to }) {
   let query = `
-    SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, u.name as unit_name,
+    SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.id_number, u.name as unit_name,
            u.bed_config, rp.code as rate_plan_code, rp.name as rate_plan_name,
            EXISTS(
              SELECT 1 FROM checkin_records cr
@@ -51,19 +53,68 @@ router.get('/', auth, async (req, res) => {
     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
     WHERE b.property_id = $1
   `;
-  const params = [req.propertyId];
-  if (month && year) {
+  const params = [propertyId];
+  // date_from/date_to (an explicit range — used by search and the guest
+  // report export) takes precedence over month/year (the calendar's
+  // single-month view) when both are somehow present.
+  if (date_from && date_to) {
+    params.push(date_from, date_to);
+    query += ` AND b.check_in_date <= $${params.length} AND b.check_out_date > $${params.length - 1}`;
+  } else if (month && year) {
     params.push(year, month);
     query += ` AND EXTRACT(YEAR FROM b.check_in_date) = $${params.length-1} AND EXTRACT(MONTH FROM b.check_in_date) = $${params.length}`;
   }
   if (unit_id) { params.push(unit_id); query += ` AND b.unit_id = $${params.length}`; }
   if (status) { params.push(status); query += ` AND b.status = $${params.length}`; }
+  if (source) { params.push(source); query += ` AND b.source = $${params.length}`; }
   if (group_id) { params.push(group_id); query += ` AND b.reservation_group_id = $${params.length}`; }
+  if (q) { params.push(`%${q}%`); query += ` AND g.name ILIKE $${params.length}`; }
   query += ' ORDER BY b.check_in_date';
+  return { query, params };
+}
 
+// GET /api/bookings
+router.get('/', auth, async (req, res) => {
+  const { query, params } = buildBookingsQuery(req.propertyId, req.query);
   try {
     const { rows } = await db.query(query, params);
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/guest-report/pdf — daily/ranged guest list for the local
+// police report (STPM/lapor tamu). Accepts the same filter query params as
+// GET / so the export always matches what's currently shown in the list.
+router.get('/guest-report/pdf', auth, async (req, res) => {
+  try {
+    const { query, params } = buildBookingsQuery(req.propertyId, req.query);
+    const [{ rows }, { rows: [property] }] = await Promise.all([
+      db.query(query, params),
+      db.query(
+        `SELECT property_name, property_address, property_phone, property_email, logo_url
+         FROM property_settings WHERE property_id = $1`,
+        [req.propertyId]
+      ),
+    ]);
+
+    const { date_from, date_to, month, year } = req.query;
+    // Filename must stay ASCII-only (an en-dash or similar in a
+    // Content-Disposition header value throws a Node header-encoding error);
+    // the on-page label can use nicer punctuation freely.
+    const dateLabel = date_from && date_to
+      ? (date_from === date_to ? date_from : `${date_from} to ${date_to}`)
+      : (month && year ? `${year}-${String(month).padStart(2, '0')}` : 'All dates');
+    const filenameSafe = dateLabel.replace(/[^a-zA-Z0-9-]/g, '_');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="guest-report-${filenameSafe}.pdf"`);
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    doc.pipe(res);
+    renderGuestReport(doc, { property: property || {}, dateLabel, rows });
+    doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

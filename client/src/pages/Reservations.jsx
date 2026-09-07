@@ -82,6 +82,67 @@ export default function Reservations() {
   const [view, setView]     = useState('calendar');
   const calScrollRef        = useRef(null);
 
+  // List view filters — kept separate from the calendar's month/year-driven
+  // `bookings` fetch above, so switching between views never contaminates
+  // the calendar grid with a filtered/searched result set.
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // debounced
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterSource, setFilterSource] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [listBookings, setListBookings] = useState([]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const hasActiveFilters = !!(searchQuery || filterStatus || filterSource || dateFrom || dateTo);
+
+  // Search or an explicit date range searches across all dates (not just the
+  // calendar's currently selected month) — that's the whole point of being
+  // able to find a reservation regardless of which month it's in.
+  function buildListParams() {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('q', searchQuery);
+    if (dateFrom && dateTo) { params.set('date_from', dateFrom); params.set('date_to', dateTo); }
+    else if (!searchQuery) { params.set('month', month); params.set('year', year); }
+    if (filterStatus) params.set('status', filterStatus);
+    if (filterSource) params.set('source', filterSource);
+    return params;
+  }
+
+  useEffect(() => {
+    if (view !== 'list') return;
+    api.get(`/api/bookings?${buildListParams().toString()}`).then(r => setListBookings(r.data));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, searchQuery, filterStatus, filterSource, dateFrom, dateTo, month, year]);
+
+  function clearFilters() {
+    setSearchInput(''); setSearchQuery(''); setFilterStatus(''); setFilterSource(''); setDateFrom(''); setDateTo('');
+  }
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+  async function exportGuestReportPdf() {
+    setExportingPdf(true);
+    try {
+      const r = await api.get(`/api/bookings/guest-report/pdf?${buildListParams().toString()}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `guest-report-${dateFrom && dateTo ? `${dateFrom}_${dateTo}` : `${year}-${String(month).padStart(2, '0')}`}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to generate guest report');
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
   // Room-type filter (calendar only). null = all types.
   const [selTypes, setSelTypes] = useState(() => {
     try { const s = JSON.parse(localStorage.getItem('resv-cal-types')); return Array.isArray(s) && s.length ? new Set(s) : null; }
@@ -420,52 +481,98 @@ export default function Reservations() {
         </>
       ) : (
         /* List view */
-        <div className="card">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Guest</th><th>Unit</th><th>Check-in</th><th>Check-out</th>
-                  <th>Nights</th><th>Source</th><th>Status</th><th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.map(b => {
-                  const isDone      = b.status === 'checked_out';
-                  const isCancelled = b.status === 'cancelled' || b.status === 'no_show';
-                  return (
-                    <tr
-                      key={b.id}
-                      style={{
-                        cursor: 'pointer',
-                        opacity: isCancelled ? 0.4 : isDone ? 0.6 : 1,
-                        filter: isDone || isCancelled ? 'grayscale(0.4)' : 'none',
-                      }}
-                      onClick={() => nav(`/reservations/${b.id}`)}
-                    >
-                      <td style={{ fontWeight: 600 }}>
-                        {b.guest_name}
-                        {b.has_condition_notes && (
-                          <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
-                        )}
-                      </td>
-                      <td>{b.unit_name}</td>
-                      <td>{b.check_in_date?.slice(0, 10)}</td>
-                      <td>{b.check_out_date?.slice(0, 10)}</td>
-                      <td>{b.nights}</td>
-                      <td><SourceBadge sourceId={b.source} /></td>
-                      <td><span className={`badge ${STATUS_BADGE[b.status] || 'badge-gray'}`}>{STATUS_LABELS[b.status] || b.status}</span></td>
-                      <td style={{ fontWeight: 600 }}>Rp {Number(b.total_amount).toLocaleString('id-ID')}</td>
-                    </tr>
-                  );
-                })}
-                {bookings.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>No bookings this month</td></tr>
-                )}
-              </tbody>
-            </table>
+        <>
+          <div className="card mb-3">
+            <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ flex: '1 1 220px', marginBottom: 0 }}>
+                <label className="form-label">Search guest</label>
+                <input
+                  className="form-input"
+                  placeholder="Guest name…"
+                  value={searchInput}
+                  onChange={e => setSearchInput(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Status</label>
+                <select className="form-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                  <option value="">All statuses</option>
+                  {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Source</label>
+                <select className="form-select" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                  <option value="">All sources</option>
+                  {sources.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">From</label>
+                <input className="form-input" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">To</label>
+                <input className="form-input" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+              </div>
+              {hasActiveFilters && (
+                <button className="btn btn-secondary btn-sm" onClick={clearFilters}>Clear filters</button>
+              )}
+              <button className="btn btn-secondary" onClick={exportGuestReportPdf} disabled={exportingPdf} style={{ marginLeft: 'auto' }}>
+                {exportingPdf ? 'Generating…' : '⬇ Guest Report PDF'}
+              </button>
+            </div>
           </div>
-        </div>
+
+          <div className="card">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Guest</th><th>Unit</th><th>Check-in</th><th>Check-out</th>
+                    <th>Nights</th><th>Source</th><th>Status</th><th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listBookings.map(b => {
+                    const isDone      = b.status === 'checked_out';
+                    const isCancelled = b.status === 'cancelled' || b.status === 'no_show';
+                    return (
+                      <tr
+                        key={b.id}
+                        style={{
+                          cursor: 'pointer',
+                          opacity: isCancelled ? 0.4 : isDone ? 0.6 : 1,
+                          filter: isDone || isCancelled ? 'grayscale(0.4)' : 'none',
+                        }}
+                        onClick={() => nav(`/reservations/${b.id}`)}
+                      >
+                        <td style={{ fontWeight: 600 }}>
+                          {b.guest_name}
+                          {b.has_condition_notes && (
+                            <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
+                          )}
+                        </td>
+                        <td>{b.unit_name}</td>
+                        <td>{b.check_in_date?.slice(0, 10)}</td>
+                        <td>{b.check_out_date?.slice(0, 10)}</td>
+                        <td>{b.nights}</td>
+                        <td><SourceBadge sourceId={b.source} /></td>
+                        <td><span className={`badge ${STATUS_BADGE[b.status] || 'badge-gray'}`}>{STATUS_LABELS[b.status] || b.status}</span></td>
+                        <td style={{ fontWeight: 600 }}>Rp {Number(b.total_amount).toLocaleString('id-ID')}</td>
+                      </tr>
+                    );
+                  })}
+                  {listBookings.length === 0 && (
+                    <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                      {hasActiveFilters ? 'No bookings match this filter' : 'No bookings this month'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

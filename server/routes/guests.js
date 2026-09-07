@@ -81,13 +81,13 @@ router.get('/:id', auth, async (req, res) => {
 
 // POST /api/guests
 router.post('/', auth, async (req, res) => {
-  const { name, nationality, whatsapp, email, birthday, anniversary, notes } = req.body;
+  const { name, nationality, id_number, whatsapp, email, birthday, anniversary, notes } = req.body;
   if (!name) return res.status(400).json({ error: 'Guest name required' });
   try {
     const { rows } = await db.query(
-      `INSERT INTO guests (name, nationality, whatsapp, email, birthday, anniversary, notes, property_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [name, nationality, whatsapp, email, birthday || null, anniversary || null, notes, req.propertyId]
+      `INSERT INTO guests (name, nationality, id_number, whatsapp, email, birthday, anniversary, notes, property_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [name, nationality, id_number, whatsapp, email, birthday || null, anniversary || null, notes, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -97,7 +97,7 @@ router.post('/', auth, async (req, res) => {
 
 // PUT /api/guests/:id
 router.put('/:id', auth, async (req, res) => {
-  const { name, nationality, whatsapp, email, birthday, anniversary, notes, preferences } = req.body;
+  const { name, nationality, id_number, whatsapp, email, birthday, anniversary, notes, preferences } = req.body;
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -105,13 +105,14 @@ router.put('/:id', auth, async (req, res) => {
       `UPDATE guests SET
         name = COALESCE($1, name),
         nationality = COALESCE($2, nationality),
-        whatsapp = COALESCE($3, whatsapp),
-        email = COALESCE($4, email),
-        birthday = COALESCE($5, birthday),
-        anniversary = COALESCE($6, anniversary),
-        notes = COALESCE($7, notes)
-       WHERE id = $8 AND property_id = $9 RETURNING *`,
-      [name, nationality, whatsapp, email, birthday || null, anniversary || null, notes, req.params.id, req.propertyId]
+        id_number = COALESCE($3, id_number),
+        whatsapp = COALESCE($4, whatsapp),
+        email = COALESCE($5, email),
+        birthday = COALESCE($6, birthday),
+        anniversary = COALESCE($7, anniversary),
+        notes = COALESCE($8, notes)
+       WHERE id = $9 AND property_id = $10 RETURNING *`,
+      [name, nationality, id_number, whatsapp, email, birthday || null, anniversary || null, notes, req.params.id, req.propertyId]
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
 
