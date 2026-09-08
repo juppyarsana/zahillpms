@@ -23,6 +23,7 @@ const allowedOrigins = [
   ...parseOrigins(process.env.DISPLAY_URL, 'http://localhost:5175'),
   ...parseOrigins(process.env.TV_URL,      'http://localhost:5176'),
   ...parseOrigins(process.env.KITCHEN_URL, 'http://localhost:5177'),
+  ...parseOrigins(process.env.RESTO_URL,   'http://localhost:5178'),
 ];
 app.use(cors({
   origin: (origin, cb) => {
@@ -100,6 +101,16 @@ app.use('/api/calls', require('./routes/calls'));
 // every route, same as /api/display. moduleGuard('sales') applied per-route
 // inside routes/kitchen.js instead of here.
 app.use('/api/kitchen', require('./routes/kitchen'));
+
+// /api/resto — resto-display/ app. Two auth models in one feature:
+//   - /api/resto/guest/* uses authTableQR (per-table QR token, printed on the
+//     table — NOT the property-wide display_token, which must never be public)
+//   - /api/resto/*       uses staff JWT (auth), plus authQueryToken for /stream
+// moduleGuard('resto_ordering') is applied per-route inside both files rather
+// than here, same reason as /api/kitchen and /api/calls. Mount order matters:
+// /api/resto/guest must be registered before the bare /api/resto mount.
+app.use('/api/resto/guest', require('./routes/restoGuest'));
+app.use('/api/resto', require('./routes/resto'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 

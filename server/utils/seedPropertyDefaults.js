@@ -108,10 +108,13 @@ async function seedPropertyDefaults(propertyId) {
     [propertyId]
   );
 
-  // Seed all modules — all enabled by default except room_controller
+  // Seed all modules. Modules that are OFF by default: room_controller is
+  // hardware-dependent; resto_ordering is a paid add-on tier (same philosophy
+  // as the planned back_office module). Everything else is on by default.
+  const DEFAULT_OFF = ['room_controller', 'resto_ordering'];
   const moduleEntries = Object.keys(MODULES).map(module => ({
     module,
-    is_enabled: module !== 'room_controller'
+    is_enabled: !DEFAULT_OFF.includes(module)
   }));
 
   for (const { module, is_enabled } of moduleEntries) {

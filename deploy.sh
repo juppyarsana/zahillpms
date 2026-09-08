@@ -86,6 +86,18 @@ if [ -d "kitchen-display" ]; then
   cd ..
 fi
 
+# ── Resto Display build ───────────────────────────────────────────────────────
+if [ -d "resto-display" ]; then
+  echo ""
+  echo "▸ Installing resto-display dependencies..."
+  cd resto-display
+  npm install
+  echo ""
+  echo "▸ Building resto-display..."
+  npm run build
+  cd ..
+fi
+
 # ── Restart server ────────────────────────────────────────────────────────────
 echo ""
 echo "▸ Restarting server via PM2..."

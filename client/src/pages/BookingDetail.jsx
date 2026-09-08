@@ -583,12 +583,16 @@ export default function BookingDetail() {
               <div style={{ marginBottom: 10 }}>
                 {[
                   ['Accommodation', c => c.type === 'room'],
-                  ['Food & Beverage', c => c.type === 'fnb'],
-                  ['Other', c => c.type !== 'room' && c.type !== 'fnb'],
+                  // 'fnb' = the rate plan's included meal (per-night, migration 044);
+                  // 'sale' = an actual ordered item (POS/Room Display/resto app,
+                  // migration 049) — both are food & beverage from a guest's
+                  // perspective, just posted by two different code paths.
+                  ['Food & Beverage', c => c.type === 'fnb' || c.type === 'sale'],
+                  ['Other', c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale'],
                 ].map(([groupLabel, match]) => {
                   const lines = folio.charges.filter(match);
                   if (!lines.length) return null;
-                  const grouped = folio.charges.some(c => c.type === 'room' || c.type === 'fnb');
+                  const grouped = folio.charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
                   return (
                     <div key={groupLabel}>
                       {grouped && (

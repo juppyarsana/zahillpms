@@ -22,9 +22,15 @@ router.post('/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+    // allowed_menus rides in the token (not just the response body) so
+    // server-side checks — see middleware/requireOwnerOrMenu.js, used by the
+    // resto ordering feature to let a non-owner role manage products/tables —
+    // can check it without a DB round trip per request. Same staleness
+    // trade-off the client already accepts: a permission change needs
+    // re-login to take effect.
     const tokenPayload = user.is_superadmin
       ? { id: user.id, name: user.name, email: user.email, role: user.role, isSuperAdmin: true }
-      : { id: user.id, name: user.name, email: user.email, role: user.role, propertyId: user.property_id };
+      : { id: user.id, name: user.name, email: user.email, role: user.role, propertyId: user.property_id, allowed_menus: user.allowed_menus || [] };
 
     const token = jwt.sign(
       tokenPayload,

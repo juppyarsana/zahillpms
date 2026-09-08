@@ -315,7 +315,8 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   // 4. Ancillary revenue tally
   const { rows: ancillaryRows } = await db.query(
     `SELECT COALESCE(SUM(total_amount), 0) AS ancillary_revenue
-     FROM sales WHERE DATE(created_at AT TIME ZONE 'Asia/Makassar') = $1 AND property_id = $2`,
+     FROM sales WHERE DATE(created_at AT TIME ZONE 'Asia/Makassar') = $1 AND property_id = $2
+       AND confirmation_status IS DISTINCT FROM 'rejected'`,
     [businessDate, propertyId]
   );
   const ancillaryRevenue = parseFloat(ancillaryRows[0].ancillary_revenue);

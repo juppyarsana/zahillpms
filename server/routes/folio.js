@@ -162,11 +162,16 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
 
     let y = tableTop + 22;
 
-    // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb) → Other.
+    // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb +
+    // sale) → Other. 'fnb' is the rate plan's included meal (migration 044);
+    // 'sale' is an actual ordered item (POS/Room Display/resto app,
+    // migration 049) — both read as food & beverage to a guest, just posted
+    // by two different code paths. Keep in sync with the same grouping in
+    // client/src/pages/BookingDetail.jsx's Folio tab.
     const GROUPS = [
       { key: 'Accommodation', match: c => c.type === 'room' },
-      { key: 'Food & Beverage', match: c => c.type === 'fnb' },
-      { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' },
+      { key: 'Food & Beverage', match: c => c.type === 'fnb' || c.type === 'sale' },
+      { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale' },
     ];
     const renderLine = c => {
       if (y > 720) { doc.addPage(); y = 50; }
@@ -178,7 +183,7 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
       y += 16;
     };
 
-    const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb');
+    const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
     if (charges.length === 0) {
       doc.font('Helvetica').fontSize(10).fillColor('#888').text('No charges posted', colX.desc, y);
       doc.fillColor('#000');

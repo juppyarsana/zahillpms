@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Theme tokens — deliberately mirrors the PMS client's own look
+   (client/src/styles/tokens.css: cream page background, white
+   cards, maroon sidebar/primary color, Inter font) rather than
+   the dark kiosk aesthetic borrowed from kitchen-display/
+   room-display — this is a staff back-office tool, not a guest
+   ambient display, and should feel like the same product family
+   as the PMS the same staff already use.
+
+   --accent/--accent-rgb/--accent-contrast are injected at runtime
+   from the property's brand_color (see src/theme.js) — same
+   mechanism as room-display/tv-display, but here the *default*
+   (no brand_color set) intentionally matches the PMS's own
+   hardcoded default maroon (#5C1A2E — see
+   client/src/pages/admin/PropertyDetail.jsx's own fallback)
+   rather than the gold used on the guest-facing displays.
+   ============================================================ */
+:root {
+  --bg:          #F1EBE3;
+  --bg-deep:     #F1EBE3;
+  --surface:     #FFFFFF;
+  --surface-2:   #F9FAFB;
+  --border:      #E5E7EB;
+  --border-soft: #EDE7DD;
+
+  --text:        #1A1A1A;
+  --text-muted:  #6B7280;
+  --text-dim:    #9CA3AF;
+
+  --danger:      #EF4444;
+  --danger-soft: #FEE2E2;
+  --danger-text: #991B1B;
+  --ok:          #22C55E;
+  --ok-soft:     #D1FAE5;
+  --ok-text:     #065F46;
+  --warn:        #F59E0B;
+  --warn-soft:   #FEF3C7;
+  --warn-text:   #92400E;
+
+  --accent:          #5C1A2E;
+  --accent-rgb:      92 26 46;
+  --accent-contrast: #ffffff;
+
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+input, button, select, textarea {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 6px; }
+
+/* Semantic utilities — used instead of Tailwind's fixed palette so
+   everything tracks the injected accent/theme tokens. */
+@layer utilities {
+  .bg-app       { background-color: var(--bg); }
+  .bg-app-deep  { background-color: var(--bg-deep); }
+  .bg-surface   { background-color: var(--surface); }
+  .bg-surface-2 { background-color: var(--surface-2); }
+  .bg-accent    { background-color: var(--accent); }
+  .bg-danger    { background-color: var(--danger); }
+  .bg-ok        { background-color: var(--ok); }
+  .bg-warn      { background-color: var(--warn); }
+
+  .text-ink     { color: var(--text); }
+  .text-muted   { color: var(--text-muted); }
+  .text-dim     { color: var(--text-dim); }
+  .text-accent  { color: var(--accent); }
+  .text-danger  { color: var(--danger-text); }
+  .text-ok      { color: var(--ok-text); }
+  .text-warn    { color: var(--warn-text); }
+
+  .border-app      { border-color: var(--border); }
+  .border-app-soft { border-color: var(--border-soft); }
+  .border-accent   { border-color: var(--accent); }
+
+  .bg-danger-soft { background-color: var(--danger-soft); }
+  .bg-ok-soft     { background-color: var(--ok-soft); }
+  .bg-warn-soft   { background-color: var(--warn-soft); }
+  .border-danger-soft { border-color: #FCA5A5; }
+  .border-ok-soft      { border-color: #6EE7B7; }
+  .border-warn-soft    { border-color: #FCD34D; }
+  .accent-tint    { background-color: rgb(var(--accent-rgb) / 0.08); }
+  .bg-accent-dim  { background-color: rgb(var(--accent-rgb) / 0.35); }
+
+  /* card shadow, matching the PMS's --shadow-sm */
+  .shadow-card { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}

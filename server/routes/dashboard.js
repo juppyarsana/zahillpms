@@ -74,7 +74,8 @@ router.get('/summary', auth, async (req, res) => {
            WHERE property_id = $1 AND status IN ('checked_in','checked_out')
              AND DATE_TRUNC('month', check_in_date) = DATE_TRUNC('month', NOW())) as fnb_revenue_mtd,
           (SELECT COALESCE(SUM(total_amount), 0) FROM sales
-           WHERE property_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())) as ancillary_revenue_mtd
+           WHERE property_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+             AND confirmation_status IS DISTINCT FROM 'rejected') as ancillary_revenue_mtd
       `, [req.propertyId]),
     ]);
 

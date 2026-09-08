@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
+const canManageMenu = requireOwnerOrMenu('resto_menu');
 
 // GET /api/products
 router.get('/', auth, async (req, res) => {
@@ -20,7 +21,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/products
-router.post('/', auth, requireRole('owner'), async (req, res) => {
+router.post('/', auth, canManageMenu, async (req, res) => {
   const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
   try {
@@ -36,7 +37,7 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 });
 
 // PUT /api/products/:id
-router.put('/:id', auth, requireRole('owner'), async (req, res) => {
+router.put('/:id', auth, canManageMenu, async (req, res) => {
   const { name, category, price, description, is_available, track_stock, low_stock_threshold } = req.body;
   try {
     const { rows } = await db.query(
@@ -57,7 +58,7 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
 
 // PATCH /api/products/:id/stock — manual restock/adjustment/waste (sales
 // decrement stock automatically inside salesService.createSale instead)
-router.patch('/:id/stock', auth, requireRole('owner'), async (req, res) => {
+router.patch('/:id/stock', auth, canManageMenu, async (req, res) => {
   const { change_qty, reason, note } = req.body;
   const REASONS = ['restock', 'adjustment', 'waste'];
   if (!Number.isInteger(change_qty) || change_qty === 0) return res.status(400).json({ error: 'change_qty must be a non-zero integer' });

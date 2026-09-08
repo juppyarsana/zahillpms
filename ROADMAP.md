@@ -340,6 +340,33 @@ Per-property tax and service charge rates, applied on folio and invoice.
   depreciation schedules
 - Status: 🔵 Planned — not started, scope only
 
+### 15. Resto Ordering
+- Guest QR self-order per table (static QR, resolves to whatever table
+  session is currently open), a floor-staff app for table-side order-taking,
+  a room-service confirm queue, and table/session management
+- New standalone app `resto-display/` (matches the Kitchen Display
+  extraction precedent), new `resto_ordering` module — default **off**, paid
+  add-on tier
+- Confirmation step is narrow and deliberate: only Room Display's
+  room-service orders wait for a resto staff confirm before firing to the
+  kitchen (nobody at the property has looked at those the way a waiter
+  would a table order) — QR self-order and staff-entered orders fire
+  straight to the kitchen, matching real POS/KDS industry practice
+  (Toast/Lightspeed don't gate any order behind human approval pre-fire)
+- Also drops `sales.payment_method`'s old hardcoded cash/qris/room_charge
+  CHECK (migration 001) so the resto app can accept any of a property's
+  configured payment methods — validation moved into
+  `salesService.createSale`
+- Also fixed in the same pass (migration 049): room-charge sales never
+  posted to the guest's Folio tab — a real pre-existing gap, not caused by
+  this feature, just surfaced by testing it. `salesService.createSale` now
+  posts a `folio_charges` row (`type='sale'`, valid since migration 028 but
+  never wired up) whenever `payment_method='room_charge'`, benefiting the
+  staff POS's existing "charge to room" flow too, not just Resto Ordering.
+- Status: ✅ Implemented (migrations 048–049) — see `CLAUDE.md`'s "Resto
+  Ordering" write-up for the full design. Not yet manually verified in a
+  browser.
+
 ---
 
 ## ⚪ Phase C — Distribution & Direct Revenue (deprioritized — build after Phase D's selected modules)
@@ -607,10 +634,12 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | room_controller  | ❌                 | Birdnest ✅, Zahill ❌ |
 | insights         | ✅                 | —             |
 | activities       | ✅                 | —             |
+| calling          | ✅                 | —             |
+| resto_ordering   | ❌                 | paid add-on tier |
 
 ---
 
-## Next migration number: 047
+## Next migration number: 050
 
 ---
 

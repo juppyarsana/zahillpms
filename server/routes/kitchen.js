@@ -23,6 +23,7 @@ router.get('/active', authDisplay, gate, async (req, res) => {
        LEFT JOIN units u ON u.id = b.unit_id
        LEFT JOIN guests g ON g.id = b.guest_id
        WHERE s.property_id = $1 AND s.kitchen_status IS NOT NULL AND s.kitchen_status != 'served'
+         AND s.confirmation_status IS DISTINCT FROM 'pending'
        ORDER BY s.created_at ASC`,
       [req.propertyId]
     );
@@ -54,6 +55,7 @@ router.patch('/:id/status', authDisplay, gate, async (req, res) => {
     const { rows } = await db.query(
       `UPDATE sales SET kitchen_status = $1
        WHERE id = $2 AND property_id = $3 AND kitchen_status IS NOT NULL
+         AND confirmation_status IS DISTINCT FROM 'pending'
        RETURNING *`,
       [status, req.params.id, req.propertyId]
     );

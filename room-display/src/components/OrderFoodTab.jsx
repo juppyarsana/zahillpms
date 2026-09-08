@@ -76,8 +76,8 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-app gap-6">
         <span className="material-symbols-outlined text-accent" style={{ fontSize: 96 }}>check_circle</span>
-        <h2 className="text-4xl font-extralight text-ink">Order placed!</h2>
-        <p className="text-muted text-sm">Our team is on it — it'll be with you shortly.</p>
+        <h2 className="text-4xl font-extralight text-ink">Order sent!</h2>
+        <p className="text-muted text-sm">Sent to the restaurant — you'll see it confirmed shortly.</p>
       </div>
     );
   }

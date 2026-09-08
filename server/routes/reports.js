@@ -28,6 +28,7 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
       SELECT COALESCE(SUM(total_amount), 0) as ancillary_revenue, COUNT(*) as sales_count
       FROM sales
       WHERE property_id = $3 AND EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2
+        AND confirmation_status IS DISTINCT FROM 'rejected'
     `, [month, year, req.propertyId]);
 
     const dailyQ = db.query(`

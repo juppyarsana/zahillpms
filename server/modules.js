@@ -12,6 +12,11 @@ module.exports = {
   insights:        { label: 'Insights',        routes: ['insights'] },
   activities:      { label: 'Activities',      routes: ['activities'] },
   calling:         { label: 'Calling',         routes: ['calls'] },
+  // Default OFF (paid add-on tier, same philosophy as the planned back_office
+  // module) — see seedPropertyDefaults.js's DEFAULT_OFF list. Assumes `sales`
+  // is also on for the property (reads products/restaurant_tables, writes
+  // sales) — not enforced in code, just a real dependency to be aware of.
+  resto_ordering:  { label: 'Resto Ordering',  routes: ['resto', 'restoGuest'] },
 };
 
 // Core routes — always on, no module guard:

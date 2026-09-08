@@ -6,6 +6,13 @@ const FOOD_STATUS = {
   ready:     { label: 'Ready',     color: '#4ade80' },
   served:    { label: 'Served',    color: '#64748b' },
 };
+// Room-service orders wait for the resto team to confirm before they reach
+// the kitchen (see server/routes/resto.js) — takes priority over kitchen_status.
+function resolveFoodStatus(o) {
+  if (o.confirmation_status === 'pending') return { label: 'Awaiting confirmation', color: '#fb923c' };
+  if (o.confirmation_status === 'rejected') return { label: 'Declined', color: '#f87171' };
+  return FOOD_STATUS[o.kitchen_status] || { label: 'Placed', color: '#64748b' };
+}
 const ACTIVITY_STATUS = {
   requested: { label: 'Requested', color: '#fb923c' },
   confirmed: { label: 'Confirmed', color: '#4ade80' },
@@ -58,7 +65,7 @@ export default function YourOrdersTab({ foodOrders = [], activityBookings = [], 
           <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted mb-4">Food Orders</h3>
           <div className="flex flex-col gap-3">
             {foodOrders.map(o => {
-              const status = FOOD_STATUS[o.kitchen_status] || { label: 'Placed', color: '#64748b' };
+              const status = resolveFoodStatus(o);
               return (
                 <div key={o.id} className="glass-card rounded-2xl p-5">
                   <div className="flex items-start justify-between gap-4 mb-3">
@@ -73,6 +80,9 @@ export default function YourOrdersTab({ foodOrders = [], activityBookings = [], 
                     </span>
                     <span className="text-muted text-sm">{fmtIDR(o.total_amount)}</span>
                   </div>
+                  {o.confirmation_status === 'rejected' && o.rejection_reason && (
+                    <div className="text-xs mt-2" style={{ color: '#f87171' }}>{o.rejection_reason}</div>
+                  )}
                 </div>
               );
             })}

@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
+const canManageTables = requireOwnerOrMenu('resto_tables');
 
 // GET /api/tables
 router.get('/', auth, async (req, res) => {
@@ -17,7 +18,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/tables
-router.post('/', auth, requireRole('owner'), async (req, res) => {
+router.post('/', auth, canManageTables, async (req, res) => {
   const { name, capacity } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   try {
@@ -32,7 +33,7 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 });
 
 // PUT /api/tables/:id
-router.put('/:id', auth, requireRole('owner'), async (req, res) => {
+router.put('/:id', auth, canManageTables, async (req, res) => {
   const { name, capacity } = req.body;
   try {
     const { rows } = await db.query(
@@ -66,7 +67,7 @@ router.patch('/:id/status', auth, async (req, res) => {
 });
 
 // DELETE /api/tables/:id
-router.delete('/:id', auth, requireRole('owner'), async (req, res) => {
+router.delete('/:id', auth, canManageTables, async (req, res) => {
   try {
     const { rows } = await db.query(
       'DELETE FROM restaurant_tables WHERE id = $1 AND property_id = $2 RETURNING id',

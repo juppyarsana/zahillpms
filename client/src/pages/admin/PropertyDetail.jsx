@@ -14,6 +14,7 @@ const MODULE_LABELS = {
   insights:        'Insights',
   activities:      'Activities',
   calling:         'Calling',
+  resto_ordering:  'Resto Ordering',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };

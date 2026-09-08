@@ -19,14 +19,22 @@ export const MENU_DEFS = [
   { key: 'users',            label: 'Staff Accounts',       group: 'Settings'   },
   { key: 'settings',         label: 'Sources & Methods',    group: 'Settings'   },
   { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'   },
+  { key: 'resto_take_order',    label: 'Resto — Take Order',       group: 'Resto' },
+  { key: 'resto_confirm_queue', label: 'Resto — Confirm Queue',    group: 'Resto' },
+  { key: 'resto_tables',        label: 'Resto — Table Management', group: 'Resto' },
+  { key: 'resto_menu',          label: 'Resto — Menu Management',  group: 'Resto' },
 ];
 
-const GROUPS = ['Operations', 'Settings'];
 const EMPTY_FORM = { id: '', label: '', allowed_menus: [] };
 
 export default function SettingsRoles() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasModule } = useAuth();
+  // 'Resto' only shown to properties with the resto_ordering add-on enabled —
+  // there's nothing to grant otherwise.
+  const GROUPS = hasModule('resto_ordering')
+    ? ['Operations', 'Settings', 'Resto']
+    : ['Operations', 'Settings'];
 
   const [roles, setRoles] = useState([]);
   const [modal, setModal] = useState(null); // null | 'add' | role object (edit)

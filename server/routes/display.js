@@ -347,10 +347,12 @@ router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
       orderType: 'room_service',
       items: pricedItems,
       servedBy: null,
+      holdForConfirmation: true, // resto staff confirm before it fires to the kitchen — see routes/resto.js
+      orderSource: 'room_display',
     });
     if (result.code === 'OUT_OF_STOCK') return res.status(409).json({ error: result.error, code: result.code, items: result.items });
     if (result.error) return res.status(404).json({ error: result.error });
-    res.status(201).json({ ok: true, total: result.sale.total_amount });
+    res.status(201).json({ ok: true, total: result.sale.total_amount, status: 'pending_confirmation' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -439,7 +441,7 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
     const bookingId = bookingRows[0].id;
 
     const { rows: foodOrders } = await db.query(
-      `SELECT s.id, s.total_amount, s.kitchen_status, s.created_at,
+      `SELECT s.id, s.total_amount, s.kitchen_status, s.confirmation_status, s.rejection_reason, s.created_at,
               COALESCE(json_agg(json_build_object('name', p.name, 'quantity', si.quantity) ORDER BY si.id) FILTER (WHERE si.id IS NOT NULL), '[]') AS items
        FROM sales s
        LEFT JOIN sale_items si ON si.sale_id = s.id

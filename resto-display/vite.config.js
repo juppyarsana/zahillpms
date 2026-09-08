@@ -1,0 +1,49 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'child_process';
+
+const commitHash = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim(); }
+  catch { return 'dev'; }
+})();
+
+export default defineConfig({
+  define: {
+    __APP_COMMIT__: JSON.stringify(commitHash),
+  },
+  plugins: [
+    tailwindcss(),
+    react(),
+    VitePWA({
+      registerType: 'prompt',
+      devOptions: { enabled: true },
+      workbox: {
+        clientsClaim: true,
+      },
+      manifest: {
+        name: 'Resto',
+        short_name: 'Resto',
+        description: 'Restaurant ordering — guest QR self-order and floor staff order taking',
+        theme_color: '#0d0709',
+        background_color: '#0d0709',
+        display: 'standalone',
+        orientation: 'portrait',
+        scope: '/',
+        start_url: '/',
+        icons: [
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        ],
+      },
+    }),
+  ],
+  server: {
+    port: 5178,
+    host: true,
+    proxy: {
+      '/api': { target: 'http://localhost:4000', changeOrigin: true },
+    },
+  },
+});
