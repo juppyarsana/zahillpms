@@ -196,7 +196,12 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     if (settlement.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: settlement.error }); }
 
     await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
-    await client.query("UPDATE units SET status = 'available' WHERE id = $1 AND property_id = $2", [booking.unit_id, req.propertyId]);
+    // Vacate the room AND flag it dirty — front desk sees a "to clean" room
+    // distinct from a ready one; housekeeping clears it from the room tablet.
+    await client.query(
+      "UPDATE units SET status = 'available', housekeeping_status = 'dirty', housekeeping_updated_at = NOW() WHERE id = $1 AND property_id = $2",
+      [booking.unit_id, req.propertyId]
+    );
     await client.query(
       'UPDATE checkin_records SET checkout_time = NOW(), condition_notes = COALESCE($1, condition_notes) WHERE booking_id = $2',
       [condition_notes, req.params.bookingId]

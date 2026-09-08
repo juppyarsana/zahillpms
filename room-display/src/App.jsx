@@ -172,6 +172,15 @@ export default function App() {
     : null;
   useResilientEventSource(stateStreamUrl, () => fetchState());
 
+  // Housekeeping — the "Mark Room Clean" button on a vacant, dirty room's
+  // idle screen (behind a confirm in IdleScreen). Flips units.housekeeping_status
+  // and closes the open cleaning task server-side.
+  const handleMarkRoomClean = useCallback(async () => {
+    if (!roomId) return;
+    await api.post(`/display/room/${roomId}/housekeeping`, { type: 'mark_clean' });
+    fetchState();
+  }, [roomId, fetchState]);
+
   // Front-desk message — full-screen until dismissed, oldest-unread served
   // first by the backend so a burst of sends doesn't skip any of them.
   const [dismissingMessage, setDismissingMessage] = useState(false);
@@ -394,6 +403,9 @@ export default function App() {
           online={!error}
           roomControllerEnabled={state.roomControllerEnabled}
           callingEnabled={state.callingEnabled}
+          operationsEnabled={state.operationsEnabled}
+          housekeepingStatus={state.unit?.housekeeping_status}
+          onMarkClean={handleMarkRoomClean}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
           onCallFrontDesk={handlePlaceCall}

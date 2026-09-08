@@ -650,7 +650,24 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 051
+## Next migration number: 052
+
+---
+
+## ✅ Housekeeping Room Status (checkout-cleaning flow)
+
+Implemented 2026-09-09, **migration 051**. New `units.housekeeping_status`
+(`clean`/`dirty`; `inspected` reserved, unused) — a second dimension kept
+separate from `units.status` (occupancy/availability). Checkout sets `dirty`;
+housekeeping taps **Mark Room Clean** (two-step confirm) on the room tablet's
+idle screen, or front desk clicks it on the Dashboard Live Unit Status tile
+(`PATCH /api/units/:id/housekeeping`, any staff). Marking clean also closes the
+open housekeeping task and pushes an SSE update. Dashboard gets a "To clean"
+count + amber 🧹 tile state; check-in arrivals list warns (non-blocking) when the
+room is still dirty. No new module (gated by existing `operations`). Scope
+locked with owner: 2 states, no per-staff attribution, checkout-cleaning only
+(no stayover/daily-service tracking — natural follow-up), warn-not-block on
+dirty check-in. Not yet browser-verified end to end (API + DB layers tested).
 
 ---
 

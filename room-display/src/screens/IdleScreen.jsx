@@ -5,7 +5,7 @@ import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import CallButton from '../components/CallButton';
 
-export default function IdleScreen({ unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function IdleScreen({ unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, operationsEnabled, housekeepingStatus, onMarkClean, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -82,7 +82,12 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
       {/* Main content */}
       <main className="flex-1 overflow-hidden">
         {activeTab === 'idle' ? (
-          <IdleView unit={unit} controller={controller} property={property} online={online} roomControllerEnabled={roomControllerEnabled} />
+          <IdleView
+            unit={unit} controller={controller} property={property} online={online}
+            roomControllerEnabled={roomControllerEnabled}
+            housekeepingDirty={operationsEnabled && housekeepingStatus === 'dirty'}
+            onMarkClean={onMarkClean}
+          />
         ) : (
           <ControlsView
             relays={localRelays}
@@ -97,7 +102,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
   );
 }
 
-function IdleView({ unit, controller, property, online, roomControllerEnabled }) {
+function IdleView({ unit, controller, property, online, roomControllerEnabled, housekeepingDirty, onMarkClean }) {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
     const id = setInterval(() => setTime(new Date()), 1000);
@@ -131,17 +136,100 @@ function IdleView({ unit, controller, property, online, roomControllerEnabled })
           )}
         </div>
 
-        <div className="glass-card rounded-2xl px-8 py-4 flex items-center gap-3 mt-2">
-          <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: online ? 'var(--ok)' : 'var(--text-faint)' }} />
-          <span className="text-xs font-bold uppercase tracking-widest text-muted">
-            {online ? 'Ready for Guests' : 'Reconnecting…'}
-          </span>
-        </div>
+        {housekeepingDirty ? (
+          <HousekeepingCard onMarkClean={onMarkClean} />
+        ) : (
+          <div className="glass-card rounded-2xl px-8 py-4 flex items-center gap-3 mt-2">
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: online ? 'var(--ok)' : 'var(--text-faint)' }} />
+            <span className="text-xs font-bold uppercase tracking-widest text-muted">
+              {online ? 'Ready for Guests' : 'Reconnecting…'}
+            </span>
+          </div>
+        )}
 
         {roomControllerEnabled && controller && !controller.connected && (
           <p className="text-[10px] uppercase tracking-widest text-ghost mt-2">Room controller offline</p>
         )}
       </div>
+    </div>
+  );
+}
+
+// Shown on a vacant room's idle screen after checkout, until housekeeping
+// confirms the room is clean. Two-step (button -> confirm) so a stray touch
+// on the tablet can't flip the room to "ready".
+function HousekeepingCard({ onMarkClean }) {
+  const [phase, setPhase] = useState('idle'); // idle | confirm | saving | done | error
+
+  const handleConfirm = async () => {
+    setPhase('saving');
+    try {
+      await onMarkClean();
+      setPhase('done');
+    } catch {
+      setPhase('error');
+    }
+  };
+
+  if (phase === 'done') {
+    return (
+      <div className="glass-card rounded-2xl px-8 py-5 flex items-center gap-3 mt-2" style={{ borderColor: 'var(--ok)' }}>
+        <span className="material-symbols-outlined filled" style={{ fontSize: 24, color: 'var(--ok)' }}>check_circle</span>
+        <span className="text-sm font-bold uppercase tracking-widest text-ink">Room marked clean</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-2xl px-8 py-6 flex flex-col items-center gap-4 mt-2 max-w-md"
+      style={{ background: 'rgb(217 119 6 / 0.12)', border: '1px solid rgb(217 119 6 / 0.4)' }}
+    >
+      <div className="flex items-center gap-3">
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#D97706' }}>cleaning_services</span>
+        <span className="text-sm font-extrabold uppercase tracking-widest" style={{ color: '#B45309' }}>Housekeeping</span>
+      </div>
+
+      {phase === 'confirm' ? (
+        <>
+          <p className="text-sm text-center text-muted leading-relaxed">
+            Confirm this room has been fully cleaned and is ready for the next guest?
+          </p>
+          <div className="flex gap-3 w-full">
+            <button
+              onClick={() => setPhase('idle')}
+              className="flex-1 rounded-xl py-3 text-xs font-bold uppercase tracking-widest"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              className="flex-1 rounded-xl py-3 text-xs font-extrabold uppercase tracking-widest"
+              style={{ background: 'var(--ok)', color: '#fff', border: 'none' }}
+            >
+              Yes, mark clean
+            </button>
+          </div>
+        </>
+      ) : phase === 'saving' ? (
+        <p className="text-xs uppercase tracking-widest text-muted">Saving…</p>
+      ) : (
+        <>
+          <p className="text-sm text-center text-muted leading-relaxed">
+            {phase === 'error'
+              ? 'Could not save — please try again.'
+              : 'This room needs cleaning before the next guest.'}
+          </p>
+          <button
+            onClick={() => setPhase('confirm')}
+            className="rounded-xl px-8 py-4 text-sm font-extrabold uppercase tracking-widest"
+            style={{ background: '#D97706', color: '#fff', border: 'none' }}
+          >
+            Mark Room Clean
+          </button>
+        </>
+      )}
     </div>
   );
 }

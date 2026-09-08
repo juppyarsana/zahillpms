@@ -18,6 +18,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
   try {
     const { rows: unitRows } = await db.query(
       `SELECT u.id, u.name, u.controller_id, u.property_id, u.bed_config,
+              u.housekeeping_status,
               rcs.connected, rcs.rgb, rcs.last_seen
        FROM units u
        LEFT JOIN room_controller_status rcs ON rcs.controller_id = u.controller_id
@@ -102,7 +103,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     res.json({
-      unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id, bed_config: unit.bed_config },
+      unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id, bed_config: unit.bed_config, housekeeping_status: unit.housekeeping_status },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
       booking: bookingRows[0] || null,
       relays: relayRows,
@@ -220,21 +221,45 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
   }
 });
 
-// POST /api/display/room/:roomId/housekeeping — guest self-service housekeeping
-// requests, surfaced on the Operations kanban as a real task.
-// Body: { type: 'dnd' | 'clean', action?: 'request' | 'cancel', task_id? }
+// POST /api/display/room/:roomId/housekeeping
+// Guest self-service requests ('dnd' / 'clean') surfaced on the Operations
+// kanban as tasks, PLUS staff housekeeping actions ('mark_clean' /
+// 'mark_dirty') that flip units.housekeeping_status directly.
+// Body: { type: 'dnd' | 'clean' | 'mark_clean' | 'mark_dirty', action?, task_id? }
 // 'clean' is one-shot — staff just mark it done whenever they get to it, no
 // guest-side cancel. 'dnd' is a toggle: 'request' opens a task, 'cancel'
 // marks that same task done — the device round-trips task_id through its
 // own localStorage (see QuickActions.jsx), same convention as roomId/token.
+// 'mark_clean'/'mark_dirty' are the housekeeper's "Mark Room Clean" button
+// (behind a confirm on the tablet) — set the room condition and, on clean,
+// close any open housekeeping work order.
 router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res) => {
   const { roomId } = req.params;
   const { type, action, task_id } = req.body;
-  if (!['dnd', 'clean'].includes(type)) return res.status(400).json({ error: 'type must be dnd or clean' });
+  if (!['dnd', 'clean', 'mark_clean', 'mark_dirty'].includes(type)) {
+    return res.status(400).json({ error: 'type must be dnd, clean, mark_clean or mark_dirty' });
+  }
   try {
     const { rows: unitRows } = await db.query('SELECT id, name FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
     const unit = unitRows[0];
+
+    if (type === 'mark_clean' || type === 'mark_dirty') {
+      const next = type === 'mark_clean' ? 'clean' : 'dirty';
+      await db.query(
+        'UPDATE units SET housekeeping_status = $1, housekeeping_updated_at = NOW() WHERE id = $2 AND property_id = $3',
+        [next, unit.id, req.propertyId]
+      );
+      if (next === 'clean') {
+        await db.query(
+          `UPDATE tasks SET status = 'done', updated_at = NOW()
+           WHERE unit_id = $1 AND property_id = $2 AND type = 'housekeeping' AND status <> 'done'`,
+          [unit.id, req.propertyId]
+        );
+      }
+      sse.notify(roomId, { type: 'housekeeping' });
+      return res.json({ ok: true, housekeeping_status: next });
+    }
 
     if (type === 'clean') {
       const { rows } = await db.query(

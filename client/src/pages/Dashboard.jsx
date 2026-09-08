@@ -40,7 +40,7 @@ function ChBadge({ source }) {
 }
 
 /* ─── unit status card ─────────────────────────────────── */
-function UnitCard({ unit, flags }) {
+function UnitCard({ unit, flags, onChanged }) {
   const { hasModule } = useAuth();
   const { callRoom } = useCall();
   const [calling, setCalling] = useState(false);
@@ -49,6 +49,18 @@ function UnitCard({ unit, flags }) {
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [messageError, setMessageError] = useState('');
+  const [hkConfirm, setHkConfirm] = useState(false);
+  const [hkBusy, setHkBusy] = useState(false);
+
+  async function setHousekeeping(status) {
+    setHkBusy(true);
+    try {
+      await api.patch(`/api/units/${unit.id}/housekeeping`, { status });
+      setHkConfirm(false);
+      onChanged?.();
+    } catch { /* leave the confirm open so staff can retry */ }
+    setHkBusy(false);
+  }
 
   async function handleCallRoom(e) {
     e.stopPropagation();
@@ -86,15 +98,17 @@ function UnitCard({ unit, flags }) {
   const isArriving = !!unit.arriving_guest_name;
   const isMaint    = unit.status === 'maintenance';
   const isBlocked  = unit.status === 'blocked';
+  const isDirty    = unit.status === 'available' && unit.housekeeping_status === 'dirty';
 
   let cls = 'available';
   if (isOccupied)   cls = 'occupied';
+  else if (isDirty) cls = 'dirty';
   else if (isArriving) cls = 'arriving';
   else if (isMaint) cls = 'occupied'; // red-ish
   else if (isBlocked) cls = 'blocked';
 
-  const unitBg    = { occupied: '#FFF7ED', arriving: '#EFF6FF', available: '#F0FDF4', blocked: '#F9FAFB' };
-  const unitBorder= { occupied: '#F97316', arriving: '#3B82F6', available: '#22C55E', blocked: '#D1D5DB' };
+  const unitBg    = { occupied: '#FFF7ED', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#FFFBEB', blocked: '#F9FAFB' };
+  const unitBorder= { occupied: '#F97316', arriving: '#3B82F6', available: '#22C55E', dirty: '#D97706', blocked: '#D1D5DB' };
 
   const bg     = isMaint ? '#FEE2E2' : (unitBg[cls]     || '#F9FAFB');
   const border = isMaint ? '#FCA5A5' : (unitBorder[cls] || '#D1D5DB');
@@ -107,7 +121,10 @@ function UnitCard({ unit, flags }) {
         <strong style={{ fontSize: 13 }}>🏕 {unit.name}</strong>
         {isOccupied && <ChBadge source={unit.source} />}
         {!isOccupied && isArriving && <ChBadge source={unit.arriving_source} />}
-        {!isOccupied && !isArriving && unit.status === 'available' && (
+        {!isOccupied && !isArriving && isDirty && (
+          <span style={{ background: '#FEF3C7', color: '#92400E', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🧹 To clean</span>
+        )}
+        {!isOccupied && !isArriving && !isDirty && unit.status === 'available' && (
           <span style={{ background: '#D1FAE5', color: '#065F46', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Available</span>
         )}
         {isMaint  && <span style={{ background: '#FEE2E2', color: '#991B1B', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Maintenance</span>}
@@ -151,7 +168,7 @@ function UnitCard({ unit, flags }) {
         </>
       )}
 
-      {!isOccupied && !isArriving && unit.status === 'available' && (
+      {!isOccupied && !isArriving && !isDirty && unit.status === 'available' && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#15803D' }}>
             ✓ Empty &amp; ready{unit.next_booking_date
@@ -161,7 +178,41 @@ function UnitCard({ unit, flags }) {
           <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
             {unit.gap_nights ? `${unit.gap_nights}-night gap · Open for last-minute booking` : 'No upcoming bookings'}
           </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setHousekeeping('dirty'); }}
+            disabled={hkBusy}
+            style={{ background: 'none', border: 'none', padding: 0, marginTop: 6, fontSize: 10, color: '#9CA3AF', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Flag for cleaning
+          </button>
         </>
+      )}
+
+      {isDirty && (
+        <div style={{ marginTop: isArriving ? 8 : 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E' }}>🧹 Vacant — needs cleaning</div>
+          {!hkConfirm ? (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ marginTop: 8, fontSize: 12 }}
+              onClick={(e) => { e.stopPropagation(); setHkConfirm(true); }}
+            >
+              Mark clean
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#6B7280' }}>Room cleaned?</span>
+              <button className="btn btn-primary btn-sm" style={{ fontSize: 12 }} disabled={hkBusy}
+                onClick={(e) => { e.stopPropagation(); setHousekeeping('clean'); }}>
+                {hkBusy ? '…' : 'Yes'}
+              </button>
+              <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} disabled={hkBusy}
+                onClick={(e) => { e.stopPropagation(); setHkConfirm(false); }}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {(isMaint || isBlocked) && (
@@ -252,6 +303,7 @@ const TILE_BG = {
   occupied:    '#F97316',
   arriving:    '#3B82F6',
   available:   '#22C55E',
+  dirty:       '#D97706',
   maintenance: '#DC2626',
   blocked:     '#9CA3AF',
 };
@@ -261,6 +313,7 @@ const TILE_ICON = {
   occupied:    '🛏',
   arriving:    '🔑',
   available:   '✓',
+  dirty:       '🧹',
   maintenance: '🔧',
   blocked:     '🔒',
 };
@@ -292,6 +345,9 @@ function tileState(u) {
   if (u.status === 'maintenance') return 'maintenance';
   if (u.status === 'blocked')     return 'blocked';
   if (u.status === 'occupied' && u.guest_name) return 'occupied';
+  // A vacant-but-dirty room is an action (clean it) — surface it over both
+  // "available" and "arriving today"; the popover still shows arrival detail.
+  if (u.status === 'available' && u.housekeeping_status === 'dirty') return 'dirty';
   if (u.arriving_guest_name)      return 'arriving';
   return 'available';
 }
@@ -321,7 +377,7 @@ function shortRoomName(name, type) {
   return w && name.startsWith(w) ? (name.slice(w.length).trim() || name) : name;
 }
 
-function UnitPopover({ unit, anchor, flags, onClose }) {
+function UnitPopover({ unit, anchor, flags, onClose, onChanged }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -336,7 +392,7 @@ function UnitPopover({ unit, anchor, flags, onClose }) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
         <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-          <div className="modal-body"><UnitCard unit={unit} flags={flags} /></div>
+          <div className="modal-body"><UnitCard unit={unit} flags={flags} onChanged={onChanged} /></div>
         </div>
       </div>
     );
@@ -357,7 +413,7 @@ function UnitPopover({ unit, anchor, flags, onClose }) {
   );
 }
 
-function UnitStatusBoard({ units, arrivals, departures, guestRequests = [] }) {
+function UnitStatusBoard({ units, arrivals, departures, guestRequests = [], onChanged }) {
   const [selected, setSelected] = useState(null); // { unit, anchor }
 
   useEffect(() => {
@@ -371,6 +427,7 @@ function UnitStatusBoard({ units, arrivals, departures, guestRequests = [] }) {
     arriving:  arrivals.length,
     departing: departures.length,
     available: units.filter(u => tileState(u) === 'available').length,
+    dirty:     units.filter(u => tileState(u) === 'dirty').length,
     offline:   units.filter(u => ['maintenance', 'blocked'].includes(tileState(u))).length,
     requests:  requestFlags.size,
   };
@@ -380,6 +437,7 @@ function UnitStatusBoard({ units, arrivals, departures, guestRequests = [] }) {
     ['#3B82F6', counts.arriving, 'Arriving today'],
     ['#92400E', counts.departing, 'Departing today'],
     ['#22C55E', counts.available, 'Available'],
+    ...(counts.dirty > 0 ? [['#D97706', counts.dirty, 'To clean']] : []),
     ['#9CA3AF', counts.offline, 'Maint / blocked'],
     ...(counts.requests > 0 ? [['#7C3AED', counts.requests, 'Guest request']] : []),
   ];
@@ -431,6 +489,7 @@ function UnitStatusBoard({ units, arrivals, departures, guestRequests = [] }) {
           anchor={selected.anchor}
           flags={requestFlags.get(selected.unit.id)}
           onClose={() => setSelected(null)}
+          onChanged={onChanged}
         />
       )}
     </div>
@@ -1034,7 +1093,7 @@ export default function Dashboard() {
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">Live Unit Status</div>
-        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} guestRequests={guestRequests} />
+        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} guestRequests={guestRequests} onChanged={load} />
       </div>
 
       {/* ── Two-column section ── */}

@@ -253,6 +253,11 @@ export default function CheckIn() {
                         Was due: {b.check_in_date}
                       </div>
                     )}
+                    {b.housekeeping_status === 'dirty' && (
+                      <div style={{ fontSize: 11, color: '#92400E', fontWeight: 700, marginTop: 2 }}>
+                        🧹 Room not yet cleaned
+                      </div>
+                    )}
                     {b.guest_whatsapp && (
                       <button
                         className="btn btn-ghost btn-sm"

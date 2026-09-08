@@ -125,7 +125,7 @@ router.get('/today/arrivals', auth, async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality,
-             u.name as unit_name, u.bed_config, rp.code as rate_plan_code,
+             u.name as unit_name, u.bed_config, u.housekeeping_status, rp.code as rate_plan_code,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
              )) as deposit_paid,

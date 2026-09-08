@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
+const sse = require('../sse');
 
 // GET /api/units
 router.get('/', auth, async (req, res) => {
@@ -95,6 +96,37 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
     res.status(err.code === '23505' ? 409 : 500).json({
       error: err.code === '23505' ? 'That Room ID is already assigned to another unit' : err.message,
     });
+  }
+});
+
+// PATCH /api/units/:id/housekeeping  (any staff — front desk fallback for the
+// room tablet's "Mark Room Clean"). Deliberately not owner-gated like PUT /:id:
+// clearing a room after checkout is a routine front-desk / housekeeping action.
+// Body: { status: 'clean' | 'dirty' }
+router.patch('/:id/housekeeping', auth, async (req, res) => {
+  const { status } = req.body;
+  if (!['clean', 'dirty'].includes(status)) {
+    return res.status(400).json({ error: "status must be 'clean' or 'dirty'" });
+  }
+  try {
+    const { rows } = await db.query(
+      `UPDATE units SET housekeeping_status = $1, housekeeping_updated_at = NOW()
+       WHERE id = $2 AND property_id = $3 RETURNING id, controller_id, housekeeping_status`,
+      [status, req.params.id, req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
+
+    if (status === 'clean') {
+      await db.query(
+        `UPDATE tasks SET status = 'done', updated_at = NOW()
+         WHERE unit_id = $1 AND property_id = $2 AND type = 'housekeeping' AND status <> 'done'`,
+        [req.params.id, req.propertyId]
+      );
+    }
+    if (rows[0].controller_id) sse.notify(rows[0].controller_id, { type: 'housekeeping' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
