@@ -118,6 +118,42 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
   padding: 16px 12px 6px;
 }
 
+/* Non-collapsible daily-nav group (Front Desk, Guest Experience, …) */
+.sidebar-navgroup { margin-top: 6px; }
+.sidebar-navgroup:first-child { margin-top: 0; }
+.sidebar-navgroup-label {
+  color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 10px 12px 4px;
+}
+
+/* Floating "Call a Room" action button */
+.call-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--green-mid, #2f6b4f);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.28);
+  z-index: 900;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.call-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.32); }
+.call-fab:active { transform: translateY(0); }
+@media (max-width: 768px) {
+  .call-fab { bottom: 76px; right: 16px; } /* clear the bottom nav bar */
+}
+
 .sidebar-footer {
   flex-shrink: 0;
   padding: 14px 16px;

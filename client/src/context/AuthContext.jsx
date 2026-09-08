@@ -12,8 +12,12 @@ const ORDERED_PATHS = [
   { key: 'operations',    path: '/operations' },
   { key: 'sales',         path: '/sales' },
   { key: 'activities',    path: '/activities' },
+  { key: 'guest_board',   path: '/settings/board' },
   { key: 'loyalty',       path: '/loyalty' },
   { key: 'allotments',    path: '/allotment' },
+  { key: 'pricing',       path: '/pricing' },
+  { key: 'units',         path: '/units' },
+  { key: 'users',         path: '/users' },
 ];
 
 export function firstAllowedPath(user) {

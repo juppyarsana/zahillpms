@@ -6,6 +6,7 @@ import { CallProvider } from './context/CallContext';
 import Sidebar from './components/Sidebar';
 import UpdatePrompt from './components/UpdatePrompt';
 import CallBanner from './components/CallBanner';
+import CallRoomFab from './components/CallRoomFab';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
@@ -43,29 +44,54 @@ function BottomNav() {
   const nav = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const isOwner = user?.role === 'owner';
+
   const mainItems = [
     can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
-    can('reservations') && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Bookings' },
+    can('reservations') && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Reservations' },
     can('quick_checkin') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
     can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
   ].filter(Boolean);
 
-  const moreItems = [
-    can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin',                     icon: '✅', label: 'Check-in/out (Full)' },
-    can('operations') && hasModule('operations')         && { to: '/operations',                  icon: '🔧', label: 'Operations' },
-    can('sales') && hasModule('sales')                   && { to: '/sales',                       icon: '🛍', label: 'Sales' },
-    can('activities') && hasModule('activities')         && { to: '/activities',                   icon: '🥾', label: 'Activities' },
-    can('loyalty') && hasModule('guest_crm')              && { to: '/loyalty',                     icon: '⭐', label: 'Loyalty' },
-    can('allotments') && hasModule('reservations')        && { to: '/allotment',                   icon: '📡', label: 'Channel' },
-    can('pricing') && hasModule('reservations')           && { to: '/pricing',                     icon: '💰', label: 'Pricing' },
-    user?.role === 'owner' && hasModule('reservations')   && { to: '/settings/rate-plans',          icon: '🍳', label: 'Rate Plans' },
-    can('units')            && { to: '/units',                       icon: '🏕', label: 'Units' },
-    can('users')            && { to: '/users',                       icon: '👥', label: 'Users' },
-    user?.role === 'owner'  && { to: '/settings/property',           icon: '🏢', label: 'Property Details' },
-    user?.role === 'owner'  && { to: '/settings',                    icon: '🔧', label: 'Sources & Methods' },
-    user?.role === 'owner'  && { to: '/settings/communications',     icon: '✉️', label: 'Email & Communication' },
-    user?.role === 'owner'  && { to: '/settings/roles',              icon: '🔑', label: 'Roles & Permissions' },
-  ].filter(Boolean);
+  // Grouped "More" drawer — mirrors the desktop sidebar's grouping so the two
+  // navs stay in sync (and so nothing is unreachable on mobile, which used to
+  // be the case for Night Audit / Agent Billing / Room Controllers / Guest Board).
+  const moreGroups = [
+    { label: null, items: [
+      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
+    ]},
+    { label: 'Front Desk', items: [
+      can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
+      can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
+    ]},
+    { label: 'Guest Experience', items: [
+      can('activities') && hasModule('activities') && { to: '/activities', icon: '🥾', label: 'Activities' },
+      can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
+    ]},
+    { label: 'Operations', items: [
+      can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
+      isOwner && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
+    ]},
+    { label: 'Revenue & Billing', items: [
+      can('pricing') && hasModule('reservations') && { to: '/pricing', icon: '💰', label: 'Pricing' },
+      can('allotments') && hasModule('reservations') && { to: '/allotment', icon: '📡', label: 'Channels' },
+      isOwner && hasModule('reservations') && { to: '/settings/rate-plans', icon: '🍳', label: 'Rate Plans' },
+      isOwner && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },
+    ]},
+    { label: 'Settings · Property', items: [
+      isOwner && { to: '/settings/property', icon: '🏢', label: 'Property Details' },
+      can('units') && { to: '/units', icon: '🏕', label: 'Units' },
+      isOwner && { to: '/settings', icon: '💳', label: 'Sources & Methods' },
+      isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
+      can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
+    ]},
+    { label: 'Settings · Access', items: [
+      can('users') && { to: '/users', icon: '👥', label: 'Users' },
+      isOwner && { to: '/settings/roles', icon: '🔑', label: 'Roles & Permissions' },
+    ]},
+  ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length > 0);
+
+  const moreItems = moreGroups.flatMap(g => g.items);
 
   function isActive(to, end) {
     return end ? location.pathname === to : location.pathname.startsWith(to);
@@ -106,15 +132,24 @@ function BottomNav() {
               <span style={{ fontWeight: 700, fontSize: 15 }}>Menu</span>
               <button className="btn btn-icon" onClick={() => setDrawerOpen(false)}>✕</button>
             </div>
-            {moreItems.map(item => (
-              <button
-                key={item.to}
-                className="drawer-item"
-                onClick={() => { nav(item.to); setDrawerOpen(false); }}
-              >
-                <span style={{ fontSize: 20 }}>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
+            {moreGroups.map((group, gi) => (
+              <div key={group.label || `g${gi}`}>
+                {group.label && (
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#9CA3AF', padding: '12px 20px 4px' }}>
+                    {group.label}
+                  </div>
+                )}
+                {group.items.map(item => (
+                  <button
+                    key={item.to}
+                    className="drawer-item"
+                    onClick={() => { nav(item.to); setDrawerOpen(false); }}
+                  >
+                    <span style={{ fontSize: 20 }}>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
             ))}
             <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 4, padding: '12px 20px 4px' }}>
               <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 10 }}>
@@ -150,6 +185,7 @@ function Layout({ children }) {
       </div>
       <UpdatePrompt />
       <CallBanner />
+      <CallRoomFab />
     </div>
   );
 }
@@ -237,7 +273,7 @@ export default function App() {
                   <Route path="/settings/property" element={<RequireOwner><SettingsProperty /></RequireOwner>} />
                   <Route path="/settings/communications" element={<RequireOwner><SettingsCommunications /></RequireOwner>} />
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><RequireModule moduleName="room_controller"><SettingsRoomControllers /></RequireModule></RequireMenu>} />
-                  <Route path="/settings/board"   element={<RequireOwner><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireOwner>} />
+                  <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
                   <Route path="/night-audit"      element={<RequireOwner><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireOwner>} />

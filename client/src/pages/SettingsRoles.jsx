@@ -3,22 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+// Groups mirror the sidebar's nav grouping so the two stay in sync.
+// rate_plans / night_audit / agents aren't listed — they're owner-only
+// (RequireOwner), not delegatable menu keys.
 export const MENU_DEFS = [
-  { key: 'dashboard',        label: 'Dashboard',            group: 'Operations' },
-  { key: 'reservations',     label: 'Reservations',         group: 'Operations' },
-  { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Operations' },
-  { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Operations' },
-  { key: 'guests',           label: 'Guests',               group: 'Operations' },
+  { key: 'dashboard',        label: 'Dashboard',            group: 'Front Desk' },
+  { key: 'reservations',     label: 'Reservations',         group: 'Front Desk' },
+  { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
+  { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
+  { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
+  { key: 'loyalty',          label: 'Loyalty',              group: 'Front Desk' },
+  { key: 'sales',            label: 'Sales',                group: 'Guest Experience' },
+  { key: 'activities',       label: 'Activities',           group: 'Guest Experience' },
+  { key: 'guest_board',      label: 'Guest Board',          group: 'Guest Experience' },
   { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
-  { key: 'sales',            label: 'Sales',                group: 'Operations' },
-  { key: 'activities',       label: 'Activities',           group: 'Operations' },
-  { key: 'loyalty',          label: 'Loyalty',              group: 'Operations' },
-  { key: 'allotments',       label: 'Allotments',           group: 'Operations' },
-  { key: 'pricing',          label: 'Pricing',              group: 'Settings'   },
-  { key: 'units',            label: 'Unit Settings',        group: 'Settings'   },
-  { key: 'users',            label: 'Staff Accounts',       group: 'Settings'   },
-  { key: 'settings',         label: 'Sources & Methods',    group: 'Settings'   },
-  { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'   },
+  { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
+  { key: 'allotments',       label: 'Channels',             group: 'Revenue'   },
+  { key: 'units',            label: 'Unit Settings',        group: 'Settings'  },
+  { key: 'users',            label: 'Staff Accounts',       group: 'Settings'  },
+  { key: 'settings',         label: 'Sources & Methods',    group: 'Settings'  },
+  { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'  },
   { key: 'resto_take_order',    label: 'Resto — Take Order',       group: 'Resto' },
   { key: 'resto_confirm_queue', label: 'Resto — Confirm Queue',    group: 'Resto' },
   { key: 'resto_tables',        label: 'Resto — Table Management', group: 'Resto' },
@@ -32,9 +36,8 @@ export default function SettingsRoles() {
   const { user, hasModule } = useAuth();
   // 'Resto' only shown to properties with the resto_ordering add-on enabled —
   // there's nothing to grant otherwise.
-  const GROUPS = hasModule('resto_ordering')
-    ? ['Operations', 'Settings', 'Resto']
-    : ['Operations', 'Settings'];
+  const BASE_GROUPS = ['Front Desk', 'Guest Experience', 'Operations', 'Revenue', 'Settings'];
+  const GROUPS = hasModule('resto_ordering') ? [...BASE_GROUPS, 'Resto'] : BASE_GROUPS;
 
   const [roles, setRoles] = useState([]);
   const [modal, setModal] = useState(null); // null | 'add' | role object (edit)

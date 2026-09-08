@@ -265,7 +265,11 @@ export default function SettingsBoardCards() {
                 <input className="form-input" value={form.meta} onChange={e => setForm(f => ({ ...f, meta: e.target.value }))} placeholder="e.g. 20 min drive · open 8am–6pm" />
               </div>
 
-              {hasModule('activities') && (
+              {/* Paid/bookable creates or unlinks a priced activity — an owner
+                  decision, matching the owner-only Activities catalog. Staff
+                  manage free content cards; a card already linked to an activity
+                  keeps that link untouched when a non-owner edits it. */}
+              {hasModule('activities') && user?.role === 'owner' && (
                 <div className="form-group">
                   <label className="form-label">Bookable</label>
                   <div style={{ display: 'flex', gap: 8, marginBottom: alreadyLinked || form.paid ? 10 : 0 }}>
