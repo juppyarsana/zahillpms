@@ -368,6 +368,28 @@ function tileState(u) {
   return 'available';
 }
 
+// Order = how segments/chips read left-to-right. `offline` folds
+// maintenance + blocked (both grey, both "not sellable").
+const STATUS_META = [
+  { key: 'available',  color: '#22C55E', label: 'Available' },
+  { key: 'occupied',   color: '#DC2626', label: 'Occupied' },
+  { key: 'departing',  color: '#9333EA', label: 'Departing' },
+  { key: 'arriving',   color: '#3B82F6', label: 'Arriving' },
+  { key: 'dirty',      color: '#FACC15', label: 'To clean' },
+  { key: 'offline',    color: '#9CA3AF', label: 'Maint / blocked' },
+];
+
+function bucketOf(u) {
+  const s = tileState(u);
+  return (s === 'maintenance' || s === 'blocked') ? 'offline' : s;
+}
+
+function countByState(list) {
+  const c = { available: 0, occupied: 0, departing: 0, arriving: 0, dirty: 0, offline: 0 };
+  for (const u of list) c[bucketOf(u)]++;
+  return c;
+}
+
 const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
 function typeRank(t) {
   const i = TYPE_ORDER.findIndex(x => (t || '').includes(x));
@@ -429,8 +451,46 @@ function UnitPopover({ unit, anchor, flags, onClose, onChanged }) {
   );
 }
 
-function UnitStatusBoard({ units, arrivals, departures, guestRequests = [], onChanged }) {
+function TypeCounts({ counts, filter }) {
+  const shown = STATUS_META.filter(m => counts[m.key] > 0);
+  if (!shown.length) return null;
+  return (
+    <div className="unit-type-counts">
+      {shown.map(m => (
+        <span key={m.key} className={`unit-type-chip${filter && filter !== m.key ? ' dim' : ''}`} title={`${counts[m.key]} ${m.label}`}>
+          <span className="unit-type-chip-dot" style={{ background: m.color }} />
+          <b>{counts[m.key]}</b>
+          <span className="unit-type-chip-lbl">{m.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function UnitTile({ unit, flags, selected, onClick }) {
+  const state = tileState(unit);
+  return (
+    <button
+      className={`unit-tile${selected ? ' selected' : ''}`}
+      style={{ background: TILE_BG[state], color: TILE_FG[state] }}
+      title={`${unit.name}${flags?.dnd ? ' · Do Not Disturb' : ''}${flags?.clean ? ' · Clean requested' : ''}`}
+      onClick={onClick}
+    >
+      <span className="unit-tile-icon">{TILE_ICON[state]}</span>
+      <span className="unit-tile-num">{shortRoomName(unit.name, unit.type)}</span>
+      {flags && (
+        <span className="unit-tile-badges">
+          {flags.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
+          {flags.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
   const [selected, setSelected] = useState(null); // { unit, anchor }
+  const [filter, setFilter] = useState(null);     // a STATUS_META key, or null
 
   useEffect(() => {
     if (selected && !units.some(u => u.id === selected.unit.id)) setSelected(null);
@@ -438,66 +498,66 @@ function UnitStatusBoard({ units, arrivals, departures, guestRequests = [], onCh
 
   const groups = groupUnitsByType(units);
   const requestFlags = unitRequestFlags(guestRequests);
-  const counts = {
-    available: units.filter(u => tileState(u) === 'available').length,
-    occupied:  units.filter(u => tileState(u) === 'occupied').length,
-    dirty:     units.filter(u => tileState(u) === 'dirty').length,
-    arriving:  arrivals.length,
-    departing: departures.length,
-    offline:   units.filter(u => ['maintenance', 'blocked'].includes(tileState(u))).length,
-    requests:  requestFlags.size,
-  };
-
-  const strip = [
-    ['#22C55E', counts.available, 'Available'],
-    ['#DC2626', counts.occupied, 'Occupied'],
-    ['#FACC15', counts.dirty, 'To clean'],
-    ['#3B82F6', counts.arriving, 'Arriving today'],
-    ['#9333EA', counts.departing, 'Departing today'],
-    ['#9CA3AF', counts.offline, 'Maint / blocked'],
-    ...(counts.requests > 0 ? [['#DB2777', counts.requests, 'Guest request']] : []),
-  ];
+  const overall = countByState(units);
+  const total = units.length;
 
   return (
     <div>
-      <div className="unit-summary-strip">
-        {strip.map(([dot, n, label]) => (
-          <span key={label} className="unit-summary-item">
-            <span className="unit-summary-dot" style={{ background: dot }} />
-            <b>{n}</b> {label}
-          </span>
+      {/* Whole-property status at a glance — one proportional bar. */}
+      <div className="unit-overview-bar" title={`${total} rooms`}>
+        {STATUS_META.filter(m => overall[m.key] > 0).map(m => (
+          <div
+            key={m.key}
+            className="unit-overview-seg"
+            style={{ flexGrow: overall[m.key], background: m.color }}
+            title={`${overall[m.key]} ${m.label}`}
+          />
         ))}
       </div>
 
-      {groups.map(g => (
-        <div key={g.type} className="unit-tile-group">
-          <div className="unit-tile-group-label">{g.type} · {g.list.length}</div>
-          <div className="unit-tile-grid">
-            {g.list.map(u => {
-              const flags = requestFlags.get(u.id);
-              const state = tileState(u);
-              return (
-                <button
+      {/* Legend + click-to-filter. Filtering narrows the tile grids below. */}
+      <div className="unit-summary-strip">
+        {STATUS_META.map(m => (
+          <button
+            key={m.key}
+            className={`unit-summary-item${filter === m.key ? ' active' : ''}${overall[m.key] === 0 ? ' zero' : ''}`}
+            onClick={() => setFilter(f => (f === m.key ? null : m.key))}
+          >
+            <span className="unit-summary-dot" style={{ background: m.color }} />
+            <b>{overall[m.key]}</b> {m.label}
+          </button>
+        ))}
+        {filter && (
+          <button className="unit-summary-clear" onClick={() => setFilter(null)}>
+            Show all ✕
+          </button>
+        )}
+      </div>
+
+      {groups.map(g => {
+        const list = filter ? g.list.filter(u => bucketOf(u) === filter) : g.list;
+        if (!list.length) return null;
+        return (
+          <div key={g.type} className="unit-tile-group">
+            <div className="unit-type-head">
+              <span className="unit-type-name">{g.type}</span>
+              <span className="unit-type-total">{g.list.length} room{g.list.length !== 1 ? 's' : ''}</span>
+            </div>
+            <TypeCounts counts={countByState(g.list)} filter={filter} />
+            <div className="unit-tile-grid">
+              {list.map(u => (
+                <UnitTile
                   key={u.id}
-                  className={`unit-tile${selected?.unit.id === u.id ? ' selected' : ''}`}
-                  style={{ background: TILE_BG[state], color: TILE_FG[state] }}
-                  title={`${u.name}${flags?.dnd ? ' · Do Not Disturb' : ''}${flags?.clean ? ' · Clean requested' : ''}`}
+                  unit={u}
+                  flags={requestFlags.get(u.id)}
+                  selected={selected?.unit.id === u.id}
                   onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
-                >
-                  <span className="unit-tile-icon">{TILE_ICON[state]}</span>
-                  <span className="unit-tile-num">{shortRoomName(u.name, u.type)}</span>
-                  {flags && (
-                    <span className="unit-tile-badges">
-                      {flags.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
-                      {flags.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {selected && (
         <UnitPopover
@@ -1117,7 +1177,7 @@ export default function Dashboard() {
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-title">Live Unit Status</div>
-        <UnitStatusBoard units={occupancy.units} arrivals={arrivals_today} departures={departures_today} guestRequests={guestRequests} onChanged={load} />
+        <UnitStatusBoard units={occupancy.units} guestRequests={guestRequests} onChanged={load} />
       </div>
 
       {/* ── Two-column section ── */}
