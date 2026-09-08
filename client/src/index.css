@@ -18,6 +18,19 @@ a { color: inherit; text-decoration: none; }
 button { cursor: pointer; font-family: inherit; }
 input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 
+/* ── Seamless scrollbars (app-wide default; sidebar overrides below) ── */
+* { scrollbar-width: thin; scrollbar-color: rgba(15,23,42,0.18) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(15,23,42,0.16);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,0.32); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* ── App Shell ── */
 .app-shell { display: flex; flex-direction: row; min-height: 100vh; }
 .app-main  { display: flex; flex-direction: column; flex: 1; min-width: 0; }
@@ -54,6 +67,25 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 }
 
 .sidebar-nav { flex: 1; padding: 10px 10px; overflow-y: auto; min-height: 0; }
+
+/* Seamless, unobtrusive scrollbars for the sidebar's scrolling regions —
+   thin, no track, faint thumb that only firms up on hover. */
+.sidebar-nav,
+.sidebar-settings {
+  scrollbar-width: thin;                                  /* Firefox */
+  scrollbar-color: rgba(255,255,255,0.14) transparent;    /* Firefox: thumb / track */
+}
+.sidebar-nav::-webkit-scrollbar,
+.sidebar-settings::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-track,
+.sidebar-settings::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb,
+.sidebar-settings::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+}
+.sidebar-nav:hover::-webkit-scrollbar-thumb,
+.sidebar-settings:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.24); }
 
 /* Settings — visually separated from daily-use nav above (own block, not
    part of the scrollable list), pinned just above the user footer. Mirrors

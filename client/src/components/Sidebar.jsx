@@ -61,6 +61,7 @@ export default function Sidebar() {
     can('checkin_full')  && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
     can('guests')        && hasModule('guest_crm')    && { to: '/guests',  icon: '👤', label: 'Guests' },
     can('loyalty')       && hasModule('guest_crm')    && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
+    can('sales')         && hasModule('sales')        && { to: '/sales',   icon: '🛍', label: 'Sales' },
   ].filter(Boolean);
 
   const guestExperienceItems = [
@@ -105,7 +106,6 @@ export default function Sidebar() {
 
       <nav className="sidebar-nav">
         {can('dashboard') && <SidebarLink to="/" end icon="📊" label="Dashboard" />}
-        {can('sales') && hasModule('sales') && <SidebarLink to="/sales" icon="🛍" label="Sales" />}
 
         <NavGroup label="Front Desk" items={frontDeskItems} />
         <NavGroup label="Guest Experience" items={guestExperienceItems} />

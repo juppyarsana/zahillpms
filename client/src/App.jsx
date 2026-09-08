@@ -57,12 +57,10 @@ function BottomNav() {
   // navs stay in sync (and so nothing is unreachable on mobile, which used to
   // be the case for Night Audit / Agent Billing / Room Controllers / Guest Board).
   const moreGroups = [
-    { label: null, items: [
-      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
-    ]},
     { label: 'Front Desk', items: [
       can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
+      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
     ]},
     { label: 'Guest Experience', items: [
       can('activities') && hasModule('activities') && { to: '/activities', icon: '🥾', label: 'Activities' },
