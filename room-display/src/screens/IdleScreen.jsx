@@ -183,11 +183,11 @@ function HousekeepingCard({ onMarkClean }) {
   return (
     <div
       className="rounded-2xl px-8 py-6 flex flex-col items-center gap-4 mt-2 max-w-md"
-      style={{ background: 'rgb(217 119 6 / 0.12)', border: '1px solid rgb(217 119 6 / 0.4)' }}
+      style={{ background: 'rgb(124 58 237 / 0.12)', border: '1px solid rgb(124 58 237 / 0.4)' }}
     >
       <div className="flex items-center gap-3">
-        <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#D97706' }}>cleaning_services</span>
-        <span className="text-sm font-extrabold uppercase tracking-widest" style={{ color: '#B45309' }}>Housekeeping</span>
+        <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#7C3AED' }}>cleaning_services</span>
+        <span className="text-sm font-extrabold uppercase tracking-widest" style={{ color: '#6D28D9' }}>Housekeeping</span>
       </div>
 
       {phase === 'confirm' ? (
@@ -224,7 +224,7 @@ function HousekeepingCard({ onMarkClean }) {
           <button
             onClick={() => setPhase('confirm')}
             className="rounded-xl px-8 py-4 text-sm font-extrabold uppercase tracking-widest"
-            style={{ background: '#D97706', color: '#fff', border: 'none' }}
+            style={{ background: '#7C3AED', color: '#fff', border: 'none' }}
           >
             Mark Room Clean
           </button>

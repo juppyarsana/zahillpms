@@ -107,8 +107,8 @@ function UnitCard({ unit, flags, onChanged }) {
   else if (isMaint) cls = 'occupied'; // red-ish
   else if (isBlocked) cls = 'blocked';
 
-  const unitBg    = { occupied: '#FFF7ED', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#FFFBEB', blocked: '#F9FAFB' };
-  const unitBorder= { occupied: '#F97316', arriving: '#3B82F6', available: '#22C55E', dirty: '#D97706', blocked: '#D1D5DB' };
+  const unitBg    = { occupied: '#FFF7ED', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#F5F3FF', blocked: '#F9FAFB' };
+  const unitBorder= { occupied: '#F97316', arriving: '#3B82F6', available: '#22C55E', dirty: '#7C3AED', blocked: '#D1D5DB' };
 
   const bg     = isMaint ? '#FEE2E2' : (unitBg[cls]     || '#F9FAFB');
   const border = isMaint ? '#FCA5A5' : (unitBorder[cls] || '#D1D5DB');
@@ -122,7 +122,7 @@ function UnitCard({ unit, flags, onChanged }) {
         {isOccupied && <ChBadge source={unit.source} />}
         {!isOccupied && isArriving && <ChBadge source={unit.arriving_source} />}
         {!isOccupied && !isArriving && isDirty && (
-          <span style={{ background: '#FEF3C7', color: '#92400E', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🧹 To clean</span>
+          <span style={{ background: '#EDE9FE', color: '#5B21B6', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🧹 To clean</span>
         )}
         {!isOccupied && !isArriving && !isDirty && unit.status === 'available' && (
           <span style={{ background: '#D1FAE5', color: '#065F46', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Available</span>
@@ -190,7 +190,7 @@ function UnitCard({ unit, flags, onChanged }) {
 
       {isDirty && (
         <div style={{ marginTop: isArriving ? 8 : 0 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E' }}>🧹 Vacant — needs cleaning</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#6D28D9' }}>🧹 Vacant — needs cleaning</div>
           {!hkConfirm ? (
             <button
               className="btn btn-secondary btn-sm"
@@ -303,7 +303,7 @@ const TILE_BG = {
   occupied:    '#F97316',
   arriving:    '#3B82F6',
   available:   '#22C55E',
-  dirty:       '#D97706',
+  dirty:       '#7C3AED',
   maintenance: '#DC2626',
   blocked:     '#9CA3AF',
 };
@@ -437,9 +437,9 @@ function UnitStatusBoard({ units, arrivals, departures, guestRequests = [], onCh
     ['#3B82F6', counts.arriving, 'Arriving today'],
     ['#92400E', counts.departing, 'Departing today'],
     ['#22C55E', counts.available, 'Available'],
-    ...(counts.dirty > 0 ? [['#D97706', counts.dirty, 'To clean']] : []),
+    ...(counts.dirty > 0 ? [['#7C3AED', counts.dirty, 'To clean']] : []),
     ['#9CA3AF', counts.offline, 'Maint / blocked'],
-    ...(counts.requests > 0 ? [['#7C3AED', counts.requests, 'Guest request']] : []),
+    ...(counts.requests > 0 ? [['#DB2777', counts.requests, 'Guest request']] : []),
   ];
 
   return (
