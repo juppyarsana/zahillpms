@@ -974,8 +974,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 30_000);
-    return () => clearInterval(id);
+    // 10s so housekeeping / unit-status changes from the Room Display surface
+    // quickly; skipped while the tab is hidden, with an immediate refetch when
+    // it regains focus so a glance at a backgrounded dashboard is never stale.
+    const id = setInterval(() => { if (!document.hidden) load(); }, 10_000);
+    const onVisible = () => { if (!document.hidden) load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   async function handleResolveRequest(taskId) {
