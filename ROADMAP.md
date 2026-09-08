@@ -30,7 +30,12 @@ Local DB is at **migration 044**. Run `git pull` + `npm run migrate` on the lapt
 - Cutover: run `node server/scripts/backfillRoomCharges.js` once against prod for any
   currently-checked-in bookings (posts their elapsed folio nights). Idempotent.
 - Agent Accounts Slice C not browser-verified either (record-payment / generate-invoice modals).
-- TURN server for calls still deferred (known gap).
+- TURN relay for calls **built** 2026-09-06 (`turnCredentials.js` + relay-only ICE + follow-up
+  fixes) — but verify `coturn` is actually installed/running on the VM and TURN env vars are
+  set in `server/.env`; code alone doesn't deploy it. On-property WiFi flakiness fix not
+  confirmed live yet.
+- Resto Ordering (`resto-display/`, migrations 048–050) not yet browser-verified; deploy of
+  `resto.zahill.kdai.cloud` in progress (DNS added 2026-09-08).
 
 **Demo data on the PC's local DB** (not on the laptop until re-seeded — the scripts are
 gitignored under `server/scripts/`): 35 rooms (Deluxe 101–125 / Suite 201–204 / Glamping
