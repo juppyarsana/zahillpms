@@ -6,7 +6,14 @@ function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 // the menu, mobile) and the staff Take Order screen (a sticky sidebar next
 // to the menu, POS-style). cart is a Map<product_id, quantity>, menuById a
 // Map<product_id, product>.
-export default function CartPanel({ cart, menuById, paymentMethods, onSubmit, submitting, error }) {
+//
+// mode:
+//   'guest' — no payment step at all. The order opens a tab; resto staff
+//             settle the whole table later (and can charge it to a room).
+//   'staff' — an optional payment method. Left blank = open tab (same as
+//             guest); pick one for an immediate-pay takeaway.
+// onSubmit is always called (lines, paymentMethod | null).
+export default function CartPanel({ cart, menuById, paymentMethods = [], onSubmit, submitting, error, mode = 'guest' }) {
   const [paymentMethod, setPaymentMethod] = useState('');
 
   const lines = [...cart.entries()]
@@ -40,26 +47,34 @@ export default function CartPanel({ cart, menuById, paymentMethods, onSubmit, su
             <span className="text-lg font-bold text-accent">{fmtIDR(total)}</span>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-dim">Payment Method</label>
-            <select
-              value={paymentMethod}
-              onChange={e => setPaymentMethod(e.target.value)}
-              className="bg-surface-2 border border-app rounded-lg px-3 py-2.5 text-sm text-ink outline-none"
-            >
-              <option value="" style={{ color: '#000' }}>Select…</option>
-              {paymentMethods.map(pm => <option key={pm.id} value={pm.id} style={{ color: '#000' }}>{pm.label}</option>)}
-            </select>
-          </div>
+          {mode === 'staff' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-dim">Payment</label>
+              <select
+                value={paymentMethod}
+                onChange={e => setPaymentMethod(e.target.value)}
+                className="bg-surface-2 border border-app rounded-lg px-3 py-2.5 text-sm text-ink outline-none"
+              >
+                <option value="" style={{ color: '#000' }}>Open tab — pay at table</option>
+                {paymentMethods.map(pm => <option key={pm.id} value={pm.id} style={{ color: '#000' }}>{pm.label}</option>)}
+              </select>
+            </div>
+          )}
+
+          {mode === 'guest' && (
+            <p className="text-xs text-dim leading-relaxed">
+              No payment now — a member of staff will bring the bill to your table when you're done.
+            </p>
+          )}
 
           {error && <p className="text-xs text-danger">{error}</p>}
 
           <button
-            disabled={!paymentMethod || submitting}
-            onClick={() => onSubmit(lines, paymentMethod)}
+            disabled={submitting}
+            onClick={() => onSubmit(lines, paymentMethod || null)}
             className={
               'w-full rounded-xl py-3.5 text-sm font-bold uppercase tracking-wide transition-colors ' +
-              (!paymentMethod || submitting
+              (submitting
                 ? 'bg-accent-dim text-muted cursor-not-allowed'
                 : 'bg-accent text-[color:var(--accent-contrast)] cursor-pointer')
             }

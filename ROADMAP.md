@@ -363,7 +363,13 @@ Per-property tax and service charge rates, applied on folio and invoice.
   posts a `folio_charges` row (`type='sale'`, valid since migration 028 but
   never wired up) whenever `payment_method='room_charge'`, benefiting the
   staff POS's existing "charge to room" flow too, not just Resto Ordering.
-- Status: ✅ Implemented (migrations 048–049) — see `CLAUDE.md`'s "Resto
+- Open tabs (migration 050): the QR screen has no payment step — walk-ins
+  shouldn't pay before eating. Guest QR + staff dine-in orders land
+  `payment_method='unpaid'` and fire to the kitchen; staff settle the whole
+  table with one method (cash/QRIS/**charge to room**) when the party's
+  done, via `restoSettleService.settleAndClose`. One payment per table, no
+  split. `/tables/:id/close` refuses while anything's still unpaid.
+- Status: ✅ Implemented (migrations 048–050) — see `CLAUDE.md`'s "Resto
   Ordering" write-up for the full design. Not yet manually verified in a
   browser.
 
@@ -639,7 +645,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 050
+## Next migration number: 051
 
 ---
 

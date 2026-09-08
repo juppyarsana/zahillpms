@@ -85,12 +85,13 @@ async function closeSession(propertyId, tableId, closedBy) {
 // Orders + items + running total for one session (Table Management's "View Bill").
 async function sessionSummary(propertyId, sessionId) {
   const { rows: sales } = await db.query(
-    `SELECT id, created_at, total_amount, kitchen_status, confirmation_status, order_source
+    `SELECT id, created_at, total_amount, kitchen_status, confirmation_status, order_source,
+            payment_method, settled_at
        FROM sales WHERE table_session_id = $1 AND property_id = $2
       ORDER BY created_at ASC`,
     [sessionId, propertyId]
   );
-  if (sales.length === 0) return { session_id: sessionId, orders: [], total: 0 };
+  if (sales.length === 0) return { session_id: sessionId, orders: [], total: 0, unpaid_total: 0 };
 
   const { rows: items } = await db.query(
     `SELECT si.sale_id, p.name, si.quantity, si.unit_price, si.subtotal
@@ -104,8 +105,12 @@ async function sessionSummary(propertyId, sessionId) {
     itemsBySale.get(item.sale_id).push({ name: item.name, quantity: item.quantity, unit_price: item.unit_price, subtotal: item.subtotal });
   }
   const orders = sales.map(s => ({ ...s, items: itemsBySale.get(s.id) || [] }));
-  const total = sales.reduce((sum, s) => sum + parseFloat(s.total_amount), 0);
-  return { session_id: sessionId, orders, total };
+  const billable = sales.filter(s => s.confirmation_status !== 'rejected');
+  const total = billable.reduce((sum, s) => sum + parseFloat(s.total_amount), 0);
+  const unpaid_total = billable
+    .filter(s => s.payment_method === 'unpaid')
+    .reduce((sum, s) => sum + parseFloat(s.total_amount), 0);
+  return { session_id: sessionId, orders, total, unpaid_total };
 }
 
 module.exports = { ensureOpenSession, getOpenSession, openSession, closeSession, sessionSummary };

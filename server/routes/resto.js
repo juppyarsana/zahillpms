@@ -8,6 +8,7 @@ const moduleGuard = require('../middleware/moduleGuard');
 const sse = require('../sse');
 const salesService = require('../services/salesService');
 const tableSessionService = require('../services/tableSessionService');
+const restoSettleService = require('../services/restoSettleService');
 const gate = moduleGuard('resto_ordering');
 
 // Resto staff surface (resto-display/'s /staff/* screens) — real staff JWT
@@ -62,15 +63,37 @@ router.get('/menu', auth, gate, async (req, res) => {
   }
 });
 
+// GET /api/resto/rooms — currently checked-in rooms, for the "charge to
+// room" option when settling a table. Scoped to this property; a resto_staff
+// login reaches this fine (only needs a valid property JWT + the module).
+router.get('/rooms', auth, gate, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT b.id, u.name AS unit_name, g.name AS guest_name
+         FROM bookings b
+         JOIN units u ON u.id = b.unit_id
+         LEFT JOIN guests g ON g.id = b.guest_id
+        WHERE b.property_id = $1 AND b.status = 'checked_in'
+        ORDER BY u.name`,
+      [req.propertyId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/resto/orders — staff-tablet order taking (Take Order screen).
 // Fires straight to the kitchen — a staff member entering it is the
-// verification, same logic as the existing PMS POS.
+// verification, same logic as the existing PMS POS. payment_method is
+// optional: omit it (or send 'unpaid') to open a tab that's settled when the
+// table closes — the default for dine-in. Pass a real method for an
+// immediate-pay takeaway.
 router.post('/orders', auth, gate, async (req, res) => {
   const { table_id, order_type, payment_method, items, booking_id } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items required' });
   }
-  if (!payment_method) return res.status(400).json({ error: 'payment_method required' });
   try {
     const productIds = items.map(i => i.product_id);
     const { rows: products } = await db.query(
@@ -85,7 +108,7 @@ router.post('/orders', auth, gate, async (req, res) => {
 
     const result = await salesService.createSale(req.propertyId, {
       bookingId: booking_id || null,
-      paymentMethod: payment_method,
+      paymentMethod: payment_method || 'unpaid',
       orderType: order_type || 'dine_in',
       items: pricedItems,
       tableId: table_id || null,
@@ -224,16 +247,21 @@ router.get('/tables', auth, gate, async (req, res) => {
     const openSessionIds = tables.filter(t => t.session_id).map(t => t.session_id);
     let totalsBySession = new Map();
     let countsBySession = new Map();
+    let unpaidBySession = new Map();
     if (openSessionIds.length > 0) {
       const { rows: totals } = await db.query(
-        `SELECT table_session_id, COUNT(*) AS order_count, COALESCE(SUM(total_amount), 0) AS session_total
-           FROM sales WHERE table_session_id = ANY($1)
+        `SELECT table_session_id, COUNT(*) AS order_count,
+                COALESCE(SUM(total_amount), 0) AS session_total,
+                COALESCE(SUM(total_amount) FILTER (WHERE payment_method = 'unpaid'), 0) AS unpaid_total
+           FROM sales
+          WHERE table_session_id = ANY($1) AND confirmation_status IS DISTINCT FROM 'rejected'
           GROUP BY table_session_id`,
         [openSessionIds]
       );
       for (const t of totals) {
         totalsBySession.set(t.table_session_id, parseFloat(t.session_total));
         countsBySession.set(t.table_session_id, parseInt(t.order_count));
+        unpaidBySession.set(t.table_session_id, parseFloat(t.unpaid_total));
       }
     }
     res.json(tables.map(t => ({
@@ -241,6 +269,7 @@ router.get('/tables', auth, gate, async (req, res) => {
       session: t.session_id ? { id: t.session_id, opened_at: t.session_opened_at } : null,
       order_count: t.session_id ? (countsBySession.get(t.session_id) || 0) : 0,
       session_total: t.session_id ? (totalsBySession.get(t.session_id) || 0) : 0,
+      unpaid_total: t.session_id ? (unpaidBySession.get(t.session_id) || 0) : 0,
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -271,10 +300,35 @@ router.get('/tables/:id/session', auth, gate, async (req, res) => {
   }
 });
 
+// POST /api/resto/tables/:id/settle — pick ONE payment method for every
+// unpaid order on the table's open session, then close it. body:
+// { payment_method, booking_id? } — booking_id required when payment_method
+// is 'room_charge'. See services/restoSettleService.js.
+router.post('/tables/:id/settle', auth, gate, async (req, res) => {
+  const { payment_method, booking_id } = req.body;
+  try {
+    const result = await restoSettleService.settleAndClose(req.propertyId, req.params.id, {
+      paymentMethod: payment_method,
+      bookingId: booking_id || null,
+      userId: req.user.id,
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+    sse.notify('resto:' + req.propertyId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/resto/tables/:id/close — closes the open session + frees the
-// table. Idempotent if there's no open session.
+// table. Idempotent if there's no open session. Refuses (409) if the session
+// still has unpaid orders — settle those first (/settle), or this would
+// strand real revenue as 'unpaid' forever.
 router.post('/tables/:id/close', auth, gate, async (req, res) => {
   try {
+    if (await restoSettleService.hasUnpaid(req.propertyId, req.params.id)) {
+      return res.status(409).json({ error: 'This table has unpaid orders — settle the bill first', code: 'UNPAID' });
+    }
     await tableSessionService.closeSession(req.propertyId, req.params.id, req.user.id);
     sse.notify('resto:' + req.propertyId);
     res.json({ ok: true });

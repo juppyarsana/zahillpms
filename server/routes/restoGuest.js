@@ -22,16 +22,11 @@ router.get('/:qrToken/context', authTableQR, gate, async (req, res) => {
         WHERE p.id = $1`,
       [req.propertyId]
     );
-    const { rows: paymentMethods } = await db.query(
-      'SELECT id, label FROM payment_methods WHERE property_id = $1 AND is_active = true ORDER BY sort_order, id',
-      [req.propertyId]
-    );
     const session = await tableSessionService.getOpenSession(req.propertyId, req.tableId);
     res.json({
       table: { id: req.tableId, name: req.tableName },
       property: propertyRows[0] || null,
       session: session ? { id: session.id, opened_at: session.opened_at } : null,
-      payment_methods: paymentMethods,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -58,13 +53,14 @@ router.get('/:qrToken/menu', authTableQR, gate, async (req, res) => {
 // POST /api/resto/guest/:qrToken/order — fires straight to the kitchen, no
 // confirmation gate (only Room Display's room-service orders get that, see
 // routes/resto.js). Prices are resolved server-side, never trusted from a
-// guest's phone.
+// guest's phone. No payment step — the order lands as an "open tab"
+// (payment_method 'unpaid', migration 050); resto staff settle the whole
+// table when the party's done, and can charge it to a room.
 router.post('/:qrToken/order', authTableQR, gate, async (req, res) => {
-  const { items, payment_method } = req.body;
+  const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items required' });
   }
-  if (!payment_method) return res.status(400).json({ error: 'payment_method required' });
   try {
     const productIds = items.map(i => i.product_id);
     const { rows: products } = await db.query(
@@ -79,7 +75,7 @@ router.post('/:qrToken/order', authTableQR, gate, async (req, res) => {
 
     const result = await salesService.createSale(req.propertyId, {
       bookingId: null,
-      paymentMethod: payment_method,
+      paymentMethod: 'unpaid',
       orderType: 'dine_in',
       items: pricedItems,
       tableId: req.tableId,

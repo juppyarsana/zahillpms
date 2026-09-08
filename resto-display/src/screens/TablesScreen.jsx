@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
 import api from '../api';
 import { getToken, getUser } from '../auth';
+import { useRestoContext } from '../context/RestoContext';
 import useResilientEventSource from '../useResilientEventSource';
 
 const POLL_MS = 30_000;
@@ -15,8 +16,10 @@ function fmtAge(openedAt) {
 }
 
 export default function TablesScreen() {
+  const context = useRestoContext();
+  const paymentMethods = context?.payment_methods || [];
   const [tables, setTables] = useState([]);
-  const [billModal, setBillModal] = useState(null); // { table, session, orders, total } | null
+  const [billModal, setBillModal] = useState(null); // { table, session, orders, total, unpaid_total } | null
   const [qrModal, setQrModal] = useState(null); // { table_id, name, url, dataUrl } | null
   const [addModal, setAddModal] = useState(false);
   const [newTable, setNewTable] = useState({ name: '', capacity: '' });
@@ -52,9 +55,19 @@ export default function TablesScreen() {
 
   async function closeTable(table) {
     if (!window.confirm(`Close ${table.name}? This clears the table for the next party.`)) return;
-    await api.post(`/resto/tables/${table.id}/close`);
-    setBillModal(null);
-    fetchTables();
+    try {
+      await api.post(`/resto/tables/${table.id}/close`);
+      setBillModal(null);
+      fetchTables();
+    } catch (err) {
+      if (err.response?.data?.code === 'UNPAID') {
+        // Re-open the bill so staff can settle it.
+        alert(err.response.data.error);
+        viewBill(table);
+      } else {
+        alert(err.response?.data?.error || 'Could not close this table.');
+      }
+    }
   }
 
   async function showQr(table) {
@@ -115,6 +128,9 @@ export default function TablesScreen() {
             {t.session && (
               <div className="text-xs text-dim">
                 Open {fmtAge(t.session.opened_at)} · {t.order_count} order{t.order_count === 1 ? '' : 's'} · {fmtIDR(t.session_total)}
+                {t.unpaid_total > 0 && (
+                  <span className="text-warn font-semibold"> · {fmtIDR(t.unpaid_total)} unpaid</span>
+                )}
               </div>
             )}
 
@@ -124,8 +140,12 @@ export default function TablesScreen() {
               )}
               {t.session && (
                 <>
-                  <button onClick={() => viewBill(t)} className="rounded-lg bg-surface-2 border border-app text-ink text-[11px] font-bold px-2.5 py-1.5">View Bill</button>
-                  <button onClick={() => closeTable(t)} className="rounded-lg bg-surface-2 border border-app text-ink text-[11px] font-bold px-2.5 py-1.5">Close Table</button>
+                  <button onClick={() => viewBill(t)} className="rounded-lg bg-accent text-[color:var(--accent-contrast)] text-[11px] font-bold px-2.5 py-1.5">
+                    {t.unpaid_total > 0 ? 'Bill & Settle' : 'View Bill'}
+                  </button>
+                  {t.unpaid_total === 0 && (
+                    <button onClick={() => closeTable(t)} className="rounded-lg bg-surface-2 border border-app text-ink text-[11px] font-bold px-2.5 py-1.5">Close Table</button>
+                  )}
                 </>
               )}
               <button onClick={() => showQr(t)} className="rounded-lg bg-surface-2 border border-app text-ink text-[11px] font-bold px-2.5 py-1.5">Show QR</button>
@@ -161,24 +181,13 @@ export default function TablesScreen() {
       )}
 
       {billModal && (
-        <Modal onClose={() => setBillModal(null)} title={`${billModal.table.name} — Bill`}>
-          {billModal.orders.length === 0 && <p className="text-dim text-sm">No orders yet.</p>}
-          <div className="flex flex-col gap-2.5">
-            {billModal.orders.map(o => (
-              <div key={o.id} className="text-sm flex justify-between gap-3">
-                <span className="text-ink">{(o.items || []).map(i => `${i.quantity}× ${i.name}`).join(', ')}</span>
-                <span className="text-muted flex-shrink-0">{fmtIDR(o.total_amount)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="h-px bg-app-soft my-3" />
-          <div className="flex justify-between font-bold">
-            <span className="text-ink">Total</span><span className="text-accent">{fmtIDR(billModal.total)}</span>
-          </div>
-          <button onClick={() => closeTable(billModal.table)} className="w-full rounded-lg bg-surface-2 border border-app text-ink text-sm font-bold py-3 mt-4">
-            Close Table
-          </button>
-        </Modal>
+        <BillModal
+          bill={billModal}
+          paymentMethods={paymentMethods}
+          onClose={() => setBillModal(null)}
+          onCloseTable={() => closeTable(billModal.table)}
+          onSettled={() => { setBillModal(null); fetchTables(); }}
+        />
       )}
 
       {qrModal && (
@@ -190,6 +199,138 @@ export default function TablesScreen() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function BillModal({ bill, paymentMethods, onClose, onCloseTable, onSettled }) {
+  const { table } = bill;
+  const unpaid = Number(bill.unpaid_total || 0);
+  const billableOrders = (bill.orders || []).filter(o => o.confirmation_status !== 'rejected');
+
+  const [method, setMethod] = useState('');       // '' | payment_methods.id | 'room_charge'
+  const [rooms, setRooms] = useState(null);        // null = not fetched, [] = fetched
+  const [bookingId, setBookingId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function pickRoomCharge() {
+    setMethod('room_charge');
+    setError('');
+    if (rooms === null) {
+      try {
+        const { data } = await api.get('/resto/rooms');
+        setRooms(data);
+      } catch {
+        setRooms([]);
+        setError('Could not load checked-in rooms.');
+      }
+    }
+  }
+
+  async function settle() {
+    if (!method) { setError('Choose how the bill is paid.'); return; }
+    if (method === 'room_charge' && !bookingId) { setError('Choose which room to charge.'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      await api.post(`/resto/tables/${table.id}/settle`, {
+        payment_method: method,
+        booking_id: method === 'room_charge' ? bookingId : undefined,
+      });
+      onSettled();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not settle this table.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} title={`${table.name} — Bill`}>
+      {billableOrders.length === 0 && <p className="text-dim text-sm">No orders yet.</p>}
+      <div className="flex flex-col gap-2.5">
+        {billableOrders.map(o => (
+          <div key={o.id} className="text-sm flex justify-between gap-3">
+            <span className="text-ink">
+              {(o.items || []).map(i => `${i.quantity}× ${i.name}`).join(', ')}
+              {o.payment_method !== 'unpaid' && <span className="text-ok text-xs"> · paid</span>}
+            </span>
+            <span className="text-muted flex-shrink-0">{fmtIDR(o.total_amount)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="h-px bg-app-soft my-3" />
+      <div className="flex justify-between font-bold text-sm">
+        <span className="text-ink">Total</span><span className="text-ink">{fmtIDR(bill.total)}</span>
+      </div>
+      {unpaid > 0 && (
+        <div className="flex justify-between font-bold mt-1">
+          <span className="text-warn">To pay</span><span className="text-warn">{fmtIDR(unpaid)}</span>
+        </div>
+      )}
+
+      {unpaid > 0 ? (
+        <div className="mt-4 flex flex-col gap-2">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-dim">Settle with</label>
+          <div className="flex flex-wrap gap-2">
+            {paymentMethods.map(pm => (
+              <button
+                key={pm.id}
+                onClick={() => { setMethod(pm.id); setError(''); }}
+                className={
+                  'rounded-lg text-[11px] font-bold px-3 py-2 border ' +
+                  (method === pm.id ? 'bg-accent text-[color:var(--accent-contrast)] border-transparent' : 'bg-surface-2 border-app text-ink')
+                }
+              >
+                {pm.label}
+              </button>
+            ))}
+            <button
+              onClick={pickRoomCharge}
+              className={
+                'rounded-lg text-[11px] font-bold px-3 py-2 border ' +
+                (method === 'room_charge' ? 'bg-accent text-[color:var(--accent-contrast)] border-transparent' : 'bg-surface-2 border-app text-ink')
+              }
+            >
+              Charge to room
+            </button>
+          </div>
+
+          {method === 'room_charge' && (
+            <select
+              value={bookingId}
+              onChange={e => setBookingId(e.target.value)}
+              className="bg-surface-2 border border-app rounded-lg px-3 py-2.5 text-sm text-ink outline-none mt-1"
+            >
+              <option value="" style={{ color: '#000' }}>
+                {rooms === null ? 'Loading rooms…' : rooms.length === 0 ? 'No rooms checked in' : 'Select room…'}
+              </option>
+              {(rooms || []).map(r => (
+                <option key={r.id} value={r.id} style={{ color: '#000' }}>
+                  {r.unit_name}{r.guest_name ? ` — ${r.guest_name}` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {error && <p className="text-xs text-danger mt-1">{error}</p>}
+
+          <button
+            onClick={settle}
+            disabled={busy}
+            className={
+              'w-full rounded-lg text-sm font-bold py-3 mt-2 ' +
+              (busy ? 'bg-accent-dim text-muted' : 'bg-accent text-[color:var(--accent-contrast)]')
+            }
+          >
+            {busy ? 'Settling…' : `Settle ${fmtIDR(unpaid)} & Close Table`}
+          </button>
+        </div>
+      ) : (
+        <button onClick={onCloseTable} className="w-full rounded-lg bg-surface-2 border border-app text-ink text-sm font-bold py-3 mt-4">
+          Close Table
+        </button>
+      )}
+    </Modal>
   );
 }
 

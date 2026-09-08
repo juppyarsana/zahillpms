@@ -84,13 +84,12 @@ export default function GuestOrderScreen() {
     });
   }
 
-  async function handleSubmit(lines, paymentMethod) {
+  async function handleSubmit(lines) {
     setSubmitting(true);
     setSubmitError('');
     try {
       const { data } = await guestApi.post(`/${qrToken}/order`, {
         items: lines.map(l => ({ product_id: l.product.id, quantity: l.qty })),
-        payment_method: paymentMethod,
       });
       sessionStorage.setItem(storageKey, data.session_id);
       setSessionId(data.session_id);
@@ -155,7 +154,7 @@ export default function GuestOrderScreen() {
         <CartPanel
           cart={cart}
           menuById={menuById}
-          paymentMethods={context.payment_methods}
+          mode="guest"
           onSubmit={handleSubmit}
           submitting={submitting}
           error={submitError}

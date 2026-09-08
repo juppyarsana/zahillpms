@@ -25,6 +25,11 @@ const KITCHEN_CATEGORIES = ['drinks', 'food'];
 // routes/resto.js's confirm/reject endpoints. orderSource just labels where
 // an order came from for the resto app's UI; it's not load-bearing for any
 // gate.
+//
+// paymentMethod may be falsy or 'unpaid' — an "open tab" order (migration
+// 050): placed and fired to the kitchen, but not yet paid. It's stored as
+// 'unpaid' and settled later by restoSettleService when staff close the
+// table. No booking or folio posting at this point.
 async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource }) {
   const client = await db.pool.connect();
   try {
@@ -52,9 +57,15 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // migration 001). Migration 048 dropped that so the resto app can accept
     // any of a property's configured payment_methods — this is now the one
     // choke point every caller (staff POS, Room Display, resto app) goes
-    // through. room_charge is special-cased: it isn't a real payment_methods
-    // row, it means "post to the guest's folio," which requires a booking.
-    if (paymentMethod === 'room_charge') {
+    // through. Two sentinels that aren't real payment_methods rows:
+    //   - 'room_charge' means "post to the guest's folio," requires a booking.
+    //   - 'unpaid' means "open tab" — the order's placed but nobody's paid yet
+    //     (migration 050). Settled later by restoSettleService when staff
+    //     close the table. No folio posting, no booking required.
+    const paymentMethodValue = paymentMethod || 'unpaid';
+    if (paymentMethodValue === 'unpaid') {
+      // nothing to validate — sentinel, resolved at settlement
+    } else if (paymentMethodValue === 'room_charge') {
       if (!bookingId) {
         await client.query('ROLLBACK');
         return { error: 'room_charge requires a booking' };
@@ -62,7 +73,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     } else {
       const { rows: [pm] } = await client.query(
         'SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true',
-        [paymentMethod, propertyId]
+        [paymentMethodValue, propertyId]
       );
       if (!pm) {
         await client.query('ROLLBACK');
@@ -93,7 +104,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       `INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id, order_type, table_number, table_id, kitchen_status,
                           table_session_id, confirmation_status, order_source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [bookingId || null, paymentMethod, total, servedBy || null, propertyId, orderType || 'takeaway', resolvedTableNumber, tableId || null, needsKitchen ? 'new' : null,
+      [bookingId || null, paymentMethodValue, total, servedBy || null, propertyId, orderType || 'takeaway', resolvedTableNumber, tableId || null, needsKitchen ? 'new' : null,
        sessionId, pending ? 'pending' : null, orderSource || null]
     );
     for (const item of items) {
@@ -124,7 +135,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // as decrementing stock immediately — the charge is real from the moment
     // the guest orders); a rejected room-service order's charge is voided by
     // routes/resto.js's reject handler via sale_id.
-    if (paymentMethod === 'room_charge') {
+    if (paymentMethodValue === 'room_charge') {
       const desc = items
         .map(i => `${i.quantity}× ${productById.get(i.product_id).name}`)
         .join(', ')

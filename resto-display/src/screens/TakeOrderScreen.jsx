@@ -42,7 +42,7 @@ export default function TakeOrderScreen() {
       await api.post('/resto/orders', {
         table_id: tableId || null,
         order_type: tableId ? 'dine_in' : 'takeaway',
-        payment_method: paymentMethod,
+        payment_method: paymentMethod || null, // null = open tab, settled at table close
         items: lines.map(l => ({ product_id: l.product.id, quantity: l.qty })),
       });
       setCart(new Map());
@@ -93,6 +93,7 @@ export default function TakeOrderScreen() {
         <CartPanel
           cart={cart}
           menuById={menuById}
+          mode="staff"
           paymentMethods={context.payment_methods}
           onSubmit={handleSubmit}
           submitting={submitting}

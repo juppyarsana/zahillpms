@@ -295,7 +295,7 @@ export default function Sales() {
                     <td>{s.created_at?.slice(0,10)}</td>
                     <td><span className="badge badge-gray">{s.order_type}</span></td>
                     <td>{s.table_number || '—'}</td>
-                    <td><span className="badge badge-gray">{s.payment_method}</span></td>
+                    <td><span className={'badge ' + (s.payment_method === 'unpaid' ? 'badge-amber' : 'badge-gray')}>{s.payment_method === 'unpaid' ? 'open tab' : s.payment_method}</span></td>
                     <td>{fmtIDR(s.total_amount)}</td>
                     <td>{s.served_by_name}</td>
                   </tr>
