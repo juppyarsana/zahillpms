@@ -55,7 +55,10 @@ export default function App() {
   useEffect(() => {
     if (callState.status === 'incoming') ringtone.start();
     else ringtone.stop();
-    return () => ringtone.stop();
+    // Outgoing ringback while the front desk rings (before they pick up).
+    if (callState.status === 'calling') ringtone.startDial();
+    else ringtone.stopDial();
+    return () => { ringtone.stop(); ringtone.stopDial(); };
   }, [callState.status]);
 
   // TURN credentials are minted fresh per call (short-lived) rather than

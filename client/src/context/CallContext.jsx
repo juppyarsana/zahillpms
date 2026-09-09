@@ -82,6 +82,14 @@ export function CallProvider({ children }) {
     return () => ringtone.stop();
   }, [incomingCall]);
 
+  // Outgoing ringback while a staff-placed call rings the room (status
+  // 'calling'); stops the moment the room answers ('connecting'/'connected').
+  useEffect(() => {
+    if (activeCall?.status === 'calling') ringtone.startDial();
+    else ringtone.stopDial();
+    return () => ringtone.stopDial();
+  }, [activeCall?.status]);
+
   const staffStreamUrl = user ? `/api/calls/staff/stream?token=${encodeURIComponent(localStorage.getItem('token'))}` : null;
   useResilientEventSource(staffStreamUrl, (msg) => {
     if (msg.type === 'incoming_call') {
