@@ -21,18 +21,15 @@ async function getIceServers() {
   if (!fetchTurnServers) return { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
   try {
     const turnServers = await fetchTurnServers();
-    // Relay candidates are always the lowest ICE priority, so a mixed
-    // host+srflx+relay candidate list means the one pair that can actually
-    // work across a restrictive NAT sits behind a pile of guaranteed-to-fail
-    // ones — coturn's own logs showed the answering side never even got as
-    // far as attempting its relay candidate before the browser gave up.
-    // Forcing relay-only when TURN is actually available removes every
-    // other pair from consideration, so there's nothing to work through
-    // first. Falls back to 'all' (STUN + host, same as before any of this)
-    // if TURN isn't configured/reachable, so a TURN outage doesn't also
-    // break same-network calling.
+    // Always 'all': try the direct host/srflx path first (connects in <1s
+    // when both sides are on the same LAN), and fall back to the TURN relay
+    // only for the cross-NAT case. An earlier revision forced relay-only
+    // whenever TURN credentials were obtained, but the server can't actually
+    // tell whether the relay is *reachable* — only whether the credential
+    // fetch succeeded — so a misconfigured/unreachable coturn took down
+    // same-network calling too, with no path left to fall back to.
     return turnServers?.length
-      ? { iceServers: [...STUN_SERVERS, ...turnServers], iceTransportPolicy: 'relay' }
+      ? { iceServers: [...STUN_SERVERS, ...turnServers], iceTransportPolicy: 'all' }
       : { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
   } catch {
     return { iceServers: STUN_SERVERS, iceTransportPolicy: 'all' };
