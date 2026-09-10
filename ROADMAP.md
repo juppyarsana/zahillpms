@@ -654,6 +654,48 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
+## 🔵 Room Display Kiosk APK + Android TV launcher (native-app track — planning only)
+
+> Full plan in `ROOM_DISPLAY_KIOSK_PLAN.md` at the repo root. Nothing built yet.
+
+- **Problem:** Room Display currently runs as a bare PWA in the tablet browser — no
+  OS-level battery/health access, and no way to lock a guest out of the rest of the
+  tablet. 35 rooms, each with a tablet; also an Android TV per room.
+- **Decided approach — new `room-display-kiosk/` APK (greenfield):** native Android
+  WebView wrapper around the existing Room Display PWA URL. Device Owner + Lock Task
+  API (`startLockTask()`) for kiosk lock-down — Google-native COSU, zero licensing
+  cost, no MDM required. `BatteryManager` bridged into the WebView via
+  `@JavascriptInterface`. Sideload + `dpm set-device-owner` provisioning (no server).
+  `BOOT_COMPLETED` receiver + Home-activity registration for auto-relaunch. Hidden
+  PIN-protected `clearDeviceOwnerApp()` release screen.
+- **Telemetry is part of Phase 1, not deferred:** the APK reads battery, charging,
+  network type, `internet_ok` (validated), wifi SSID/BSSID/RSSI/link-speed/band, IP,
+  storage, uptime, app + WebView + OS/model — and (a) bridges it into the Room Display
+  PWA and (b) posts it via a dedicated `POST /api/display/room/:roomId/telemetry`
+  (`authDisplay`, no module gate), which upserts a new `property_id`-scoped
+  `room_display_devices` table (migration 052; most columns nullable). PMS Dashboard
+  Live Unit Status tiles + `UnitCard` popover show a low-battery / offline /
+  no-internet badge + wifi SSID & signal. "Offline" = `last_seen_at` > ~15 min. SSID/RSSI
+  need location permission for a normal app but a Device Owner app is exempt (Phase 2+).
+- **MDM (Headwind Community, self-hosted) deferred to Phase 3 / second client** — used
+  only for OTA app-push, QR enrolment, and a richer standalone fleet dashboard in
+  "Application mode"; lock-down always stays in our own Device Owner code (Headwind COSU
+  lock-down is Enterprise-only). Basic battery/online status does NOT wait for it.
+- **Android TV = Phase 4, an update to the existing `tv-screensaver/` APK, not a new
+  project.** The `DreamService` screensaver (`com.zahill.tvscreensaver`,
+  `ZahillDreamService` → WebView of `tv-display/`) already exists. Phase 4 only adds a
+  launcher activity + multi-app Lock Task whitelist to that same project, and only
+  after the Room Display tablet APK is built and stable. OTT apps are launched via
+  intents, never embedded (Widevine/DRM).
+- **Build order:** (1) new APK: WebView + battery bridge + backend telemetry pipeline
+  (`room_display_devices` migration, `POST /telemetry`, Dashboard badges), test on
+  personal tablet, no device-owner. (2) same APK: DeviceAdmin + device-owner + Lock Task
+  + boot receiver + PIN release. (3) Headwind (OTA push, QR enrol, richer fleet
+  dashboard). (4) TV launcher on `tv-screensaver/`.
+- Status: 🔵 Not started. Plan written 2026-09-11.
+
+---
+
 ## ✅ Housekeeping Room Status (checkout-cleaning flow)
 
 Implemented 2026-09-09, **migration 051**. New `units.housekeeping_status`

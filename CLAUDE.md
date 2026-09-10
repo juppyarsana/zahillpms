@@ -332,6 +332,8 @@ Sidebar layout: `.sidebar-nav` (flex:1, `min-height:0`, its own `overflow-y:auto
 
 Each unit can have **two displays** with distinct, complementary roles, plus two property-wide kiosk/guest apps (not per-unit): Kitchen Display and Resto Ordering.
 
+**Native-app track (planning only, nothing built):** `ROOM_DISPLAY_KIOSK_PLAN.md` at the repo root is the plan for wrapping Room Display in a native Android kiosk APK (new greenfield `room-display-kiosk/` — WebView + Device Owner/Lock Task lock-down + `BatteryManager` bridge) and, later, adding a launcher + Lock Task to the **existing** `tv-screensaver/` APK for the Android TV. Order: (1) Room Display APK — WebView + battery bridge **+ backend telemetry** (new `property_id`-scoped `room_display_devices` table, `POST /api/display/room/:roomId/telemetry` on `authDisplay` with no module gate, APK posts directly on interval; PMS Dashboard Live Unit Status tiles/`UnitCard` show battery + offline badge); (2) same APK — device-owner lock-down + boot relaunch + PIN release; (3) Headwind MDM Community for OTA push / QR enrol / richer fleet dashboard; (4) TV launcher on `tv-screensaver/`. Basic per-tablet battery/online status is Phase 1, not Headwind. See `ROADMAP.md` for the summary.
+
 ### 1. Room Display
 **Primary purpose:** Device control — relay toggles, RGB LED, AC via IR blaster
 **Secondary:** Shows guest name and stay dates at a glance; guest self-ordering (see below); housekeeping marks the room clean after checkout from the idle screen (see below)
