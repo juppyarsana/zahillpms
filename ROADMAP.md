@@ -650,13 +650,41 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 052
+## Next migration number: 053
 
 ---
 
-## 🔵 Room Display Kiosk APK + Android TV launcher (native-app track — planning only)
+## 🟡 Room Display Kiosk APK + Android TV launcher (native-app track — Phase 1 built)
 
-> Full plan in `ROOM_DISPLAY_KIOSK_PLAN.md` at the repo root. Nothing built yet.
+> Full plan in `ROOM_DISPLAY_KIOSK_PLAN.md` at the repo root. **Phase 1 built
+> 2026-09-11** (migration 052). Phases 2–4 not started.
+
+**Phase 1 shipped + verified end-to-end on a real tablet (Samsung Galaxy Tab A9,
+Android 16) — telemetry reaches the Dashboard, PWA loads fullscreen, kiosk chip shows:**
+- New `room-display-kiosk/` Android project (mirrors `tv-screensaver/` toolchain —
+  AGP 8.3.2 / Kotlin 1.9.25 / Gradle 8.7 / compileSdk 35, package
+  `com.zahill.roomdisplay`). `MainActivity` = fullscreen landscape WebView of the
+  PWA + `window.AndroidKiosk` bridge + `mediaPlaybackRequiresUserGesture=false` +
+  `onReceivedError` reconnect overlay + 5-tap corner → `SettingsActivity`. No
+  device-owner / lock-task / boot receiver yet. `TelemetryScheduler` (plain
+  `ScheduledExecutorService` + `HttpURLConnection`, zero new deps) POSTs every 2 min
+  + on battery/connectivity change while the activity is started.
+- Migration `052_room_display_devices.sql` — `property_id`-scoped, keyed
+  `(property_id, controller_id)`, ~21 nullable telemetry columns + `last_seen_at`.
+- `POST /api/display/room/:roomId/telemetry` in `routes/display.js` (`authDisplay`,
+  no moduleGuard). Whitelisted/clamped fields, dynamic-column upsert `ON CONFLICT
+  DO UPDATE` so partial payloads don't null unsent columns. Verified: valid/partial/
+  empty POST, clamp, unknown-key drop, 401, 404.
+- `routes/dashboard.js` occupancy query `LEFT JOIN room_display_devices` → `tablet_*`
+  columns. `client/src/pages/Dashboard.jsx`: `tabletHealth()`/`wifiBars()`/`relTime()`,
+  `UnitTile` gets 📵/⚠️/🔋 badge (`.unit-tile-badge.warn`), `UnitCard` gets a "Room
+  tablet" section (battery, wifi SSID+bars, last-seen, app/WebView version).
+- `room-display/`: `src/kiosk.js` (`isKiosk`, `getKioskStats`, `bootstrapKiosk` URL
+  cred-seeding, `startKioskStatsWatcher`), `bootstrapKiosk()` in `main.jsx` before
+  React, `KioskChip.jsx` in the Idle/Guest sidebars (self-hides in a browser),
+  Device section in `DebugMenu.jsx`. `client` + `room-display` both build clean.
+
+> Full plan in `ROOM_DISPLAY_KIOSK_PLAN.md` at the repo root.
 
 - **Problem:** Room Display currently runs as a bare PWA in the tablet browser — no
   OS-level battery/health access, and no way to lock a guest out of the rest of the
@@ -675,7 +703,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
   (`authDisplay`, no module gate), which upserts a new `property_id`-scoped
   `room_display_devices` table (migration 052; most columns nullable). PMS Dashboard
   Live Unit Status tiles + `UnitCard` popover show a low-battery / offline /
-  no-internet badge + wifi SSID & signal. "Offline" = `last_seen_at` > ~15 min. SSID/RSSI
+  no-internet badge + wifi SSID & signal. "Offline" = `last_seen_at` > ~6 min. SSID/RSSI
   need location permission for a normal app but a Device Owner app is exempt (Phase 2+).
 - **MDM (Headwind Community, self-hosted) deferred to Phase 3 / second client** — used
   only for OTA app-push, QR enrolment, and a richer standalone fleet dashboard in
@@ -687,12 +715,13 @@ Per-property tax and service charge rates, applied on folio and invoice.
   launcher activity + multi-app Lock Task whitelist to that same project, and only
   after the Room Display tablet APK is built and stable. OTT apps are launched via
   intents, never embedded (Widevine/DRM).
-- **Build order:** (1) new APK: WebView + battery bridge + backend telemetry pipeline
-  (`room_display_devices` migration, `POST /telemetry`, Dashboard badges), test on
-  personal tablet, no device-owner. (2) same APK: DeviceAdmin + device-owner + Lock Task
-  + boot receiver + PIN release. (3) Headwind (OTA push, QR enrol, richer fleet
-  dashboard). (4) TV launcher on `tv-screensaver/`.
-- Status: 🔵 Not started. Plan written 2026-09-11.
+- **Build order:** (1) ✅ new APK: WebView + battery bridge + backend telemetry pipeline
+  (`room_display_devices` migration, `POST /telemetry`, Dashboard badges). (2) same APK:
+  DeviceAdmin + device-owner + Lock Task + boot receiver + PIN release. (3) Headwind (OTA
+  push, QR enrol, richer fleet dashboard). (4) TV launcher on `tv-screensaver/`.
+- **Next:** Phase 2 — Device Owner + Lock Task + `BOOT_COMPLETED` receiver + PIN release
+  screen (see plan). Also: bump `versionName` per APK release; decide prod vs per-property
+  display URL before wider rollout.
 
 ---
 

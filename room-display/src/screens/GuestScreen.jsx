@@ -8,6 +8,7 @@ import ExploreTab from '../components/ExploreTab';
 import OrderFoodTab from '../components/OrderFoodTab';
 import BookActivityTab from '../components/BookActivityTab';
 import YourOrdersTab from '../components/YourOrdersTab';
+import KioskChip from '../components/KioskChip';
 
 const ORDERS_POLL_MS = 15000;
 
@@ -110,6 +111,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         </nav>
 
         <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+          <KioskChip />
           <p className="text-ghost text-xs font-mono">{__APP_COMMIT__}</p>
         </div>
       </aside>

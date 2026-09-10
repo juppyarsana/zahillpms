@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zahill Room Display</string>
+    <string name="settings_title">Room Display Kiosk — Settings</string>
+    <string name="saved_message">Configuration saved</string>
+    <string name="validation_error">Room ID and display token are required</string>
+    <string name="current_configuration">Room %1$s · %2$s</string>
+    <string name="reconnecting">Reconnecting…</string>
+    <string name="location_hint">Wi-Fi name needs Location permission + Location services on (Phase 1 only). Without it, wifi SSID reports as blank.</string>
+    <string name="location_granted">Location permission granted — Wi-Fi name will be reported.</string>
+</resources>

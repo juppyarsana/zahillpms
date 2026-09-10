@@ -30,12 +30,23 @@ router.get('/summary', auth, async (req, res) => {
           (SELECT nb.check_in_date - CURRENT_DATE FROM bookings nb
            WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','pending')
              AND nb.check_in_date > CURRENT_DATE
-           ORDER BY nb.check_in_date LIMIT 1) as gap_nights
+           ORDER BY nb.check_in_date LIMIT 1) as gap_nights,
+          rdd.battery_level as tablet_battery_level,
+          rdd.battery_charging as tablet_battery_charging,
+          rdd.power_source as tablet_power_source,
+          rdd.network_type as tablet_network_type,
+          rdd.internet_ok as tablet_internet_ok,
+          rdd.wifi_ssid as tablet_wifi_ssid,
+          rdd.wifi_rssi as tablet_wifi_rssi,
+          rdd.app_version as tablet_app_version,
+          rdd.webview_version as tablet_webview_version,
+          rdd.last_seen_at as tablet_last_seen_at
         FROM units u
         LEFT JOIN bookings b ON b.unit_id = u.id AND b.property_id = u.property_id AND b.status = 'checked_in'
         LEFT JOIN guests g ON b.guest_id = g.id
         LEFT JOIN bookings arr ON arr.unit_id = u.id AND arr.property_id = u.property_id AND arr.status IN ('confirmed','pending') AND arr.check_in_date = CURRENT_DATE
         LEFT JOIN guests ag ON arr.guest_id = ag.id
+        LEFT JOIN room_display_devices rdd ON rdd.controller_id = u.controller_id AND rdd.property_id = u.property_id
         WHERE u.property_id = $1
         ORDER BY u.name
       `, [req.propertyId]),

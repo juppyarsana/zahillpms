@@ -40,7 +40,7 @@ function ChBadge({ source }) {
 }
 
 /* ─── unit status card ─────────────────────────────────── */
-function UnitCard({ unit, flags, onChanged }) {
+function UnitCard({ unit, flags, health, onChanged }) {
   const { hasModule } = useAuth();
   const { callRoom } = useCall();
   const [calling, setCalling] = useState(false);
@@ -51,6 +51,18 @@ function UnitCard({ unit, flags, onChanged }) {
   const [messageError, setMessageError] = useState('');
   const [hkConfirm, setHkConfirm] = useState(false);
   const [hkBusy, setHkBusy] = useState(false);
+  const [tabletConfirm, setTabletConfirm] = useState(false);
+  const [tabletBusy, setTabletBusy] = useState(false);
+
+  async function removeTablet() {
+    setTabletBusy(true);
+    try {
+      await api.delete(`/api/units/${unit.id}/tablet`);
+      setTabletConfirm(false);
+      onChanged?.();
+    } catch { /* leave confirm open to retry */ }
+    setTabletBusy(false);
+  }
 
   async function setHousekeeping(status) {
     setHkBusy(true);
@@ -146,6 +158,54 @@ function UnitCard({ unit, flags, onChanged }) {
               🧹 Clean requested
             </span>
           )}
+        </div>
+      )}
+
+      {/* Room tablet — telemetry from the room-display-kiosk Android APK. */}
+      {health && (
+        <div style={{ marginBottom: 8, padding: '6px 8px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: health.offline ? '#B91C1C' : '#475569' }}>
+            📱 Room tablet
+            {health.offline && <span style={{ color: '#B91C1C' }}>· 📵 offline, last seen {relTime(health.lastSeen)}</span>}
+          </div>
+          {!health.offline && (
+            <div style={{ fontSize: 11, color: '#64748B', marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
+              {health.battery != null && (
+                <span style={{ color: health.lowBattery ? '#B91C1C' : undefined, fontWeight: health.lowBattery ? 700 : undefined }}>
+                  {health.charging ? '⚡' : '🔋'} {health.battery}%{health.charging ? ' charging' : ''}
+                </span>
+              )}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                {health.noInternet
+                  ? '⚠️ wifi, no internet'
+                  : health.networkType === 'wifi'
+                    ? <>📶 {health.ssid || 'wifi'} {health.bars != null && <WifiBars bars={health.bars} />}</>
+                    : health.networkType && health.networkType !== 'none'
+                      ? `📶 ${health.networkType}`
+                      : '📵 no network'}
+              </span>
+              <span>seen {relTime(health.lastSeen)}</span>
+              {health.appVersion && <span style={{ color: '#94A3B8' }}>v{health.appVersion}{health.webviewVersion ? ` · WebView ${health.webviewVersion}` : ''}</span>}
+            </div>
+          )}
+          {onChanged && (tabletConfirm ? (
+            <div style={{ display: 'flex', gap: 6, marginTop: 5, alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: '#6B7280' }}>Remove this tablet record?</span>
+              <button onClick={(e) => { e.stopPropagation(); removeTablet(); }} disabled={tabletBusy}
+                style={{ background: 'none', border: 'none', padding: 0, fontSize: 10, color: '#B91C1C', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                {tabletBusy ? '…' : 'Yes, remove'}
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setTabletConfirm(false); }}
+                style={{ background: 'none', border: 'none', padding: 0, fontSize: 10, color: '#6B7280', cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); setTabletConfirm(true); }}
+              style={{ background: 'none', border: 'none', padding: 0, marginTop: 5, fontSize: 10, color: '#9CA3AF', cursor: 'pointer', textDecoration: 'underline' }}>
+              {health.offline ? 'Remove tablet (moved / retired)' : 'Remove tablet record'}
+            </button>
+          ))}
         </div>
       )}
 
@@ -354,6 +414,76 @@ function unitRequestFlags(guestRequests) {
   return map;
 }
 
+/* ─── Room Display tablet telemetry ────────────────────────
+   Fed by room-display-kiosk/ (the Android kiosk APK) via
+   POST /api/display/room/:roomId/telemetry -> room_display_devices,
+   LEFT JOINed onto the occupancy query as tablet_* columns. */
+
+// 3 missed ~2-min telemetry ticks = "we've lost this tablet".
+const TABLET_STALE_MS = 6 * 60 * 1000;
+
+function wifiBars(rssi) {
+  if (rssi == null) return null;
+  if (rssi >= -55) return 4;
+  if (rssi >= -65) return 3;
+  if (rssi >= -75) return 2;
+  if (rssi >= -85) return 1;
+  return 0;
+}
+
+// 4 CSS-drawn signal bars (unicode block chars render as tofu in some fonts).
+function WifiBars({ bars }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'flex-end', gap: 1.5, height: 10 }}>
+      {[3, 6, 8, 10].map((h, i) => (
+        <span
+          key={i}
+          style={{
+            width: 2.5,
+            height: h,
+            borderRadius: 1,
+            background: i < bars ? (bars <= 1 ? '#DC2626' : '#64748B') : '#CBD5E1',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+// null when no tablet is assigned or none has ever reported in.
+function tabletHealth(u) {
+  if (!u.controller_id || !u.tablet_last_seen_at) return null;
+  const ageMs = Date.now() - new Date(u.tablet_last_seen_at).getTime();
+  const offline = ageMs > TABLET_STALE_MS;
+  const battery = u.tablet_battery_level;
+  return {
+    offline,
+    battery,
+    charging: u.tablet_battery_charging === true,
+    powerSource: u.tablet_power_source,
+    noInternet: !offline && u.tablet_internet_ok === false,
+    lowBattery: !offline && battery != null && battery <= 20 && u.tablet_battery_charging !== true,
+    networkType: u.tablet_network_type,
+    ssid: u.tablet_wifi_ssid,
+    rssi: u.tablet_wifi_rssi,
+    bars: wifiBars(u.tablet_wifi_rssi),
+    lastSeen: u.tablet_last_seen_at,
+    appVersion: u.tablet_app_version,
+    webviewVersion: u.tablet_webview_version,
+  };
+}
+
 // mirrors UnitCard's branch order
 function tileState(u) {
   if (u.status === 'maintenance') return 'maintenance';
@@ -415,7 +545,7 @@ function shortRoomName(name, type) {
   return w && name.startsWith(w) ? (name.slice(w.length).trim() || name) : name;
 }
 
-function UnitPopover({ unit, anchor, flags, onClose, onChanged }) {
+function UnitPopover({ unit, anchor, flags, health, onClose, onChanged }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -430,13 +560,13 @@ function UnitPopover({ unit, anchor, flags, onClose, onChanged }) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
         <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-          <div className="modal-body"><UnitCard unit={unit} flags={flags} onChanged={onChanged} /></div>
+          <div className="modal-body"><UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} /></div>
         </div>
       </div>
     );
   }
 
-  const H = flags ? 240 : 200;
+  const H = (flags ? 240 : 200) + (health ? 60 : 0);
   const W = 300, pad = 8;
   const left = Math.min(Math.max(anchor.left, pad), window.innerWidth - W - pad);
   const top = anchor.bottom + H + pad > window.innerHeight ? anchor.top - H - 6 : anchor.bottom + 6;
@@ -445,7 +575,7 @@ function UnitPopover({ unit, anchor, flags, onClose, onChanged }) {
       <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={onClose} />
       <div className="card" style={{ position: 'fixed', top, left, width: W, zIndex: 200, boxShadow: 'var(--shadow-md)', padding: 12 }}
         onClick={e => e.stopPropagation()}>
-        <UnitCard unit={unit} flags={flags} />
+        <UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} />
       </div>
     </>
   );
@@ -467,21 +597,34 @@ function TypeCounts({ counts, filter }) {
   );
 }
 
-function UnitTile({ unit, flags, selected, onClick }) {
+function UnitTile({ unit, flags, health, selected, onClick }) {
   const state = tileState(unit);
+  // Only the single most severe tablet issue gets a badge — offline wins.
+  const tabletBadge = health?.offline
+    ? { icon: '📵', title: 'Tablet offline' }
+    : health?.noInternet
+      ? { icon: '⚠️', title: 'Tablet: wifi but no internet' }
+      : health?.lowBattery
+        ? { icon: '🔋', title: `Tablet battery ${health.battery}%` }
+        : null;
+  const title = `${unit.name}`
+    + (flags?.dnd ? ' · Do Not Disturb' : '')
+    + (flags?.clean ? ' · Clean requested' : '')
+    + (tabletBadge ? ` · ${tabletBadge.title}` : '');
   return (
     <button
       className={`unit-tile${selected ? ' selected' : ''}`}
       style={{ background: TILE_BG[state], color: TILE_FG[state] }}
-      title={`${unit.name}${flags?.dnd ? ' · Do Not Disturb' : ''}${flags?.clean ? ' · Clean requested' : ''}`}
+      title={title}
       onClick={onClick}
     >
       <span className="unit-tile-icon">{TILE_ICON[state]}</span>
       <span className="unit-tile-num">{shortRoomName(unit.name, unit.type)}</span>
-      {flags && (
+      {(flags || tabletBadge) && (
         <span className="unit-tile-badges">
-          {flags.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
-          {flags.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
+          {flags?.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
+          {flags?.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
+          {tabletBadge && <span className="unit-tile-badge warn" title={tabletBadge.title}>{tabletBadge.icon}</span>}
         </span>
       )}
     </button>
@@ -550,6 +693,7 @@ function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
                   key={u.id}
                   unit={u}
                   flags={requestFlags.get(u.id)}
+                  health={tabletHealth(u)}
                   selected={selected?.unit.id === u.id}
                   onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
                 />
@@ -564,6 +708,7 @@ function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
           unit={selected.unit}
           anchor={selected.anchor}
           flags={requestFlags.get(selected.unit.id)}
+          health={tabletHealth(selected.unit)}
           onClose={() => setSelected(null)}
           onChanged={onChanged}
         />

@@ -11,6 +11,55 @@ const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
 const opsGate = moduleGuard('operations');
 
+// --- Telemetry field coercion (POST /room/:roomId/telemetry) ---------------
+const clampInt = (v, lo, hi) => {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : undefined;
+};
+const clampNum = (v, lo, hi) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : undefined;
+};
+const asBool = (v) => (typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : undefined);
+const asEnum = (v, allowed) => (allowed.includes(v) ? v : undefined);
+const asStr = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
+const cleanSsid = (v) => {
+  const s = asStr(v, 66);
+  if (!s) return undefined;
+  const u = s.replace(/^"|"$/g, '');
+  return (u === '<unknown ssid>' || u === '0x' || !u) ? null : u.slice(0, 64);
+};
+const cleanBssid = (v) => {
+  const s = asStr(v, 17);
+  return (!s || s === '02:00:00:00:00:00') ? null : s;
+};
+
+// Only these body keys are ever written. Absent key -> row value untouched
+// (partial payloads are fine). Present-but-invalid -> silently dropped.
+// Explicit null -> written through (clears the column).
+const TELEMETRY_FIELDS = {
+  battery_level: (v) => clampInt(v, 0, 100),
+  battery_charging: asBool,
+  power_source: (v) => asEnum(v, ['ac', 'usb', 'wireless', 'none']),
+  battery_temp_c: (v) => clampNum(v, -20, 100),
+  network_type: (v) => asEnum(v, ['wifi', 'ethernet', 'cellular', 'none']),
+  internet_ok: asBool,
+  wifi_ssid: cleanSsid,
+  wifi_bssid: cleanBssid,
+  wifi_rssi: (v) => clampInt(v, -120, 0),
+  wifi_link_speed_mbps: (v) => clampInt(v, 0, 10000),
+  wifi_frequency_mhz: (v) => clampInt(v, 0, 7200),
+  ip_address: (v) => asStr(v, 45),
+  storage_free_mb: (v) => clampInt(v, 0, 50000000),
+  storage_total_mb: (v) => clampInt(v, 0, 50000000),
+  uptime_seconds: (v) => clampInt(v, 0, 4000000000),
+  app_version: (v) => asStr(v, 32),
+  webview_version: (v) => asStr(v, 64),
+  android_version: (v) => asStr(v, 32),
+  device_model: (v) => asStr(v, 64),
+  screen_on: asBool,
+};
+
 // GET /api/display/room/:roomId/state
 // roomId = controller_id (e.g. "1")
 router.get('/room/:roomId/state', authDisplay, async (req, res) => {
@@ -215,6 +264,53 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
     } catch (mqttErr) {
       console.warn('[DISPLAY] MQTT publish failed:', mqttErr.message);
     }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/display/room/:roomId/telemetry
+// Room Display Kiosk APK -> device health. Its own channel, NOT piggybacked
+// on GET /state's poll: a direct APK POST still reports "tablet alive,
+// battery 12%" when the web app fails to load. last_seen_at is the heartbeat.
+// Body: any subset of TELEMETRY_FIELDS. Empty body still bumps last_seen_at.
+router.post('/room/:roomId/telemetry', authDisplay, async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const { rows } = await db.query(
+      'SELECT id FROM units WHERE controller_id = $1 AND property_id = $2',
+      [roomId, req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
+
+    const body = req.body || {};
+    const cols = [];
+    const vals = [];
+    for (const [key, coerce] of Object.entries(TELEMETRY_FIELDS)) {
+      if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+      const raw = body[key];
+      const clean = raw === null ? null : coerce(raw);
+      if (clean === undefined) continue;
+      cols.push(key);
+      vals.push(clean);
+    }
+
+    // Dynamic column list — a fixed SQL string would null out every column
+    // the tablet didn't send on this particular POST.
+    const insertCols = ['property_id', 'controller_id', ...cols, 'last_seen_at', 'updated_at'];
+    const placeholders = ['$1', '$2', ...cols.map((_, i) => `$${i + 3}`), 'NOW()', 'NOW()'];
+    const setClauses = [
+      ...cols.map((c) => `${c} = EXCLUDED.${c}`),
+      'last_seen_at = NOW()',
+      'updated_at = NOW()',
+    ];
+    await db.query(
+      `INSERT INTO room_display_devices (${insertCols.join(', ')})
+       VALUES (${placeholders.join(', ')})
+       ON CONFLICT (property_id, controller_id) DO UPDATE SET ${setClauses.join(', ')}`,
+      [req.propertyId, roomId, ...vals]
+    );
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

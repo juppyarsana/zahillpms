@@ -1,7 +1,12 @@
 # Room Display Kiosk APK & Android TV Launcher — Implementation Plan
 
-> Status: planning only, nothing built yet. This file is the handoff record for the
-> native-app track — see also the "Room Display Kiosk APK" section in `ROADMAP.md`.
+> Status: **Phase 1 built + verified on a real tablet 2026-09-11** (migration 052) —
+> `room-display-kiosk/` Android project, `POST /telemetry` endpoint, `room_display_devices`
+> table, Dashboard badges, PWA kiosk chip. APK built (JDK 21 + auto-downloaded android-35)
+> and run on a Samsung Galaxy Tab A9 (Android 16): PWA loads fullscreen, kiosk chip shows,
+> full telemetry (battery/wifi SSID/storage/uptime/WebView version) reaches the Dashboard.
+> Telemetry interval is 2 min; Dashboard marks a tablet offline after ~6 min. Phases 2–4
+> not started. See also the "Room Display Kiosk APK" section in `ROADMAP.md`.
 
 ## Context
 - 35-room property; each room has a tablet running **Room Display** (currently the
@@ -77,7 +82,7 @@ read natively, then used **two ways** — both in Phase 1:
      `authDisplay` (per-property `display_token`), **no `moduleGuard`** (device health is
      always-on, like `GET /state`). Upserts the row by `(property_id, controller_id)`.
    - **Transport** — a **dedicated `POST /telemetry` from the APK itself** (it has the
-     stored `display_token` + `roomId`), on an interval (~5 min) plus on significant
+     stored `display_token` + `roomId`), on an interval (~2 min) plus on significant
      change (charging state flip, battery crosses a threshold, network up/down). Kept as
      its own channel — **not** piggybacked onto the PWA's existing `GET /state` 10s poll:
      direct-from-APK still reports "tablet online, battery 12%" even when the web app
@@ -88,7 +93,7 @@ read natively, then used **two ways** — both in Phase 1:
      low battery, offline, or "on wifi but no internet" (`internet_ok = false`). The
      `UnitCard` popover shows battery % + charging, wifi SSID + signal (derive bars from
      `wifi_rssi`), last-seen, and app/WebView version. "Offline" = `last_seen_at` older
-     than ~15 min (3 missed intervals).
+     than ~6 min (3 missed intervals).
 - **What's still deferred to Phase 3 (Headwind):** OTA app-push, QR enrolment, and a
   richer standalone fleet dashboard. The basic "is this tablet alive and charged" view
   lands in Phase 1 via the pipeline above — it does not wait for Headwind.
@@ -171,15 +176,20 @@ order:**
 
 ## Build Order
 
-**Phase 1 — Data bridge + telemetry (new `room-display-kiosk/` APK + backend)**
-Build the wrapper APK: fullscreen WebView pointed at the Room Display PWA URL +
-`@JavascriptInterface` bridge exposing battery / charging / network state to the PWA.
-**Plus** the backend telemetry pipeline (migration `room_display_devices`, `POST
-/telemetry` endpoint, APK posts directly on interval + on change) and the PMS Dashboard
-badges/popover fields that read it. Sideload and test on the personal tablet — no factory
-reset, no device-owner needed yet. Goal: the battery indicator updates in the Room
-Display PWA UI **and** the tablet shows up with live battery/online status on the PMS
-Dashboard.
+**Phase 1 — Data bridge + telemetry (new `room-display-kiosk/` APK + backend) — ✅ BUILT 2026-09-11**
+Wrapper APK (`room-display-kiosk/`, `com.zahill.roomdisplay`): fullscreen landscape WebView
+of the Room Display PWA + `window.AndroidKiosk` bridge (`isKiosk`/`getConfig`/
+`getDeviceStats`/`openSettings`), `SettingsActivity` for Room ID / token / URL, a 5-tap
+corner escape hatch, `onReceivedError` reconnect overlay, `mediaPlaybackRequiresUserGesture
+=false`. `TelemetryScheduler` (`ScheduledExecutorService` + `HttpURLConnection`, no new
+deps) POSTs every 2 min + on battery/connectivity change while started. Backend: migration
+`052_room_display_devices.sql`, `POST /api/display/room/:roomId/telemetry` (whitelist +
+clamp + dynamic-column upsert), `dashboard/summary` LEFT JOIN → `tablet_*` columns. Client:
+`Dashboard.jsx` `tabletHealth()` + `UnitTile` badge + `UnitCard` "Room tablet" section.
+`room-display/`: `src/kiosk.js`, `bootstrapKiosk()` in `main.jsx`, `KioskChip.jsx`,
+`DebugMenu.jsx` Device section. **Still to do:** build the APK in Android Studio (this
+laptop lacks Android Studio + android-35 SDK — use the PC, same as `tv-screensaver/`),
+sideload to the test tablet, verify telemetry reaches the Dashboard.
 
 **Phase 2 — Lock-down + auto-launch (same APK)**
 Add `DeviceAdminReceiver`, claim device-owner via ADB (factory reset the test tablet

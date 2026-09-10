@@ -22,6 +22,15 @@ tv-screensaver/gradle/wrapper/tmp*/
 tv-screensaver/keystore.properties
 tv-screensaver/*.jks
 tv-screensaver/*.keystore
+room-display-kiosk/.gradle/
+room-display-kiosk/build/
+room-display-kiosk/app/build/
+room-display-kiosk/local.properties
+room-display-kiosk/*.zip
+room-display-kiosk/gradle/wrapper/tmp*/
+room-display-kiosk/keystore.properties
+room-display-kiosk/*.jks
+room-display-kiosk/*.keystore
 *.iml
 .idea/
 

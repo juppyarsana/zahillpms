@@ -130,6 +130,28 @@ router.patch('/:id/housekeeping', auth, async (req, res) => {
   }
 });
 
+// DELETE /api/units/:id/tablet — clear the room_display_devices telemetry
+// row for this unit's Room ID. Plain `auth` (like /housekeeping) — used
+// when a kiosk tablet is physically moved to another room, so front desk
+// can dismiss the now-permanently-"offline" ghost from the Dashboard.
+router.delete('/:id/tablet', auth, async (req, res) => {
+  try {
+    const { rows: unitRows } = await db.query(
+      'SELECT controller_id FROM units WHERE id = $1 AND property_id = $2',
+      [req.params.id, req.propertyId]
+    );
+    if (!unitRows[0]) return res.status(404).json({ error: 'Unit not found' });
+    if (!unitRows[0].controller_id) return res.json({ message: 'No tablet record' });
+    await db.query(
+      'DELETE FROM room_display_devices WHERE property_id = $1 AND controller_id = $2',
+      [req.propertyId, unitRows[0].controller_id]
+    );
+    res.json({ message: 'Tablet record removed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/units/:id  (owner only — blocked if active bookings exist)
 router.delete('/:id', auth, requireRole('owner'), async (req, res) => {
   try {
