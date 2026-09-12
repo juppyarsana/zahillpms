@@ -99,17 +99,35 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
       GROUP BY COALESCE(bs.label, nights.source, 'Unspecified')
     `, [month, year, req.propertyId]);
 
-    const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }] = await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ]);
+    // Expenses (Back Office Slice B) aren't night-based — recognized on the
+    // date incurred, same as ancillary/sales revenue above. Safe to query
+    // regardless of whether the property has back_office enabled: an
+    // unused table just returns 0, so Net Income quietly degrades to
+    // "= Total Revenue" rather than erroring for properties that don't use
+    // Expenses at all.
+    const expensesQ = db.query(`
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM expenses
+      WHERE property_id = $3 AND is_voided = false
+        AND EXTRACT(MONTH FROM incurred_on) = $1 AND EXTRACT(YEAR FROM incurred_on) = $2
+    `, [month, year, req.propertyId]);
+
+    const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }, { rows: [expenses] }] =
+      await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ, expensesQ]);
 
     const roomRev = parseFloat(room.room_revenue);
     const fnbRev = parseFloat(room.fnb_revenue);
     const ancRev = parseFloat(ancillary.ancillary_revenue);
+    const totalRevenue = roomRev + fnbRev + ancRev;
+    const expensesTotal = parseFloat(expenses.total);
     res.json({
       month, year,
       room_revenue: roomRev,
       fnb_revenue: fnbRev,
       ancillary_revenue: ancRev,
-      total_revenue: roomRev + fnbRev + ancRev,
+      total_revenue: totalRevenue,
+      expenses_total: expensesTotal,
+      net_income: totalRevenue - expensesTotal,
       bookings_count: parseInt(room.bookings_count),
       total_nights: parseInt(room.total_nights),
       daily_revenue: daily,

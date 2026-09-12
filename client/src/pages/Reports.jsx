@@ -330,6 +330,37 @@ export default function Reports() {
               </table>
             )}
           </div>
+
+          {/* ── Net income — lightweight P&L, not a full accounting system.
+              Expenses come from Back Office's Expenses log (if the property
+              uses it); degrades quietly to "= Total Revenue" for properties
+              that don't. ── */}
+          <div className="card" style={{ marginTop: 20 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>Net Income</div>
+            <div className="grid-3">
+              <div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>Total Revenue</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{fmtIDR(data.total_revenue)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>Expenses</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: data.expenses_total > 0 ? '#DC2626' : '#111' }}>
+                  {data.expenses_total > 0 ? `− ${fmtIDR(data.expenses_total)}` : fmtIDR(0)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#6B7280' }}>Net Income</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: data.net_income >= 0 ? '#16A34A' : '#DC2626' }}>
+                  {fmtIDR(data.net_income)}
+                </div>
+              </div>
+            </div>
+            {data.expenses_total === 0 && (
+              <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>
+                No expenses logged this month — Net Income currently just mirrors Total Revenue. Record costs under Back Office → Expenses to see a real profit figure here.
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

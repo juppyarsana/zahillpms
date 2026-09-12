@@ -20,6 +20,27 @@ const PO_STATUS_BADGE = { draft: 'gray', pending_approval: 'amber', approved: 'b
 // Hex equivalents of the badge colors above, for the row's left-edge accent stripe.
 const PO_STATUS_COLOR = { draft: '#9CA3AF', pending_approval: '#D97706', approved: '#2563EB', received: '#16A34A', cancelled: '#DC2626' };
 
+// Shared CSV/PDF-style download helper — same blob-then-click pattern
+// Agents.jsx already uses for invoice PDFs, just swapped to text/csv.
+async function downloadCsv(url, filename) {
+  const r = await api.get(url, { responseType: 'blob' });
+  const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
+const EXPENSE_CATEGORY_LABELS = {
+  utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
+  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', other: 'Other',
+};
+const EXPENSE_CATEGORY_COLORS = {
+  utilities: 'blue', laundry: 'purple', maintenance: 'orange', staff: 'pink',
+  supplies: 'amber', marketing: 'green', admin_fees: 'gray', other: 'gray',
+};
+const EMPTY_EXPENSE = { category: 'utilities', amount: '', incurred_on: new Date().toISOString().slice(0, 10), payment_method: '', supplier_id: '', description: '', reference: '' };
+
 function materialStockBadge(m) {
   if (m.stock_quantity <= 0) return <span className="badge badge-red">Out of stock</span>;
   if (m.low_stock_threshold != null && Number(m.stock_quantity) <= Number(m.low_stock_threshold)) {
@@ -36,18 +57,20 @@ export default function BackOffice() {
       <div className="page-header">
         <div>
           <div className="page-title">Back Office</div>
-          <div className="page-subtitle">Suppliers &amp; Purchasing · Owner only</div>
+          <div className="page-subtitle">Suppliers, Purchasing &amp; Expenses · Owner only</div>
         </div>
         <div className="flex gap-2">
           <button className={`btn btn-sm ${tab === 'suppliers' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('suppliers')}>🚚 Suppliers</button>
           <button className={`btn btn-sm ${tab === 'raw_materials' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('raw_materials')}>🌾 Raw Materials</button>
           <button className={`btn btn-sm ${tab === 'purchase_orders' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('purchase_orders')}>📦 Purchase Orders</button>
+          <button className={`btn btn-sm ${tab === 'expenses' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('expenses')}>🧾 Expenses</button>
         </div>
       </div>
 
       {tab === 'suppliers' && <SuppliersTab />}
       {tab === 'raw_materials' && <RawMaterialsTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
+      {tab === 'expenses' && <ExpensesTab />}
     </div>
   );
 }
@@ -383,7 +406,10 @@ function PurchaseOrdersTab() {
             {Object.entries(PO_STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </div>
-        <button className="btn btn-primary" onClick={() => setNewModal(true)}>+ New Purchase Order</button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={() => downloadCsv(`/api/purchasing/purchase-orders/export${statusFilter ? `?status=${statusFilter}` : ''}`, 'purchase-orders.csv')}>⬇ Export CSV</button>
+          <button className="btn btn-primary" onClick={() => setNewModal(true)}>+ New Purchase Order</button>
+        </div>
       </div>
 
       {toast && <div className={`alert ${toast.type === 'error' ? 'alert-error' : 'alert-success'}`}>{toast.msg}</div>}
@@ -659,6 +685,169 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
           <button className="btn btn-primary" onClick={submit} disabled={saving || outstanding.length === 0}>{saving ? 'Saving…' : 'Confirm Receipt'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── Expenses ─────────────────────────────
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function ExpensesTab() {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [category, setCategory] = useState('');
+  const [expenses, setExpenses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState(EMPTY_EXPENSE);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i);
+
+  function load() {
+    const params = { month, year };
+    if (category) params.category = category;
+    api.get('/api/expenses', { params }).then(r => setExpenses(r.data)).catch(() => {});
+  }
+  useEffect(() => { load(); }, [month, year, category]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});
+    api.get('/api/settings/payment-methods').then(r => setPaymentMethods(r.data.filter(m => m.is_active))).catch(() => setPaymentMethods([]));
+  }, []);
+
+  function openAdd() { setForm({ ...EMPTY_EXPENSE, incurred_on: new Date().toISOString().slice(0, 10) }); setError(''); setModal(true); }
+
+  async function save() {
+    const amt = parseFloat(form.amount);
+    if (!Number.isFinite(amt) || amt <= 0) { setError('Enter a valid amount'); return; }
+    setSaving(true);
+    try {
+      await api.post('/api/expenses', {
+        ...form,
+        amount: amt,
+        payment_method: form.payment_method || null,
+        supplier_id: form.supplier_id || null,
+      });
+      setModal(false);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function voidExpense(e) {
+    if (!confirm('Void this expense? It stays on record but is removed from totals.')) return;
+    await api.delete(`/api/expenses/${e.id}`);
+    load();
+  }
+
+  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
+
+  function exportUrl() {
+    const params = new URLSearchParams({ month, year });
+    if (category) params.set('category', category);
+    return `/api/expenses/export?${params.toString()}`;
+  }
+
+  return (
+    <div>
+      <div className="flex" style={{ justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div className="flex gap-2">
+          <select className="form-select" style={{ width: 140 }} value={month} onChange={e => setMonth(Number(e.target.value))}>
+            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select className="form-select" style={{ width: 180 }} value={category} onChange={e => setCategory(e.target.value)}>
+            <option value="">All categories</option>
+            {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={() => downloadCsv(exportUrl(), `expenses-${year}-${String(month).padStart(2, '0')}.csv`)}>⬇ Export CSV</button>
+          <button className="btn btn-primary" onClick={openAdd}>+ Add Expense</button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 12, padding: 14 }}>
+        <div className="stat-label">Total — {MONTHS[month - 1]} {year}{category ? ` · ${EXPENSE_CATEGORY_LABELS[category]}` : ''}</div>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtIDR(total)}</div>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Paid Via</th><th>Supplier</th><th>Reference</th><th></th></tr></thead>
+            <tbody>
+              {expenses.map(e => (
+                <tr key={e.id}>
+                  <td>{fmtDate(e.incurred_on)}</td>
+                  <td><span className={`badge badge-${EXPENSE_CATEGORY_COLORS[e.category]}`}>{EXPENSE_CATEGORY_LABELS[e.category]}</span></td>
+                  <td style={{ fontWeight: 600 }}>{fmtIDR(e.amount)}</td>
+                  <td>{e.payment_method || <span className="text-muted">—</span>}</td>
+                  <td>{e.supplier_name || <span className="text-muted">—</span>}</td>
+                  <td>{e.reference || <span className="text-muted">—</span>}</td>
+                  <td><button className="btn btn-sm btn-secondary" onClick={() => voidExpense(e)}>Void</button></td>
+                </tr>
+              ))}
+              {expenses.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No expenses recorded for this period</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modal && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Add Expense</div>
+              <button className="btn btn-icon" onClick={() => setModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {error && <div className="alert alert-error">{error}</div>}
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Category *</label>
+                  <select className="form-select" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                    {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label className="form-label">Amount (IDR) *</label><input className="form-input" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Date</label><input className="form-input" type="date" value={form.incurred_on} onChange={e => setForm(f => ({ ...f, incurred_on: e.target.value }))} /></div>
+                <div className="form-group"><label className="form-label">Paid via</label>
+                  <select className="form-select" value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}>
+                    <option value="">Not specified</option>
+                    {paymentMethods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group"><label className="form-label">Supplier / vendor</label>
+                <select className="form-select" value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))}>
+                  <option value="">None — one-off cost</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Reference</label><input className="form-input" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} placeholder="invoice / receipt #" /></div>
+              </div>
+              <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="optional" /></div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Expense'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -198,6 +198,42 @@ router.get('/purchase-orders', ownerOnly, async (req, res) => {
   }
 });
 
+function csvEscape(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+// GET /purchase-orders/export?status= — CSV, for handing to an outside
+// accountant/bookkeeper alongside expenses.js's export. Must be declared
+// before /purchase-orders/:id or that route would swallow "export" as an id.
+router.get('/purchase-orders/export', ownerOnly, async (req, res) => {
+  try {
+    const rows = await svc.listPurchaseOrders(req.propertyId, { status: req.query.status });
+    const header = ['PO #', 'Supplier', 'Status', 'Total', 'Created', 'Updated'];
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      // created_at/updated_at are TIMESTAMPTZ, so pg hands back real JS Date
+      // objects here (unlike DATE columns, which db/index.js normalizes to
+      // plain strings) — must call toISOString(), not String(), or
+      // Date.prototype.toString()'s "Sun Sep 13 2026 ..." format leaks through.
+      lines.push([
+        csvEscape(r.po_number),
+        csvEscape(r.supplier_name),
+        csvEscape(r.status),
+        csvEscape(r.total_amount),
+        csvEscape(r.created_at.toISOString().slice(0, 10)),
+        csvEscape(r.updated_at.toISOString().slice(0, 10)),
+      ].join(','));
+    }
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="purchase-orders.csv"');
+    res.send(lines.join('\n'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/purchase-orders/:id', ownerOnly, async (req, res) => {
   try {
     const po = await svc.getPurchaseOrder(req.propertyId, req.params.id);

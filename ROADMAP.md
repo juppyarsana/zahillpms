@@ -411,7 +411,73 @@ Per-property tax and service charge rates, applied on folio and invoice.
     Expenses, Cash & Bank, AP Bills, Recipes/COGS, any Dashboard/low-stock
     alerting integration. Not yet manually clicked through in a browser —
     DB + HTTP + client-build verified, per this session's established bar.
-- Status: 🟡 Slice A implemented; Expenses/Cash & Bank/AP and Recipes/COGS
+- **Slice B — ✅ Implemented 2026-09-13 (migration 055).** Expenses — a
+  lightweight, categorized cost log (laundry, electricity, maintenance,
+  etc.), explicitly **not** a step toward a full accounting system (GL/
+  chart-of-accounts/journal entries stay out of scope, per the decision
+  already on record above). Scoped after the owner confirmed clients will
+  keep using a real accounting app/bookkeeper for actual bookkeeping — this
+  slice's job is (a) a lightweight Net Income view inside the PMS, and (b)
+  clean, **exportable** data an outside accountant can pull into their own
+  tool without retyping every transaction.
+  - New `expenses` table: fixed `CHECK`-constrained `category`
+    (utilities/laundry/maintenance/staff/supplies/marketing/admin_fees/
+    other — free text was rejected, since an accountant can't reliably map
+    inconsistent free text to their own chart of accounts, and it can't be
+    summed for Net Income), `payment_method` (plain `VARCHAR`, validated in
+    the route against the property's real `payment_methods` table — same
+    convention `salesService.createSale` already uses, not a DB-level FK),
+    optional `supplier_id` (ties a recurring vendor, e.g. an outside
+    laundry service, to the existing Suppliers directory from Slice A),
+    `reference` (invoice/receipt #). **Void, not delete**
+    (`is_voided`/`voided_by`/`voided_at`) — mirrors `folio_charges`
+    (migration 028), deliberately not `agent_payments`' hard-delete
+    pattern, since an accountant needs an unbroken audit trail.
+  - New `server/routes/expenses.js`: `GET /` (list, `?month=&year=&category=`,
+    defaults to current month — same bucketing convention `reports.js`
+    already uses, so a future "expenses this month" always means the same
+    thing everywhere), `POST /` (create), `DELETE /:id` (void),
+    `GET /export` (CSV). No new module — rides the existing `back_office`
+    module (`modules.js`'s `back_office.routes` gained `'expenses'`).
+  - **CSV export is new to this codebase** (confirmed via research: every
+    existing download anywhere in the app is PDF, never CSV) — built on
+    both `/api/expenses/export` and a new `/api/purchasing/purchase-
+    orders/export` (an accountant needs *both* operating costs and
+    inventory/supply purchases). Client-side download reuses `Agents.jsx`'s
+    existing PDF-blob-download shape (`downloadCsv()` helper in
+    `BackOffice.jsx`), just `text/csv` instead of `application/pdf`.
+    Caught and fixed a real bug while building the PO export: `created_at`/
+    `updated_at` are `TIMESTAMPTZ` (real JS `Date` objects from `pg`, unlike
+    `DATE` columns which `db/index.js` normalizes to plain strings) —
+    `String(date).slice(0,10)` was silently grabbing garbage from
+    `Date.prototype.toString()`'s `"Sun Sep 13 2026 …"` format instead of
+    an ISO date; fixed with `.toISOString().slice(0,10)`.
+  - **`GET /api/reports/revenue` gains `expenses_total` and `net_income`**
+    (`total_revenue − expenses_total`) — a plain, non-`NIGHTS_CTE` query
+    added to the existing `Promise.all` (expenses aren't night-based, same
+    as ancillary/sales revenue). Safe for properties that don't use
+    Expenses at all — an empty table just returns 0, so Net Income quietly
+    degrades to "= Total Revenue" rather than erroring. New "Net Income"
+    card on `Reports.jsx`, right after Revenue by Source.
+  - New **Expenses** tab on `BackOffice.jsx` (fourth tab) — month/year +
+    category filter (mirrors `Reports.jsx`'s picker), Add Expense modal,
+    void action, Export CSV button. Purchase Orders tab also gained an
+    Export CSV button next to its existing status filter.
+  - Verified end-to-end against the live dev DB **and** real HTTP round-
+    trips against a running server (not just code review): created an
+    expense via `POST /api/expenses`, confirmed it appeared in
+    `GET /api/reports/revenue`'s `expenses_total`/`net_income`, confirmed
+    `GET /api/expenses/export` produces well-formed CSV (including correct
+    comma-escaping inside a description field), voided it via
+    `DELETE /api/expenses/:id`, confirmed it dropped out of both the list
+    and the Reports totals. Confirmed `GET /purchase-orders/export`
+    produces correct dates post-fix.
+  - **Not built in this slice:** Cash & Bank (real account balances/
+    reconciliation) — deferred per the original scope, this slice is
+    expense *logging*, not balance tracking. AP Bills and Recipes/COGS
+    remain unbuilt too. Not yet manually clicked through in a browser — DB
+    + HTTP + client-build verified.
+- Status: 🟡 Slices A + B implemented; Cash & Bank/AP and Recipes/COGS
   still 🔵 planned, scope only (see above)
 
 ### 15. Resto Ordering
@@ -716,7 +782,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | activities       | ✅                 | —             |
 | calling          | ✅                 | —             |
 | resto_ordering   | ❌                 | paid add-on tier |
-| back_office      | ❌                 | paid add-on tier, Slice A only |
+| back_office      | ❌                 | paid add-on tier, Slices A+B |
 
 ---
 
@@ -787,7 +853,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 055
+## Next migration number: 056
 
 ---
 

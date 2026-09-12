@@ -17,10 +17,10 @@ module.exports = {
   // is also on for the property (reads products/restaurant_tables, writes
   // sales) — not enforced in code, just a real dependency to be aware of.
   resto_ordering:  { label: 'Resto Ordering',  routes: ['resto', 'restoGuest'] },
-  // Default OFF — paid add-on tier, Slice A only (Suppliers + Purchasing +
-  // PO receiving). Expenses/Cash & Bank/AP and Recipes/COGS are future
-  // slices of the same module, not yet built.
-  back_office:     { label: 'Back Office',     routes: ['purchasing'] },
+  // Default OFF — paid add-on tier. Slice A (Suppliers + Purchasing + PO
+  // receiving) + Slice B (Expenses) built so far. Cash & Bank/AP and
+  // Recipes/COGS are future slices of the same module, not yet built.
+  back_office:     { label: 'Back Office',     routes: ['purchasing', 'expenses'] },
 };
 
 // Core routes — always on, no module guard:
