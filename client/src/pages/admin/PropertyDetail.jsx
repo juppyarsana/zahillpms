@@ -15,6 +15,7 @@ const MODULE_LABELS = {
   activities:      'Activities',
   calling:         'Calling',
   resto_ordering:  'Resto Ordering',
+  back_office:     'Back Office',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };

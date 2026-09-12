@@ -117,6 +117,10 @@ export default function Sidebar() {
             {revenueItems.map(item => <SidebarLink key={item.to} {...item} />)}
           </SidebarSection>
         )}
+
+        {isOwner && hasModule('back_office') && (
+          <SidebarLink to="/back-office" icon="🏭" label="Back Office" />
+        )}
       </nav>
 
       {hasSettings && (

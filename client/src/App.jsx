@@ -35,6 +35,7 @@ import SettingsBoardCards from './pages/SettingsBoardCards';
 import NightAudit from './pages/NightAudit';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
+import BackOffice from './pages/BackOffice';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
@@ -77,6 +78,9 @@ function BottomNav() {
       isOwner && hasModule('reservations') && { to: '/settings/rate-plans', icon: '🍳', label: 'Rate Plans' },
       isOwner && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },
       isOwner && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
+    ]},
+    { label: 'Back Office', items: [
+      isOwner && hasModule('back_office') && { to: '/back-office', icon: '🏭', label: 'Back Office' },
     ]},
     { label: 'Settings · Property', items: [
       isOwner && { to: '/settings/property', icon: '🏢', label: 'Property Details' },
@@ -280,6 +284,7 @@ export default function App() {
                   <Route path="/agents"          element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/agents/:sourceId" element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />
+                  <Route path="/back-office"     element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
                 </Routes>
               </Layout>
             </CallProvider>

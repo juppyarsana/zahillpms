@@ -90,6 +90,7 @@ app.use('/api/board', auth, moduleGuard('in_room_media'), require('./routes/boar
 app.use('/api/iot', auth, moduleGuard('room_controller'), require('./routes/iot'));
 app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insights'));
 app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/activities'));
+app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 
 // /api/calls mixes three auth mechanisms (staff auth, authDisplay for the
 // room's own call actions, authQueryToken for the staff SSE stream) — a

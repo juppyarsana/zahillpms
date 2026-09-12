@@ -343,7 +343,76 @@ Per-property tax and service charge rates, applied on folio and invoice.
   until a client specifically asks): full General Ledger with journal
   entries and chart of accounts, monthly closing, budgeting, Fixed Assets
   depreciation schedules
-- Status: 🔵 Planned — not started, scope only
+- **Slice A — ✅ Implemented 2026-09-13 (migration 053).** Suppliers +
+  Purchasing + PO receiving. New module `back_office` (default off, same
+  paid-add-on philosophy as `resto_ordering`), routes: `['purchasing']`,
+  mounted the plain single-mount way (`app.use('/api/purchasing', auth,
+  moduleGuard('back_office'), ...)`) since — unlike `resto`/`kitchen`/`calls`
+  — everything here is plain staff-JWT, no mixed auth model needed.
+  - **Ingredients get their own table, not a repurposed `products` row** —
+    a real design decision made with the owner mid-plan: raw ingredients
+    (flour, rice, chicken breast — never sold directly) are a
+    restaurant/kitchen-specific concept, and reusing `products` risked (a)
+    an ingredient leaking into a guest menu / staff POS grid / Kitchen
+    Display if a filter were ever missed at any of the several places that
+    already query `products`, and (b) muddying future ingredient-cost
+    reporting by mixing it into the general Sales/Reports domain. New
+    `raw_materials` (property-scoped, `unit_of_measure` kg/g/l/ml/pcs,
+    `stock_quantity` NUMERIC — fractional, unlike products' INT stock —
+    `low_stock_threshold`, `cost_per_unit` informational) + its own
+    `raw_material_movements` ledger, fully separate from `products`/
+    `stock_movements`. Nothing sellable-facing (guest menu, staff POS,
+    Kitchen Display) queries `raw_materials` — it physically can't leak.
+  - `purchase_order_items` restocks *either* an existing sellable `product`
+    (e.g. bulk-buying bottled water for resale) *or* a `raw_material` (e.g.
+    buying rice/chicken for the kitchen) per line — a `CHECK` enforces
+    exactly one of `product_id`/`raw_material_id` is set. `quantity` is
+    NUMERIC throughout but sellable-product lines are validated as whole
+    numbers (products' own stock stays INT).
+  - `purchase_orders` status workflow: `draft → pending_approval → approved
+    → received`, or `cancelled` from any pre-received status — a whitelist
+    transition map in `server/services/purchasingService.js` rejects
+    invalid moves (e.g. can't go straight from `approved` back to `draft`).
+    `po_number` is a per-property sequential `PO-YYMM-NNN`
+    (`nextPoNumber`), same generation pattern as Agent Billing's
+    `nextInvoiceNumber`.
+  - Receiving (`POST /purchase-orders/:id/receive`) supports **partial
+    receipt** — `purchase_order_items.received_quantity` accumulates across
+    multiple calls, clamped so a line can never be over-received; the PO
+    only flips to `received` once every line is fully received, otherwise
+    it stays `approved`. Each receipt posts a real `stock_movements` row
+    (`reason='restock'`, existing CHECK untouched) or `raw_material_movements`
+    row (`reason='purchase'`), both carrying the new `purchase_order_id`
+    FK for traceability back to the PO. Mirrors `salesService.createSale`'s
+    row-lock-then-adjust shape, just incrementing instead of decrementing.
+  - New `client/src/pages/BackOffice.jsx` — one page, one nav entry
+    (`/back-office`, `RequireOwner` + `RequireModule('back_office')`),
+    internal tabs (Suppliers / Raw Materials / Purchase Orders) matching
+    `Sales.jsx`'s tab-switching shape rather than separate routes — future
+    slices (Expenses, Cash & Bank, Recipes) add more tabs to this same file.
+    Suppliers/Raw Materials CRUD + the Raw Materials "Adjust Stock" modal
+    directly mirror `Sales.jsx`'s Product/stock-adjust modals; Purchase
+    Orders gets a line-item builder (Product or Ingredient per line), a
+    status-action detail modal, and a Receive modal defaulting each field
+    to that line's outstanding quantity.
+  - Verified against the live dev DB end-to-end (service layer *and* real
+    HTTP round-trips against a running server, not just code review):
+    create supplier → create raw material → create a PO mixing one product
+    line and one raw-material line → submit → approve → partial receive →
+    full receive (PO correctly flips to `received` only once everything is
+    in) → confirmed an invalid status transition is rejected → confirmed
+    `moduleGuard('back_office')` actually 403s while the module is off and
+    a real request succeeds once toggled on. Caught and fixed a real
+    Postgres parameter-type-inference bug along the way (reusing the same
+    `$1` placeholder both as an assigned value and inside a `CASE WHEN`
+    comparison confused type deduction — fixed by passing the comparison
+    as its own boolean parameter instead).
+  - **Not built in this slice** (future slices, per the scope above):
+    Expenses, Cash & Bank, AP Bills, Recipes/COGS, any Dashboard/low-stock
+    alerting integration. Not yet manually clicked through in a browser —
+    DB + HTTP + client-build verified, per this session's established bar.
+- Status: 🟡 Slice A implemented; Expenses/Cash & Bank/AP and Recipes/COGS
+  still 🔵 planned, scope only (see above)
 
 ### 15. Resto Ordering
 - Guest QR self-order per table (static QR, resolves to whatever table
@@ -647,6 +716,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | activities       | ✅                 | —             |
 | calling          | ✅                 | —             |
 | resto_ordering   | ❌                 | paid add-on tier |
+| back_office      | ❌                 | paid add-on tier, Slice A only |
 
 ---
 
@@ -717,7 +787,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 053
+## Next migration number: 055
 
 ---
 
