@@ -79,6 +79,7 @@ export default function Sidebar() {
     can('allotments') && hasModule('reservations') && { to: '/allotment', icon: '📡', label: 'Channels' },
     isOwner && hasModule('reservations')           && { to: '/settings/rate-plans', icon: '🍳', label: 'Rate Plans' },
     isOwner && hasModule('financial')              && { to: '/agents',    icon: '🧾', label: 'Agent Billing' },
+    isOwner && hasModule('financial')              && { to: '/reports',   icon: '📈', label: 'Reports' },
   ].filter(Boolean);
 
   // ── settings (pinned, collapsed) ───────────────────────

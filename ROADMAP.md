@@ -1,6 +1,6 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-02
+Last updated: 2026-09-13
 
 ---
 
@@ -647,6 +647,73 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | activities       | ✅                 | —             |
 | calling          | ✅                 | —             |
 | resto_ordering   | ❌                 | paid add-on tier |
+
+---
+
+## ✅ Reports Page
+
+> The backend `GET /api/reports/revenue` endpoint had existed since Phase A
+> (migrations 028–029) with real data behind it, but no client page or nav
+> entry was ever built on top of it — literally unreachable in the app.
+> Surfaced 2026-09-13 when the owner went looking for Reports in the menu
+> and it wasn't there.
+
+- New `client/src/pages/Reports.jsx` (`/reports`, `RequireOwner` +
+  `RequireModule moduleName="financial"` — same guard pattern as `/agents`/
+  `/night-audit`; not added to `SettingsRoles.jsx` `MENU_DEFS` for the same
+  reason those two aren't, per that file's own comment). Nav entry added to
+  both `Sidebar.jsx`'s Revenue & Billing section and `App.jsx`'s mobile
+  "More" drawer (same group) — the exact both-places convention called out
+  in this file's "Important Conventions" section.
+- Month/year picker, revenue-composition KPI cards (Room/F&B/Ancillary/
+  Total), an operational stats strip (Bookings/Room Nights/ADR), a daily
+  room-revenue bar chart (plain CSS bars — no charting library in this
+  repo), and a Revenue by Source table.
+- **Found and fixed two real bugs in `server/routes/reports.js` while
+  building the page** (not introduced by it — the endpoint just had no UI
+  exercising it before now):
+  1. **Month attribution mismatch.** The monthly KPI query summed a
+     booking's *entire* room/F&B revenue into whichever month its
+     check-in date fell in; the daily chart query (pre-existing) instead
+     spread revenue evenly across actual nights stayed. For any booking
+     crossing a month boundary, the two disagreed — caught because the KPI
+     card and the chart's own total showed different numbers for the same
+     month. Fixed by extracting a shared `NIGHTS_CTE` (one row per
+     booking-night, clipped to the requested month) that both the KPI
+     query and the daily/by-source queries now build on — everything is
+     night-based and self-consistent. `bookings_count` now counts a
+     booking in every month it has at least one night in (can be 2 months
+     for a boundary-crossing stay) rather than only its check-in month.
+     Ancillary (sales) revenue deliberately stays keyed off
+     `sales.created_at` — it's a different kind of revenue, not spread
+     across nights.
+  2. **Source names were raw slugs, not labels.** `bookings.source` stores
+     `booking_sources.id` (a slug like `booking_com`), and the by-source
+     query grouped on that raw column directly instead of joining
+     `booking_sources` for `label` (`Booking.com`) the way `Agents.jsx`
+     already does elsewhere. Fixed with a `LEFT JOIN booking_sources`,
+     falling back to the raw slug for any orphaned value.
+- **ADR vs. a made-up "daily average"**: the chart's hover tooltip
+  originally compared a day's raw revenue against `total ÷ calendar days
+  in month` — not a real metric. Checked against GuestPro (the Indonesian
+  PMS this codebase is scoped against) and every general hotel-industry
+  source (Mews, Cloudbeds, Wikipedia, Wall Street Prep): ADR is universally
+  `total room revenue ÷ room-nights sold`, one of hospitality's three core
+  KPIs alongside occupancy and RevPAR. Backend's daily query now also
+  returns `nights_sold` per day so the tooltip compares each day's own
+  *implied rate* (`day revenue ÷ that day's nights sold`) against the
+  property's real ADR — a fair rate-vs-rate comparison instead of a
+  multi-room day's aggregate total vs. a single-room-night rate, which
+  would have overstated variance on any day with more than one room
+  occupied.
+- Verified against the live dev DB (not just code review): found the one
+  real boundary-crossing booking in Zahill's September data (Aug 31 → Sep
+  4), confirmed August's and September's totals now shift by exactly its
+  spread-out nights and the two figures agree to the cent; confirmed
+  `by_source` returns `Direct`/`Airbnb`/`Booking.com` post-fix.
+- Not yet manually clicked through in a browser (queries verified directly
+  against the dev DB; client builds clean).
+- Status: ✅ Implemented
 
 ---
 
