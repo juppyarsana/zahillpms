@@ -252,7 +252,25 @@ async function receivePurchaseOrder(propertyId, poId, items, userId) {
       );
 
       if (item.product_id) {
-        await client.query('UPDATE products SET stock_quantity = stock_quantity + $1 WHERE id = $2', [delta, item.product_id]);
+        // Weighted-average cost — same treatment as the raw-material branch
+        // below (see its comment for the reasoning): blends this receipt
+        // into the existing stock's average by value, not just the last
+        // price paid, so cost_per_unit reflects what the stock on hand
+        // actually cost. Locks the products row itself (not just the PO
+        // item) so two concurrent receipts can't blend from a stale
+        // quantity.
+        const { rows: [product] } = await client.query(
+          'SELECT stock_quantity, cost_per_unit FROM products WHERE id = $1 FOR UPDATE',
+          [item.product_id]
+        );
+        const oldQty = product.stock_quantity; // INT column, unlike raw_materials' NUMERIC
+        const oldAvg = product.cost_per_unit != null ? parseFloat(product.cost_per_unit) : 0;
+        const newQty = oldQty + delta;
+        const newAvg = newQty > 0 ? round2((oldQty * oldAvg + delta * item.unit_cost) / newQty) : oldAvg;
+        await client.query(
+          'UPDATE products SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3',
+          [newQty, newAvg, item.product_id]
+        );
         await client.query(
           `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, created_by)
            VALUES ($1,$2,$3,'restock',$4,$5)`,

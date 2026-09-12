@@ -188,6 +188,50 @@ router.get('/raw-materials/:id/movements', ownerOnly, async (req, res) => {
   }
 });
 
+// GET /inventory-value — raw materials + sellable products, each at cost
+// (stock_quantity × cost_per_unit). An item with no cost_per_unit yet (no
+// PO receipt has ever set one — pre-existing stock, or never restocked
+// through a PO) is listed but excluded from the totals rather than
+// silently valued at 0, since we genuinely don't know its cost.
+router.get('/inventory-value', ownerOnly, async (req, res) => {
+  try {
+    const { rows: rawMaterials } = await db.query(
+      `SELECT id, name, unit_of_measure, stock_quantity, cost_per_unit
+       FROM raw_materials WHERE property_id = $1 AND is_active = true ORDER BY name`,
+      [req.propertyId]
+    );
+    const { rows: products } = await db.query(
+      `SELECT id, name, stock_quantity, cost_per_unit
+       FROM products WHERE property_id = $1 AND track_stock = true ORDER BY name`,
+      [req.propertyId]
+    );
+
+    let uncostedCount = 0;
+    const withValue = rows => rows.map(r => {
+      const costed = r.cost_per_unit != null;
+      if (!costed) uncostedCount++;
+      return { ...r, value: costed ? Math.round(r.stock_quantity * r.cost_per_unit * 100) / 100 : null };
+    });
+    const rawMaterialsValued = withValue(rawMaterials);
+    const productsValued = withValue(products);
+
+    const sum = rows => rows.reduce((s, r) => s + (r.value || 0), 0);
+    const rawMaterialsTotal = sum(rawMaterialsValued);
+    const productsTotal = sum(productsValued);
+
+    res.json({
+      raw_materials: rawMaterialsValued,
+      raw_materials_total: rawMaterialsTotal,
+      products: productsValued,
+      products_total: productsTotal,
+      grand_total: rawMaterialsTotal + productsTotal,
+      uncosted_count: uncostedCount,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────── Purchase Orders ───────────────────────────
 
 router.get('/purchase-orders', ownerOnly, async (req, res) => {

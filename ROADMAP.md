@@ -477,8 +477,40 @@ Per-property tax and service charge rates, applied on folio and invoice.
     expense *logging*, not balance tracking. AP Bills and Recipes/COGS
     remain unbuilt too. Not yet manually clicked through in a browser — DB
     + HTTP + client-build verified.
-- Status: 🟡 Slices A + B implemented; Cash & Bank/AP and Recipes/COGS
-  still 🔵 planned, scope only (see above)
+- **Inventory Value — ✅ Implemented 2026-09-13 (migration 056).** The
+  deliberate first step before any COGS/Net-Income-from-purchases work —
+  raised directly by the owner: *"before [subtracting purchases], should we
+  also have the value of our inventory stated in the app?"* Correct
+  instinct — buying inventory is an asset swap, not an expense, until it's
+  actually consumed (sold), and "value consumed" can't be computed without
+  first knowing "value on hand." This slice adds just that, nothing more.
+  - `products` gains `cost_per_unit` — the same weighted-average treatment
+    `raw_materials.cost_per_unit` already got in Slice A. Until now, a PO
+    could restock a sellable product (e.g. bulk-bought bottled water for
+    resale) with the app having no idea what that stock cost, only what it
+    sells for (`products.price`). `purchasingService.js`'s
+    `receivePurchaseOrder` product branch now blends every receipt into
+    the running average exactly like the raw-material branch beside it —
+    verified with the identical 100@5000 + 50@6000 → 5333.33 case already
+    proven for raw materials.
+  - New `GET /api/purchasing/inventory-value` — raw materials + products,
+    each row's `stock_quantity × cost_per_unit`, both subtotals, and a
+    grand total. An item with stock but no `cost_per_unit` yet (never
+    received through a PO — pre-existing stock, or manually stocked only)
+    is listed but **excluded from the total** rather than silently valued
+    at 0, with a visible warning so the figure is never presented as more
+    complete than it is.
+  - New "📊 Inventory Value" tab on `BackOffice.jsx` (fifth tab) — grand
+    total up top, two breakdown tables (Raw Materials, Products) below.
+  - Deliberately **no COGS, no Net Income change, no Recipes** in this
+    pass — this only makes "what's on hand worth" visible; consumption-
+    based costing stays future work (see Recipes/COGS above).
+  - Verified against the live dev DB and real HTTP round-trips — including
+    against real data the owner had already entered while testing (a raw
+    material with 210kg on hand blending to a real weighted-average cost,
+    confirmed via the live endpoint, not synthetic test data alone).
+- Status: 🟡 Slices A + B + Inventory Value implemented; Cash & Bank/AP and
+  Recipes/COGS still 🔵 planned, scope only (see above)
 
 ### 15. Resto Ordering
 - Guest QR self-order per table (static QR, resolves to whatever table
@@ -782,7 +814,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | activities       | ✅                 | —             |
 | calling          | ✅                 | —             |
 | resto_ordering   | ❌                 | paid add-on tier |
-| back_office      | ❌                 | paid add-on tier, Slices A+B |
+| back_office      | ❌                 | paid add-on tier, Slices A+B + Inventory Value |
 
 ---
 
@@ -861,7 +893,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 056
+## Next migration number: 057
 
 ---
 

@@ -64,6 +64,7 @@ export default function BackOffice() {
           <button className={`btn btn-sm ${tab === 'raw_materials' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('raw_materials')}>🌾 Raw Materials</button>
           <button className={`btn btn-sm ${tab === 'purchase_orders' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('purchase_orders')}>📦 Purchase Orders</button>
           <button className={`btn btn-sm ${tab === 'expenses' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('expenses')}>🧾 Expenses</button>
+          <button className={`btn btn-sm ${tab === 'inventory_value' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('inventory_value')}>📊 Inventory Value</button>
         </div>
       </div>
 
@@ -71,6 +72,7 @@ export default function BackOffice() {
       {tab === 'raw_materials' && <RawMaterialsTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
       {tab === 'expenses' && <ExpensesTab />}
+      {tab === 'inventory_value' && <InventoryValueTab />}
     </div>
   );
 }
@@ -848,6 +850,75 @@ function ExpensesTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ───────────────────────────── Inventory Value ─────────────────────────────
+
+function InventoryValueTab() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    api.get('/api/purchasing/inventory-value').then(r => setData(r.data)).catch(() => {});
+  }, []);
+
+  if (!data) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 16, padding: 14 }}>
+        <div className="stat-label">Total Inventory Value (at cost)</div>
+        <div style={{ fontSize: 26, fontWeight: 700 }}>{fmtIDR(data.grand_total)}</div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+          Raw Materials {fmtIDR(data.raw_materials_total)} · Products {fmtIDR(data.products_total)}
+        </div>
+        {data.uncosted_count > 0 && (
+          <div style={{ fontSize: 12, color: '#D97706', marginTop: 8 }}>
+            ⚠ {data.uncosted_count} item{data.uncosted_count !== 1 ? 's have' : ' has'} stock but no recorded cost yet (never received through a Purchase Order) — excluded from the total above, so this figure is a floor, not the complete picture.
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title" style={{ marginBottom: 8 }}>Raw Materials</div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
+            <tbody>
+              {data.raw_materials.map(m => (
+                <tr key={m.id}>
+                  <td style={{ fontWeight: 600 }}>{m.name}</td>
+                  <td>{m.stock_quantity} {m.unit_of_measure}</td>
+                  <td>{m.cost_per_unit != null ? fmtIDR(m.cost_per_unit) : <span className="text-muted">No cost recorded yet</span>}</td>
+                  <td style={{ fontWeight: 600 }}>{m.value != null ? fmtIDR(m.value) : <span className="text-muted">—</span>}</td>
+                </tr>
+              ))}
+              {data.raw_materials.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No raw materials yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title" style={{ marginBottom: 8 }}>Products</div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
+            <tbody>
+              {data.products.map(p => (
+                <tr key={p.id}>
+                  <td style={{ fontWeight: 600 }}>{p.name}</td>
+                  <td>{p.stock_quantity}</td>
+                  <td>{p.cost_per_unit != null ? fmtIDR(p.cost_per_unit) : <span className="text-muted">No cost recorded yet</span>}</td>
+                  <td style={{ fontWeight: 600 }}>{p.value != null ? fmtIDR(p.value) : <span className="text-muted">—</span>}</td>
+                </tr>
+              ))}
+              {data.products.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No stock-tracked products yet</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
