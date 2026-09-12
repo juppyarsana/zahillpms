@@ -893,7 +893,69 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 057
+## ✅ Telegram Notifications (internal staff/owner alerts)
+
+> No notification channel reached staff *outside* the app at all — email is
+> guest-facing only, WhatsApp is still an unbuilt Open Decision, and SSE only
+> pushes to a browser tab someone happens to have open. Scoped after a direct
+> conversation about what "notification" should mean here: internal alerts
+> (new booking, guest requests), not guest-facing messaging (that's WhatsApp's
+> job, separately).
+
+- **Architecture**: one shared **platform-wide Telegram bot**
+  (`TELEGRAM_BOT_TOKEN` env var) — same philosophy as `PLATFORM_SMTP_*`, a
+  single platform credential rather than per-property bot setup. New
+  `telegram_chats` table (migration 057: `property_id`, `chat_id`, `label`,
+  `is_active`) — a property can link multiple chats (e.g. the owner's phone
+  *and* a shared front-desk group), every linked chat gets every alert.
+- **`server/services/telegramService.js`**: `sendAlert(propertyId, message)`
+  looks up every active chat for the property and `POST`s to Telegram's
+  `sendMessage` endpoint via native `fetch` (no new dependency — same
+  pattern `googlePlaces.js` already uses for outbound API calls) for each,
+  swallowing per-chat errors internally (one bad/blocked chat never stops
+  the others) and no-op'ing entirely if `TELEGRAM_BOT_TOKEN` isn't set —
+  same graceful-absence convention `mailer.js` already uses for
+  unconfigured SMTP.
+- **Linking is deliberately the simplest possible v1** — discussed directly
+  with the owner: a staff member gets their own numeric Chat ID from
+  `@userinfobot` on Telegram and pastes it into a new "Telegram
+  Notifications" card on `SettingsCommunications.jsx`
+  (`GET/POST/DELETE /api/settings/telegram-chats`, owner-only). No bot
+  webhook, no `/start`-command self-linking. Confirmed with the owner this
+  upgrades cleanly later — a polished "Connect Telegram" flow only ever
+  means adding a second way to populate the same table; the send-side
+  logic (`sendAlert`) never changes.
+- **No new module** — gracefully absent for any property that hasn't linked
+  a chat, exactly like per-property SMTP.
+- **Three trigger points wired**, each a one-line fire-and-forget call
+  (`.catch(() => {})`) right next to existing logic at that exact spot:
+  - `routes/bookings.js`'s `POST /` (new booking) — the existing unit/guest
+    validation queries there gained `name` to their `SELECT` for a
+    readable alert message, since those rows were already being fetched.
+  - `routes/display.js`'s `POST /room/:roomId/housekeeping` — both the
+    Clean Room (`type==='clean'`) and Do Not Disturb (`type==='dnd'`)
+    branches.
+  - `routes/calls.js`'s room-to-staff call creation (Call Front Desk).
+- Verified twice over. First with a fake/invalid bot token (per-chat
+  failure doesn't throw; `is_active` correctly excludes an inactive chat)
+  and all three wired endpoints still returning `201` normally with the
+  new call in place. Then **live, with a real bot and the owner's own
+  Telegram** — created a real bot via @BotFather, linked a real Chat ID
+  through the actual Settings UI + API, confirmed a direct test alert
+  arrived, and confirmed the `POST /room/:roomId/housekeeping` "Clean
+  Room" trigger delivers a real alert end-to-end.
+- **Caught a real bug during the live test (migration 058):** the same
+  chat had been linked twice (once via the Settings UI, once via a
+  separate API call around the same time) with nothing stopping it, so
+  the test alert arrived twice. Fixed with `UNIQUE (property_id, chat_id)`
+  on `telegram_chats`; `POST /telegram-chats` now returns a clean `409` on
+  a duplicate instead of a raw `500` (same `err.code === '23505'`
+  convention `payment-methods` already uses in the same file).
+- Status: ✅ Implemented
+
+---
+
+## Next migration number: 059
 
 ---
 

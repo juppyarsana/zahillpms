@@ -6,6 +6,7 @@ const authQueryToken = require('../middleware/authQueryToken');
 const moduleGuard = require('../middleware/moduleGuard');
 const sse = require('../sse');
 const { getTurnCredentials } = require('../services/turnCredentials');
+const telegramService = require('../services/telegramService');
 const gate = moduleGuard('calling');
 
 const staffChannel = (propertyId) => `staff:broadcast:${propertyId}`;
@@ -95,6 +96,7 @@ router.post('/', authDisplay, gate, async (req, res) => {
     ringTimeouts.set(callId, handle);
 
     sse.notify(staffChannel(unit.property_id), { type: 'incoming_call', callId, unitName: unit.name, roomId, guestName });
+    telegramService.sendAlert(unit.property_id, `📞 Incoming call from ${unit.name}${guestName ? ` (${guestName})` : ''}`).catch(() => {});
     res.status(201).json({ callId });
   } catch (err) {
     res.status(500).json({ error: err.message });

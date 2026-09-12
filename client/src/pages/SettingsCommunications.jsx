@@ -29,6 +29,12 @@ export default function SettingsCommunications() {
   const [commLog, setCommLog] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
 
+  const [telegramChats, setTelegramChats] = useState([]);
+  const [newChatId, setNewChatId] = useState('');
+  const [newChatLabel, setNewChatLabel] = useState('');
+  const [telegramSaving, setTelegramSaving] = useState(false);
+  const [telegramError, setTelegramError] = useState('');
+
   function reloadTemplates() {
     return api.get('/api/communications/templates').then(r => setTemplates(r.data)).catch(() => {});
   }
@@ -39,16 +45,42 @@ export default function SettingsCommunications() {
       .catch(() => {})
       .finally(() => setLogLoading(false));
   }
+  function reloadTelegramChats() {
+    return api.get('/api/settings/telegram-chats').then(r => setTelegramChats(r.data)).catch(() => {});
+  }
 
   useEffect(() => {
     api.get('/api/settings/property').then(r => setPropertyForm(r.data)).catch(() => {});
     reloadTemplates();
     reloadLog();
+    reloadTelegramChats();
     api.get('/api/bookings').then(r => {
       const sorted = [...r.data].sort((a, b) => new Date(b.check_in_date) - new Date(a.check_in_date));
       setRecentBookings(sorted.slice(0, 20));
     }).catch(() => {});
   }, []);
+
+  async function addTelegramChat() {
+    if (!newChatId.trim()) return;
+    setTelegramSaving(true);
+    setTelegramError('');
+    try {
+      await api.post('/api/settings/telegram-chats', { chat_id: newChatId.trim(), label: newChatLabel.trim() || null });
+      setNewChatId('');
+      setNewChatLabel('');
+      await reloadTelegramChats();
+    } catch (err) {
+      setTelegramError(err.response?.data?.error || 'Failed to add chat');
+    } finally {
+      setTelegramSaving(false);
+    }
+  }
+
+  async function removeTelegramChat(id) {
+    if (!confirm('Remove this chat? It will stop receiving alerts.')) return;
+    await api.delete(`/api/settings/telegram-chats/${id}`);
+    reloadTelegramChats();
+  }
 
   useEffect(() => {
     const tmpl = templates.find(t => t.trigger === activeTrigger);
@@ -167,6 +199,41 @@ export default function SettingsCommunications() {
             </div>
           </>
         )}
+      </div>
+
+      <div className="card mb-3">
+        <div className="card-title">Telegram Notifications</div>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+          Get pinged on Telegram for a new booking or a guest request (Do Not Disturb, Clean Room, Call Front Desk).
+          Message <strong>@userinfobot</strong> on Telegram to get your Chat ID, then add it below. Every chat listed
+          receives every alert.
+        </p>
+        {telegramChats.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            {telegramChats.map(c => (
+              <div key={c.id} className="flex items-center" style={{ justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 13 }}>
+                  <strong>{c.chat_id}</strong>{c.label ? ` — ${c.label}` : ''}
+                </div>
+                <button className="btn btn-sm btn-secondary" onClick={() => removeTelegramChat(c.id)}>Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {telegramError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{telegramError}</div>}
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Chat ID</label>
+            <input className="form-input" placeholder="e.g. 123456789" value={newChatId} onChange={e => setNewChatId(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Label (optional)</label>
+            <input className="form-input" placeholder="e.g. Owner, Front Desk" value={newChatLabel} onChange={e => setNewChatLabel(e.target.value)} />
+          </div>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={addTelegramChat} disabled={!newChatId.trim() || telegramSaving}>
+          {telegramSaving ? 'Adding…' : '+ Add Chat ID'}
+        </button>
       </div>
 
       <div className="card mb-3">

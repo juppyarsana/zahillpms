@@ -7,6 +7,7 @@ const sse = require('../sse');
 const { getWeather } = require('../weather');
 const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
+const telegramService = require('../services/telegramService');
 const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
 const opsGate = moduleGuard('operations');
@@ -363,6 +364,7 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
          VALUES ($1, 'guest_request', 'medium', $2, $3) RETURNING id`,
         [`Please clean room — ${unit.name}`, unit.id, req.propertyId]
       );
+      telegramService.sendAlert(req.propertyId, `🧹 Clean Room requested — ${unit.name}`).catch(() => {});
       return res.status(201).json({ ok: true, task_id: rows[0].id });
     }
 
@@ -382,6 +384,7 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
        VALUES ($1, 'guest_request', 'high', $2, $3) RETURNING id`,
       [`Do Not Disturb — ${unit.name}`, unit.id, req.propertyId]
     );
+    telegramService.sendAlert(req.propertyId, `🔕 Do Not Disturb — ${unit.name}`).catch(() => {});
     res.status(201).json({ ok: true, task_id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });

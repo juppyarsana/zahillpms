@@ -7,6 +7,7 @@ const { computeFolioTotals, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
+const telegramService = require('../services/telegramService');
 const { renderGuestReport } = require('../services/guestReportPdf');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
@@ -378,9 +379,9 @@ router.post('/', auth, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const { rows: unitRows } = await client.query('SELECT id FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
+    const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!unitRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Unit not found' }); }
-    const { rows: guestRows } = await client.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
+    const { rows: guestRows } = await client.query('SELECT id, name FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
     if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
 
     // Check availability
@@ -448,6 +449,9 @@ router.post('/', auth, async (req, res) => {
     // Fire and forget — don't await, don't fail the booking if email fails
     sendBookingEmail(req.propertyId, booking.id, 'booking_confirmed')
       .catch(err => console.error('Email trigger failed:', err));
+    telegramService.sendAlert(req.propertyId,
+      `📅 New booking: ${guestRows[0].name} — ${unitRows[0].name}, ${check_in_date} to ${check_out_date}`
+    ).catch(() => {});
 
     res.status(201).json(booking);
   } catch (err) {
