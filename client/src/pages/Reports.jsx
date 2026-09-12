@@ -5,6 +5,18 @@ function fmtIDR(n) {
   return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 }
 
+// Same blob-then-click download pattern as BackOffice.jsx's downloadCsv —
+// duplicated rather than shared, matching this codebase's house style for
+// small per-file helpers.
+async function downloadCsv(url, filename) {
+  const r = await api.get(url, { responseType: 'blob' });
+  const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  window.URL.revokeObjectURL(blobUrl);
+}
+
 // Compact form for axis labels — e.g. Rp 5.2jt / Rp 850rb — Indonesian-standard
 // abbreviations (juta/ribu) rather than the K/M convention.
 function fmtIDRShort(n) {
@@ -89,6 +101,7 @@ export default function Reports() {
           <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          <button className="btn btn-secondary" onClick={() => downloadCsv(`/api/reports/revenue/export?month=${month}&year=${year}`, `revenue-${year}-${String(month).padStart(2, '0')}.csv`)}>⬇ Export CSV</button>
         </div>
       </div>
 

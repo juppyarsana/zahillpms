@@ -849,6 +849,14 @@ Per-property tax and service charge rates, applied on folio and invoice.
   `by_source` returns `Direct`/`Airbnb`/`Booking.com` post-fix.
 - Not yet manually clicked through in a browser (queries verified directly
   against the dev DB; client builds clean).
+- **Gained "Net Income" (Back Office Slice B) and "Export CSV" (same day,
+  2026-09-13)** — `GET /api/reports/revenue/export` produces a two-block
+  CSV (summary metrics, then Revenue by Source) for the selected month,
+  sharing its query logic with the JSON endpoint via a new
+  `getMonthlyReport()` helper so the two can't drift. Completes the
+  accountant-handoff trio alongside Back Office's Expenses/Purchase Orders
+  CSV exports — Revenue, Expenses, and Purchases are each independently
+  downloadable now. Verified over real HTTP against a running server.
 - Status: ✅ Implemented
 
 ---
