@@ -49,23 +49,36 @@ function materialStockBadge(m) {
   return <span className="badge badge-gray">{m.stock_quantity} {m.unit_of_measure}</span>;
 }
 
+const TABS = [
+  { key: 'suppliers', icon: '🚚', label: 'Suppliers' },
+  { key: 'raw_materials', icon: '🌾', label: 'Raw Materials' },
+  { key: 'purchase_orders', icon: '📦', label: 'Purchase Orders' },
+  { key: 'expenses', icon: '🧾', label: 'Expenses' },
+  { key: 'inventory_value', icon: '📊', label: 'Inventory Value' },
+];
+
 export default function BackOffice() {
   const [tab, setTab] = useState('suppliers');
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ marginBottom: 8 }}>
         <div>
           <div className="page-title">Back Office</div>
           <div className="page-subtitle">Suppliers, Purchasing &amp; Expenses · Owner only</div>
         </div>
-        <div className="flex gap-2">
-          <button className={`btn btn-sm ${tab === 'suppliers' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('suppliers')}>🚚 Suppliers</button>
-          <button className={`btn btn-sm ${tab === 'raw_materials' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('raw_materials')}>🌾 Raw Materials</button>
-          <button className={`btn btn-sm ${tab === 'purchase_orders' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('purchase_orders')}>📦 Purchase Orders</button>
-          <button className={`btn btn-sm ${tab === 'expenses' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('expenses')}>🧾 Expenses</button>
-          <button className={`btn btn-sm ${tab === 'inventory_value' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('inventory_value')}>📊 Inventory Value</button>
-        </div>
+      </div>
+
+      <div className="tab-bar">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            className={`tab-bar-item${tab === t.key ? ' active' : ''}`}
+            onClick={() => setTab(t.key)}
+          >
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
       </div>
 
       {tab === 'suppliers' && <SuppliersTab />}
