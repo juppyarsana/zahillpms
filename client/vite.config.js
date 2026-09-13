@@ -22,6 +22,15 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
+            // SSE/EventSource endpoints (e.g. /api/calls/staff/stream) must never
+            // be intercepted by Workbox — a caching strategy tries to buffer/clone
+            // the response to store it, but an SSE stream never completes, so that
+            // throws "Failed to fetch" and kills the live connection. Must come
+            // before the general /api/ rule below since Workbox matches in order.
+            urlPattern: ({ url }) => url.pathname.endsWith('/stream'),
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\//,
             handler: 'NetworkFirst',
             options: {
