@@ -9,7 +9,12 @@ const { loadFolio, round2 } = require('../services/folioService');
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
 function fmtIDR(n) {
-  return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+  // Fixed 2 decimals — the default toLocaleString('id-ID') caps at 3 fraction
+  // digits but trims trailing zeros down to the minimum of 0, so e.g.
+  // 2105103.30 prints as "2.105.103,3" while 2105103.31 prints as
+  // "2.105.103,31" on the same invoice (real bug, not rounding: room charges
+  // are split across nights to the cent, e.g. 6315309.91 / 3 nights).
+  return 'Rp ' + Number(n || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // GET /api/folio/group/:groupId — master folio: aggregates each room's own
@@ -120,34 +125,50 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     doc.pipe(res);
 
+    // Header: logo (if any) sits top-right; the Invoice/Booking#/date block is
+    // pinned to a fixed y BELOW the logo's bottom edge rather than following
+    // the auto-flowing cursor, so it can never collide with the logo
+    // regardless of how many lines the property name/address block above
+    // takes (a fixed 2-line address vs. a 1-line one used to shift the
+    // "Invoice" title up into the logo's box).
+    const headerTop = doc.y;
+    const LOGO_SIZE = 65;
+    const LOGO_X = 545 - LOGO_SIZE;
+
     if (property.logo_url) {
       try {
         const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
-        if (fs.existsSync(logoPath)) doc.image(logoPath, 480, 45, { fit: [70, 70] });
+        if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
       } catch (_) {
         // Corrupt/missing logo file — fall back to text-only header below.
       }
     }
 
-    doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', { continued: false });
+    doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
     doc.fontSize(9).font('Helvetica').fillColor('#555');
-    if (property.property_address) doc.text(property.property_address);
+    if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
     const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
-    if (contactLine) doc.text(contactLine);
+    if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
     doc.fillColor('#000');
+    const leftColBottom = doc.y;
 
-    doc.moveDown(1);
-    doc.fontSize(14).font('Helvetica-Bold').text('Invoice', { align: 'right' });
-    doc.fontSize(9).font('Helvetica').text(`Booking #${booking.id.slice(0, 8).toUpperCase()}`, { align: 'right' });
-    doc.text(new Date().toLocaleDateString('id-ID'), { align: 'right' });
+    const rightColTop = headerTop + LOGO_SIZE + 10;
+    doc.fontSize(14).font('Helvetica-Bold').text('Invoice', 350, rightColTop, { width: 200, align: 'right' });
+    doc.fontSize(9).font('Helvetica').text(`Booking #${booking.id.slice(0, 8).toUpperCase()}`, 350, doc.y, { width: 200, align: 'right' });
+    doc.text(new Date().toLocaleDateString('id-ID'), 350, doc.y, { width: 200, align: 'right' });
 
-    doc.moveDown(1.5);
+    doc.x = 50;
+    doc.y = Math.max(leftColBottom, doc.y) + 20;
+
     doc.fontSize(10).font('Helvetica-Bold').text('Guest');
     doc.font('Helvetica').text(booking.guest_name);
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold').text('Stay');
+    // En dash (WinAnsi-safe under pdfkit's standard Helvetica font) instead of
+    // "→" (U+2192) — pdfkit's built-in fonts only support WinAnsiEncoding, so
+    // an arrow outside that range rendered as garbage ("!'").
     doc.font('Helvetica').text(
-      `${booking.unit_name}  ·  ${String(booking.check_in_date).slice(0, 10)} → ${String(booking.check_out_date).slice(0, 10)}`
+      `${booking.unit_name}  ·  ${String(booking.check_in_date).slice(0, 10)}  –  ${String(booking.check_out_date).slice(0, 10)}`
     );
 
     doc.moveDown(1.5);
@@ -208,7 +229,11 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
 
     function totalsLine(label, value, opts = {}) {
       doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.bold ? 11 : 10);
-      doc.text(label, colX.price - 90, y, { width: 90, align: 'right' });
+      // A 90pt-wide box is too narrow for "Service Charge (0%)" at this font
+      // size — it silently wraps onto 2 lines, and since the row height below
+      // is a fixed 16, the wrapped second line ("(0%)") spills down onto the
+      // next row's text, reading as doubled/overlapping glyphs.
+      doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
       doc.text(value, colX.amount, y, { width: 90, align: 'right' });
       y += opts.bold ? 20 : 16;
     }
