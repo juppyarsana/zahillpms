@@ -2,7 +2,9 @@ const path = require('path');
 const fs = require('fs');
 
 function fmtIDR(n) {
-  return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+  // Fixed 2 decimals — see routes/folio.js's fmtIDR for why the bare
+  // toLocaleString('id-ID') is inconsistent (trims trailing zeros unevenly).
+  return 'Rp ' + Number(n || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Consolidated agent invoice — one line per booking. Layout mirrors the
@@ -10,31 +12,42 @@ function fmtIDR(n) {
 // that working code stays untouched. `doc` is a live PDFDocument already
 // piped to the response.
 function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid, balance }) {
+  // Header: logo (if any) sits top-right; the title block is pinned to a
+  // fixed y BELOW the logo's bottom edge rather than following the
+  // auto-flowing cursor, so it can never collide with the logo regardless of
+  // how many lines the property name/address block above takes. Same fix as
+  // routes/folio.js's invoice header.
+  const headerTop = doc.y;
+  const LOGO_SIZE = 65;
+  const LOGO_X = 545 - LOGO_SIZE;
+
   if (property.logo_url) {
     try {
       const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
-      if (fs.existsSync(logoPath)) doc.image(logoPath, 480, 45, { fit: [70, 70] });
+      if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
     } catch (_) {
       // missing/corrupt logo — text header only
     }
   }
 
-  doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', { continued: false });
+  doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
   doc.fontSize(9).font('Helvetica').fillColor('#555');
-  if (property.property_address) doc.text(property.property_address);
+  if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
   const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
-  if (contactLine) doc.text(contactLine);
+  if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
   doc.fillColor('#000');
+  const leftColBottom = doc.y;
 
-  doc.moveDown(1);
-  doc.fontSize(14).font('Helvetica-Bold').text('Agent Invoice', { align: 'right' });
-  doc.fontSize(9).font('Helvetica').text(invoice.invoice_number, { align: 'right' });
-  doc.text(`Issued ${String(invoice.issued_on).slice(0, 10)}`, { align: 'right' });
+  const rightColTop = headerTop + LOGO_SIZE + 10;
+  doc.fontSize(14).font('Helvetica-Bold').text('Agent Invoice', 350, rightColTop, { width: 200, align: 'right' });
+  doc.fontSize(9).font('Helvetica').text(invoice.invoice_number, 350, doc.y, { width: 200, align: 'right' });
+  doc.text(`Issued ${String(invoice.issued_on).slice(0, 10)}`, 350, doc.y, { width: 200, align: 'right' });
   if (invoice.period_start || invoice.period_end) {
-    doc.text(`Period ${String(invoice.period_start || '').slice(0, 10)} – ${String(invoice.period_end || '').slice(0, 10)}`, { align: 'right' });
+    doc.text(`Period ${String(invoice.period_start || '').slice(0, 10)} – ${String(invoice.period_end || '').slice(0, 10)}`, 350, doc.y, { width: 200, align: 'right' });
   }
 
-  doc.moveDown(1.5);
+  doc.x = 50;
+  doc.y = Math.max(leftColBottom, doc.y) + 20;
   doc.fontSize(10).font('Helvetica-Bold').text('Bill To');
   doc.font('Helvetica').text(agent.label || '');
   if (agent.billing_address) doc.text(agent.billing_address);
@@ -58,7 +71,9 @@ function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid,
     doc.text(`#${ref} · ${l.guest_name} · ${l.unit_name}`, colX.desc, y, { width: 380 });
     doc.text(fmtIDR(l.amount), colX.amount, y, { width: 90, align: 'right' });
     y += 14;
-    doc.fillColor('#888').fontSize(8).text(`${l.check_in_date} → ${l.check_out_date}`, colX.desc, y, { width: 380 });
+    // En dash, not "→" (U+2192) — pdfkit's built-in Helvetica only supports
+    // WinAnsiEncoding, which doesn't include that arrow (renders as garbage).
+    doc.fillColor('#888').fontSize(8).text(`${l.check_in_date}  –  ${l.check_out_date}`, colX.desc, y, { width: 380 });
     doc.fillColor('#000').fontSize(10);
     y += 16;
   }
