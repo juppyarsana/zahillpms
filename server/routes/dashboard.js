@@ -16,6 +16,8 @@ router.get('/summary', auth, async (req, res) => {
     ] = await Promise.all([
       db.query(`
         SELECT u.id, u.name, u.status, u.type, u.controller_id, u.housekeeping_status,
+          u.status_reason, u.status_expected_back, u.status_updated_at,
+          sub.name as status_updated_by_name,
           b.id as booking_id, b.source, b.num_guests,
           b.check_in_date, b.check_out_date,
           (b.check_out_date - CURRENT_DATE) as nights_left,
@@ -47,6 +49,7 @@ router.get('/summary', auth, async (req, res) => {
         LEFT JOIN bookings arr ON arr.unit_id = u.id AND arr.property_id = u.property_id AND arr.status IN ('confirmed','pending') AND arr.check_in_date = CURRENT_DATE
         LEFT JOIN guests ag ON arr.guest_id = ag.id
         LEFT JOIN room_display_devices rdd ON rdd.controller_id = u.controller_id AND rdd.property_id = u.property_id
+        LEFT JOIN users sub ON sub.id = u.status_updated_by
         WHERE u.property_id = $1
         ORDER BY u.name
       `, [req.propertyId]),

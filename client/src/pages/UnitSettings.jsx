@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const STATUS_OPTIONS = ['available', 'occupied', 'maintenance', 'blocked'];
-const STATUS_BADGE = { available: 'green', occupied: 'yellow', maintenance: 'red', blocked: 'gray' };
+const STATUS_OPTIONS = [
+  ['available', 'available'],
+  ['occupied', 'occupied'],
+  ['out_of_order', 'Out of Order'],
+];
+const STATUS_BADGE = { available: 'green', occupied: 'yellow', out_of_order: 'red' };
 
 const BED_CONFIGS = [
   ['double', 'Double bed'],
@@ -142,7 +146,7 @@ export default function UnitSettings() {
                   <div className="form-group">
                     <label className="form-label">Status</label>
                     <select className="form-select" value={form.status} onChange={e => set('status', e.target.value)}>
-                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
@@ -193,7 +197,7 @@ export default function UnitSettings() {
                   {unit.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{unit.description}</div>}
                 </div>
                 <div className="flex gap-2 flex-center">
-                  <span className={`badge badge-${STATUS_BADGE[unit.status] || 'gray'}`}>{unit.status}</span>
+                  <span className={`badge badge-${STATUS_BADGE[unit.status] || 'gray'}`}>{unit.status === 'out_of_order' ? 'Out of Order' : unit.status}</span>
                   <button className="btn btn-sm btn-secondary" onClick={() => openEdit(unit)}>Edit</button>
                   <button className="btn btn-sm btn-danger" onClick={() => { setConfirmDelete(unit.id); setDeleteError(''); setEditing(null); }}>Delete</button>
                 </div>

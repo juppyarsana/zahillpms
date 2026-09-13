@@ -9,7 +9,7 @@ const CH_CLASS = { direct: 'ch-direct', airbnb: 'ch-airbnb', booking_com: 'ch-bo
 function TonightBadge({ status }) {
   if (status === 'occupied')    return <span className="badge badge-amber">Occupied</span>;
   if (status === 'arriving')    return <span className="badge badge-blue">Arriving</span>;
-  if (status === 'maintenance') return <span className="badge badge-gray">Maintenance</span>;
+  if (status === 'out_of_order') return <span className="badge badge-gray">Out of Order</span>;
   return <span className="badge badge-green">Available</span>;
 }
 
@@ -32,7 +32,7 @@ export default function Allotment() {
         let s = 'available';
         if (u.booking_id)          s = 'occupied';
         else if (u.arriving_booking_id) s = 'arriving';
-        else if (u.status === 'maintenance') s = 'maintenance';
+        else if (u.status === 'out_of_order') s = 'out_of_order';
         map[u.id] = s;
       });
       setUnitStatuses(map);

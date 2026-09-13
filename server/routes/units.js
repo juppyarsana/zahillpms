@@ -130,6 +130,81 @@ router.patch('/:id/housekeeping', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/units/:id/status  (any staff — mirrors /housekeeping: taking a
+// room out of service for a broken AC/plumbing/etc. is usually noticed by
+// front desk or housekeeping, not the owner, and is time-sensitive).
+// Body: { status: 'out_of_order' | 'available', reason?, expected_back? }
+// 'out_of_order' requires a reason and opens a type='maintenance' task
+// (the same task type Operations already uses) so it's tracked as real
+// work, not just a status flag. 'available' clears the reason/date and
+// closes that task, mirroring how 'clean' closes the housekeeping task.
+router.patch('/:id/status', auth, async (req, res) => {
+  const { status, reason, expected_back } = req.body;
+  if (!['out_of_order', 'available'].includes(status)) {
+    return res.status(400).json({ error: "status must be 'out_of_order' or 'available'" });
+  }
+  if (status === 'out_of_order' && !String(reason || '').trim()) {
+    return res.status(400).json({ error: 'A reason is required to mark a room Out of Order' });
+  }
+  try {
+    // status is a single column shared with occupancy — guard both
+    // directions so this can't silently clobber 'occupied' (marking a room
+    // Out of Order while a guest is checked in would erase that a guest is
+    // there; a broken fixture in an occupied room should go through the
+    // regular Operations task instead) or reset an occupied room to
+    // 'available' via the "return to service" action.
+    const { rows: current } = await db.query(
+      'SELECT status FROM units WHERE id = $1 AND property_id = $2',
+      [req.params.id, req.propertyId]
+    );
+    if (!current[0]) return res.status(404).json({ error: 'Unit not found' });
+    if (status === 'out_of_order' && current[0].status !== 'available') {
+      return res.status(409).json({ error: `Cannot mark a(n) ${current[0].status} room Out of Order — check the guest out or transfer them first` });
+    }
+    if (status === 'available' && current[0].status !== 'out_of_order') {
+      return res.status(409).json({ error: 'Room is not marked Out of Order' });
+    }
+
+    const { rows } = await db.query(
+      `UPDATE units SET
+        status = $1,
+        status_reason = $2,
+        status_expected_back = $3,
+        status_updated_at = NOW(),
+        status_updated_by = $4
+       WHERE id = $5 AND property_id = $6 RETURNING id, name, controller_id, status, status_reason, status_expected_back, status_updated_at`,
+      [
+        status,
+        status === 'out_of_order' ? reason.trim() : null,
+        status === 'out_of_order' ? (expected_back || null) : null,
+        req.user.id,
+        req.params.id,
+        req.propertyId,
+      ]
+    );
+    const unit = rows[0];
+
+    if (status === 'out_of_order') {
+      await db.query(
+        `INSERT INTO tasks (title, description, type, priority, unit_id, property_id)
+         VALUES ($1, $2, 'maintenance', 'high', $3, $4)`,
+        [`Out of Order — ${unit.name}`, unit.status_reason, unit.id, req.propertyId]
+      );
+    } else {
+      await db.query(
+        `UPDATE tasks SET status = 'done', updated_at = NOW()
+         WHERE unit_id = $1 AND property_id = $2 AND type = 'maintenance' AND status <> 'done'`,
+        [unit.id, req.propertyId]
+      );
+    }
+
+    if (unit.controller_id) sse.notify(unit.controller_id, { type: 'unit_status' });
+    res.json(unit);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/units/:id/tablet — clear the room_display_devices telemetry
 // row for this unit's Room ID. Plain `auth` (like /housekeeping) — used
 // when a kiosk tablet is physically moved to another room, so front desk

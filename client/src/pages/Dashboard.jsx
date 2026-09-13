@@ -53,6 +53,42 @@ function UnitCard({ unit, flags, health, onChanged }) {
   const [hkBusy, setHkBusy] = useState(false);
   const [tabletConfirm, setTabletConfirm] = useState(false);
   const [tabletBusy, setTabletBusy] = useState(false);
+  const [oooForm, setOooForm] = useState(false);
+  const [oooReason, setOooReason] = useState('');
+  const [oooExpectedBack, setOooExpectedBack] = useState('');
+  const [oooBusy, setOooBusy] = useState(false);
+  const [oooError, setOooError] = useState('');
+  const [oooReturnConfirm, setOooReturnConfirm] = useState(false);
+
+  async function markOutOfOrder() {
+    if (!oooReason.trim()) { setOooError('A reason is required'); return; }
+    setOooBusy(true);
+    setOooError('');
+    try {
+      await api.patch(`/api/units/${unit.id}/status`, {
+        status: 'out_of_order',
+        reason: oooReason.trim(),
+        expected_back: oooExpectedBack || undefined,
+      });
+      setOooForm(false);
+      setOooReason('');
+      setOooExpectedBack('');
+      onChanged?.();
+    } catch (err) {
+      setOooError(err.response?.data?.error || 'Failed to mark Out of Order');
+    }
+    setOooBusy(false);
+  }
+
+  async function returnToService() {
+    setOooBusy(true);
+    try {
+      await api.patch(`/api/units/${unit.id}/status`, { status: 'available' });
+      setOooReturnConfirm(false);
+      onChanged?.();
+    } catch { /* leave confirm open to retry */ }
+    setOooBusy(false);
+  }
 
   async function removeTablet() {
     setTabletBusy(true);
@@ -109,8 +145,7 @@ function UnitCard({ unit, flags, health, onChanged }) {
   const isOccupied  = unit.status === 'occupied' && unit.guest_name;
   const isDeparting = isOccupied && unit.nights_left != null && unit.nights_left <= 0;
   const isArriving  = !!unit.arriving_guest_name;
-  const isMaint     = unit.status === 'maintenance';
-  const isBlocked   = unit.status === 'blocked';
+  const isOutOfOrder = unit.status === 'out_of_order';
   const isDirty     = unit.status === 'available' && unit.housekeeping_status === 'dirty';
 
   let cls = 'available';
@@ -118,11 +153,10 @@ function UnitCard({ unit, flags, health, onChanged }) {
   else if (isOccupied) cls = 'occupied';
   else if (isDirty)   cls = 'dirty';
   else if (isArriving) cls = 'arriving';
-  else if (isMaint)   cls = 'maintenance';
-  else if (isBlocked) cls = 'blocked';
+  else if (isOutOfOrder) cls = 'out_of_order';
 
-  const unitBg    = { occupied: '#FEF2F2', departing: '#FAF5FF', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#FEFCE8', maintenance: '#F9FAFB', blocked: '#F9FAFB' };
-  const unitBorder= { occupied: '#DC2626', departing: '#9333EA', arriving: '#3B82F6', available: '#22C55E', dirty: '#EAB308', maintenance: '#9CA3AF', blocked: '#D1D5DB' };
+  const unitBg    = { occupied: '#FEF2F2', departing: '#FAF5FF', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#FEFCE8', out_of_order: '#F9FAFB' };
+  const unitBorder= { occupied: '#DC2626', departing: '#9333EA', arriving: '#3B82F6', available: '#22C55E', dirty: '#EAB308', out_of_order: '#9CA3AF' };
 
   const bg     = unitBg[cls]     || '#F9FAFB';
   const border = unitBorder[cls] || '#D1D5DB';
@@ -141,8 +175,7 @@ function UnitCard({ unit, flags, health, onChanged }) {
         {!isOccupied && !isArriving && !isDirty && unit.status === 'available' && (
           <span style={{ background: '#D1FAE5', color: '#065F46', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Available</span>
         )}
-        {isMaint  && <span style={{ background: '#F3F4F6', color: '#374151', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Maintenance</span>}
-        {isBlocked && <span style={{ background: '#F3F4F6', color: '#374151', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>Blocked</span>}
+        {isOutOfOrder && <span style={{ background: '#F3F4F6', color: '#374151', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🔧 Out of Order</span>}
       </div>
 
       {/* guest request flags — set from Room Display's DND / Clean Room widget */}
@@ -242,13 +275,21 @@ function UnitCard({ unit, flags, health, onChanged }) {
           <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
             {unit.gap_nights ? `${unit.gap_nights}-night gap · Open for last-minute booking` : 'No upcoming bookings'}
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); setHousekeeping('dirty'); }}
-            disabled={hkBusy}
-            style={{ background: 'none', border: 'none', padding: 0, marginTop: 6, fontSize: 10, color: '#9CA3AF', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            Flag for cleaning
-          </button>
+          <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setHousekeeping('dirty'); }}
+              disabled={hkBusy}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 10, color: '#9CA3AF', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Flag for cleaning
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setOooForm(true); }}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 10, color: '#9CA3AF', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Mark Out of Order
+            </button>
+          </div>
         </>
       )}
 
@@ -279,8 +320,79 @@ function UnitCard({ unit, flags, health, onChanged }) {
         </div>
       )}
 
-      {(isMaint || isBlocked) && (
-        <div style={{ fontSize: 11, color: '#6B7280' }}>Unit not available for booking</div>
+      {isOutOfOrder && (
+        <div style={{ padding: '8px 10px', borderRadius: 8, background: '#F3F4F6', border: '1px solid #E5E7EB' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#374151' }}>🔧 {unit.status_reason || 'Out of Order'}</div>
+          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 3 }}>
+            {unit.status_expected_back && `Expected back ${new Date(unit.status_expected_back).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · `}
+            Since {relTime(unit.status_updated_at)}{unit.status_updated_by_name ? ` · ${unit.status_updated_by_name}` : ''}
+          </div>
+          {!oooReturnConfirm ? (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ marginTop: 8, fontSize: 12 }}
+              onClick={(e) => { e.stopPropagation(); setOooReturnConfirm(true); }}
+            >
+              Return to Service
+            </button>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#6B7280' }}>Fixed and ready to sell?</span>
+              <button className="btn btn-primary btn-sm" style={{ fontSize: 12 }} disabled={oooBusy}
+                onClick={(e) => { e.stopPropagation(); returnToService(); }}>
+                {oooBusy ? '…' : 'Yes'}
+              </button>
+              <button className="btn btn-secondary btn-sm" style={{ fontSize: 12 }} disabled={oooBusy}
+                onClick={(e) => { e.stopPropagation(); setOooReturnConfirm(false); }}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {oooForm && (
+        <div className="modal-backdrop" onClick={e => e.stopPropagation()}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Mark Out of Order — {unit.name}</div>
+              <button className="btn btn-icon" onClick={() => setOooForm(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Reason</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="e.g. AC not cooling, plumbing leak"
+                  value={oooReason}
+                  onChange={e => setOooReason(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Expected back in service (optional)</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={oooExpectedBack}
+                  onChange={e => setOooExpectedBack(e.target.value)}
+                />
+              </div>
+              {oooError && <div className="alert alert-error">{oooError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setOooForm(false)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={markOutOfOrder}
+                disabled={oooBusy || !oooReason.trim()}
+              >
+                {oooBusy ? 'Saving…' : 'Mark Out of Order'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Call Room — same eligibility as Sidebar's "Call a Room" / CallRoomModal:
@@ -364,16 +476,15 @@ function UnitCard({ unit, flags, health, onChanged }) {
 /* ─── compact unit status board ────────────────────────── */
 
 // Housekeeping-board convention: green = vacant ready, red = occupied,
-// yellow = vacant dirty. Departing gets its own purple; maintenance/blocked
-// drop to grey (occupied took the red).
+// yellow = vacant dirty. Departing gets its own purple; out_of_order drops
+// to grey (occupied took the red).
 const TILE_BG = {
-  available:   '#22C55E',
-  occupied:    '#DC2626',
-  dirty:       '#FACC15',
-  arriving:    '#3B82F6',
-  departing:   '#9333EA',
-  maintenance: '#9CA3AF',
-  blocked:     '#9CA3AF',
+  available:    '#22C55E',
+  occupied:     '#DC2626',
+  dirty:        '#FACC15',
+  arriving:     '#3B82F6',
+  departing:    '#9333EA',
+  out_of_order: '#9CA3AF',
 };
 
 // Tiles are white-on-color by default; yellow needs dark text to stay legible.
@@ -383,13 +494,12 @@ const TILE_FG = {
 
 // Icons so status doesn't rely on color alone — small but legible at tile size.
 const TILE_ICON = {
-  available:   '✓',
-  occupied:    '🛏',
-  dirty:       '🧹',
-  arriving:    '🔑',
-  departing:   '🧳',
-  maintenance: '🔧',
-  blocked:     '🔒',
+  available:    '✓',
+  occupied:     '🛏',
+  dirty:        '🧹',
+  arriving:     '🔑',
+  departing:    '🧳',
+  out_of_order: '🔧',
 };
 
 // DND / Clean Room requests come from Room Display as `guest_request` tasks
@@ -486,8 +596,7 @@ function tabletHealth(u) {
 
 // mirrors UnitCard's branch order
 function tileState(u) {
-  if (u.status === 'maintenance') return 'maintenance';
-  if (u.status === 'blocked')     return 'blocked';
+  if (u.status === 'out_of_order') return 'out_of_order';
   if (u.status === 'occupied' && u.guest_name) {
     return (u.nights_left != null && u.nights_left <= 0) ? 'departing' : 'occupied';
   }
@@ -498,24 +607,22 @@ function tileState(u) {
   return 'available';
 }
 
-// Order = how segments/chips read left-to-right. `offline` folds
-// maintenance + blocked (both grey, both "not sellable").
+// Order = how segments/chips read left-to-right.
 const STATUS_META = [
-  { key: 'available',  color: '#22C55E', label: 'Available' },
-  { key: 'occupied',   color: '#DC2626', label: 'Occupied' },
-  { key: 'departing',  color: '#9333EA', label: 'Departing' },
-  { key: 'arriving',   color: '#3B82F6', label: 'Arriving' },
-  { key: 'dirty',      color: '#FACC15', label: 'To clean' },
-  { key: 'offline',    color: '#9CA3AF', label: 'Maint / blocked' },
+  { key: 'available',    color: '#22C55E', label: 'Available' },
+  { key: 'occupied',     color: '#DC2626', label: 'Occupied' },
+  { key: 'departing',    color: '#9333EA', label: 'Departing' },
+  { key: 'arriving',     color: '#3B82F6', label: 'Arriving' },
+  { key: 'dirty',        color: '#FACC15', label: 'To clean' },
+  { key: 'out_of_order', color: '#9CA3AF', label: 'Out of Order' },
 ];
 
 function bucketOf(u) {
-  const s = tileState(u);
-  return (s === 'maintenance' || s === 'blocked') ? 'offline' : s;
+  return tileState(u);
 }
 
 function countByState(list) {
-  const c = { available: 0, occupied: 0, departing: 0, arriving: 0, dirty: 0, offline: 0 };
+  const c = { available: 0, occupied: 0, departing: 0, arriving: 0, dirty: 0, out_of_order: 0 };
   for (const u of list) c[bucketOf(u)]++;
   return c;
 }

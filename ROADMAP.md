@@ -955,7 +955,33 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ---
 
-## Next migration number: 059
+## Room "Out of Order" status (migration 059)
+
+- `units.status`'s `maintenance`/`blocked` pair (no documented difference,
+  no reason/date ever captured, and `maintenance` already meant a
+  `tasks.type` and an `expenses.category`) replaced with a single
+  `out_of_order` status — checked against real hotel PMS convention
+  (Opera/Mews/Cloudbeds/RMS all use "Out of Order" for this). New
+  `status_reason`/`status_expected_back`/`status_updated_at`/
+  `status_updated_by` columns.
+- New `PATCH /api/units/:id/status`, plain `auth` (not owner-gated — a
+  broken AC is usually noticed by front desk/housekeeping). Requires a
+  reason, opens/closes a `type='maintenance'` Operations task
+  automatically, and guards both directions against clobbering `occupied`
+  (can't mark an occupied room Out of Order, can't reset it to `available`
+  except from `out_of_order`).
+- Dashboard's `UnitCard` popup gained a real info+action panel for Out of
+  Order rooms (reason, expected-back date, who/when, "Return to Service")
+  and a "Mark Out of Order" action on available rooms — see `CLAUDE.md`'s
+  Room Display section for the full write-up.
+- Status: ✅ Implemented (verified via direct HTTP round-trips against a
+  running server — mark/reason-required/occupied-guard/task-create/
+  return-to-service/task-close/double-return-guard all confirmed; not yet
+  clicked through in a browser).
+
+---
+
+## Next migration number: 060
 
 ---
 
