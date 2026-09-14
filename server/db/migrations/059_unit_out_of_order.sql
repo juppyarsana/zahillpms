@@ -10,9 +10,10 @@
 -- a safety net, not a real backfill.
 -- ============================================================
 
+ALTER TABLE units DROP CONSTRAINT IF EXISTS units_status_check;
+
 UPDATE units SET status = 'out_of_order' WHERE status IN ('maintenance', 'blocked');
 
-ALTER TABLE units DROP CONSTRAINT IF EXISTS units_status_check;
 ALTER TABLE units ADD CONSTRAINT units_status_check
   CHECK (status IN ('available', 'occupied', 'out_of_order'));
 
