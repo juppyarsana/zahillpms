@@ -1,41 +1,46 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-13
+Last updated: 2026-09-17
 
 ---
 
-## 🔖 Session handoff — 2026-09-02 (PC → laptop)
+## 🔖 Session handoff — 2026-09-17 (PC → laptop)
 
-Everything below is committed + pushed to `origin/dev` (through commit `2f0697f`).
-Local DB is at **migration 044**. Run `git pull` + `npm run migrate` on the laptop.
+Everything below is **committed to `dev` (commit `4a9eaca`) but NOT yet pushed to
+`origin/dev`** — check `git log origin/dev..dev` on whichever machine you're on next; if it's
+still unpushed, `git push` before switching machines, or pull won't see it. Local DB is at
+**migration 060**. Run `git pull` + `npm run migrate` on the laptop.
 
-**Shipped this session:**
-- **Agent Accounts / Direct Billing #13 — Slices B & C** (migrations 042–043). City-ledger
-  checkout + `agent_commissions`; per-agent statement / AR aging / agent payments (auto
-  oldest-first, editable) / consolidated invoice PDF at `/agents`. Verified live in the API.
-- **Dashboard + Reservations calendar rework for 35 rooms** — compact tile board + popover;
-  frozen-header calendar with collapsible room-type groups, a type filter, denser rows, and
-  the per-cell perf cliff removed. Several follow-up polish commits (sticky group label,
-  scroll drift, taller day-header with weekday).
-- **Rate plans ("arrangements") + bed config + room/F&B revenue split** (migration 044, both
-  slices). `rate_plans` (RO/BB seeded), `units.bed_config`, `bookings.rate_plan_id` +
-  `room_revenue`/`fnb_revenue` (NET). Per-night `folio_charges` auto-posting via
-  `roomChargeService` (night audit / checkout / amend / cancel). **Reports now show NET room
-  revenue** (one-time visible drop). Owner CRUD at `/settings/rate-plans`.
+**Shipped this session:** Channex channel-manager integration — **research + a validated
+staging spike, not production automation.** Full step-by-step breakdown, what's done vs. not,
+lives in the new **"Channel Manager Integration + Dynamic Pricing"** section below — read that
+before continuing this work, don't rely on this summary alone.
 
-**Not done / next:**
-- Rate plans + calendar rework **not yet clicked through in a real browser** — service +
-  HTTP layers tested, but do a manual pass. See the verification checklists in each ROADMAP
-  section.
-- Cutover: run `node server/scripts/backfillRoomCharges.js` once against prod for any
-  currently-checked-in bookings (posts their elapsed folio nights). Idempotent.
-- Agent Accounts Slice C not browser-verified either (record-payment / generate-invoice modals).
-- TURN relay for calls **built** 2026-09-06 (`turnCredentials.js` + relay-only ICE + follow-up
-  fixes) — but verify `coturn` is actually installed/running on the VM and TURN env vars are
-  set in `server/.env`; code alone doesn't deploy it. On-property WiFi flakiness fix not
-  confirmed live yet.
-- Resto Ordering (`resto-display/`, migrations 048–050) not yet browser-verified; deploy of
-  `resto.zahill.kdai.cloud` in progress (DNS added 2026-09-08).
+- Researched three channel-manager vendors (Channex, STAAH, Beds24) and confirmed the
+  in-house-vs-buy call for dynamic/yield pricing — decided to build yield pricing ourselves
+  rather than pay for STAAH Max, reasoning: this is a resold multi-tenant platform, so an
+  in-house feature sells to every client while a per-property vendor fee recurs forever.
+- Built and **live-tested** a Channex staging-sandbox spike (migration 060): new
+  `channel_manager` module (default off), vendor-agnostic `channel_manager_mappings` table,
+  `server/services/channexAdapter.js`, `server/routes/channelManager.js` (owner-only `/test/*`
+  endpoints). Ran the full round trip against Channex's real API — property/room-type/rate-plan
+  setup, ARI push, a manually-created test booking pulled back and acknowledged. All verified
+  by reading the result back from Channex directly, not just trusting our own request succeeded.
+- **Found and fixed two real Channex API gotchas** while testing (undocumented in what we'd
+  researched beforehand): room-type creation needs `occ_children`/`occ_infants`, and — the
+  important one — **rates must be sent as a decimal string, not a raw integer**, or Channex
+  reads them as minor units and stores 100x too low (500,000 IDR landed as 5,000.00 until
+  fixed). Would have silently undersold every room if it had shipped un-caught.
+
+**Real secret handling note:** a real Channex staging API key was briefly pasted into
+`server/.env.example` (the *committed* template) instead of `server/.env` (gitignored) —
+caught and moved before anything was committed or pushed, so no rotation was needed. Worth
+double-checking `server/.env.example` has no real values before any future commit involving it.
+
+**Not done / next** — see the new section below for the full breakdown, but in short: no
+production automation (no cron job, no writing pulled bookings into our real `bookings`
+table), only one unit mapped (not all of Zahill's 35), no client UI, and the dynamic pricing
+engine itself hasn't been started — only architecture, not code.
 
 **Demo data on the PC's local DB** (not on the laptop until re-seeded — the scripts are
 gitignored under `server/scripts/`): 35 rooms (Deluxe 101–125 / Suite 201–204 / Glamping
@@ -559,12 +564,152 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Auto-creates reservation in PMS on payment success
 - Availability synced with Beds24 (when Phase C2 is live) to prevent doubles
 
-### 7. Channel Manager (Beds24)
-- Real-time availability push to Booking.com, Airbnb, Traveloka, Tiket.com, Agoda
-- Webhook-driven (API V2), invite code auth per property (one-time setup)
-- Rate push from Rate Management module
-- Per-property Beds24 credentials stored in property_settings
-- Migration: new `channel_sync_log` table
+### 7. Channel Manager + Dynamic Pricing
+- Real-time availability/rate push to OTAs (Booking.com, Airbnb, Traveloka,
+  Tiket.com, Agoda), plus in-house dynamic/yield pricing automation.
+- **Superseded the "(Beds24)" scoping this item originally had** — vendor
+  research done 2026-09-16/17 landed on a Channex staging spike first
+  (validated end-to-end, see below), not a firm Beds24 commitment. Beds24
+  remains a strong, cheaper, Indonesia-proven fallback candidate if Channex
+  doesn't work out for production.
+- Status: 🟡 research + validated spike done, production automation and
+  dynamic pricing engine not started. **Full step-by-step breakdown below**
+  — see "Channel Manager Integration + Dynamic Pricing".
+
+---
+
+## 🟡 Channel Manager Integration + Dynamic Pricing
+
+> Two related but independently-shippable efforts, scoped together 2026-09-16/17
+> because they touch the same data (`pricing_periods`) but don't depend on each
+> other's code. **Read this section fully before continuing either — it's the
+> single source of truth for what's done vs. not, superseding any summary in a
+> session-handoff block above.**
+
+### Why this shape (decision record)
+- Researched three channel-manager vendors: **Channex** (pure distribution,
+  PMS-push ARI / pull-or-webhook bookings, ~$130/mo platform fee + $7/hotel
+  flat regardless of room count), **STAAH** (bigger, has its own native
+  occupancy-based yield engine "STAAH Max" but requires exposing a mandatory
+  inbound webhook endpoint and moves rate authority partly to STAAH),
+  **Beds24** (cheaper per-room pricing, real API, native Tiket.com/Traveloka
+  support, proven specifically in the Bali villa market, confirmed still
+  actively maintained via forum activity as recent as this week — was the
+  originally-scoped vendor for this item before the research pass).
+- **Cost math matters differently for a resold multi-tenant platform than for
+  a single property**: Channex's $130/mo platform fee is shared across every
+  property on the platform, with only a small flat per-property add-on ($7,
+  down to $4 at volume) — Beds24's per-room fee stacks fresh for every new
+  property onboarded. At Zahill's actual scale (35 rooms) the two land close;
+  the gap only favors Channex as more properties are added.
+- **Decided to build dynamic/yield pricing in-house rather than buy STAAH
+  Max**: a channel manager is needed regardless of the yield decision, so the
+  real comparable cost is "STAAH's recurring per-property premium" vs. "our
+  one-time build" — and since ZHP PMS is meant to be resold, an in-house
+  engine becomes a sellable feature (same paid-module pattern as
+  `back_office`/`resto_ordering`) instead of a vendor fee every client pays
+  forever.
+- **Chose to spike Channex first** (not commit to a vendor yet) specifically
+  to de-risk before spending real money — validated end-to-end against their
+  real staging sandbox rather than trusting documentation alone.
+
+### Step-by-step status
+
+1. **✅ Vendor research** (2026-09-16/17) — Channex, STAAH, Beds24 compared:
+   architecture, auth model, pricing at real scale, Indonesia/Bali OTA
+   support (Tiket.com, Traveloka), and confirmed-current vs. stale docs
+   (Beds24's changelog wiki looked dead but forum activity proved otherwise —
+   worth remembering as a lesson: check community/support activity, not just
+   a static changelog page, before writing off a vendor as abandoned).
+2. **✅ Channex staging spike, validated end-to-end** (2026-09-17, migration
+   060, commit `4a9eaca`). New `channel_manager` module (default off),
+   vendor-agnostic `channel_manager_mappings` table (deliberately generic
+   column names — `provider`, `external_room_type_id` — so adding a
+   `beds24Adapter.js` later never needs a schema change), `server/services/
+   channexAdapter.js`, `server/routes/channelManager.js` (owner-only
+   `/test/setup`, `/test/push-rates`, `/test/bookings`,
+   `/test/bookings/:id/ack`). Ran the real round trip against Channex's
+   staging API for one unit (Zahill's Deluxe 101): created a real Channex
+   property/room-type/rate-plan, pushed 30 days of real `pricing_periods`-
+   resolved rates + live availability (confirmed correct via independent
+   GET readback, not just "no error"), manually created a test booking in
+   Channex's dashboard (Applications → add "Booking CRS" app → its booking
+   page's "Create" button — the discoverable manual path, not obvious from
+   the main dashboard nav), pulled it via the booking-revisions feed, and
+   acknowledged it (confirmed it dropped off the unacked feed after).
+   **Found and fixed two real Channex API gotchas** live: room-type creation
+   needs `occ_children`/`occ_infants` (422 without them), and rate-plan
+   creation needs an `options` array. **The important one**: Channex's
+   `/restrictions` rate field silently reads a plain integer as the
+   currency's minor unit (cents-equivalent) — pushing `500000` (meaning
+   500,000 IDR) landed as `5000.00`, **100x too low**, no error thrown.
+   Fixed by sending `rate.toFixed(2)` as a decimal string; re-verified
+   correct via independent readback. This is exactly the kind of bug that
+   would have silently undersold every room by 99% if it had shipped
+   straight to a real push job without this spike catching it first.
+3. **🔵 Not started — production channel-manager automation.** What's needed
+   to go from "spike proves the mechanism" to "actually usable":
+   - Map all of a property's real units (not just one) — `POST /test/setup`
+     equivalent needs a bulk/batch path, and a real UI for it (owner picks
+     which units to list on which OTAs).
+   - A scheduled push job (`server/jobs/`, same pattern as night-audit/market-
+     insights) instead of manual `/test/push-rates` calls — push on every
+     `pricing_periods`/booking change, plus a nightly full resync.
+   - Real booking ingestion — turn a pulled Channex booking-revision into an
+     actual `bookings` row (guest match/create, folio posting, source
+     attribution to an OTA `booking_sources` row) instead of today's
+     inspect-only pull. This is the biggest remaining piece of real work.
+   - Client-facing settings UI (module toggle already exists via superadmin;
+     needs an owner-facing "which rooms are listed on which channels" page).
+   - Decide for real whether Channex is the production vendor, or pivot to
+     Beds24 — the adapter boundary (`channexAdapter.js`'s plain function
+     interface) means this decision doesn't require redoing the schema or
+     the booking-ingestion logic, only a new adapter file plus re-mapping
+     external ids.
+4. **🔵 Not started — Dynamic/Yield Pricing Engine v1.** Architecture is
+   sketched (not coded): reuses `pricing_periods` as the single rate-
+   resolution engine every consumer already reads (Reservations calendar,
+   booking rate suggestion, and the channel-manager push job above) —
+   automation becomes just another writer into that table, at lower
+   `sort_order` priority than a manual override, so **no existing read path
+   needs to change**. Planned pieces:
+   - New `pricing_periods.source` column (`manual`/`auto`) + new
+     `yield_settings` table (occupancy-tier config, floor/ceiling bounds,
+     enabled — property-scoped).
+   - `server/services/yieldService.js` — pure occupancy-tier lookup (e.g.
+     <40% occ → −10%, 70–90% → +15%, 90%+ → +30%), same core technique
+     STAAH Max uses, just self-built.
+   - Nightly `server/jobs/yieldPricing.js` computing occupancy per unit per
+     date (derivable today from `bookings` — no new data capture needed for
+     v1) and upserting `pricing_periods` rows.
+   - New `yield_management` module (default off, paid add-on tier).
+   - Owner-facing settings UI + a visible marker distinguishing an
+     auto-set rate from a manual one on the Pricing/Reservations calendar —
+     an owner needs to see and override the machine, not just be shown a
+     number it produced.
+   - Guardrails from day one: floor/ceiling bounds (a bad occupancy read
+     should never push a rate to something absurd), and a lightweight
+     change log for auto-set rates (mirrors `purchase_order_events`) so an
+     owner can ask "why did tonight's rate change" and get a real answer.
+5. **🔵 Future (v1.1+, not v1) — pace/pickup + same-time-last-year
+   comparison.** Unlike v1's occupancy-tier signal (fully derivable from
+   existing `bookings`/`units` data today), this needs genuinely **new data
+   capture** — a lightweight nightly snapshot table (`demand_snapshots`:
+   property_id, stay_date, snapshot_date, rooms_booked) that has to
+   accumulate over time before it's useful, plus an inherent cold-start
+   limit for any newly onboarded property with no history yet.
+6. **🔵 Known, unaddressed gap regardless of build path chosen**: real
+   competitor **nightly rate** tracking. Market Insights only tracks
+   review/rating signals (Google Places) today, not actual OTA prices — a
+   real rate-shopping data source (scraping, ToS-risky, or a paid API like
+   RateGain/OTA Insight) would be needed to ever feed competitor pricing
+   into the yield engine. Not blocking v1, which works off occupancy alone.
+
+### What NOT to assume is done
+No cron job exists yet. No pulled Channex booking has ever been written into
+the real `bookings` table — the spike is strictly inspect-only. Only one unit
+(Deluxe 101) is mapped, not all 35. No client UI exists for any of this. The
+yield engine is architecture only — zero lines of `yieldService.js` exist.
 
 ---
 
@@ -815,6 +960,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 | calling          | ✅                 | —             |
 | resto_ordering   | ❌                 | paid add-on tier |
 | back_office      | ❌                 | paid add-on tier, Slices A+B + Inventory Value |
+| channel_manager  | ❌                 | spike/validation only, not production — Zahill only, for testing |
 
 ---
 
