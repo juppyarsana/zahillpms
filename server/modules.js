@@ -21,6 +21,10 @@ module.exports = {
   // receiving) + Slice B (Expenses) built so far. Cash & Bank/AP and
   // Recipes/COGS are future slices of the same module, not yet built.
   back_office:     { label: 'Back Office',     routes: ['purchasing', 'expenses'] },
+  // Default OFF — spike/validation only (migration 060), not production
+  // automation yet. Testing whether a channel-manager (Channex staging
+  // sandbox) integration is viable before committing to a vendor.
+  channel_manager: { label: 'Channel Manager', routes: ['channelManager'] },
 };
 
 // Core routes — always on, no module guard:

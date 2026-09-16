@@ -92,6 +92,7 @@ app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insigh
 app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/activities'));
 app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/expenses'));
+app.use('/api/channel-manager', auth, moduleGuard('channel_manager'), require('./routes/channelManager'));
 
 // /api/calls mixes three auth mechanisms (staff auth, authDisplay for the
 // room's own call actions, authQueryToken for the staff SSE stream) — a
