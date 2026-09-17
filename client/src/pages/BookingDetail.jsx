@@ -49,10 +49,10 @@ export default function BookingDetail() {
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
+  const [estimate, setEstimate] = useState(null);
   const [addingCharge, setAddingCharge] = useState(false);
   const [chargeForm, setChargeForm] = useState({ type: 'misc', description: '', quantity: 1, unit_price: '' });
   const [chargeError, setChargeError] = useState('');
-  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [activityBookings, setActivityBookings] = useState(null);
 
   async function load() {
@@ -68,8 +68,12 @@ export default function BookingDetail() {
   async function loadFolio() {
     setFolioLoading(true);
     try {
-      const r = await api.get(`/api/folio/${id}`);
-      setFolio(r.data);
+      const [f, e] = await Promise.all([
+        api.get(`/api/folio/${id}`),
+        api.get(`/api/folio/${id}/estimate`).catch(() => null),
+      ]);
+      setFolio(f.data);
+      if (e) setEstimate(e.data);
     } catch {}
     setFolioLoading(false);
   }
@@ -108,23 +112,28 @@ export default function BookingDetail() {
     }
   }
 
-  async function downloadInvoice() {
-    setDownloadingInvoice(true);
+  async function downloadPdf(url, filename) {
     try {
-      const r = await api.get(`/api/folio/${id}/invoice`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const r = await api.get(url, { responseType: 'blob' });
+      const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `invoice-${id}.pdf`;
+      a.href = blobUrl;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      window.URL.revokeObjectURL(blobUrl);
     } catch {
-      alert('Failed to download invoice');
-    } finally {
-      setDownloadingInvoice(false);
+      alert('Failed to download PDF');
     }
+  }
+
+  async function downloadInvoice() {
+    await downloadPdf(`/api/folio/${id}/invoice`, `invoice-${id}.pdf`);
+  }
+
+  async function downloadProforma() {
+    await downloadPdf(`/api/folio/${id}/proforma`, `proforma-${id}.pdf`);
   }
 
   async function markPaid(payment) {
@@ -322,8 +331,31 @@ export default function BookingDetail() {
   const bookingSource = sources.find(s => s.id === booking.source);
   const cityLedgerSource = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(bookingSource?.payment_status);
 
+  // Modify Booking (moderate consequence) and Danger Zone (rare, destructive)
+  // stay collapsed behind ⋮, visually separated by a divider — Communication
+  // (Call/Message/WhatsApp) is high-frequency enough to live as visible icon
+  // buttons instead, and Download earns its own always-visible button since
+  // it's a different kind of action (produces a guest-facing document).
+  const modifyItems = [
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
+      { label: 'Amend Dates', icon: '📅', onClick: openAmend },
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
+  ].filter(Boolean);
+  const dangerItems = [
+    ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
+      { label: 'Mark No-Show', icon: '🚫', onClick: markNoShow },
+    ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
+      { label: 'Cancel Booking', icon: '✕', onClick: cancel, danger: true },
+  ].filter(Boolean);
+  const moreItems = [
+    ...modifyItems,
+    modifyItems.length > 0 && dangerItems.length > 0 && { divider: true },
+    ...dangerItems,
+  ];
+
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+    <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <div className="page-header">
         <div>
           <div className="page-title">Booking #{id.slice(0,8).toUpperCase()}</div>
@@ -346,19 +378,27 @@ export default function BookingDetail() {
             parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
             <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
           )}
-          <ActionMenu items={[
-            hasModule('calling') && { label: 'Call Room', icon: '📞', onClick: callRoomAction },
-            { label: 'Send Message', icon: '✉️', onClick: openMessage },
-            booking.guest_whatsapp && { label: 'WhatsApp Guest', icon: '💬', onClick: waLink },
-            ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
-              { label: 'Amend Dates', icon: '📅', onClick: openAmend },
-            ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
-              { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
-            ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
-              { label: 'Mark No-Show', icon: '🚫', onClick: markNoShow },
-            ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
-              { label: 'Cancel Booking', icon: '✕', onClick: cancel, danger: true },
-          ]} />
+          <div className="icon-group">
+            {hasModule('calling') && (
+              <button title="Call Room" onClick={callRoomAction}>📞</button>
+            )}
+            <button title="Send Message" onClick={openMessage}>✉️</button>
+            {booking.guest_whatsapp && (
+              <button title="WhatsApp Guest" onClick={waLink}>💬</button>
+            )}
+            <ActionMenu
+              bare
+              icon="⬇"
+              ariaLabel="Download documents"
+              items={[
+                { label: 'Invoice', icon: '🧾', hint: 'What has actually been charged so far', onClick: downloadInvoice },
+                { divider: true },
+                { label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total for the whole stay', onClick: downloadProforma },
+              ]}
+            />
+          </div>
+          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
+          <ActionMenu items={moreItems} />
         </div>
       </div>
 
@@ -369,10 +409,10 @@ export default function BookingDetail() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-3">
-        <button className={`btn btn-sm ${tab === 'details' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('details')}>Details</button>
-        <button className={`btn btn-sm ${tab === 'folio' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('folio')}>Folio</button>
-        {hasModule('activities') && <button className={`btn btn-sm ${tab === 'activities' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('activities')}>Activities</button>}
+      <div className="tab-bar">
+        <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
+        <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Folio</button>
+        {hasModule('activities') && <button className={`tab-bar-item${tab === 'activities' ? ' active' : ''}`} onClick={() => setTab('activities')}>Activities</button>}
       </div>
 
       {tab === 'details' && (
@@ -561,15 +601,27 @@ export default function BookingDetail() {
 
       {tab === 'folio' && (
         <div className="card mt-3">
-          <div className="flex-between mb-3">
-            <div className="card-title" style={{ marginBottom: 0 }}>Folio</div>
-            <button className="btn btn-secondary btn-sm" onClick={downloadInvoice} disabled={downloadingInvoice}>
-              {downloadingInvoice ? 'Preparing…' : '⬇ Download Invoice'}
-            </button>
-          </div>
+          <div className="card-title">Folio</div>
 
           {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
             <>
+              {estimate && (
+                <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                  <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                    <span className="text-muted">Estimated Total (full stay)</span>
+                    <span>{fmtIDR(estimate.total)}</span>
+                  </div>
+                  <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
+                    <span>Estimated Balance Due</span>
+                    <span style={{ color: parseFloat(estimate.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
+                      {fmtIDR(estimate.balance_due)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    Projected for the whole stay, including room/meal nights not yet posted below. Use this to know what the guest actually still owes.
+                  </div>
+                </div>
+              )}
               {(() => {
                 const roomSum = folio.charges.filter(c => c.type === 'room').reduce((s, c) => s + parseFloat(c.amount), 0);
                 const fnbSum = folio.charges.filter(c => c.type === 'fnb').reduce((s, c) => s + parseFloat(c.amount), 0);
@@ -682,10 +734,13 @@ export default function BookingDetail() {
               )}
 
               <div className="flex-between mt-3" style={{ fontWeight: 700, fontSize: 16 }}>
-                <span>Balance Due</span>
+                <span>Posted Balance</span>
                 <span style={{ color: parseFloat(folio.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
                   {fmtIDR(folio.balance_due)}
                 </span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Based only on charges already posted to the ledger above — see "Estimated Balance Due" up top for what the guest actually still owes overall.
               </div>
             </>
           )}

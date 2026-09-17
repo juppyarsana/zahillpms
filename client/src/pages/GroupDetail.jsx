@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import ActionMenu from '../components/ActionMenu';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -38,6 +39,22 @@ export default function GroupDetail() {
 
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
 
+  async function downloadGroupProforma() {
+    try {
+      const r = await api.get(`/api/folio/group/${groupId}/proforma`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `proforma-group-${groupId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download pro forma');
+    }
+  }
+
   async function checkInGroup() {
     setCheckingIn(true);
     setCheckinResults(null);
@@ -69,18 +86,24 @@ export default function GroupDetail() {
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+    <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <div className="page-header">
         <div>
           <div className="page-title">Group Booking · {group.guest_name}</div>
           <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           {anyEligibleForCheckin && (
             <button className="btn btn-primary" onClick={checkInGroup} disabled={checkingIn}>
               {checkingIn ? 'Checking in…' : 'Check In Whole Group'}
             </button>
           )}
+          <ActionMenu
+            icon="⬇"
+            label="Download"
+            ariaLabel="Download documents"
+            items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
+          />
           {group.status === 'active' && (
             <button className="btn btn-danger" onClick={cancelGroup}>Cancel Group</button>
           )}
@@ -110,9 +133,9 @@ export default function GroupDetail() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-3">
-        <button className={`btn btn-sm ${tab === 'details' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('details')}>Details</button>
-        <button className={`btn btn-sm ${tab === 'folio' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('folio')}>Master Folio</button>
+      <div className="tab-bar">
+        <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
+        <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Master Folio</button>
       </div>
 
       {tab === 'details' && (

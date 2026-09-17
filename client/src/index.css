@@ -328,6 +328,22 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 .btn-icon { padding: 6px 8px; border-radius: var(--radius-md); background: var(--white); border: 1.5px solid var(--border); font-size: 14px; }
 .btn-icon:hover { background: var(--green-light); border-color: var(--green-dark); }
 
+/* Joins a cluster of related icon buttons (e.g. contact actions) into one
+   segmented control instead of several separately-boxed buttons, so they
+   read as one grouped unit rather than scattered icons. No `overflow:
+   hidden` here — one item (Download) pops open a dropdown panel, and
+   clipping the group would clip that panel too. Rounded corners are instead
+   applied directly to the first/last item (and, when that item is an
+   ActionMenu's wrapper div, to the button nested inside it). */
+.icon-group { display: inline-flex; align-items: stretch; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--white); }
+.icon-group button { display: flex; align-items: center; justify-content: center; width: 36px; border: none; background: none; font-size: 14px; cursor: pointer; transition: background var(--transition); }
+.icon-group > *:not(:first-child) { border-left: 1.5px solid var(--border); }
+.icon-group button:hover { background: var(--green-light); }
+.icon-group > *:first-child,
+.icon-group > *:first-child > button { border-radius: calc(var(--radius-md) - 1.5px) 0 0 calc(var(--radius-md) - 1.5px); }
+.icon-group > *:last-child,
+.icon-group > *:last-child > button { border-radius: 0 calc(var(--radius-md) - 1.5px) calc(var(--radius-md) - 1.5px) 0; }
+
 /* ── Badges ── */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -347,7 +363,7 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 /* ── Tab Bar (underline tabs, reusable across pages with 3+ sub-views) ── */
 .tab-bar {
   display: flex; gap: 4px; border-bottom: 1.5px solid var(--border);
-  margin-bottom: 20px; overflow-x: auto;
+  margin-bottom: 20px; overflow-x: auto; overflow-y: hidden;
 }
 .tab-bar-item {
   display: flex; align-items: center; gap: 6px; white-space: nowrap;
