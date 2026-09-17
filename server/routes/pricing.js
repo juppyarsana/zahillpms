@@ -21,6 +21,11 @@ router.get('/periods', auth, async (req, res) => {
 // GET /api/pricing/suggest?unit_id=&check_in=&check_out=&rate_plan_id=&num_guests=
 // Returns the suggested NET room rate, the rate plan's NET meal supplement,
 // and the grossed-up grand total (what the guest pays incl. service charge & VAT).
+// Resolves the effective rate per NIGHT (see night_breakdown) rather than
+// applying whatever period covers check_in to the whole stay — a stay that
+// crosses into a different pricing period (e.g. a weekday check-in running
+// into a weekend) previously priced every night at the check-in night's
+// rate, silently over/under-quoting the crossed-into nights.
 router.get('/suggest', auth, async (req, res) => {
   const { unit_id, check_in, check_out, rate_plan_id, num_guests } = req.query;
   if (!unit_id || !check_in || !check_out) {
@@ -30,41 +35,52 @@ router.get('/suggest', auth, async (req, res) => {
     const nights = Math.max(0,
       (new Date(check_out) - new Date(check_in)) / 86400000
     );
-    if (nights === 0) return res.json({ nights: 0, suggested_total: 0, period: null });
+    if (nights === 0) return res.json({ nights: 0, suggested_total: 0, period: null, night_breakdown: [] });
 
     const { rows: [unit] } = await db.query('SELECT * FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
-    // Find highest-priority active period covering check_in date
+    const baseRate = parseFloat(unit.base_rate);
+
+    // Every active period overlapping ANY night of the stay, highest-priority first.
     const { rows: periods } = await db.query(`
       SELECT * FROM pricing_periods
       WHERE property_id = $3
         AND is_active = true
-        AND date_from <= $1
+        AND date_from < $2
         AND date_to >= $1
-        AND (unit_ids = '[]'::jsonb OR unit_ids @> $2::jsonb)
+        AND (unit_ids = '[]'::jsonb OR unit_ids @> $4::jsonb)
       ORDER BY sort_order DESC
-      LIMIT 1
-    `, [check_in, JSON.stringify([unit_id]), req.propertyId]);
+    `, [check_in, check_out, req.propertyId, JSON.stringify([unit_id])]);
 
-    const period = periods[0] || null;
-    let rate_per_night = parseFloat(unit.base_rate);
-
-    if (period) {
-      if (period.type === 'fixed') {
-        rate_per_night = parseFloat(period.value);
-      } else {
-        rate_per_night = parseFloat(unit.base_rate) * parseFloat(period.value);
-      }
+    // Resolve one rate per night: check_in .. check_out-1 (matches
+    // roomChargeService.stayNights' convention — no charge for the departure day).
+    const night_breakdown = [];
+    for (let t = new Date(check_in + 'T00:00:00Z').getTime(); t < new Date(check_out + 'T00:00:00Z').getTime(); t += 86400000) {
+      const dateStr = new Date(t).toISOString().slice(0, 10);
+      const period = periods.find(p => p.date_from <= dateStr && p.date_to >= dateStr) || null;
+      const room_rate = Math.round(period
+        ? (period.type === 'fixed' ? parseFloat(period.value) : baseRate * parseFloat(period.value))
+        : baseRate);
+      night_breakdown.push({
+        date: dateStr,
+        room_rate,
+        period: period ? { name: period.name, type: period.type, value: period.value, color: period.color } : null,
+      });
     }
-    rate_per_night = Math.round(rate_per_night);
 
-    // Rate plan meal supplement (NET, per person per night)
+    const room_total = night_breakdown.reduce((sum, n) => sum + n.room_rate, 0); // NET
+    const varies_by_night = new Set(night_breakdown.map(n => n.room_rate)).size > 1;
+    // Back-compat single-rate/period fields: only meaningful when every night
+    // agrees — otherwise null, and callers should read night_breakdown instead.
+    const rate_per_night = varies_by_night ? null : night_breakdown[0].room_rate;
+    const period = varies_by_night ? null : night_breakdown[0].period;
+
+    // Rate plan meal supplement (NET, per person per night) — constant across
+    // the stay, doesn't key off pricing_periods.
     const plan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
     const guests = Math.max(1, parseInt(num_guests, 10) || 1);
     const meal_per_night = ratePlanService.mealNetPerNight(plan, guests);
-
-    const room_total = rate_per_night * nights;         // NET
     const meal_total = Math.round(meal_per_night * nights); // NET
 
     const { rows: [settings] } = await db.query(
@@ -75,15 +91,22 @@ router.get('/suggest', auth, async (req, res) => {
 
     res.json({
       nights,
-      base_rate: parseFloat(unit.base_rate),
-      rate_per_night,                       // back-compat: NET room rate/night
+      base_rate: baseRate,
+      rate_per_night,                       // back-compat: NET room rate/night, null if it varies — see night_breakdown
       room_rate_per_night: rate_per_night,  // NET
       room_total,                           // NET
       meal_per_night,                       // NET
       meal_total,                           // NET
+      subtotal: gross.subtotal,              // NET, room_total + meal_total
+      tax_rate: gross.tax_rate,
+      tax_amount: gross.tax_amount,
+      service_charge_rate: gross.service_charge_rate,
+      service_charge_amount: gross.service_charge_amount,
       grand_total: gross.total,             // GROSS — what the guest pays
       suggested_total: room_total,          // back-compat (was rate_per_night * nights)
-      period: period ? { name: period.name, type: period.type, value: period.value, color: period.color } : null,
+      period,                               // null if it varies by night — see night_breakdown
+      varies_by_night,
+      night_breakdown,                      // [{ date, room_rate, period }] — one row per stay night
       rate_plan: plan ? { id: plan.id, code: plan.code, name: plan.name, meal_price: parseFloat(plan.meal_price) } : null,
     });
   } catch (err) {

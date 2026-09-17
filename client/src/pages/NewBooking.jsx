@@ -405,19 +405,79 @@ export default function NewBooking() {
                 <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
                   onChange={e => setRoom(i, 'total_amount', e.target.value)} />
                 {priceSuggestion && suggestedTotal > 0 && (
-                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                    {priceSuggestion.period && (
-                      <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600, marginRight: 6 }}>
-                        {priceSuggestion.period.name}
+                  <div style={{ marginTop: 8, fontSize: 12, background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div className="flex-between" style={{ marginBottom: 4 }}>
+                      <span className="text-muted">
+                        Room ({priceSuggestion.nights} night{priceSuggestion.nights > 1 ? 's' : ''}
+                        {!priceSuggestion.varies_by_night && ` × Rp ${Number(priceSuggestion.room_rate_per_night).toLocaleString('id-ID')}`})
+                        {!priceSuggestion.varies_by_night && priceSuggestion.period && (
+                          <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600, marginLeft: 6 }}>
+                            {priceSuggestion.period.name}
+                          </span>
+                        )}
+                        {priceSuggestion.varies_by_night && <span style={{ fontStyle: 'italic' }}> · rates vary by night, see below</span>}
                       </span>
+                      <span>Rp {Number(priceSuggestion.room_total).toLocaleString('id-ID')}</span>
+                    </div>
+
+                    {priceSuggestion.meal_total > 0 && (
+                      <div className="flex-between" style={{ marginBottom: 4 }}>
+                        <span className="text-muted">
+                          {priceSuggestion.rate_plan?.name || 'Breakfast'} ({room.num_guests} guest{room.num_guests > 1 ? 's' : ''} × {priceSuggestion.nights} night{priceSuggestion.nights > 1 ? 's' : ''} × Rp {Number(priceSuggestion.rate_plan?.meal_price || 0).toLocaleString('id-ID')})
+                        </span>
+                        <span>Rp {Number(priceSuggestion.meal_total).toLocaleString('id-ID')}</span>
+                      </div>
                     )}
-                    Room Rp {Number(priceSuggestion.room_rate_per_night).toLocaleString('id-ID')}/night
-                    {priceSuggestion.meal_per_night > 0 && <> · {priceSuggestion.rate_plan?.name || 'Breakfast'} Rp {Number(priceSuggestion.meal_per_night).toLocaleString('id-ID')}/night ({room.num_guests} guest{room.num_guests > 1 ? 's' : ''})</>}
-                    {' · '}<strong>Grand total Rp {Number(suggestedTotal).toLocaleString('id-ID')}</strong>
+
+                    <div className="flex-between" style={{ marginBottom: 4, paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+                      <span className="text-muted">Subtotal</span>
+                      <span>Rp {Number(priceSuggestion.subtotal).toLocaleString('id-ID')}</span>
+                    </div>
+                    {priceSuggestion.service_charge_amount > 0 && (
+                      <div className="flex-between" style={{ marginBottom: 4 }}>
+                        <span className="text-muted">Service Charge ({priceSuggestion.service_charge_rate}%)</span>
+                        <span>Rp {Number(priceSuggestion.service_charge_amount).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+                    {priceSuggestion.tax_amount > 0 && (
+                      <div className="flex-between" style={{ marginBottom: 4 }}>
+                        <span className="text-muted">Tax ({priceSuggestion.tax_rate}%)</span>
+                        <span>Rp {Number(priceSuggestion.tax_amount).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    <div className="flex-between" style={{ fontWeight: 700, paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+                      <span>Grand Total</span>
+                      <span>Rp {Number(suggestedTotal).toLocaleString('id-ID')}</span>
+                    </div>
+
                     {!room.total_amount && (
-                      <button type="button" className="btn btn-sm btn-secondary" style={{ marginLeft: 8 }} onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
+                      <button type="button" className="btn btn-sm btn-secondary mt-2" onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
                         Use this
                       </button>
+                    )}
+
+                    {priceSuggestion.night_breakdown?.length > 1 && (
+                      <details open={priceSuggestion.varies_by_night} style={{ marginTop: 8 }}>
+                        <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text)' }}>
+                          Nightly room rate breakdown ({priceSuggestion.night_breakdown.length} nights)
+                        </summary>
+                        <div style={{ marginTop: 6 }}>
+                          {priceSuggestion.night_breakdown.map(n => (
+                            <div key={n.date} className="flex-between" style={{ padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
+                              <span>
+                                {n.date}
+                                {n.period && (
+                                  <span style={{ background: n.period.color, color: 'white', borderRadius: 4, padding: '0 6px', fontSize: 10, fontWeight: 600, marginLeft: 6 }}>
+                                    {n.period.name}
+                                  </span>
+                                )}
+                              </span>
+                              <span>Rp {Number(n.room_rate).toLocaleString('id-ID')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </div>
                 )}
