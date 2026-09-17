@@ -4,7 +4,7 @@ const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const fs = require('fs');
-const { loadFolio, round2 } = require('../services/folioService');
+const { loadFolio, computeProforma, round2 } = require('../services/folioService');
 
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
@@ -68,6 +68,22 @@ router.get('/:bookingId', auth, async (req, res) => {
   }
 });
 
+// GET /api/folio/:bookingId/estimate — JSON projection (see
+// folioService.computeProforma), used by the Folio tab to show a sensible
+// "Estimated Balance Due" even before any night has actually posted to the
+// ledger (loadFolio's balance_due is 0 minus whatever's been paid until
+// then, which reads as a confusing negative number pre-check-in/pre-audit).
+router.get('/:bookingId/estimate', auth, async (req, res) => {
+  try {
+    const estimate = await computeProforma(req.params.bookingId, req.propertyId);
+    if (!estimate) return res.status(404).json({ error: 'Booking not found' });
+    const { booking, property, ...rest } = estimate;
+    res.json({ booking_id: booking.id, ...rest });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/folio/:bookingId/charge
 router.post('/:bookingId/charge', auth, async (req, res) => {
   const { type, description, quantity, unit_price } = req.body;
@@ -112,153 +128,294 @@ router.delete('/charge/:id', auth, async (req, res) => {
   }
 });
 
-// GET /api/folio/:bookingId/invoice — PDF
+// Draws the header block shared by every invoice-style PDF: logo top-right,
+// property name/address/contact top-left, and a right-aligned title block
+// (e.g. "Invoice" / "Pro Forma Invoice") pinned to a fixed y BELOW the logo's
+// bottom edge rather than following the auto-flowing cursor, so it can never
+// collide with the logo regardless of how many lines the address block takes.
+// Leaves doc.y positioned to start the Guest/Stay block right after it.
+function drawDocumentHeader(doc, property, { title, refLine }) {
+  const headerTop = doc.y;
+  const LOGO_SIZE = 65;
+  const LOGO_X = 545 - LOGO_SIZE;
+
+  if (property.logo_url) {
+    try {
+      const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
+      if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
+    } catch (_) {
+      // Corrupt/missing logo file — fall back to text-only header below.
+    }
+  }
+
+  doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
+  doc.fontSize(9).font('Helvetica').fillColor('#555');
+  if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
+  const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
+  if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
+  doc.fillColor('#000');
+  const leftColBottom = doc.y;
+
+  const rightColTop = headerTop + LOGO_SIZE + 10;
+  doc.fontSize(14).font('Helvetica-Bold').text(title, 300, rightColTop, { width: 250, align: 'right' });
+  doc.fontSize(9).font('Helvetica').text(refLine, 300, doc.y, { width: 250, align: 'right' });
+  doc.text(new Date().toLocaleDateString('id-ID'), 300, doc.y, { width: 250, align: 'right' });
+
+  doc.x = 50;
+  doc.y = Math.max(leftColBottom, doc.y) + 20;
+}
+
+// Draws the line-item table + totals + payments-received + (optionally)
+// balance due, starting at the doc's current y. Shared by the single-booking
+// invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
+// caller should continue from.
+function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
+  const tableTop = doc.y;
+  const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+  doc.text('Description', colX.desc, tableTop);
+  doc.text('Qty', colX.qty, tableTop, { width: 50, align: 'right' });
+  doc.text('Unit Price', colX.price, tableTop, { width: 90, align: 'right' });
+  doc.text('Amount', colX.amount, tableTop, { width: 90, align: 'right' });
+  doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).strokeColor('#ccc').stroke();
+
+  let y = tableTop + 22;
+
+  // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb +
+  // sale) → Other. 'fnb' is the rate plan's included meal (migration 044);
+  // 'sale' is an actual ordered item (POS/Room Display/resto app,
+  // migration 049) — both read as food & beverage to a guest, just posted
+  // by two different code paths. Keep in sync with the same grouping in
+  // client/src/pages/BookingDetail.jsx's Folio tab.
+  const GROUPS = [
+    { key: 'Accommodation', match: c => c.type === 'room' },
+    { key: 'Food & Beverage', match: c => c.type === 'fnb' || c.type === 'sale' },
+    { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale' },
+  ];
+  const renderLine = c => {
+    if (y > 720) { doc.addPage(); y = 50; }
+    doc.font('Helvetica').fontSize(10).fillColor('#000');
+    doc.text(c.description, colX.desc, y, { width: 240 });
+    doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
+    doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
+    doc.text(fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
+    y += 16;
+  };
+
+  const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
+  if (charges.length === 0) {
+    doc.font('Helvetica').fontSize(10).fillColor('#888').text('No charges posted', colX.desc, y);
+    doc.fillColor('#000');
+    y += 18;
+  } else if (!anyGrouped) {
+    for (const c of charges) renderLine(c);
+  } else {
+    for (const g of GROUPS) {
+      const lines = charges.filter(g.match);
+      if (!lines.length) continue;
+      if (y > 715) { doc.addPage(); y = 50; }
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#555').text(g.key.toUpperCase(), colX.desc, y);
+      doc.fillColor('#000');
+      y += 15;
+      for (const c of lines) renderLine(c);
+      y += 4;
+    }
+  }
+
+  doc.moveTo(50, y + 4).lineTo(550, y + 4).strokeColor('#ccc').stroke();
+  y += 14;
+
+  function totalsLine(label, value, opts = {}) {
+    doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.bold ? 11 : 10);
+    // A 90pt-wide box is too narrow for "Service Charge (0%)" at this font
+    // size — it silently wraps onto 2 lines, and since the row height below
+    // is a fixed 16, the wrapped second line ("(0%)") spills down onto the
+    // next row's text, reading as doubled/overlapping glyphs.
+    doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
+    doc.text(value, colX.amount, y, { width: 90, align: 'right' });
+    y += opts.bold ? 20 : 16;
+  }
+
+  totalsLine('Subtotal', fmtIDR(subtotal));
+  totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
+  totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
+  totalsLine('Total', fmtIDR(total), { bold: true });
+
+  const received = payments.filter(p => p.status === 'received');
+  if (received.length) {
+    y += 6;
+    doc.font('Helvetica-Bold').fontSize(10).text('Payments Received', colX.desc, y);
+    y += 16;
+    for (const p of received) {
+      doc.font('Helvetica').text(`${p.type} — ${(p.method || '').replace('_', ' ')} · ${String(p.received_at || '').slice(0, 10)}`, colX.desc, y, { width: 240 });
+      doc.text(fmtIDR(p.amount), colX.amount, y, { width: 90, align: 'right' });
+      y += 16;
+    }
+  }
+
+  if (showBalance) {
+    y += 8;
+    totalsLine('Balance Due', fmtIDR(balance_due), { bold: true });
+  }
+
+  doc.y = y;
+}
+
+// Renders the single-booking invoice/pro-forma PDF straight to the response.
+function renderBookingInvoicePdf(res, folio, { title, filenamePrefix, note }) {
+  const { booking, property } = folio;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filenamePrefix}-${booking.id}.pdf"`);
+
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  doc.pipe(res);
+
+  drawDocumentHeader(doc, property, { title, refLine: `Booking #${booking.id.slice(0, 8).toUpperCase()}` });
+
+  doc.fontSize(10).font('Helvetica-Bold').text('Guest');
+  doc.font('Helvetica').text(booking.guest_name);
+  doc.moveDown(0.5);
+  doc.font('Helvetica-Bold').text('Stay');
+  // En dash (WinAnsi-safe under pdfkit's standard Helvetica font) instead of
+  // "→" (U+2192) — pdfkit's built-in fonts only support WinAnsiEncoding, so
+  // an arrow outside that range rendered as garbage ("!'").
+  doc.font('Helvetica').text(
+    `${booking.unit_name}  ·  ${String(booking.check_in_date).slice(0, 10)}  –  ${String(booking.check_out_date).slice(0, 10)}`
+  );
+
+  if (note) {
+    doc.moveDown(0.5);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e').text(note, { width: 500 });
+    doc.fillColor('#000');
+  }
+
+  doc.moveDown(1.5);
+  drawChargeTable(doc, folio);
+
+  doc.moveDown(3);
+  doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
+
+  doc.end();
+}
+
+const PROFORMA_NOTE = 'Estimate only — projected charges for the full stay. The final invoice may differ if dates, rate plan, or extras change.';
+
+// GET /api/folio/:bookingId/invoice — PDF, reflects the live folio (only
+// what's actually posted so far — see computeProforma below for why that
+// can be incomplete before checkout).
 router.get('/:bookingId/invoice', auth, async (req, res) => {
   try {
     const folio = await loadFolio(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
-    const { booking, charges, payments, property, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due } = folio;
+    renderBookingInvoicePdf(res, folio, { title: 'Invoice', filenamePrefix: 'invoice' });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/folio/:bookingId/proforma — PDF, projected charges for the whole
+// stay (see folioService.computeProforma). What front desk hands a guest who
+// asks for "an invoice" before night audit/checkout has posted every night.
+router.get('/:bookingId/proforma', auth, async (req, res) => {
+  try {
+    const folio = await computeProforma(req.params.bookingId, req.propertyId);
+    if (!folio) return res.status(404).json({ error: 'Booking not found' });
+    renderBookingInvoicePdf(res, folio, { title: 'Pro Forma Invoice', filenamePrefix: 'proforma', note: PROFORMA_NOTE });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/folio/group/:groupId/proforma — PDF, one section per room
+// (each projected the same way as the single-booking pro forma) followed by
+// a grand total across the whole group.
+router.get('/group/:groupId/proforma', auth, async (req, res) => {
+  try {
+    const { rows: [group] } = await db.query(
+      `SELECT rg.id, rg.check_in_date, rg.check_out_date, g.name as guest_name
+       FROM reservation_groups rg JOIN guests g ON rg.primary_guest_id = g.id
+       WHERE rg.id = $1 AND rg.property_id = $2`,
+      [req.params.groupId, req.propertyId]
+    );
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    const { rows: bookingRows } = await db.query(
+      'SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2',
+      [req.params.groupId, req.propertyId]
+    );
+    const folios = await Promise.all(bookingRows.map(b => computeProforma(b.id, req.propertyId)));
+    const { rows: [settings] } = await db.query(
+      `SELECT tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email, logo_url
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    const property = settings || {};
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="invoice-${booking.id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="proforma-group-${group.id}.pdf"`);
 
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     doc.pipe(res);
 
-    // Header: logo (if any) sits top-right; the Invoice/Booking#/date block is
-    // pinned to a fixed y BELOW the logo's bottom edge rather than following
-    // the auto-flowing cursor, so it can never collide with the logo
-    // regardless of how many lines the property name/address block above
-    // takes (a fixed 2-line address vs. a 1-line one used to shift the
-    // "Invoice" title up into the logo's box).
-    const headerTop = doc.y;
-    const LOGO_SIZE = 65;
-    const LOGO_X = 545 - LOGO_SIZE;
-
-    if (property.logo_url) {
-      try {
-        const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
-        if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
-      } catch (_) {
-        // Corrupt/missing logo file — fall back to text-only header below.
-      }
-    }
-
-    doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
-    doc.fontSize(9).font('Helvetica').fillColor('#555');
-    if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
-    const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
-    if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
-    doc.fillColor('#000');
-    const leftColBottom = doc.y;
-
-    const rightColTop = headerTop + LOGO_SIZE + 10;
-    doc.fontSize(14).font('Helvetica-Bold').text('Invoice', 350, rightColTop, { width: 200, align: 'right' });
-    doc.fontSize(9).font('Helvetica').text(`Booking #${booking.id.slice(0, 8).toUpperCase()}`, 350, doc.y, { width: 200, align: 'right' });
-    doc.text(new Date().toLocaleDateString('id-ID'), 350, doc.y, { width: 200, align: 'right' });
-
-    doc.x = 50;
-    doc.y = Math.max(leftColBottom, doc.y) + 20;
+    drawDocumentHeader(doc, property, { title: 'Pro Forma Invoice (Group)', refLine: `Group #${group.id.slice(0, 8).toUpperCase()}` });
 
     doc.fontSize(10).font('Helvetica-Bold').text('Guest');
-    doc.font('Helvetica').text(booking.guest_name);
+    doc.font('Helvetica').text(group.guest_name);
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold').text('Stay');
-    // En dash (WinAnsi-safe under pdfkit's standard Helvetica font) instead of
-    // "→" (U+2192) — pdfkit's built-in fonts only support WinAnsiEncoding, so
-    // an arrow outside that range rendered as garbage ("!'").
     doc.font('Helvetica').text(
-      `${booking.unit_name}  ·  ${String(booking.check_in_date).slice(0, 10)}  –  ${String(booking.check_out_date).slice(0, 10)}`
+      `${folios.length} room${folios.length !== 1 ? 's' : ''}  ·  ${String(group.check_in_date).slice(0, 10)}  –  ${String(group.check_out_date).slice(0, 10)}`
     );
 
-    doc.moveDown(1.5);
-    const tableTop = doc.y;
-    const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
-    doc.font('Helvetica-Bold').fontSize(10);
-    doc.text('Description', colX.desc, tableTop);
-    doc.text('Qty', colX.qty, tableTop, { width: 50, align: 'right' });
-    doc.text('Unit Price', colX.price, tableTop, { width: 90, align: 'right' });
-    doc.text('Amount', colX.amount, tableTop, { width: 90, align: 'right' });
-    doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).strokeColor('#ccc').stroke();
+    doc.moveDown(0.5);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e')
+      .text('Estimate only — projected charges for the full stay, per room. The final invoice may differ if dates, rate plans, or extras change.', { width: 500 });
+    doc.fillColor('#000');
 
-    let y = tableTop + 22;
+    doc.moveDown(1.2);
 
-    // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb +
-    // sale) → Other. 'fnb' is the rate plan's included meal (migration 044);
-    // 'sale' is an actual ordered item (POS/Room Display/resto app,
-    // migration 049) — both read as food & beverage to a guest, just posted
-    // by two different code paths. Keep in sync with the same grouping in
-    // client/src/pages/BookingDetail.jsx's Folio tab.
-    const GROUPS = [
-      { key: 'Accommodation', match: c => c.type === 'room' },
-      { key: 'Food & Beverage', match: c => c.type === 'fnb' || c.type === 'sale' },
-      { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale' },
-    ];
-    const renderLine = c => {
-      if (y > 720) { doc.addPage(); y = 50; }
-      doc.font('Helvetica').fontSize(10).fillColor('#000');
-      doc.text(c.description, colX.desc, y, { width: 240 });
-      doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
-      doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
-      doc.text(fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
-      y += 16;
+    for (const folio of folios) {
+      if (doc.y > 650) { doc.addPage(); doc.y = 50; }
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text(
+        `${folio.booking.unit_name}  ·  ${String(folio.booking.check_in_date).slice(0, 10)} – ${String(folio.booking.check_out_date).slice(0, 10)}`,
+        50, doc.y
+      );
+      doc.moveDown(0.3);
+      drawChargeTable(doc, { ...folio, showBalance: false });
+      doc.y += 14;
+    }
+
+    const sum = key => round2(folios.reduce((s, f) => s + f[key], 0));
+    const grand = {
+      subtotal: sum('subtotal'),
+      tax_rate: folios[0]?.tax_rate ?? 0,
+      service_charge_rate: folios[0]?.service_charge_rate ?? 0,
+      service_charge_amount: sum('service_charge_amount'),
+      tax_amount: sum('tax_amount'),
+      total: sum('total'),
+      balance_due: sum('balance_due'),
     };
 
-    const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
-    if (charges.length === 0) {
-      doc.font('Helvetica').fontSize(10).fillColor('#888').text('No charges posted', colX.desc, y);
-      doc.fillColor('#000');
-      y += 18;
-    } else if (!anyGrouped) {
-      for (const c of charges) renderLine(c);
-    } else {
-      for (const g of GROUPS) {
-        const lines = charges.filter(g.match);
-        if (!lines.length) continue;
-        if (y > 715) { doc.addPage(); y = 50; }
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#555').text(g.key.toUpperCase(), colX.desc, y);
-        doc.fillColor('#000');
-        y += 15;
-        for (const c of lines) renderLine(c);
-        y += 4;
-      }
-    }
+    if (doc.y > 680) { doc.addPage(); doc.y = 50; }
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).strokeColor('#000').lineWidth(1).stroke();
+    doc.moveDown(0.5);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000').text('GROUP TOTAL', 50, doc.y);
+    doc.moveDown(0.3);
 
-    doc.moveTo(50, y + 4).lineTo(550, y + 4).strokeColor('#ccc').stroke();
-    y += 14;
-
-    function totalsLine(label, value, opts = {}) {
+    function grandLine(label, value, opts = {}) {
       doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.bold ? 11 : 10);
-      // A 90pt-wide box is too narrow for "Service Charge (0%)" at this font
-      // size — it silently wraps onto 2 lines, and since the row height below
-      // is a fixed 16, the wrapped second line ("(0%)") spills down onto the
-      // next row's text, reading as doubled/overlapping glyphs.
-      doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
-      doc.text(value, colX.amount, y, { width: 90, align: 'right' });
-      y += opts.bold ? 20 : 16;
+      doc.text(label, 210, doc.y, { width: 150, align: 'right' });
+      doc.text(value, 460, doc.y, { width: 90, align: 'right' });
+      doc.moveDown(opts.bold ? 0.9 : 0.7);
     }
+    grandLine('Subtotal', fmtIDR(grand.subtotal));
+    grandLine(`Service Charge (${grand.service_charge_rate}%)`, fmtIDR(grand.service_charge_amount));
+    grandLine(`Tax (${grand.tax_rate}%)`, fmtIDR(grand.tax_amount));
+    grandLine('Total', fmtIDR(grand.total), { bold: true });
+    grandLine('Estimated Balance Due', fmtIDR(grand.balance_due), { bold: true });
 
-    totalsLine('Subtotal', fmtIDR(subtotal));
-    totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
-    totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
-    totalsLine('Total', fmtIDR(total), { bold: true });
-
-    const received = payments.filter(p => p.status === 'received');
-    if (received.length) {
-      y += 6;
-      doc.font('Helvetica-Bold').fontSize(10).text('Payments Received', colX.desc, y);
-      y += 16;
-      for (const p of received) {
-        doc.font('Helvetica').text(`${p.type} — ${(p.method || '').replace('_', ' ')} · ${String(p.received_at || '').slice(0, 10)}`, colX.desc, y, { width: 240 });
-        doc.text(fmtIDR(p.amount), colX.amount, y, { width: 90, align: 'right' });
-        y += 16;
-      }
-    }
-
-    y += 8;
-    totalsLine('Balance Due', fmtIDR(balance_due), { bold: true });
-
-    doc.moveDown(3);
+    doc.moveDown(2);
     doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
 
     doc.end();

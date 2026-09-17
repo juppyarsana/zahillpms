@@ -1,5 +1,5 @@
 const db = require('../db');
-const { round2 } = require('./folioService');
+const { round2, ymd, stayNights, nightlyAmount } = require('./folioService');
 
 // Per-night folio posting for the room + F&B (meal-plan) revenue split.
 // One `folio_charges` row of type='room' and (if the plan includes a meal)
@@ -7,40 +7,15 @@ const { round2 } = require('./folioService');
 // `folio_charges.service_date` + the partial unique index
 // `uq_folio_charges_night` (migration 044) make every write idempotent —
 // voided rows drop out of the index so a re-post after a void still works.
+// stayNights/nightlyAmount live in folioService now — computeProforma there
+// (the pro-forma invoice) needs the exact same per-night split this uses.
 //
 // Transaction-participant: every function takes the caller's `client`; none
 // opens its own BEGIN/COMMIT. Mirrors activityBookingService.postFolioCharge.
 
-function ymd(d) {
-  if (typeof d === 'string') return d.slice(0, 10);
-  const dt = new Date(d);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
-}
-
 // Today's calendar date in WITA (UTC+8).
 function todayWITA() {
   return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-}
-
-// Every stay night: check_in .. check_out-1 (you don't pay for the day you leave).
-function stayNights(checkIn, checkOut) {
-  const start = new Date(ymd(checkIn) + 'T00:00:00Z');
-  const end = new Date(ymd(checkOut) + 'T00:00:00Z');
-  const out = [];
-  for (let t = start.getTime(); t < end.getTime(); t += 86400000) {
-    out.push(ymd(new Date(t)));
-  }
-  return out;
-}
-
-// Split a whole-stay NET total across `nights`; the last night absorbs the
-// rounding remainder so the sum is exact and independent of post order.
-function nightlyAmount(totalNet, nights, nightIndex) {
-  const total = round2(parseFloat(totalNet) || 0);
-  const n = Math.max(1, nights);
-  if (total === 0) return 0;
-  const per = round2(total / n);
-  return nightIndex >= n - 1 ? round2(total - per * (n - 1)) : per;
 }
 
 async function ratePlanCodeFor(client, ratePlanId) {
