@@ -666,7 +666,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
      interface) means this decision doesn't require redoing the schema or
      the booking-ingestion logic, only a new adapter file plus re-mapping
      external ids.
-4. **🟡 Dynamic/Yield Pricing Engine v1 — BUILT 2026-09-20 (migration 061), verified against the live dev DB + real HTTP round-trips; client verified by build only (not clicked through in a browser).** Design decisions locked with the owner:
+4. **🟡 Dynamic/Yield Pricing Engine v1 — BUILT 2026-09-20 (migration 061), DEPLOYED to production 2026-09-21 (module `yield_management` is OFF by default, so no production rate has changed). Verified against the live dev DB + real HTTP round-trips; client verified by build only (not clicked through in a browser).** Design decisions locked with the owner:
    - **Everything is per room type** (`units.type`, free text: Zahill has Deluxe 25 /
      Glamping 3 / Suite 4 / Villa 3, one `base_rate` per type). Tiers, bounds and
      occupancy are all computed per (property, room type, date) — a Villa filling up
@@ -746,6 +746,8 @@ Per-property tax and service charge rates, applied on folio and invoice.
    (Google Places) — a real rate-shopping source (scraping, ToS-risky, or a paid
    API like RateGain/OTA Insight) would be needed. Shown as "✖ Not connected" in
    the Sources panel until then.
+
+8. **✅ Room types as a real entity (migration 062, 2026-09-21, deployed to production the same day).** Free-text `units.type` + a per-room `base_rate` meant "one price per type" was never enforced. New `room_types` table (name, base_rate, max_guests, description; unique per property, case-insensitive) is now the source of truth; `units.type/base_rate/max_guests` stay as trigger-maintained read-only mirrors so no existing reader changed. `/api/room-types` (owner CRUD; rename cascades to yield settings/log/auto periods; delete blocked while rooms use it). `UnitSettings.jsx` is grouped by room type (collapsed accordion, summary strip, availability bar, room tiles). **Migration safeguard:** stops (changes nothing) if a property with bookings has a type whose rooms disagree on rate/max guests, or type names differing only by case; a property with no bookings only gets a NOTICE. Production applied cleanly with no MIXED/STOPPED output. **Follow-up for step 3:** the Channex mapping (`channel_manager_mappings`) is still one row per *unit*; the production channel-manager work should map per *room type* (+ room count), which is how Channex models inventory. The room type record is the natural place to hold the external room-type id.
 
 ### What NOT to assume is done
 No cron job exists yet. No pulled Channex booking has ever been written into
