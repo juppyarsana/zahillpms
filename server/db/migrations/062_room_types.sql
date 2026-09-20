@@ -34,24 +34,65 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_room_types_property_lower_name ON room_type
 ALTER TABLE units ADD COLUMN IF NOT EXISTS room_type_id UUID REFERENCES room_types(id) ON DELETE RESTRICT;
 CREATE INDEX IF NOT EXISTS idx_units_room_type ON units(room_type_id);
 
--- ── Backfill: one room type per (property, distinct existing type) ─────────────
--- base_rate / max_guests take the MOST COMMON value among that type's rooms. Types
--- whose rooms disagree are reported (NOTICE) so nothing is silently lost.
+-- ── SAFEGUARD: refuse to run if it would change any room's price or capacity ────
+-- From now on a room ALWAYS takes its rate and max guests from its room type, so a type
+-- whose rooms currently disagree would have some rooms silently re-priced the next time
+-- they are updated. Rather than guess which value is right, stop before touching anything
+-- (the whole migration is one transaction, so nothing is changed) and list the problems.
+-- Only properties WITH BOOKING HISTORY are protected this way: a property nobody has booked
+-- yet (e.g. the demo rooms seeded by 001 on a fresh install) just gets a NOTICE, since no real
+-- price is at stake.
 DO $$
-DECLARE r RECORD;
+DECLARE r RECORD; problems TEXT := '';
 BEGIN
   FOR r IN
     SELECT property_id, COALESCE(NULLIF(TRIM(type), ''), 'Unassigned') AS tname,
            COUNT(*) AS rooms,
-           COUNT(DISTINCT base_rate) AS rate_variants,
-           COUNT(DISTINCT max_guests) AS guest_variants
-    FROM units GROUP BY property_id, COALESCE(NULLIF(TRIM(type), ''), 'Unassigned')
+           COUNT(DISTINCT base_rate) AS rate_variants, MIN(base_rate) AS min_rate, MAX(base_rate) AS max_rate,
+           COUNT(DISTINCT max_guests) AS guest_variants, MIN(max_guests) AS min_guests, MAX(max_guests) AS max_guests_v
+    FROM units
+    WHERE EXISTS (SELECT 1 FROM bookings b WHERE b.property_id = units.property_id)
+    GROUP BY property_id, COALESCE(NULLIF(TRIM(type), ''), 'Unassigned')
+    HAVING COUNT(DISTINCT base_rate) > 1 OR COUNT(DISTINCT max_guests) > 1
+    ORDER BY 1, 2
+  LOOP
+    problems := problems || format(
+      E'\n  - property %s, type "%s" (%s rooms): base rate %s to %s (%s different), max guests %s to %s (%s different)',
+      r.property_id, r.tname, r.rooms, r.min_rate, r.max_rate, r.rate_variants, r.min_guests, r.max_guests_v, r.guest_variants);
+  END LOOP;
+
+  -- Properties with no bookings: keep going (the most common value wins) but say so.
+  FOR r IN
+    SELECT property_id, COALESCE(NULLIF(TRIM(type), ''), 'Unassigned') AS tname, COUNT(*) AS rooms
+    FROM units
+    WHERE NOT EXISTS (SELECT 1 FROM bookings b WHERE b.property_id = units.property_id)
+    GROUP BY property_id, COALESCE(NULLIF(TRIM(type), ''), 'Unassigned')
     HAVING COUNT(DISTINCT base_rate) > 1 OR COUNT(DISTINCT max_guests) > 1
   LOOP
-    RAISE NOTICE 'MIXED VALUES: property % type "%" has % rooms with % different base rates and % different max_guests — using the most common value',
-      r.property_id, r.tname, r.rooms, r.rate_variants, r.guest_variants;
+    RAISE NOTICE 'MIXED VALUES (property % has no bookings, continuing): type "%" (% rooms) has different rates/capacities — the most common value is used', r.property_id, r.tname, r.rooms;
   END LOOP;
+
+  -- 'Deluxe' vs 'deluxe' would become two room types that differ only by case, which the
+  -- new case-insensitive uniqueness forbids (applies to every property).
+  FOR r IN
+    SELECT property_id, array_agg(DISTINCT TRIM(type)) AS spellings
+    FROM units WHERE COALESCE(TRIM(type), '') <> ''
+    GROUP BY property_id, LOWER(TRIM(type))
+    HAVING COUNT(DISTINCT TRIM(type)) > 1
+    ORDER BY 1
+  LOOP
+    problems := problems || format(E'\n  - property %s: these type names differ only by upper/lower case: %s', r.property_id, r.spellings);
+  END LOOP;
+
+  IF problems <> '' THEN
+    RAISE EXCEPTION E'Migration 062 (room types) STOPPED — no data was changed. Fix these first, then deploy again:%\n\nMake every room of a type share the SAME base rate and max guests (and spell each type name one way) in Unit Settings, or with an UPDATE on the units table.', problems;
+  END IF;
 END $$;
+
+-- ── Backfill: one room type per (property, distinct existing type) ─────────────
+-- (In properties protected by the safeguard every type is uniform, so the most-common-value
+-- picks below are exact; a property with no bookings that has mixed values gets the most common
+-- one.) Rooms with a blank type are grouped into a type called 'Unassigned'.
 
 INSERT INTO room_types (property_id, name, base_rate, max_guests, description, sort_order)
 SELECT property_id, tname,
