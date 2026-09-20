@@ -86,6 +86,7 @@ Not every property needs every feature (e.g. a property with no ESP32 hardware s
 | `calling` | calls | ✅ on |
 | `resto_ordering` | resto, restoGuest | ❌ off by default (paid add-on tier, same philosophy as `back_office`) |
 | `back_office` | purchasing, expenses | ❌ off by default (paid add-on tier, Slices A+B + Inventory Value — Suppliers + Purchasing + PO receiving + Expenses + Inventory Value) |
+| `yield_management` | yield | ❌ off by default (paid add-on) — per-room-type automatic pricing (occupancy tiers by rooms-left/%, day-of-week, holiday/event uplifts, floor/ceiling), tabs inside `/pricing` for owners; nightly job 02:00 WITA. Migration 061. |
 | `channel_manager` | channelManager | ❌ off by default — spike/validation only (migration 060), enabled only on Zahill for testing, not production automation. See `ROADMAP.md`'s "Channel Manager Integration + Dynamic Pricing" for the full step-by-step plan. |
 
 `resto_ordering` assumes `sales` is also on for the property (reads `products`/`restaurant_tables`, writes `sales`) — not enforced in code, just a real dependency to be aware of when onboarding a property.
@@ -222,6 +223,7 @@ One backend, one database, many properties. The client app, Room Display, and TV
 - `communications` — guest email (owner-only)
 - `purchasing` — Back Office Slice A (Suppliers, Raw Materials, Purchase Orders + receiving), own `back_office` module, owner-only per handler. See the Back Office write-up below for the full design (why ingredients get their own `raw_materials` table instead of reusing `products`, the PO status workflow, partial receiving).
 - `expenses` — Back Office Slice B (categorized cost log — laundry, electricity, maintenance, etc. — plus CSV export), same `back_office` module, owner-only. See the Back Office write-up below.
+- `yield` — Yield/dynamic pricing (`/api/yield/*`: overview, settings/:roomType, run {dry_run}, rates, log, report/dow, events, holiday-uplift), own `yield_management` module mounted with `moduleGuard` + `requireRole('owner')`. Logic in `server/services/yieldService.js`, nightly `server/jobs/yieldPricing.js`. UI = extra tabs in `client/src/pages/Pricing.jsx` (components in `pages/pricing/YieldTabs.jsx`), shown only for owner + module on. The `pricing` route itself is still gated by `reservations`.
 - `channelManager` — Channex channel-manager spike/validation, own `channel_manager` module (default off, only enabled on Zahill for testing), owner-only, all endpoints under `/test/*` to signal spike-only scope — not production automation. See `ROADMAP.md`'s "Channel Manager Integration + Dynamic Pricing" for the full plan and what's actually built vs. not.
 
 **IoT database tables (migration 006):**
@@ -288,9 +290,10 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 057 | Telegram notifications — new `telegram_chats` table (property_id, chat_id, label, is_active). No new module. Additive only. |
 | 058 | `telegram_chats` uniqueness — `UNIQUE (property_id, chat_id)`, caught live while testing (the same chat could be linked twice, e.g. once via the UI and once via a separate API call, causing a genuinely duplicated alert). `POST /api/settings/telegram-chats` now returns a clean 409 on a duplicate instead of a raw 500. Additive only. |
 | 059 | Room "Out of Order" status — `units.status`'s `'maintenance'`/`'blocked'` pair (undocumented difference between the two, never had a reason/date, and `'maintenance'` already meant something else — a `tasks.type` and an `expenses.category`) replaced with a single, industry-standard `'out_of_order'` status. New `units.status_reason`/`status_expected_back`/`status_updated_at`/`status_updated_by`. Existing `maintenance`/`blocked` rows (none on any known property) backfilled to `out_of_order`. |
+| 061 | Yield / dynamic pricing v1 — new `yield_management` module (default off, paid), `pricing_periods.source` (`manual`/`auto`), per-room-type `yield_settings`, `yield_holiday_uplifts`, `yield_events`, append-only `yield_rate_log`; `holidays` gains `is_joint_leave`/`source` + seeded with official SKB 3 Menteri 2026–2027 national holidays & cuti bersama. Engine writes `source='auto'` multiplier periods (`sort_order -1000`) so any manual period wins and no read path changed. See `ROADMAP.md` step 4. Additive only. |
 | 060 | Channel Manager (Channex) — spike/validation, not production. New `channel_manager` module (default off), `properties.channex_property_id`, vendor-agnostic `channel_manager_mappings` table (`provider`/`external_room_type_id`/`external_rate_plan_id` — generic naming on purpose so a future Beds24/STAAH adapter doesn't need a schema change). Validated end-to-end against Channex's real staging sandbox — see `ROADMAP.md`'s "Channel Manager Integration + Dynamic Pricing" for the full write-up, including two real API gotchas found live (room-type occupancy fields, and rates needing to be sent as a decimal string or landing 100x too low). Additive only. |
 
-**Next migration number: 061** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
+**Next migration number: 062** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
 
 ---
 

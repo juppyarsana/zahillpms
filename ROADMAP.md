@@ -666,50 +666,92 @@ Per-property tax and service charge rates, applied on folio and invoice.
      interface) means this decision doesn't require redoing the schema or
      the booking-ingestion logic, only a new adapter file plus re-mapping
      external ids.
-4. **🔵 Not started — Dynamic/Yield Pricing Engine v1.** Architecture is
-   sketched (not coded): reuses `pricing_periods` as the single rate-
-   resolution engine every consumer already reads (Reservations calendar,
-   booking rate suggestion, and the channel-manager push job above) —
-   automation becomes just another writer into that table, at lower
-   `sort_order` priority than a manual override, so **no existing read path
-   needs to change**. Planned pieces:
-   - New `pricing_periods.source` column (`manual`/`auto`) + new
-     `yield_settings` table (occupancy-tier config, floor/ceiling bounds,
-     enabled — property-scoped).
-   - `server/services/yieldService.js` — pure occupancy-tier lookup (e.g.
-     <40% occ → −10%, 70–90% → +15%, 90%+ → +30%), same core technique
-     STAAH Max uses, just self-built.
-   - Nightly `server/jobs/yieldPricing.js` computing occupancy per unit per
-     date (derivable today from `bookings` — no new data capture needed for
-     v1) and upserting `pricing_periods` rows.
-   - New `yield_management` module (default off, paid add-on tier).
-   - Owner-facing settings UI + a visible marker distinguishing an
-     auto-set rate from a manual one on the Pricing/Reservations calendar —
-     an owner needs to see and override the machine, not just be shown a
-     number it produced.
-   - Guardrails from day one: floor/ceiling bounds (a bad occupancy read
-     should never push a rate to something absurd), and a lightweight
-     change log for auto-set rates (mirrors `purchase_order_events`) so an
-     owner can ask "why did tonight's rate change" and get a real answer.
-5. **🔵 Future (v1.1+, not v1) — pace/pickup + same-time-last-year
-   comparison.** Unlike v1's occupancy-tier signal (fully derivable from
-   existing `bookings`/`units` data today), this needs genuinely **new data
-   capture** — a lightweight nightly snapshot table (`demand_snapshots`:
-   property_id, stay_date, snapshot_date, rooms_booked) that has to
-   accumulate over time before it's useful, plus an inherent cold-start
-   limit for any newly onboarded property with no history yet.
-6. **🔵 Known, unaddressed gap regardless of build path chosen**: real
-   competitor **nightly rate** tracking. Market Insights only tracks
-   review/rating signals (Google Places) today, not actual OTA prices — a
-   real rate-shopping data source (scraping, ToS-risky, or a paid API like
-   RateGain/OTA Insight) would be needed to ever feed competitor pricing
-   into the yield engine. Not blocking v1, which works off occupancy alone.
+4. **🟡 Dynamic/Yield Pricing Engine v1 — BUILT 2026-09-20 (migration 061), verified against the live dev DB + real HTTP round-trips; client verified by build only (not clicked through in a browser).** Design decisions locked with the owner:
+   - **Everything is per room type** (`units.type`, free text: Zahill has Deluxe 25 /
+     Glamping 3 / Suite 4 / Villa 3, one `base_rate` per type). Tiers, bounds and
+     occupancy are all computed per (property, room type, date) — a Villa filling up
+     must not lift Deluxe. Occupancy = booked ÷ sellable rooms of that type
+     (out-of-order rooms excluded from the denominator). Types with ≤5 rooms use
+     **rooms-remaining** tiers ("1 left → +25%") because one booking swings
+     occupancy 33 points (3 rooms → only 0/33/67/100%, so a 70–90% tier can never fire); larger types use percentage tiers. **Locked 2026-09-20:** each room type has a per-type setting "tiers by: rooms left / % occupied" — defaults to rooms-left for types with ≤5 rooms, percent for larger; owner can switch either and edit the numbers; engine converts internally so other factors/bounds are unaffected.
+   - **`pricing_periods` stays the single rate resolver.** Yield is another
+     writer: `source='auto'` multiplier periods, one per (room type, date), at
+     lower `sort_order` than any manual period, so **a manual Pricing rule always
+     wins** and no read path (`/suggest`, `/calendar`, Channex push) changes.
+   - **Factors multiply, then clamp:** `base × day-of-week × occupancy tier ×
+     holiday/event`, clamped to per-type floor/ceiling (default ≈ −20%/+40%),
+     then overridden by any manual period.
+   - **Signals in v1 (all derivable today, no history needed):** (1) occupancy
+     tiers, (2) configured day-of-week factors (e.g. Fri/Sat +15% — the existing
+     Pricing module can't express weekends at all, periods are date ranges),
+     (3) holiday calendar with owner-editable uplift per event. The `holidays`
+     table today has only 5 Balinese rows (Jan–Aug 2027), **no national
+     holidays / cuti bersama and nothing for 2026** — v1 must seed Indonesian
+     national + cuti bersama + Balinese from a reliable source (SKB decree).
+   - **Signals gated on data (v1 ships the report, not auto-apply):** weekday vs
+     weekend analysis from past bookings. Checked 2026-09-20: Zahill has only 19
+     bookings (Aug 27–Sep 17, 2026) → 1–3 nights per weekday per type, pure
+     noise. Report shows "not enough data yet" until a minimum (≈8 weeks and
+     ≥5 nights per weekday per type) is met, then shows *suggestions*, never
+     auto-applies.
+   - **Schema (migration 061):** `pricing_periods.source` (`manual`/`auto`);
+     `yield_settings` (property_id, room_type, enabled, occupancy tiers JSONB,
+     day-of-week factors JSONB, floor_pct, ceiling_pct, lookahead_days);
+     `yield_rate_log` (property_id, room_type, stay_date, occupancy, factors
+     applied, sources active at run time, old_rate, new_rate — append-only, so a
+     rate's explanation stays true even if settings change later); event
+     uplifts on holidays/events; `yield_management` module (default off, paid).
+   - **Code:** `server/services/yieldService.js` (pure factor math),
+     `server/jobs/yieldPricing.js` (nightly, per property with the module on:
+     upsert auto periods, delete stale auto periods, never touch manual ones,
+     write log rows). A **dry-run/preview** mode ("Run now" without applying)
+     ships from day one.
+   - **UI — NOT a separate menu. Yield lives as tabs inside the existing Pricing
+     page** (`/pricing`), because Pricing and Yield both answer "what is the rate
+     on this night" and two menus would confuse owners. Tabs:
+     **Rate calendar** (final rate per type/night + where it came from: base /
+     your rule / automatic + "why this rate" showing e.g. `500,000 × 1.15 (Sat)
+     × 1.10 (occ 78%) × 1.00 = 632,500`), **My rules** (today's Pricing page,
+     unchanged), **Automatic (Yield)**, **Events**, **Reports**. Extra tabs only
+     appear when `yield_management` is on; other properties see Pricing exactly
+     as today. `RequireOwner` + `RequireModule('yield_management')` for the new
+     tabs; no new sidebar entry.
+   - **"Sources in use" panel — always at the top of the Automatic tab.** One row
+     per signal with a plain-language state: ✅ In use (with what it's based on,
+     e.g. "live from your bookings"), ⏳ Waiting for data (with progress, e.g.
+     "3 of 8 weeks"), ⏸ Off / awaiting review, ✖ Not connected (competitor
+     rates). Also shows last run time and the bounds. Purpose: the owner can
+     always see *what the engine is analyzing right now*.
+   - Guardrails from day one: floor/ceiling, change log, dry-run, auto-vs-manual
+     badge on calendars.
+   - **Built:** `server/services/yieldService.js`, `server/jobs/yieldPricing.js` (cron 02:00 WITA), `server/routes/yield.js` (`/api/yield/*`, `moduleGuard('yield_management')` + owner-only), `client/src/pages/pricing/YieldTabs.jsx` wired into `Pricing.jsx` as tabs (Rate calendar / My rules / Automatic / Events / Reports; classic page unchanged when the module is off or user isn't owner). Verified: manual period outranks auto (also through `/suggest`), dry-run writes nothing, disabling a type removes its auto periods, change log records factors, module-off → 403. Consecutive dates with the same multiplier are merged into one auto period. **Rate calendar tab (2026-09-21):** month view (◀ ▶ by month, `GET /api/yield/rates?month=YYYY-MM`) — one room type at a time as a Monday-first 7-column calendar, plus a "Compare room types" grid (types × days, sticky first column, horizontal scroll) and a plain "List" view (dates × types); the chosen view is remembered per browser; every view has solid grid lines; cells tinted above/below base with a dot for auto vs your rule; past days dimmed (auto periods for past dates are deleted nightly, so past cells show base/rule only). Auto periods use `sort_order = -1000` and are named `Auto: <room type>`.
+   - **Finding while building:** occupancy tiers alone would discount every empty far-future night (far dates are always empty), so the default lowest tier is 0%, not −10%. **Fixed 2026-09-21:** per-room-type `yield_settings.discount_window_days` (default 14, empty = no limit) — occupancy-tier *discounts* (negative %) only apply to nights within N days of today; increases, day-of-week and holiday/event effects are never limited by it. Recorded in the change log as `discount_held_back`.
+   - **Not built yet (v1 follow-ups):** api.co.id holiday sync (free, docs at api.co.id/indonesia-holiday-calender-api; auth header undocumented — needs an API key from the owner to confirm; would refresh national/joint-leave rows and skip quietly when no key is set). Until then national holidays come from the migration-061 SKB seed (2026–2027, verified against setneg.go.id). Balinese holidays are only seeded for 2027 (Galungan/Kuningan/Nyepi). Allotments (agent room blocks) are not counted in occupancy. Room-type out-of-order is current-status only, not date-based.
+5. **🔵 Yield v1.1 — AI local-events finder (decided 2026-09-20, suggestions only).**
+   Weekly job reuses `services/claude.js` (already in Market Insights) with web
+   search to find festivals, concerts, conferences, Kintamani-area events,
+   school holidays. **The AI never changes a rate by itself** — it proposes
+   (event, date, source link, suggested uplift) into the Events tab; the owner
+   Approves/Rejects, and only approved events feed the engine (AI can be wrong
+   or invent dates; also has per-run API cost). Sources panel shows "N
+   suggestions awaiting review".
+6. **🔵 Future (v1.1+) — pace/pickup + same-time-last-year, and learned
+   day-of-week auto-apply.** Needs genuinely new data capture — a nightly
+   `demand_snapshots` table (property_id, stay_date, snapshot_date,
+   rooms_booked) that must accumulate before it's useful, plus a cold-start
+   limit for any new property. Learned weekday factors move from "suggestion"
+   to optional auto-apply once the owner trusts the analysis.
+7. **🔵 Known, unaddressed gap regardless of build path**: real competitor
+   **nightly rate** tracking. Market Insights only tracks review/rating signals
+   (Google Places) — a real rate-shopping source (scraping, ToS-risky, or a paid
+   API like RateGain/OTA Insight) would be needed. Shown as "✖ Not connected" in
+   the Sources panel until then.
 
 ### What NOT to assume is done
 No cron job exists yet. No pulled Channex booking has ever been written into
 the real `bookings` table — the spike is strictly inspect-only. Only one unit
 (Deluxe 101) is mapped, not all 35. No client UI exists for any of this. The
-yield engine is architecture only — zero lines of `yieldService.js` exist.
+yield engine v1 exists (migration 061) but is only enabled on dev and has never run against real Zahill demand; nothing pushes its rates to OTAs yet (see step 3).
 
 ---
 
@@ -1127,7 +1169,7 @@ yield engine is architecture only — zero lines of `yieldService.js` exist.
 
 ---
 
-## Next migration number: 060
+## Next migration number: 062
 
 ---
 

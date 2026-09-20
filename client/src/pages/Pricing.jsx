@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import { RateCalendarTab, AutomaticTab, EventsTab, ReportsTab } from './pricing/YieldTabs';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(d) { return d?.slice(0, 10) || ''; }
 
 const PRESET_COLORS = ['#4D4D35', '#6b7280', '#b45309', '#1d4ed8', '#be185d', '#15803d', '#7c3aed', '#c2410c'];
 
-export default function Pricing() {
+// "My rules": the owner's own pricing periods. Automatic (yield) periods are written by the
+// engine (source='auto') and managed from the Automatic tab, so they are hidden here.
+function MyRules() {
   const [periods, setPeriods] = useState([]);
   const [units, setUnits] = useState([]);
   const [modal, setModal] = useState(false);
@@ -19,7 +23,7 @@ export default function Pricing() {
 
   async function load() {
     const [p, u] = await Promise.all([api.get('/api/pricing/periods'), api.get('/api/units')]);
-    setPeriods(p.data);
+    setPeriods(p.data.filter(x => x.source !== 'auto'));
     setUnits(u.data);
   }
   useEffect(() => { load(); }, []);
@@ -66,6 +70,23 @@ export default function Pricing() {
       ...f,
       unit_ids: f.unit_ids.includes(id) ? f.unit_ids.filter(u => u !== id) : [...f.unit_ids, id],
     }));
+  }
+
+  // Units grouped by room type (natural room order), so a whole type can be ticked at once.
+  const unitGroups = Object.values(units.reduce((acc, u) => {
+    const type = u.type || 'Other';
+    (acc[type] ||= { type, units: [] }).units.push(u);
+    return acc;
+  }, {})).map(g => ({ ...g, units: [...g.units].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) }))
+    .sort((a, b) => a.type.localeCompare(b.type));
+
+  // Tick a room type: select all of its rooms — or, if they're all selected already, clear them.
+  function toggleType(g) {
+    const ids = g.units.map(u => u.id);
+    setForm(f => {
+      const allPicked = ids.every(id => f.unit_ids.includes(id));
+      return { ...f, unit_ids: allPicked ? f.unit_ids.filter(id => !ids.includes(id)) : [...new Set([...f.unit_ids, ...ids])] };
+    });
   }
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
@@ -198,20 +219,47 @@ export default function Pricing() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Apply To Units (leave empty = all units)</label>
-                <div className="flex gap-2" style={{ flexWrap: 'wrap', marginTop: 4 }}>
-                  {units.map(u => (
-                    <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                      padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
-                      background: form.unit_ids.includes(u.id) ? 'var(--green-pale)' : 'white' }}>
-                      <input type="checkbox" checked={form.unit_ids.includes(u.id)} onChange={() => toggleUnit(u.id)} />
-                      {u.name}
-                    </label>
-                  ))}
+                <label className="form-label">Apply To</label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4,
+                  padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border)',
+                  background: form.unit_ids.length === 0 ? 'var(--green-pale)' : 'white' }}>
+                  <input type="checkbox" checked={form.unit_ids.length === 0} onChange={() => set('unit_ids', [])} />
+                  <strong>All units</strong>
+                </label>
+
+                <div style={{ marginTop: 8, maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {unitGroups.map(g => {
+                    const picked = g.units.filter(u => form.unit_ids.includes(u.id)).length;
+                    const all = picked === g.units.length;
+                    return (
+                      <div key={g.type} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, marginBottom: 6 }}>
+                          <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = picked > 0 && !all; }}
+                            onChange={() => toggleType(g)} />
+                          {g.type}
+                          <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted)' }}>
+                            {picked > 0 ? `${picked} of ${g.units.length} selected` : `${g.units.length} rooms`}
+                          </span>
+                        </label>
+                        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                          {g.units.map(u => (
+                            <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                              padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 13,
+                              background: form.unit_ids.includes(u.id) ? 'var(--green-pale)' : 'white' }}>
+                              <input type="checkbox" checked={form.unit_ids.includes(u.id)} onChange={() => toggleUnit(u.id)} />
+                              {u.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                {form.unit_ids.length === 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Applies to all units</div>
-                )}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  {form.unit_ids.length === 0
+                    ? 'Applies to all units — including rooms you add later.'
+                    : `Applies to ${form.unit_ids.length} selected room${form.unit_ids.length === 1 ? '' : 's'}. Tick a room type to select all its rooms. Rooms added later are not included automatically.`}
+                </div>
               </div>
             </div>
             <div className="modal-footer">
@@ -221,6 +269,46 @@ export default function Pricing() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const YIELD_TABS = [
+  { key: 'calendar',  icon: '📅', label: 'Rate calendar' },
+  { key: 'rules',     icon: '📝', label: 'My rules' },
+  { key: 'automatic', icon: '🤖', label: 'Automatic' },
+  { key: 'events',    icon: '🎉', label: 'Events' },
+  { key: 'reports',   icon: '📊', label: 'Reports' },
+];
+
+// Yield management lives inside Pricing as extra tabs (owner-only + paid module) rather than a
+// separate menu — both answer "what is the rate on this night". Without the module (or for
+// non-owners) this renders exactly the classic Pricing page.
+export default function Pricing() {
+  const { user, hasModule } = useAuth();
+  const [tab, setTab] = useState('calendar');
+  const yieldOn = user?.role === 'owner' && hasModule('yield_management');
+  if (!yieldOn) return <MyRules />;
+  return (
+    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+      <div className="page-header">
+        <div>
+          <div className="page-title">Pricing</div>
+          <div className="page-subtitle">Your rules and automatic (yield) pricing — one rate per room type per night</div>
+        </div>
+      </div>
+      <div className="tab-bar">
+        {YIELD_TABS.map(t => (
+          <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'calendar' && <RateCalendarTab />}
+      {tab === 'rules' && <MyRules />}
+      {tab === 'automatic' && <AutomaticTab />}
+      {tab === 'events' && <EventsTab />}
+      {tab === 'reports' && <ReportsTab />}
     </div>
   );
 }

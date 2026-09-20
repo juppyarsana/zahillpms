@@ -111,7 +111,7 @@ async function seedPropertyDefaults(propertyId) {
   // Seed all modules. Modules that are OFF by default: room_controller is
   // hardware-dependent; resto_ordering and back_office are paid add-on tiers.
   // Everything else is on by default.
-  const DEFAULT_OFF = ['room_controller', 'resto_ordering', 'back_office', 'channel_manager'];
+  const DEFAULT_OFF = ['room_controller', 'resto_ordering', 'back_office', 'channel_manager', 'yield_management'];
   const moduleEntries = Object.keys(MODULES).map(module => ({
     module,
     is_enabled: !DEFAULT_OFF.includes(module)

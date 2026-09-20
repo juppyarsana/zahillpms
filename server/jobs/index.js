@@ -5,6 +5,7 @@ const {
   refreshSearchTrendsAllProperties,
   refreshAiSummaryAllProperties,
 } = require('./marketInsights');
+const { runYieldAllProperties } = require('./yieldPricing');
 const { sendPreArrivalEmails, sendPostCheckoutEmails } = require('./communications');
 
 function registerJobs() {
@@ -65,6 +66,17 @@ function registerJobs() {
       console.error('[Jobs] Post-checkout email cron failed:', err.message);
     }
   }, { timezone: 'Asia/Makassar' });
+
+  // Yield pricing — daily at 02:00 WITA (after night audit has closed the day, so occupancy is current)
+  cron.schedule('0 2 * * *', async () => {
+    try {
+      await runYieldAllProperties();
+    } catch (err) {
+      console.error('[Jobs] Yield pricing cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Yield pricing scheduled daily 02:00 WITA');
 
   console.log('[Jobs] Guest communication scheduled — pre-arrival daily 10:00, post-checkout daily 11:00 (WITA)');
 }

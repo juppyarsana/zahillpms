@@ -25,6 +25,11 @@ module.exports = {
   // automation yet. Testing whether a channel-manager (Channex staging
   // sandbox) integration is viable before committing to a vendor.
   channel_manager: { label: 'Channel Manager', routes: ['channelManager'] },
+  // Default OFF — paid add-on tier (migration 061). Per-room-type automatic rate
+  // adjustment (occupancy tiers, day-of-week, holidays/events). Gates /api/yield;
+  // the Pricing page's extra tabs show only when this is on. Writes source='auto'
+  // rows into pricing_periods, so the pricing route itself stays under 'reservations'.
+  yield_management: { label: 'Yield Management', routes: ['yield'] },
 };
 
 // Core routes — always on, no module guard:
