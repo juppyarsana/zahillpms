@@ -14,6 +14,8 @@ const PRE_TRACKER = [
 
 async function migrate() {
   const client = await pool.connect();
+  // Surface RAISE NOTICE output from migrations (e.g. 062 reports room types with mixed rates).
+  client.on('notice', n => console.log(`  NOTICE: ${n.message}`));
   try {
     // Create the tracker table on first ever run
     await client.query(`

@@ -61,6 +61,7 @@ app.use('/api/admin', authSuperAdmin, require('./routes/admin'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/units', require('./routes/units'));
+app.use('/api/room-types', require('./routes/roomTypes'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/communications', auth, requireRole('owner'), require('./routes/communications'));

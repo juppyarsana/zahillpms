@@ -27,10 +27,28 @@ router.get('/:id', auth, async (req, res) => {
 
 const BED_CONFIGS = ['double', 'twin', 'twin_or_double', 'other'];
 
+// A room's type, base rate and max guests come from its ROOM TYPE (migration 062, /api/room-types) —
+// triggers mirror them onto units.type/base_rate/max_guests, so those are never set from here.
+// Accepts room_type_id, or (legacy clients) a type NAME that must match an existing room type.
+async function resolveRoomTypeId(propertyId, room_type_id, typeName) {
+  if (room_type_id) {
+    const { rows } = await db.query('SELECT id FROM room_types WHERE id = $1 AND property_id = $2', [room_type_id, propertyId]);
+    return rows[0] ? { id: rows[0].id } : { error: 'Room type not found' };
+  }
+  if (typeName && String(typeName).trim()) {
+    const { rows } = await db.query('SELECT id FROM room_types WHERE property_id = $1 AND LOWER(name) = LOWER($2)', [propertyId, String(typeName).trim()]);
+    return rows[0] ? { id: rows[0].id } : { error: `Unknown room type "${String(typeName).trim()}" — create the room type first` };
+  }
+  return { id: null };
+}
+
 // POST /api/units  (owner only)
 router.post('/', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests, bed_config, controller_id } = req.body;
+  const { name, type, description, bed_config, controller_id, room_type_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Unit name is required' });
+  const rt = await resolveRoomTypeId(req.propertyId, room_type_id, type);
+  if (rt.error) return res.status(400).json({ error: rt.error });
+  if (!rt.id) return res.status(400).json({ error: 'Choose a room type' });
   if (bed_config && !BED_CONFIGS.includes(bed_config)) {
     return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
   }
@@ -41,9 +59,9 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
   const roomId = rawRoomId ? String(rawRoomId).trim().slice(0, 32) : null;
   try {
     const { rows } = await db.query(
-      `INSERT INTO units (name, type, description, base_rate, max_guests, bed_config, controller_id, property_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [name, type || '', description || '', base_rate || 0, max_guests || 2, bed_config || 'double', roomId, req.propertyId]
+      `INSERT INTO units (name, room_type_id, description, bed_config, controller_id, property_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [name, rt.id, description || '', bed_config || 'double', roomId, req.propertyId]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -68,7 +86,7 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 // `''`/null clears it (mirrors routes/iot.js's controller-assignment
 // endpoint, which keeps working for hardware-owning properties too).
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
-  const { name, type, description, base_rate, max_guests, status, controller_id, bed_config } = req.body;
+  const { name, type, description, status, controller_id, bed_config, room_type_id } = req.body;
   const controllerIdProvided = controller_id !== undefined;
   const controllerIdValue = controllerIdProvided
     ? (controller_id ? String(controller_id).trim().slice(0, 32) : null)
@@ -77,18 +95,20 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
     return res.status(400).json({ error: `bed_config must be one of ${BED_CONFIGS.join(', ')}` });
   }
   try {
+    // Moving a room to another type is allowed; editing its rate/capacity directly is not
+    // (those belong to the room type — see PUT /api/room-types/:id).
+    const rt = await resolveRoomTypeId(req.propertyId, room_type_id, type);
+    if (rt.error) return res.status(400).json({ error: rt.error });
     const { rows } = await db.query(
       `UPDATE units SET
         name = COALESCE($1, name),
-        type = COALESCE($2, type),
+        room_type_id = COALESCE($2, room_type_id),
         description = COALESCE($3, description),
-        base_rate = COALESCE($4, base_rate),
-        max_guests = COALESCE($5, max_guests),
-        status = COALESCE($6, status),
-        bed_config = COALESCE($11, bed_config),
-        controller_id = CASE WHEN $9 THEN $7 ELSE controller_id END
-       WHERE id = $8 AND property_id = $10 RETURNING *`,
-      [name, type, description, base_rate, max_guests, status, controllerIdValue, req.params.id, controllerIdProvided, req.propertyId, bed_config || null]
+        status = COALESCE($4, status),
+        bed_config = COALESCE($5, bed_config),
+        controller_id = CASE WHEN $6 THEN $7 ELSE controller_id END
+       WHERE id = $8 AND property_id = $9 RETURNING *`,
+      [name, rt.id, description, status, bed_config || null, controllerIdProvided, controllerIdValue, req.params.id, req.propertyId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Unit not found' });
     res.json(rows[0]);
