@@ -16,6 +16,37 @@ function wrapEmailBody(html, { logo_url, property_name }) {
   return `<div style="margin-bottom:16px"><img src="${logoSrc}" alt="${property_name || ''}" style="max-height:60px"></div>${html}`;
 }
 
+// Two-tier SMTP fail-over, shared by every email this app sends (guest emails here,
+// and the night-audit owner summary in jobs/nightAudit.js): use the property's own
+// SMTP if — and only if — it's FULLY configured (host + user + password all present).
+// The Settings form doesn't require those fields together, so a property could save
+// just a host/from and leave user/password blank; treating that as "configured" would
+// try to authenticate with no credentials and fail outright instead of falling back.
+// Falls back to the shared platform-default account (PLATFORM_SMTP_*) otherwise, and
+// returns null only if neither is usable (caller should skip sending, not throw).
+function resolveSmtp(ps) {
+  const hasOwn = !!(ps?.smtp_host && ps?.smtp_user && ps?.smtp_password);
+  const transportConfig = hasOwn ? {
+    host: ps.smtp_host,
+    port: ps.smtp_port || 587,
+    secure: false,
+    auth: { user: ps.smtp_user, pass: ps.smtp_password },
+  } : {
+    host: process.env.PLATFORM_SMTP_HOST,
+    port: parseInt(process.env.PLATFORM_SMTP_PORT || '587'),
+    secure: false,
+    auth: { user: process.env.PLATFORM_SMTP_USER, pass: process.env.PLATFORM_SMTP_PASSWORD },
+  };
+  if (!transportConfig.host || !transportConfig.auth.user || !transportConfig.auth.pass) return null;
+  // `from` follows whichever account is actually authenticating — using a property's
+  // custom From address while sending through the platform's server (or vice versa)
+  // would mismatch the authenticated domain, which most providers flag or reject.
+  const from = hasOwn
+    ? (ps.smtp_from || process.env.PLATFORM_SMTP_FROM || 'noreply@platform.com')
+    : (process.env.PLATFORM_SMTP_FROM || 'noreply@platform.com');
+  return { transportConfig, from, usingOwnSmtp: hasOwn };
+}
+
 async function sendBookingEmail(propertyId, bookingId, trigger) {
   const { rows: [tmpl] } = await db.query(
     'SELECT * FROM email_templates WHERE property_id = $1 AND trigger = $2 AND is_active = true',
@@ -50,22 +81,9 @@ async function sendBookingEmail(propertyId, bookingId, trigger) {
   const subject = renderTemplate(tmpl.subject, vars);
   const html    = wrapEmailBody(renderTemplate(tmpl.body_html, vars), booking);
 
-  const transportConfig = booking.smtp_host ? {
-    host: booking.smtp_host,
-    port: booking.smtp_port || 587,
-    secure: false,
-    auth: { user: booking.smtp_user, pass: booking.smtp_password },
-  } : {
-    host: process.env.PLATFORM_SMTP_HOST,
-    port: parseInt(process.env.PLATFORM_SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.PLATFORM_SMTP_USER,
-      pass: process.env.PLATFORM_SMTP_PASSWORD,
-    },
-  };
-
-  const from = booking.smtp_from || process.env.PLATFORM_SMTP_FROM || 'noreply@platform.com';
+  const smtp = resolveSmtp(booking);
+  if (!smtp) return { skipped: true, reason: 'no_smtp_configured' };
+  const { transportConfig, from } = smtp;
   const transporter = nodemailer.createTransport(transportConfig);
 
   try {
@@ -127,22 +145,9 @@ async function sendGroupBookingEmail(propertyId, groupId) {
   const subject = renderTemplate(tmpl.subject, vars);
   const html    = wrapEmailBody(renderTemplate(tmpl.body_html, vars), group);
 
-  const transportConfig = group.smtp_host ? {
-    host: group.smtp_host,
-    port: group.smtp_port || 587,
-    secure: false,
-    auth: { user: group.smtp_user, pass: group.smtp_password },
-  } : {
-    host: process.env.PLATFORM_SMTP_HOST,
-    port: parseInt(process.env.PLATFORM_SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: process.env.PLATFORM_SMTP_USER,
-      pass: process.env.PLATFORM_SMTP_PASSWORD,
-    },
-  };
-
-  const from = group.smtp_from || process.env.PLATFORM_SMTP_FROM || 'noreply@platform.com';
+  const smtp = resolveSmtp(group);
+  if (!smtp) return { skipped: true, reason: 'no_smtp_configured' };
+  const { transportConfig, from } = smtp;
   const transporter = nodemailer.createTransport(transportConfig);
 
   try {
@@ -167,4 +172,4 @@ async function sendGroupBookingEmail(propertyId, groupId) {
   }
 }
 
-module.exports = { sendBookingEmail, sendGroupBookingEmail, renderTemplate };
+module.exports = { sendBookingEmail, sendGroupBookingEmail, renderTemplate, resolveSmtp };

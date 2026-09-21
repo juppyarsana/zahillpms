@@ -1,6 +1,7 @@
 const db = require('../db');
 const nodemailer = require('nodemailer');
 const roomChargeService = require('../services/roomChargeService');
+const { resolveSmtp } = require('../services/mailer');
 
 function nextDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00Z');
@@ -23,23 +24,39 @@ async function getBusinessDate() {
   return getYesterday();
 }
 
-async function sendAuditEmail(businessDate, data) {
+// Per-property, using the exact same two-tier SMTP fail-over as guest emails
+// (services/mailer.js's resolveSmtp — see its comment for the full rule). Recipient is
+// that property's own owner-role user(s), not a single hardcoded global inbox, which is
+// what this function did before multi-tenancy (every property's audit used to land in
+// one inbox under a "[Zahill]" subject regardless of which property it was actually for).
+async function sendAuditEmail(propertyId, businessDate, data) {
   const { unitsOccupied, noShows, roomRevenue, fnbRevenue = 0, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated } = data;
 
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailPass = process.env.GMAIL_APP_PASSWORD;
-  const toAddr = (process.env.OWNER_EMAIL || '')
-    .split(',').map(e => e.trim()).filter(Boolean);
+  const { rows: [ps] } = await db.query(
+    `SELECT property_name, property_address, smtp_host, smtp_port, smtp_user, smtp_password, smtp_from
+     FROM property_settings WHERE property_id = $1`,
+    [propertyId]
+  );
+  const propertyName = ps?.property_name || 'The Property';
 
-  if (!gmailUser || !gmailPass || toAddr.length === 0) {
-    console.log('[Night Audit] Email skipped — GMAIL_USER / GMAIL_APP_PASSWORD / OWNER_EMAIL not set');
+  const { rows: owners } = await db.query(
+    `SELECT email FROM users WHERE property_id = $1 AND role = 'owner' AND email IS NOT NULL`,
+    [propertyId]
+  );
+  const toAddr = owners.map(o => o.email).filter(Boolean);
+  if (toAddr.length === 0) {
+    console.log(`[Night Audit] Email skipped for ${propertyName} — no owner account with an email on file`);
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: gmailUser, pass: gmailPass },
-  });
+  const smtp = resolveSmtp(ps);
+  if (!smtp) {
+    console.log(`[Night Audit] Email skipped for ${propertyName} — no property SMTP configured and PLATFORM_SMTP_* not set`);
+    return;
+  }
+  const { transportConfig, from } = smtp;
+
+  const transporter = nodemailer.createTransport(transportConfig);
 
   const fmtIDR = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
   const totalRevenue = Number(roomRevenue) + Number(fnbRevenue) + Number(ancillaryRevenue);
@@ -103,7 +120,7 @@ async function sendAuditEmail(businessDate, data) {
         <tr>
           <td style="background:#2D5016;border-radius:12px 12px 0 0;padding:28px 32px;">
             <div style="color:#a3c96e;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-              Zahill Glamping · Kintamani, Bali
+              ${propertyName}${ps?.property_address ? ` · ${ps.property_address}` : ''}
             </div>
             <div style="color:#ffffff;font-size:22px;font-weight:700;margin-bottom:4px;">
               Night Audit Report
@@ -212,7 +229,7 @@ async function sendAuditEmail(businessDate, data) {
         <tr>
           <td style="background:#f9fafb;border-radius:0 0 12px 12px;padding:20px 32px;border-top:1px solid #e5e7eb;">
             <div style="font-size:11px;color:#9ca3af;text-align:center;">
-              Zahill PMS · Automated night audit · ${new Date().toISOString()}
+              ${propertyName} · Automated night audit · ${new Date().toISOString()}
             </div>
           </td>
         </tr>
@@ -225,13 +242,13 @@ async function sendAuditEmail(businessDate, data) {
 </html>`.trim();
 
   await transporter.sendMail({
-    from: `Zahill PMS <${gmailUser}>`,
+    from,
     to: toAddr,
-    subject: `[Zahill] Night Audit — ${fmtDateLong(businessDate)}`,
+    subject: `[${propertyName}] Night Audit — ${fmtDateLong(businessDate)}`,
     html,
   });
 
-  console.log(`[Night Audit] Email sent to ${toAddr}`);
+  console.log(`[Night Audit] Email sent to ${toAddr} for ${propertyName}`);
 }
 
 async function runNightAudit(triggeredBy = 'auto', propertyId) {
@@ -405,7 +422,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
 
   // 11. Owner email — best-effort, never blocks or fails the audit
   try {
-    await sendAuditEmail(businessDate, { unitsOccupied, noShows, roomRevenue, fnbRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
+    await sendAuditEmail(propertyId, businessDate, { unitsOccupied, noShows, roomRevenue, fnbRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
   } catch (err) {
     console.error('[Night Audit] Email failed (audit still complete):', err.message);
   }
