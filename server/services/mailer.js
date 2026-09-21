@@ -26,15 +26,21 @@ function wrapEmailBody(html, { logo_url, property_name }) {
 // returns null only if neither is usable (caller should skip sending, not throw).
 function resolveSmtp(ps) {
   const hasOwn = !!(ps?.smtp_host && ps?.smtp_user && ps?.smtp_password);
+  // Port 465 is implicit TLS (SMTPS) — the server expects a TLS handshake before any
+  // plaintext SMTP greeting, so `secure` must be true or the connection hangs until
+  // timeout with a "Greeting never received" error. Every other common port (587, 25,
+  // 2525) uses STARTTLS instead, which nodemailer negotiates itself when secure=false.
+  const ownPort = ps?.smtp_port || 587;
+  const platformPort = parseInt(process.env.PLATFORM_SMTP_PORT || '587');
   const transportConfig = hasOwn ? {
     host: ps.smtp_host,
-    port: ps.smtp_port || 587,
-    secure: false,
+    port: ownPort,
+    secure: ownPort === 465,
     auth: { user: ps.smtp_user, pass: ps.smtp_password },
   } : {
     host: process.env.PLATFORM_SMTP_HOST,
-    port: parseInt(process.env.PLATFORM_SMTP_PORT || '587'),
-    secure: false,
+    port: platformPort,
+    secure: platformPort === 465,
     auth: { user: process.env.PLATFORM_SMTP_USER, pass: process.env.PLATFORM_SMTP_PASSWORD },
   };
   if (!transportConfig.host || !transportConfig.auth.user || !transportConfig.auth.pass) return null;

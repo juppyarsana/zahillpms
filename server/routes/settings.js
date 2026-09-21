@@ -63,6 +63,12 @@ router.patch('/property', ownerOnly, async (req, res) => {
     tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
     smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
   } = req.body;
+  // A From header needs an actual email address (bare, or "Display Name" <addr>) — a
+  // plain display name with no address is invalid RFC 5322 and every mail server
+  // rejects it at send time (caught live: Titan Email 550 5.7.1 "Invalid From address").
+  if (smtp_from && !/[^\s<>]+@[^\s<>]+\.[^\s<>]+/.test(smtp_from)) {
+    return res.status(400).json({ error: 'From Address must include an email address, e.g. "Zahill Resort" <info@zahill.com>' });
+  }
   try {
     const { rows } = await db.query(
       `UPDATE property_settings SET
