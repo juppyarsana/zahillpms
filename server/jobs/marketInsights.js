@@ -2,8 +2,10 @@ const db = require('../db');
 const places = require('../services/googlePlaces');
 const trends = require('../services/trends');
 const claude = require('../services/claude');
+const holidayApi = require('../services/holidayApi');
 
 const TREND_TERMS = ['kintamani glamping', 'bali glamping'];
+const HOLIDAY_SYNC_YEARS_AHEAD = 2; // covers yield's max 365-day lookahead even from Dec 31
 
 async function getActiveProperties() {
   const { rows } = await db.query('SELECT id FROM properties WHERE is_active = true');
@@ -129,6 +131,56 @@ async function refreshAiSummary(propertyId) {
   }
 }
 
+// Refreshes the GLOBAL `holidays` table (shared across every property — see migration
+// 019) from the live api.co.id Indonesian Holidays API. Only real public holidays and
+// cuti bersama/joint-leave days are kept — the API also returns plain "Observance"/
+// awareness days (e.g. "Hari Kartini") mixed into the same list, which don't move guest
+// demand the way a statutory holiday does, so those are dropped.
+// Supersedes migration 061's hand-seeded 'skb' rows: both sources are deleted for the
+// synced date range before the fresh 'api_co_id' rows go in, so a date is never listed
+// twice under two different names. Never touches source='manual' rows (the pawukon-
+// calendar Balinese Hindu holidays from migration 014 — not in any generic holiday API)
+// or per-property yield_holiday_uplifts overrides (keyed by date, so an owner's edit
+// survives a resync regardless of which holiday row exists for that date).
+async function refreshHolidays() {
+  if (!holidayApi.isConfigured()) {
+    console.log('[Insights] HOLIDAY_API_KEY not set — skipping holiday sync');
+    return;
+  }
+  const thisYear = new Date().getFullYear();
+  let synced = 0;
+  for (let year = thisYear; year <= thisYear + HOLIDAY_SYNC_YEARS_AHEAD; year++) {
+    try {
+      const rows = await holidayApi.fetchYear(year);
+      const keep = rows.filter(r => r.is_holiday || r.is_joint_holiday);
+      // The API doesn't publish next year's calendar until sometime after the SKB decree
+      // is signed (observed: nothing for 2027 as of 2026-09-21, days after that year's SKB
+      // was actually signed). Skip entirely rather than deleting a year's rows with nothing
+      // to replace them — leaves the migration-061 'skb' fallback seed intact until the API
+      // actually has that year, at which point this same loop supersedes it cleanly.
+      if (!keep.length) continue;
+      // Delete by the exact dates being (re)inserted, not the whole year — so a date the
+      // API hasn't caught up on yet (partial-year coverage) also keeps its 'skb' fallback.
+      await db.query(
+        `DELETE FROM holidays WHERE source IN ('api_co_id', 'skb') AND holiday_date = ANY($1::date[])`,
+        [keep.map(h => h.date)]
+      );
+      for (const h of keep) {
+        await db.query(
+          `INSERT INTO holidays (holiday_date, name, category, is_joint_leave, source)
+           VALUES ($1, $2, 'national', $3, 'api_co_id')
+           ON CONFLICT (holiday_date, name) DO UPDATE SET is_joint_leave = EXCLUDED.is_joint_leave, source = 'api_co_id'`,
+          [h.date, h.name, !!h.is_joint_holiday]
+        );
+      }
+      synced += keep.length;
+    } catch (err) {
+      console.error(`[Insights] Holiday sync failed for ${year}:`, err.message);
+    }
+  }
+  console.log(`[Insights] Holidays synced from api.co.id — ${synced} holiday/joint-leave day(s), ${thisYear}-${thisYear + HOLIDAY_SYNC_YEARS_AHEAD}`);
+}
+
 async function refreshCompetitorsAllProperties() {
   const properties = await getActiveProperties();
   for (const prop of properties) await refreshCompetitors(prop.id);
@@ -148,6 +200,7 @@ module.exports = {
   refreshCompetitors,
   refreshSearchTrends,
   refreshAiSummary,
+  refreshHolidays,
   refreshCompetitorsAllProperties,
   refreshSearchTrendsAllProperties,
   refreshAiSummaryAllProperties,

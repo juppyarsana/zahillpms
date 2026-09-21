@@ -4,6 +4,7 @@ const {
   refreshCompetitorsAllProperties,
   refreshSearchTrendsAllProperties,
   refreshAiSummaryAllProperties,
+  refreshHolidays,
 } = require('./marketInsights');
 const { runYieldAllProperties } = require('./yieldPricing');
 const { sendPreArrivalEmails, sendPostCheckoutEmails } = require('./communications');
@@ -66,6 +67,18 @@ function registerJobs() {
       console.error('[Jobs] Post-checkout email cron failed:', err.message);
     }
   }, { timezone: 'Asia/Makassar' });
+
+  // Holiday sync — daily at 01:30 WITA, before yield pricing runs at 02:00 so that
+  // night's auto rates see any newly-added/changed holiday.
+  cron.schedule('30 1 * * *', async () => {
+    try {
+      await refreshHolidays();
+    } catch (err) {
+      console.error('[Jobs] Holiday sync cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Holiday sync scheduled daily 01:30 WITA (api.co.id)');
 
   // Yield pricing — daily at 02:00 WITA (after night audit has closed the day, so occupancy is current)
   cron.schedule('0 2 * * *', async () => {

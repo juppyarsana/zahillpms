@@ -4,7 +4,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const places = require('../services/googlePlaces');
 const claude = require('../services/claude');
-const { refreshCompetitors, refreshSearchTrends, refreshAiSummary } = require('../jobs/marketInsights');
+const { refreshCompetitors, refreshSearchTrends, refreshAiSummary, refreshHolidays } = require('../jobs/marketInsights');
 
 // GET /api/insights/competitors
 // Latest rating per competitor, plus the snapshot from ~7 days ago for a trend delta.
@@ -149,6 +149,18 @@ router.get('/holidays', auth, async (req, res) => {
       category: r.category,
       days_until: Math.ceil((new Date(r.holiday_date) - new Date(new Date().toDateString())) / 86400000),
     })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/insights/holidays/refresh — manual trigger (owner only).
+// Refreshes the GLOBAL holidays table (not property-scoped, see migration 019) — any
+// property's owner can trigger it, same as the other manual refresh endpoints here.
+router.post('/holidays/refresh', auth, requireRole('owner'), async (req, res) => {
+  try {
+    await refreshHolidays();
+    res.json({ message: 'Holidays refreshed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

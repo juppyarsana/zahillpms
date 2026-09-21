@@ -79,7 +79,7 @@ router.get('/overview', async (req, res) => {
       { key: 'dow', label: 'Day of week', status: usesDow ? 'in_use' : 'off',
         detail: usesDow ? 'Your weekday/weekend factors (Settings tab).' : 'No weekday/weekend factor set — every day is treated the same.' },
       { key: 'holidays', label: 'Holidays & events', status: enabled.length ? 'in_use' : 'off',
-        detail: `${hol.n} official holidays in the window (SKB 3 Menteri national + joint leave, Balinese Hindu) and ${ev.approved} custom event(s); uplifts are yours to edit in the Events tab.` },
+        detail: `${hol.n} official holidays in the window (Indonesian national holidays + cuti bersama, synced nightly from api.co.id; Balinese Hindu observances added manually) and ${ev.approved} custom event(s); uplifts are yours to edit in the Events tab.` },
       { key: 'history', label: 'Booking history (weekday vs weekend)',
         status: report.history_weeks >= report.min_weeks ? 'report_only' : 'waiting',
         detail: report.history_weeks >= report.min_weeks
