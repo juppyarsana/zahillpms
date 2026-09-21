@@ -179,6 +179,7 @@ One backend, one database, many properties. The client app, Room Display, and TV
 - WebSockets: port `9001`
 - Auth: username `zahill`, password configured per `server/.env`
 - DNS: `mqtt.d-zahill.kdai.cloud` A record → VM IP
+- **Connection is app-wide, not per-property** (`server/mqtt/index.js` — one module-level client for the whole Node process). Only opened at startup if at least one **active** property has `room_controller` **enabled** (`server/index.js`, checked against `property_modules`/`properties` before calling `mqttClient.connect()`) — otherwise it's skipped entirely rather than endlessly retrying a broker nothing needs. `connect()` is idempotent; `PATCH /api/admin/properties/:id/modules` also calls it when `room_controller` is turned on, so enabling the module takes effect immediately without a server restart. (There's currently no matching "disconnect if the last property turns it off" — harmless, since an idle connected client produces no reconnect noise.)
 
 ### Topic Structure
 

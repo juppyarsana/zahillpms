@@ -81,7 +81,10 @@ function parseRelayTopic(topic) {
   return m ? { controllerId: m[1], relayNum: parseInt(m[2], 10) } : null;
 }
 
+// Idempotent — safe to call more than once (e.g. from both server startup and the
+// superadmin module-toggle route below) without leaking a second client instance.
 function connect() {
+  if (client) return client;
   client = mqtt.connect(BROKER, {
     clientId: CLIENT_ID,
     username: USERNAME || undefined,

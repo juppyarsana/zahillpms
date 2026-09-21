@@ -120,12 +120,26 @@ app.use('/api/resto', require('./routes/resto'));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Zahill PMS server running on port ${PORT}`);
-  if (process.env.MQTT_BROKER) {
-    mqttClient.connect();
-  } else {
+  if (!process.env.MQTT_BROKER) {
     console.log('[MQTT] MQTT_BROKER not set — skipping MQTT connection');
+  } else {
+    // MQTT is one app-wide connection, not per-property — only worth opening (and
+    // retrying on failure) if at least one active property actually uses Room
+    // Controller. Otherwise a deployment with zero IoT-hardware clients would spend
+    // forever retrying a broker nothing needs. Re-checked whenever a property's
+    // room_controller module is toggled on (see routes/admin.js), so this doesn't
+    // require a server restart to take effect later.
+    const { rows } = await require('./db').query(
+      `SELECT 1 FROM property_modules pm JOIN properties p ON p.id = pm.property_id
+       WHERE pm.module = 'room_controller' AND pm.is_enabled = true AND p.is_active = true LIMIT 1`
+    );
+    if (rows.length) {
+      mqttClient.connect();
+    } else {
+      console.log('[MQTT] No active property has Room Controller enabled — skipping MQTT connection');
+    }
   }
   require('./jobs').registerJobs();
 });

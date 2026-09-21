@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const seedPropertyDefaults = require('../utils/seedPropertyDefaults');
+const mqttClient = require('../mqtt');
 
 const LOGO_DIR = path.join(__dirname, '../uploads/property-logos');
 if (!fs.existsSync(LOGO_DIR)) fs.mkdirSync(LOGO_DIR, { recursive: true });
@@ -107,6 +108,13 @@ router.patch('/properties/:id/modules', async (req, res) => {
        RETURNING *`,
       [req.params.id, module, is_enabled]
     );
+    // MQTT is one app-wide connection, only opened if some active property needs it
+    // (see index.js) — connect it now if this is the first property to turn Room
+    // Controller on, so it works immediately instead of needing a server restart.
+    // connect() is idempotent, safe to call even if already connected.
+    if (module === 'room_controller' && is_enabled && process.env.MQTT_BROKER) {
+      mqttClient.connect();
+    }
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
