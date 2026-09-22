@@ -176,13 +176,13 @@ router.get('/booking-sources', auth, async (req, res) => {
 });
 
 router.post('/booking-sources', auth, async (req, res) => {
-  const { id, label, is_ota, color, sort_order } = req.body;
+  const { id, label, is_ota, color, sort_order, publish_rate } = req.body;
   if (!id || !label) return res.status(400).json({ error: 'id and label are required' });
   const agent = parseAgentFields(req.body);
   if (agent.error) return res.status(400).json({ error: agent.error });
 
-  const cols = ['id', 'label', 'is_ota', 'color', 'sort_order', 'property_id'];
-  const vals = [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0, req.propertyId];
+  const cols = ['id', 'label', 'is_ota', 'color', 'sort_order', 'property_id', 'publish_rate'];
+  const vals = [id.toLowerCase().replace(/\s+/g, '_'), label, !!is_ota, color || '#6b7280', sort_order || 0, req.propertyId, publish_rate === false ? false : true];
   for (const [k, v] of Object.entries(agent.values)) { cols.push(k); vals.push(v); }
   const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
 
@@ -200,18 +200,19 @@ router.post('/booking-sources', auth, async (req, res) => {
 });
 
 router.put('/booking-sources/:id', auth, async (req, res) => {
-  const { label, is_ota, color, is_active, sort_order } = req.body;
+  const { label, is_ota, color, is_active, sort_order, publish_rate } = req.body;
   const agent = parseAgentFields(req.body);
   if (agent.error) return res.status(400).json({ error: agent.error });
 
   const sets = [
-    'label      = COALESCE($1, label)',
-    'is_ota     = COALESCE($2, is_ota)',
-    'color      = COALESCE($3, color)',
-    'is_active  = COALESCE($4, is_active)',
-    'sort_order = COALESCE($5, sort_order)',
+    'label        = COALESCE($1, label)',
+    'is_ota       = COALESCE($2, is_ota)',
+    'color        = COALESCE($3, color)',
+    'is_active    = COALESCE($4, is_active)',
+    'sort_order   = COALESCE($5, sort_order)',
+    'publish_rate = COALESCE($6, publish_rate)',
   ];
-  const vals = [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null];
+  const vals = [label, is_ota ?? null, color, is_active ?? null, sort_order ?? null, publish_rate ?? null];
   // Agent-billing fields: an explicit key in the body overwrites (including to NULL),
   // an absent key is left untouched.
   for (const [k, v] of Object.entries(agent.values)) {

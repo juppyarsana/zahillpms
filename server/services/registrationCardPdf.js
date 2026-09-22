@@ -53,6 +53,15 @@ function renderRegistrationCard(doc, { property, data }) {
     .text(title, 50, titleY, { width: 495, align: 'center' });
   doc.y = titleY + doc.heightOfString(title, { width: 495 }) + 10;
 
+  // Room Rate / Deposit are hidden for a booking source with
+  // publish_rate=false (OTA/travel-agent — migration 065): the rate the
+  // hotel actually nets differs from what the guest paid the channel,
+  // and isn't something to print on a guest-facing document. Shown as
+  // a plain note instead of the numbers, naming the actual source
+  // rather than a generic placeholder.
+  const showRate = data.publish_rate !== false;
+  const rateHiddenNote = `Arranged by ${data.source_label || 'Agent'}`;
+
   // ── Guest & stay details ──────────────────────────────────────────
   gridRow(doc, {
     height: 38,
@@ -117,14 +126,14 @@ function renderRegistrationCard(doc, { property, data }) {
     cells: [
       { label: 'Room Number', value: data.unit_name },
       { label: 'Source of Booking', value: data.source_label },
-      { label: 'Room Rate (per night)', value: data.room_rate != null ? fmtIDR(data.room_rate) : '' },
+      { label: 'Room Rate (per night)', value: showRate ? (data.room_rate != null ? fmtIDR(data.room_rate) : '') : rateHiddenNote },
     ],
   });
   gridRow(doc, {
     cells: [
       { label: 'Type', value: data.room_type_name },
       { label: 'Purpose of Stay', value: data.purpose_of_stay },
-      { label: 'Deposit', value: data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '' },
+      { label: 'Deposit', value: showRate ? (data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '') : rateHiddenNote },
     ],
   });
   gridRow(doc, {

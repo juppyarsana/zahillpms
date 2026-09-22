@@ -1315,7 +1315,26 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
-## Next migration number: 065
+## ✅ Registration Card "Publish Rate" per booking source (migration 065)
+
+- OTA/travel-agent bookings printed their real Room Rate and Deposit on
+  the Registration Card — wrong, since what the hotel nets differs
+  from what the guest paid the channel.
+- New `booking_sources.publish_rate` (default `true`, backfilled to
+  `false` for existing OTA/`travel_agent` sources), toggled per source
+  in `Settings.jsx` — independent of `is_ota`/`source_type` on purpose,
+  the owner controls it explicitly.
+- When off, `registrationCardPdf.js` prints "Arranged by \<source\>"
+  in place of both Room Rate and Deposit numbers.
+- Status: ✅ Implemented (verified against the live dev DB — a real
+  Airbnb booking correctly hid the numbers, a Direct booking didn't,
+  and toggling the flag via the API confirmed it works dynamically for
+  any source. Test toggle reverted. Not yet clicked through in a
+  browser).
+
+---
+
+## Next migration number: 066
 
 ---
 

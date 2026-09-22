@@ -146,6 +146,7 @@ export default function Settings() {
       for (const k of AGENT_FIELDS) f[k] = item[k] ?? '';
       f.source_type = item.source_type || 'direct';
       f.payment_status = item.payment_status || 'normal';
+      f.publish_rate = item.publish_rate !== false;
       setEditForm(f);
     } else {
       setEditForm({ label: item.label, sort_order: item.sort_order });
@@ -186,7 +187,7 @@ export default function Settings() {
     if (type === 'source') {
       const used = new Set(sources.map(s => s.color?.toLowerCase()));
       const autoColor = AUTO_COLORS.find(c => !used.has(c.toLowerCase())) || AUTO_COLORS[0];
-      setAddForm({ color: autoColor, is_ota: false, source_type: 'direct', payment_status: 'normal' });
+      setAddForm({ color: autoColor, is_ota: false, source_type: 'direct', payment_status: 'normal', publish_rate: true });
     } else {
       setAddForm({});
     }
@@ -263,6 +264,15 @@ export default function Settings() {
                   <input type="checkbox" checked={!!editForm.is_ota} onChange={e => setEdit('is_ota', e.target.checked)} />
                   OTA channel — payment managed by platform
                 </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '12px 0', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={editForm.publish_rate !== false} onChange={e => setEdit('publish_rate', e.target.checked)} />
+                  Publish rate on Registration Card
+                </label>
+                {editForm.publish_rate === false && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -8, marginBottom: 12 }}>
+                    Off: Room Rate and Deposit print as "Arranged by {editForm.label || 'this source'}" instead of the actual numbers.
+                  </div>
+                )}
                 {error && <div className="alert alert-error" style={{ marginBottom: 8 }}>{error}</div>}
                 <div className="flex gap-2">
                   <button className="btn btn-primary btn-sm" onClick={saveEdit}>Save</button>
@@ -286,6 +296,7 @@ export default function Settings() {
                       {PAYMENT_STATUS_SHORT[s.payment_status]}
                     </span>
                   )}
+                  {s.publish_rate === false && <span className="badge badge-amber" style={{ fontSize: 10, padding: '2px 6px' }}>Rate hidden on Reg. Card</span>}
                   {!s.is_active && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Inactive</span>}
                 </div>
                 <div className="flex gap-2">
@@ -329,6 +340,15 @@ export default function Settings() {
               <input type="checkbox" checked={!!addForm.is_ota} onChange={e => setAdd('is_ota', e.target.checked)} />
               OTA channel — payment managed by platform
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, margin: '12px 0', cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.publish_rate !== false} onChange={e => setAdd('publish_rate', e.target.checked)} />
+              Publish rate on Registration Card
+            </label>
+            {addForm.publish_rate === false && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -8, marginBottom: 12 }}>
+                Off: Room Rate and Deposit print as "Arranged by {addForm.label || 'this source'}" instead of the actual numbers.
+              </div>
+            )}
             {error && <div className="alert alert-error" style={{ marginBottom: 8 }}>{error}</div>}
             <div className="flex gap-2">
               <button className="btn btn-primary btn-sm" onClick={saveAdd}>Add Source</button>
