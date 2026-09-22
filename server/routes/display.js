@@ -417,10 +417,15 @@ router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
     const { rows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
     if (!rows[0]) return res.status(404).json({ error: 'Room not found' });
 
+    // "Order Food" is a food/drinks menu, not a general catalog browser —
+    // scope it to those categories so a front-desk ancillary item (extra
+    // bed, merchandise) never shows up as something a guest can "order" to
+    // their room. Same filter as routes/resto.js / routes/restoGuest.js.
     const { rows: products } = await db.query(
       `SELECT id, name, category, price, description
        FROM products
        WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
+         AND category IN ('drinks', 'food')
        ORDER BY category, name`,
       [req.propertyId]
     );

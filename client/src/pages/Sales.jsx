@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const CATEGORIES = ['drinks', 'food', 'merchandise', 'tour', 'other'];
+// Once Resto Ordering is enabled, F&B selling moves entirely to that app
+// (table service, kitchen tickets, guest QR) — this page (front desk's
+// ancillary-charges tool) hides drinks/food so the two surfaces don't
+// show the same items in two different places with two different
+// workflows. products/sales stay ONE shared table underneath (interim
+// UI-level split, not a schema change) — see CLAUDE.md for the full
+// reasoning and why a real table split is a separate, larger piece of
+// work.
+const FNB_CATEGORIES = ['drinks', 'food'];
 const CAT_ICONS = { drinks: '🍹', food: '🍽', merchandise: '👕', tour: '🏔', other: '📦' };
 const EMPTY_PRODUCT_FORM = { name: '', category: 'drinks', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '' };
 
@@ -15,6 +25,8 @@ function stockBadge(p) {
 }
 
 export default function Sales() {
+  const { hasModule } = useAuth();
+  const restoOwnsFnb = hasModule('resto_ordering');
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   const [tables, setTables] = useState([]);
@@ -48,7 +60,9 @@ export default function Sales() {
     } else setBookings([]);
   }, [bookingSearch]);
 
-  const availableProducts = products.filter(p => p.is_available);
+  const visibleProducts = restoOwnsFnb ? products.filter(p => !FNB_CATEGORIES.includes(p.category)) : products;
+  const availableProducts = visibleProducts.filter(p => p.is_available);
+  const visibleCategories = restoOwnsFnb ? CATEGORIES.filter(c => !FNB_CATEGORIES.includes(c)) : CATEGORIES;
 
   function addToCart(product) {
     if (product.track_stock && product.stock_quantity <= 0) return;
@@ -98,7 +112,7 @@ export default function Sales() {
     }
   }
 
-  function openAddProduct() { setProdForm(EMPTY_PRODUCT_FORM); setProductModal({ mode: 'add' }); }
+  function openAddProduct() { setProdForm({ ...EMPTY_PRODUCT_FORM, category: visibleCategories[0] }); setProductModal({ mode: 'add' }); }
   function openEditProduct(p) {
     setProdForm({
       name: p.name, category: p.category, price: p.price, description: p.description || '', is_available: p.is_available,
@@ -153,7 +167,7 @@ export default function Sales() {
     loadTables();
   }
 
-  const grouped = CATEGORIES.reduce((acc, cat) => {
+  const grouped = visibleCategories.reduce((acc, cat) => {
     acc[cat] = availableProducts.filter(p => p.category === cat);
     return acc;
   }, {});
@@ -161,7 +175,14 @@ export default function Sales() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Ancillary Sales</div>
+        <div>
+          <div className="page-title">Ancillary Sales</div>
+          {restoOwnsFnb && (
+            <div className="page-subtitle" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Drinks &amp; food are sold through the restaurant app — this page is for everything else (extra bed, merchandise, tours, etc).
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <button className={`btn btn-sm ${tab==='pos'?'btn-primary':'btn-secondary'}`} onClick={()=>setTab('pos')}>🛍 POS</button>
           <button className={`btn btn-sm ${tab==='history'?'btn-primary':'btn-secondary'}`} onClick={()=>setTab('history')}>History</button>
@@ -173,7 +194,7 @@ export default function Sales() {
       {tab === 'pos' && (
         <div className="grid-2" style={{ gap: 16 }}>
           <div>
-            {CATEGORIES.filter(cat => grouped[cat].length > 0).map(cat => (
+            {visibleCategories.filter(cat => grouped[cat].length > 0).map(cat => (
               <div key={cat} className="card mb-3">
                 <div className="card-title">{CAT_ICONS[cat]} {cat}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px,1fr))', gap: 8 }}>
@@ -317,7 +338,7 @@ export default function Sales() {
               <table>
                 <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Available</th><th>Stock</th><th></th></tr></thead>
                 <tbody>
-                  {products.map(p => (
+                  {visibleProducts.map(p => (
                     <tr key={p.id}>
                       <td style={{ fontWeight: 600 }}>{p.name}</td>
                       <td>{CAT_ICONS[p.category]} {p.category}</td>
@@ -350,7 +371,7 @@ export default function Sales() {
                   <div className="form-row">
                     <div className="form-group"><label className="form-label">Category</label>
                       <select className="form-select" value={prodForm.category} onChange={e=>setProdForm(f=>({...f,category:e.target.value}))}>
-                        {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                        {visibleCategories.map(c=><option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /></div>

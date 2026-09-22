@@ -1,7 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import api from '../api';
 
-const CATEGORIES = ['drinks', 'food', 'merchandise', 'tour', 'other'];
+// This screen shares the /api/products table with the PMS's own Sales
+// page (front-desk ancillary items — extra bed, merchandise, tours) —
+// scoped here to food/drinks only so the restaurant's menu management
+// never lists or lets staff edit/create an item that belongs to front
+// desk instead. Interim, UI-level split only; see CLAUDE.md for why a
+// real separate table is a bigger, separately-planned piece of work.
+const CATEGORIES = ['drinks', 'food'];
 const EMPTY_FORM = { name: '', category: 'food', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '' };
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -22,7 +28,7 @@ export default function MenuManagementScreen() {
 
   async function load() {
     const { data } = await api.get('/products');
-    setProducts(data);
+    setProducts(data.filter(p => CATEGORIES.includes(p.category)));
   }
   useEffect(() => { load(); }, []);
 

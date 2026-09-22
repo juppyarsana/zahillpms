@@ -340,6 +340,21 @@ export default function Reservations() {
     })
     .sort((a, b) => toDate(a.check_in_date) - toDate(b.check_in_date));
 
+  // List view sort — plain ascending-by-check-in-date (the API's default
+  // order) puts day 1 of whatever month is selected at the very top
+  // regardless of whether that's already weeks in the past, burying the
+  // arrivals staff actually need next below a wall of old stays. Reorder
+  // so today/upcoming (soonest first) always leads, with past stays
+  // (most recent first) following after — the same "today is the
+  // reference point" framing the calendar view already uses (it
+  // auto-scrolls to today rather than starting at day 1).
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const upcomingList = listBookings.filter(b => b.check_in_date?.slice(0, 10) >= todayStr)
+    .sort((a, b) => a.check_in_date.localeCompare(b.check_in_date));
+  const pastList = listBookings.filter(b => b.check_in_date?.slice(0, 10) < todayStr)
+    .sort((a, b) => b.check_in_date.localeCompare(a.check_in_date));
+  const sortedListBookings = [...upcomingList, ...pastList];
+
   return (
     <div>
       <div className="page-header">
@@ -534,33 +549,45 @@ export default function Reservations() {
                   </tr>
                 </thead>
                 <tbody>
-                  {listBookings.map(b => {
+                  {sortedListBookings.map((b, i) => {
                     const isDone      = b.status === 'checked_out';
                     const isCancelled = b.status === 'cancelled' || b.status === 'no_show';
+                    // Divider right where the list crosses from today/upcoming
+                    // into past stays, so the reordering (soonest-first, not
+                    // strictly chronological) reads as deliberate, not broken.
+                    const showPastDivider = i > 0 && i === upcomingList.length && pastList.length > 0;
                     return (
-                      <tr
-                        key={b.id}
-                        style={{
-                          cursor: 'pointer',
-                          opacity: isCancelled ? 0.4 : isDone ? 0.6 : 1,
-                          filter: isDone || isCancelled ? 'grayscale(0.4)' : 'none',
-                        }}
-                        onClick={() => nav(`/reservations/${b.id}`)}
-                      >
-                        <td style={{ fontWeight: 600 }}>
-                          {b.guest_name}
-                          {b.has_condition_notes && (
-                            <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
-                          )}
-                        </td>
-                        <td>{b.unit_name}</td>
-                        <td>{b.check_in_date?.slice(0, 10)}</td>
-                        <td>{b.check_out_date?.slice(0, 10)}</td>
-                        <td>{b.nights}</td>
-                        <td><SourceBadge sourceId={b.source} /></td>
-                        <td><span className={`badge ${STATUS_BADGE[b.status] || 'badge-gray'}`}>{STATUS_LABELS[b.status] || b.status}</span></td>
-                        <td style={{ fontWeight: 600 }}>Rp {Number(b.total_amount).toLocaleString('id-ID')}</td>
-                      </tr>
+                      <Fragment key={b.id}>
+                        {showPastDivider && (
+                          <tr key="past-divider">
+                            <td colSpan={8} style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', background: 'var(--bg-subtle, #f9fafb)', padding: '6px 12px' }}>
+                              Past
+                            </td>
+                          </tr>
+                        )}
+                        <tr
+                          style={{
+                            cursor: 'pointer',
+                            opacity: isCancelled ? 0.4 : isDone ? 0.6 : 1,
+                            filter: isDone || isCancelled ? 'grayscale(0.4)' : 'none',
+                          }}
+                          onClick={() => nav(`/reservations/${b.id}`)}
+                        >
+                          <td style={{ fontWeight: 600 }}>
+                            {b.guest_name}
+                            {b.has_condition_notes && (
+                              <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
+                            )}
+                          </td>
+                          <td>{b.unit_name}</td>
+                          <td>{b.check_in_date?.slice(0, 10)}</td>
+                          <td>{b.check_out_date?.slice(0, 10)}</td>
+                          <td>{b.nights}</td>
+                          <td><SourceBadge sourceId={b.source} /></td>
+                          <td><span className={`badge ${STATUS_BADGE[b.status] || 'badge-gray'}`}>{STATUS_LABELS[b.status] || b.status}</span></td>
+                          <td style={{ fontWeight: 600 }}>Rp {Number(b.total_amount).toLocaleString('id-ID')}</td>
+                        </tr>
+                      </Fragment>
                     );
                   })}
                   {listBookings.length === 0 && (

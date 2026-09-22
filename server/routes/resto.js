@@ -38,7 +38,7 @@ router.get('/context', auth, gate, async (req, res) => {
       [req.propertyId]
     );
     const { rows: categories } = await db.query(
-      `SELECT DISTINCT category FROM products WHERE property_id = $1 AND is_available = true ORDER BY category`,
+      `SELECT DISTINCT category FROM products WHERE property_id = $1 AND is_available = true AND category IN ('drinks', 'food') ORDER BY category`,
       [req.propertyId]
     );
     res.json({ property: propertyRows[0] || null, payment_methods: paymentMethods, categories: categories.map(c => c.category) });
@@ -47,13 +47,15 @@ router.get('/context', auth, gate, async (req, res) => {
   }
 });
 
-// GET /api/resto/menu
+// GET /api/resto/menu — food/drinks only. A front-desk ancillary item
+// (extra bed, merchandise) sold via Sales.jsx must never show up here.
 router.get('/menu', auth, gate, async (req, res) => {
   try {
     const { rows: products } = await db.query(
       `SELECT id, name, category, price, description
          FROM products
         WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
+          AND category IN ('drinks', 'food')
         ORDER BY category, name`,
       [req.propertyId]
     );

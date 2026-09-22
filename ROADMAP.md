@@ -1284,6 +1284,37 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
+## ✅ Front desk / restaurant catalog split (interim, read-path only)
+
+- `products`/`sales` is one shared table read by both `Sales.jsx`
+  (front desk's ancillary-charges tool) and the whole F&B stack
+  (Kitchen Display, Room Display's "Order Food", resto-display) — no
+  separation meant a food item could clutter front desk's POS grid,
+  and worse, a front-desk-only item (extra bed, merchandise) could
+  show up as something orderable in a guest's room-service or table
+  QR menu.
+- Deliberately **UI/read-path filtering only, not a schema change** —
+  a real separate table is scoped as its own larger migration (3
+  FK-dependent tables, ~10 route/service files) and logged in
+  `CLAUDE.md`'s Open Decisions for later, once the app's run settled
+  on production for a while.
+- `routes/display.js`, `routes/resto.js`, `routes/restoGuest.js`'s
+  menu-listing queries now filter to `drinks`/`food` unconditionally.
+  `Sales.jsx` hides `drinks`/`food` when `resto_ordering` is enabled
+  (unchanged, full catalog otherwise). `resto-display`'s
+  `MenuManagementScreen.jsx` now scopes itself to `drinks`/`food` only,
+  the mirror-image restriction. Back Office stays unfiltered (a
+  cross-category owner financial view, correctly needs everything).
+- No migration.
+- Status: ✅ Implemented (verified against the live dev DB with real
+  HTTP round-trips — created one food + one non-food test product,
+  confirmed all three F&B ordering endpoints return only the food item
+  and `Sales.jsx`'s filter logic shows only the non-food item when
+  Resto Ordering is on; test data and temporarily-toggled modules
+  fully reverted. Not yet clicked through in a browser).
+
+---
+
 ## Next migration number: 065
 
 ---

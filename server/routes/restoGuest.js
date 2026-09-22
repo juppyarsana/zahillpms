@@ -34,13 +34,15 @@ router.get('/:qrToken/context', authTableQR, gate, async (req, res) => {
 });
 
 // GET /api/resto/guest/:qrToken/menu — same availability filter as Room
-// Display's guest menu (routes/display.js) for consistency.
+// Display's guest menu (routes/display.js) for consistency, and the same
+// food/drinks-only scope — a table QR menu is not a general catalog.
 router.get('/:qrToken/menu', authTableQR, gate, async (req, res) => {
   try {
     const { rows: products } = await db.query(
       `SELECT id, name, category, price, description
          FROM products
         WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
+          AND category IN ('drinks', 'food')
         ORDER BY category, name`,
       [req.propertyId]
     );
