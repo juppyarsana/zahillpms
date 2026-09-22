@@ -12,6 +12,12 @@ const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'ambe
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 const ACTIVITY_STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
+// Same list NewBooking.jsx uses for the same field.
+const EDIT_BED_PREFS = [
+  ['', 'No preference'],
+  ['double', 'Double bed'],
+  ['twin', 'Twin beds'],
+];
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -39,6 +45,9 @@ export default function BookingDetail() {
   const [transferTarget, setTransferTarget] = useState(null);
   const [transferLoading, setTransferLoading] = useState(false);
   const [amending, setAmending] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [editDetailsForm, setEditDetailsForm] = useState({});
+  const [editDetailsLoading, setEditDetailsLoading] = useState(false);
   const [amendCheckIn, setAmendCheckIn] = useState('');
   const [amendCheckOut, setAmendCheckOut] = useState('');
   const [amendAvailability, setAmendAvailability] = useState(null);
@@ -279,6 +288,41 @@ export default function BookingDetail() {
     }
   }
 
+  // "Edit Details" covers every plain field PUT /api/bookings/:id already
+  // accepts with no availability/conflict checking involved — Source,
+  // Guests, Purpose of Stay, Special Requests, Internal Notes, Bed
+  // Preference. Deliberately excludes total_amount (money stays under
+  // Payment Tracking, same convention Amend Dates already notes) and
+  // status (has its own dedicated Check In/Confirm/Cancel/No-Show flows
+  // that shouldn't be bypassed by a generic field edit). Dates and unit
+  // stay their own separate flows (Amend Dates / Transfer Room) since
+  // those genuinely need availability checking and folio reposting, not
+  // just a field update.
+  function openEditDetails() {
+    setEditDetailsForm({
+      source: booking.source,
+      num_guests: booking.num_guests,
+      purpose_of_stay: booking.purpose_of_stay || '',
+      special_requests: booking.special_requests || '',
+      internal_notes: booking.internal_notes || '',
+      bed_preference: booking.bed_preference || '',
+    });
+    setEditingDetails(true);
+  }
+
+  async function doEditDetails() {
+    setEditDetailsLoading(true);
+    try {
+      await api.put(`/api/bookings/${id}`, editDetailsForm);
+      setEditingDetails(false);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update booking details');
+    } finally {
+      setEditDetailsLoading(false);
+    }
+  }
+
   async function markNoShow() {
     if (!confirm('Mark this booking as a no-show? The guest never checked in.')) return;
     try {
@@ -343,6 +387,8 @@ export default function BookingDetail() {
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
   ].filter(Boolean);
   const dangerItems = [
     ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
@@ -600,6 +646,20 @@ export default function BookingDetail() {
           <button className="btn btn-secondary" onClick={addNote}>Add</button>
         </div>
       </div>
+
+      <div className="card mt-3">
+        <div className="card-title">Edit History</div>
+        {booking.events?.length > 0 ? booking.events.map(ev => (
+          <div key={ev.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {ev.author_name || 'System'} · {new Date(ev.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+            </div>
+            <div style={{ fontSize: 13 }}>{ev.note}</div>
+          </div>
+        )) : (
+          <div className="text-muted" style={{ fontSize: 13 }}>No changes logged yet.</div>
+        )}
+      </div>
       </>
       )}
 
@@ -823,6 +883,69 @@ export default function BookingDetail() {
                 }
               >
                 {amendLoading ? 'Saving…' : 'Save New Dates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingDetails && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Edit Details — {booking.guest_name}</div>
+              <button className="btn btn-icon" onClick={() => setEditingDetails(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Source</label>
+                  <select className="form-select" value={editDetailsForm.source || ''} onChange={e => setEditDetailsForm(f => ({ ...f, source: e.target.value }))}>
+                    {sources.filter(s => s.is_active || s.id === booking.source).map(s => <option key={s.id} value={s.id}>{s.label}{!s.is_active ? ' (inactive)' : ''}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Number of Guests</label>
+                  <input className="form-input" type="number" min="1" value={editDetailsForm.num_guests ?? ''}
+                    onChange={e => setEditDetailsForm(f => ({ ...f, num_guests: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Bed Preference</label>
+                  <select className="form-select" value={editDetailsForm.bed_preference || ''} onChange={e => setEditDetailsForm(f => ({ ...f, bed_preference: e.target.value }))}>
+                    {EDIT_BED_PREFS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Purpose of Stay</label>
+                  <input className="form-input" value={editDetailsForm.purpose_of_stay || ''}
+                    onChange={e => setEditDetailsForm(f => ({ ...f, purpose_of_stay: e.target.value }))} placeholder="e.g. Leisure" />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Special Requests</label>
+                <textarea className="form-textarea" value={editDetailsForm.special_requests || ''}
+                  onChange={e => setEditDetailsForm(f => ({ ...f, special_requests: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Internal Notes</label>
+                <textarea className="form-textarea" value={editDetailsForm.internal_notes || ''}
+                  onChange={e => setEditDetailsForm(f => ({ ...f, internal_notes: e.target.value }))} />
+              </div>
+              {booking.folio_status && editDetailsForm.source !== booking.source && (
+                <div className="alert alert-error">
+                  This booking already has agent billing activity ({booking.folio_status.replace('_', ' ')}) tied to its current source — changing the source now won't move that billing history, so double-check with whoever handles Agent Billing before saving.
+                </div>
+              )}
+              <div className="alert alert-success" style={{ marginTop: 12 }}>
+                Dates and room assignment aren't edited here — use Amend Dates / Transfer Room for those.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setEditingDetails(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={doEditDetails} disabled={editDetailsLoading || !editDetailsForm.num_guests}>
+                {editDetailsLoading ? 'Saving…' : 'Save Details'}
               </button>
             </div>
           </div>

@@ -1334,7 +1334,50 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
-## Next migration number: 066
+## ✅ Edit Details (Source, Guests, Bed Preference, Purpose, Notes)
+
+- Staff had no way to correct a mis-selected booking source after
+  creation — `PUT /api/bookings/:id` already accepted `source` (and
+  several other plain fields), no UI ever exposed them.
+- First pass was a single-field "Edit Booking Source" modal;
+  reconsidered immediately and consolidated into one **"Edit Details"**
+  action in `BookingDetail.jsx`'s action menu, covering every field
+  that endpoint supports with no availability/conflict checking —
+  Source, Number of Guests, Bed Preference, Purpose of Stay, Special
+  Requests, Internal Notes — instead of one modal per field. Excludes
+  `total_amount` (Payment Tracking) and `status` (its own dedicated
+  flows). Dates/unit deliberately stay separate (Amend Dates/Transfer
+  Room) since those need real availability checking and folio
+  reposting.
+- No backend changes — reused the existing endpoint.
+- Status: ✅ Implemented (verified with real HTTP round-trips against
+  the live dev DB — all six fields updated together, bed preference
+  clear-to-NULL confirmed, fully reverted. Not yet clicked through in
+  a browser).
+
+---
+
+## ✅ Booking Edit History (migration 066)
+
+- Raised immediately after Edit Details shipped: no record of what
+  changed on a booking, who changed it, or when.
+- New `booking_events` table (same shape as `purchase_order_events`) +
+  `logBookingChanges()` — a single choke point inside
+  `PUT /api/bookings/:id` that diffs before/after and writes one
+  human-readable summary row per save, covering every field that
+  endpoint can touch, not just the ones Edit Details exposes. No-op
+  saves write nothing; `source`/`rate_plan_id` resolve to real
+  labels, not raw IDs; free-text fields log as "...updated" rather
+  than the full text.
+- `BookingDetail.jsx` gained an "Edit History" card below Staff Notes.
+- Status: ✅ Implemented (verified with real HTTP round-trips — a
+  multi-field edit produced one correctly-summarized event, a no-op
+  PUT added nothing, ordering confirmed newest-first. Test data fully
+  reverted. Not yet clicked through in a browser).
+
+---
+
+## Next migration number: 067
 
 ---
 

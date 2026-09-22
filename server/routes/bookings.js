@@ -22,6 +22,64 @@ async function grossFactor(client, propertyId) {
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
+function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
+// Compares the before/after rows PUT /:id produces and writes one
+// booking_events row summarizing whatever actually changed — a single
+// choke point, so every caller of this endpoint (Edit Details today,
+// anything else later) gets an audit trail for free, without each
+// caller having to remember to log it themselves. No-ops (no row
+// written) when nothing tracked actually changed.
+async function logBookingChanges(client, { propertyId, bookingId, userId, before, after }) {
+  const norm = v => (v === null || v === undefined) ? '' : String(v);
+  const changes = [];
+
+  if (norm(before.num_guests) !== norm(after.num_guests)) {
+    changes.push(`Guests: ${before.num_guests} → ${after.num_guests}`);
+  }
+  if (norm(before.source) !== norm(after.source)) {
+    const { rows } = await client.query(
+      'SELECT id, label FROM booking_sources WHERE property_id = $1 AND id = ANY($2)',
+      [propertyId, [before.source, after.source]]
+    );
+    const labelOf = srcId => rows.find(r => r.id === srcId)?.label || srcId;
+    changes.push(`Source: ${labelOf(before.source)} → ${labelOf(after.source)}`);
+  }
+  if (norm(before.total_amount) !== norm(after.total_amount)) {
+    changes.push(`Total Amount: ${fmtIDR(before.total_amount)} → ${fmtIDR(after.total_amount)}`);
+  }
+  if (norm(before.special_requests) !== norm(after.special_requests)) {
+    changes.push('Special Requests updated');
+  }
+  if (norm(before.internal_notes) !== norm(after.internal_notes)) {
+    changes.push('Internal Notes updated');
+  }
+  if (norm(before.status) !== norm(after.status)) {
+    changes.push(`Status: ${before.status} → ${after.status}`);
+  }
+  if (norm(before.rate_plan_id) !== norm(after.rate_plan_id)) {
+    const ids = [before.rate_plan_id, after.rate_plan_id].filter(Boolean);
+    const { rows } = ids.length
+      ? await client.query('SELECT id, code FROM rate_plans WHERE property_id = $1 AND id = ANY($2)', [propertyId, ids])
+      : { rows: [] };
+    const codeOf = planId => planId ? (rows.find(r => r.id === planId)?.code || 'Unknown') : 'None';
+    changes.push(`Rate Plan: ${codeOf(before.rate_plan_id)} → ${codeOf(after.rate_plan_id)}`);
+  }
+  if (norm(before.bed_preference) !== norm(after.bed_preference)) {
+    const label = v => v ? v.replace('_', ' ') : 'No preference';
+    changes.push(`Bed Preference: ${label(before.bed_preference)} → ${label(after.bed_preference)}`);
+  }
+  if (norm(before.purpose_of_stay) !== norm(after.purpose_of_stay)) {
+    changes.push(`Purpose of Stay: ${before.purpose_of_stay || '(none)'} → ${after.purpose_of_stay || '(none)'}`);
+  }
+
+  if (changes.length === 0) return;
+  await client.query(
+    'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+    [bookingId, changes.join('; '), userId]
+  );
+}
+
 // Split a stay's gross post-discount total into NET room + NET meal amounts.
 // meal is rate-plan-derived and fixed; room absorbs the rest.
 function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue }) {
@@ -356,12 +414,16 @@ router.get('/:id', auth, async (req, res) => {
       `SELECT checkin_time, checkout_time, condition_notes, id_captured
        FROM checkin_records WHERE booking_id = $1`,
       [req.params.id]);
+    const eventsQ = db.query(`
+      SELECT be.*, u.name as author_name FROM booking_events be
+      LEFT JOIN users u ON be.created_by = u.id
+      WHERE be.booking_id = $1 ORDER BY be.created_at DESC`, [req.params.id]);
 
-    const [{ rows: [booking] }, { rows: payments }, { rows: notes }, { rows: [checkin_record] }] =
-      await Promise.all([bookingQ, paymentsQ, notesQ, checkinQ]);
+    const [{ rows: [booking] }, { rows: payments }, { rows: notes }, { rows: [checkin_record] }, { rows: events }] =
+      await Promise.all([bookingQ, paymentsQ, notesQ, checkinQ, eventsQ]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     const group = booking.reservation_group_id ? { id: booking.reservation_group_id, room_count: booking.group_size } : null;
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group });
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -862,6 +924,8 @@ router.put('/:id', auth, async (req, res) => {
       booking = b2;
       await roomCharge.repostStay(client, booking, req.user.id);
     }
+
+    await logBookingChanges(client, { propertyId: req.propertyId, bookingId: req.params.id, userId: req.user.id, before, after: booking });
 
     await client.query('COMMIT');
     res.json(booking);
