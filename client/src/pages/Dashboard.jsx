@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { useCall } from '../context/CallContext';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
+import RegistrationCardModal from '../components/RegistrationCardModal';
 import api from '../services/api';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -49,6 +50,7 @@ function UnitCard({ unit, flags, health, onChanged }) {
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [messageError, setMessageError] = useState('');
+  const [showRegCard, setShowRegCard] = useState(false);
   const [hkConfirm, setHkConfirm] = useState(false);
   const [hkBusy, setHkBusy] = useState(false);
   const [tabletConfirm, setTabletConfirm] = useState(false);
@@ -398,9 +400,12 @@ function UnitCard({ unit, flags, health, onChanged }) {
       {/* Call Room — same eligibility as Sidebar's "Call a Room" / CallRoomModal:
           the calling module on, and a Room Display tablet actually assigned.
           Send Message — needs an actual checked-in booking to attach to (no
-          point messaging an empty room's tablet). */}
-      {(hasModule('calling') && unit.controller_id) || unit.booking_id ? (
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          point messaging an empty room's tablet).
+          Registration Card — either the current in-house stay (reprint) or
+          today's not-yet-arrived booking (front desk prepares it ahead of
+          arrival), so it also keys off arriving_booking_id. */}
+      {(hasModule('calling') && unit.controller_id) || unit.booking_id || unit.arriving_booking_id ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
           {hasModule('calling') && unit.controller_id && (
             <button
               className="btn btn-secondary btn-sm"
@@ -420,8 +425,23 @@ function UnitCard({ unit, flags, health, onChanged }) {
               ✉️ Message
             </button>
           )}
+          {(unit.booking_id || unit.arriving_booking_id) && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1, fontSize: 12 }}
+              onClick={() => setShowRegCard(true)}
+            >
+              📝 Reg. Card
+            </button>
+          )}
         </div>
       ) : null}
+      {showRegCard && (
+        <RegistrationCardModal
+          bookingId={unit.booking_id || unit.arriving_booking_id}
+          onClose={() => setShowRegCard(false)}
+        />
+      )}
       {callError && <div style={{ color: '#DC2626', fontSize: 11, marginTop: 6 }}>{callError}</div>}
 
       {messaging && (

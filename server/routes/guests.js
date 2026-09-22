@@ -97,7 +97,7 @@ router.post('/', auth, async (req, res) => {
 
 // PUT /api/guests/:id
 router.put('/:id', auth, async (req, res) => {
-  const { name, nationality, id_number, whatsapp, email, birthday, anniversary, notes, preferences } = req.body;
+  const { name, nationality, id_number, whatsapp, email, birthday, anniversary, notes, address, preferences } = req.body;
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -110,9 +110,10 @@ router.put('/:id', auth, async (req, res) => {
         email = COALESCE($5, email),
         birthday = COALESCE($6, birthday),
         anniversary = COALESCE($7, anniversary),
-        notes = COALESCE($8, notes)
+        notes = COALESCE($8, notes),
+        address = COALESCE($11, address)
        WHERE id = $9 AND property_id = $10 RETURNING *`,
-      [name, nationality, id_number, whatsapp, email, birthday || null, anniversary || null, notes, req.params.id, req.propertyId]
+      [name, nationality, id_number, whatsapp, email, birthday || null, anniversary || null, notes, req.params.id, req.propertyId, address]
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
 

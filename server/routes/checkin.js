@@ -12,6 +12,9 @@ function todayWITA() {
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
+const { drawDocumentHeader } = require('../services/pdfHeader');
+const { renderRegistrationCard } = require('../services/registrationCardPdf');
 
 const UPLOAD_DIR = path.join(__dirname, '../uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -150,6 +153,58 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/checkin/:bookingId/registration-card — printable PDF for the
+// guest to sign. Works for any booking status (a not-yet-arrived
+// 'confirmed' booking as well as a 'checked_in' one) since front desk
+// prepares this ahead of arrival as often as at/after check-in — see
+// the Dashboard "Registration Card" shortcut and BookingDetail's
+// Download menu, both of which hit this same route.
+router.get('/:bookingId/registration-card', auth, async (req, res) => {
+  try {
+    const { rows: [data] } = await db.query(
+      `SELECT
+         g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
+         b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount,
+         u.name AS unit_name, u.type AS room_type_name,
+         bs.label AS source_label,
+         lt.name AS membership,
+         pm.label AS payment_method_label
+       FROM bookings b
+       JOIN guests g ON g.id = b.guest_id
+       JOIN units u ON u.id = b.unit_id
+       LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+       LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
+       LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = (
+         SELECT p.method FROM payments p
+         WHERE p.booking_id = b.id AND p.status = 'received'
+         ORDER BY p.received_at DESC NULLS LAST LIMIT 1
+       )
+       WHERE b.id = $1 AND b.property_id = $2`,
+      [req.params.bookingId, req.propertyId]
+    );
+    if (!data) return res.status(404).json({ error: 'Booking not found' });
+
+    const { rows: [property] } = await db.query(
+      `SELECT property_name, property_address, property_phone, property_email, logo_url, registration_notice
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+
+    data.room_rate = data.nights > 0 ? Number(data.room_revenue || 0) / data.nights : null;
+    data.checked_in_by = req.user.name;
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="registration-card-${req.params.bookingId.slice(0, 8)}.pdf"`);
+    doc.pipe(res);
+    drawDocumentHeader(doc, property || {}, { title: 'Registration Card', refLine: `Booking #${req.params.bookingId.slice(0, 8).toUpperCase()}` });
+    renderRegistrationCard(doc, { property: property || {}, data });
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

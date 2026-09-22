@@ -335,7 +335,8 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const bookingQ = db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.email as guest_email,
-             u.name as unit_name, u.bed_config,
+             g.address as guest_address, g.id_number,
+             u.name as unit_name, u.bed_config, u.type as room_type_name,
              rp.code as rate_plan_code, rp.name as rate_plan_name,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(
                SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'deposit' AND p.status = 'received'
@@ -813,7 +814,7 @@ router.post('/:id/message', auth, async (req, res) => {
 
 // PUT /api/bookings/:id
 router.put('/:id', auth, async (req, res) => {
-  const { num_guests, source, total_amount, special_requests, internal_notes, status, rate_plan_id, bed_preference } = req.body;
+  const { num_guests, source, total_amount, special_requests, internal_notes, status, rate_plan_id, bed_preference, purpose_of_stay } = req.body;
   if (bed_preference !== undefined && bed_preference !== null && bed_preference !== '' && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
@@ -834,10 +835,11 @@ router.put('/:id', auth, async (req, res) => {
         rate_plan_id = COALESCE($9, rate_plan_id),
         bed_preference = CASE WHEN $10::text IS NULL THEN bed_preference
                              WHEN $10 = '' THEN NULL ELSE $10 END,
+        purpose_of_stay = COALESCE($11, purpose_of_stay),
         updated_at = NOW()
        WHERE id = $7 AND property_id = $8 RETURNING *`,
       [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId,
-        rate_plan_id || null, bed_preference === undefined ? null : bed_preference]
+        rate_plan_id || null, bed_preference === undefined ? null : bed_preference, purpose_of_stay]
     );
     let booking = rows[0];
 

@@ -5,6 +5,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
+import RegistrationCardModal from '../components/RegistrationCardModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -46,6 +47,7 @@ export default function BookingDetail() {
   const [messaging, setMessaging] = useState(false);
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [showRegCard, setShowRegCard] = useState(false);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
@@ -391,6 +393,8 @@ export default function BookingDetail() {
               icon="⬇"
               ariaLabel="Download documents"
               items={[
+                { label: 'Registration Card', icon: '📝', hint: 'Printable check-in form for the guest to sign', onClick: () => setShowRegCard(true) },
+                { divider: true },
                 { label: 'Invoice', icon: '🧾', hint: 'What has actually been charged so far', onClick: downloadInvoice },
                 { divider: true },
                 { label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total for the whole stay', onClick: downloadProforma },
@@ -1011,6 +1015,9 @@ export default function BookingDetail() {
             </div>
           </div>
         </div>
+      )}
+      {showRegCard && (
+        <RegistrationCardModal bookingId={id} onClose={() => setShowRegCard(false)} />
       )}
     </div>
   );

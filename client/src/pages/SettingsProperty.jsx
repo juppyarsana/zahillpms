@@ -84,6 +84,12 @@ export default function SettingsProperty() {
                   value={propertyForm.service_charge_rate ?? ''} onChange={e => setProp('service_charge_rate', e.target.value)} />
               </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Registration Card — House Rules Text</label>
+              <textarea className="form-textarea" rows={6}
+                placeholder="Shown on the printable guest Registration Card. One rule per line."
+                value={propertyForm.registration_notice || ''} onChange={e => setProp('registration_notice', e.target.value)} />
+            </div>
             {propertyError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{propertyError}</div>}
             <div className="flex gap-2 items-center">
               <button className="btn btn-primary btn-sm" onClick={savePropertyDetails} disabled={propertySaving}>

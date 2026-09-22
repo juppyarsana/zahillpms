@@ -43,7 +43,7 @@ router.get('/display-token', ownerOnly, async (req, res) => {
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
 const PROPERTY_FIELDS = `tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
-        smtp_host, smtp_port, smtp_user, smtp_password, smtp_from`;
+        smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice`;
 
 router.get('/property', ownerOnly, async (req, res) => {
   try {
@@ -61,7 +61,7 @@ router.get('/property', ownerOnly, async (req, res) => {
 router.patch('/property', ownerOnly, async (req, res) => {
   const {
     tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
-    smtp_host, smtp_port, smtp_user, smtp_password, smtp_from,
+    smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice,
   } = req.body;
   // A From header needs an actual email address (bare, or "Display Name" <addr>) — a
   // plain display name with no address is invalid RFC 5322 and every mail server
@@ -82,13 +82,14 @@ router.patch('/property', ownerOnly, async (req, res) => {
         smtp_port           = COALESCE($8, smtp_port),
         smtp_user           = COALESCE($9, smtp_user),
         smtp_password       = COALESCE($10, smtp_password),
-        smtp_from           = COALESCE($11, smtp_from)
+        smtp_from           = COALESCE($11, smtp_from),
+        registration_notice = COALESCE($13, registration_notice)
        WHERE property_id = $12
        RETURNING ${PROPERTY_FIELDS}`,
       [
         tax_rate ?? null, service_charge_rate ?? null, property_name ?? null, property_address ?? null, property_phone ?? null, property_email ?? null,
         smtp_host ?? null, smtp_port ?? null, smtp_user ?? null, smtp_password ?? null, smtp_from ?? null,
-        req.propertyId,
+        req.propertyId, registration_notice ?? null,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });

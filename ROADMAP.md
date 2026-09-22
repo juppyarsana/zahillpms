@@ -1171,7 +1171,46 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
-## Next migration number: 063
+## ✅ Guest Registration Card (migration 063)
+
+- Front desk had no in-system version of the paper registration card
+  guests sign at check-in — a hand-maintained Word doc, hardcoded to
+  Zahill's branding/house-rules, every field typed in by hand. Replaced
+  with a printable PDF generated from real booking/guest data, branded
+  per property.
+- New `guests.address`, `bookings.purpose_of_stay` (both optional — not
+  required at guest/booking creation, filled in at print time) and
+  `property_settings.registration_notice` (per-property house-rules
+  text, defaulted to Zahill's current wording for every property).
+- `GET /api/checkin/:bookingId/registration-card` (plain `auth`, rides
+  the existing `front_desk`+`reservations` gates, no new module).
+  `server/services/registrationCardPdf.js` renders it; the shared
+  logo/name/address header was extracted out of `routes/folio.js` into
+  `server/services/pdfHeader.js` so both invoice and registration-card
+  PDFs use the same `drawDocumentHeader()`.
+- Three entry points, all opening the same
+  `client/src/components/RegistrationCardModal.jsx`: `CheckIn.jsx`'s
+  post-check-in success panel (dropped the old 2s auto-dismiss so staff
+  has time to act), `BookingDetail.jsx`'s Download menu (reprint
+  anytime), and a Dashboard `UnitCard` shortcut — added after direct
+  feedback that front desk prepares this paperwork *before* the guest
+  arrives, gated on `unit.booking_id || unit.arriving_booking_id` so it
+  works for a not-yet-checked-in arrival too, not just an in-house stay.
+- Deliberate simplifications vs. the old paper form: no First/Last name
+  split, no ETA/ETD (time isn't tracked, only date), room type shown by
+  name via `units.type` (migration 062) instead of a hand-typed
+  abbreviation, room rate uses `room_revenue / nights` (NET, migration
+  044) instead of a raw figure. Full write-up in `CLAUDE.md`.
+- Status: ✅ Implemented (migration applied, real HTTP round-trips
+  against a running server for PDF generation + both field-save paths +
+  property-level house-rules override, PDF rasterized and visually
+  confirmed correct — not just `pdftotext`, whose `-layout` heuristic
+  mis-merges tightly-spaced rows in a way the real PDF doesn't. Not yet
+  clicked through in a browser).
+
+---
+
+## Next migration number: 064
 
 ---
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import RegistrationCardModal from '../components/RegistrationCardModal';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
@@ -70,6 +71,7 @@ export default function CheckIn() {
   const [step, setStep]             = useState(1);
   const [loading, setLoading]       = useState(false);
   const [msg, setMsg]               = useState('');
+  const [showRegCard, setShowRegCard] = useState(false);
   const [depositBlockId, setDepositBlockId] = useState(null);
   const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
   const [groupCheckinResults, setGroupCheckinResults] = useState(null);
@@ -150,7 +152,9 @@ export default function CheckIn() {
       await api.put(`/api/checkin/${selected.id}/complete`, fd);
       setMsg('success');
       load();
-      setTimeout(() => { setSelected(null); setMode(null); setMsg(''); }, 2000);
+      // No auto-dismiss here (unlike checkout below) — front desk gets a
+      // moment to open the Registration Card before moving on, instead of
+      // racing a timer.
     } catch (err) {
       const data = err.response?.data;
       if (data?.code === 'BALANCE_UNPAID') {
@@ -427,7 +431,13 @@ export default function CheckIn() {
             <div className="modal-body">
               {/* ── result states ── */}
               {msg === 'success' ? (
-                <div className="alert alert-success">Check-in complete! ✓ Unit status updated.</div>
+                <div>
+                  <div className="alert alert-success" style={{ marginBottom: 12 }}>Check-in complete! ✓ Unit status updated.</div>
+                  <div className="flex gap-2">
+                    <button className="btn btn-primary" onClick={() => setShowRegCard(true)}>🖨 Print Registration Card</button>
+                    <button className="btn btn-secondary" onClick={() => { setSelected(null); setMode(null); setMsg(''); }}>Done</button>
+                  </div>
+                </div>
               ) : msg === 'balance_unpaid' ? (
                 <div>
                   <div className="alert alert-error" style={{ marginBottom: 12 }}>
@@ -649,6 +659,9 @@ export default function CheckIn() {
             )}
           </div>
         </div>
+      )}
+      {showRegCard && selected && (
+        <RegistrationCardModal bookingId={selected.id} onClose={() => setShowRegCard(false)} />
       )}
     </div>
   );
