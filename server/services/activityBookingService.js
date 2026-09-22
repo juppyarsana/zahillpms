@@ -40,6 +40,28 @@ async function createBooking(propertyId, {
       }
     }
 
+    // payment_method used to be a DB CHECK (cash/qris/room_charge only,
+    // migration 037). Migration 064 dropped that so a property's real,
+    // configurable payment methods can be selected here too — same choke
+    // point salesService.createSale already uses for sales.payment_method
+    // (migration 048). 'room_charge' isn't a real payment_methods row; it
+    // means "post to the guest's folio," and requires a booking to post to.
+    if (paymentMethod === 'room_charge') {
+      if (!bookingId) {
+        await client.query('ROLLBACK');
+        return { error: 'Room Charge requires a linked reservation', code: 'ROOM_CHARGE_REQUIRES_BOOKING' };
+      }
+    } else if (paymentMethod) {
+      const { rows: [pm] } = await client.query(
+        'SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true',
+        [paymentMethod, propertyId]
+      );
+      if (!pm) {
+        await client.query('ROLLBACK');
+        return { error: 'Invalid payment method', code: 'INVALID_PAYMENT_METHOD' };
+      }
+    }
+
     const unitPrice = parseFloat(activity.price);
     const totalAmount = unitPrice * participants;
     const status = autoConfirm ? 'confirmed' : 'requested';

@@ -536,6 +536,7 @@ router.post('/room/:roomId/activities/book', authDisplay, activitiesGate, async 
       autoConfirm: false,
     });
     if (result.code === 'CAPACITY_FULL') return res.status(409).json({ error: result.error, code: result.code });
+    if (result.code) return res.status(400).json({ error: result.error, code: result.code });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json({ ok: true });
   } catch (err) {

@@ -4,6 +4,9 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const activityBookingService = require('../services/activityBookingService');
 const activitiesService = require('../services/activitiesService');
+const PDFDocument = require('pdfkit');
+const { drawDocumentHeader } = require('../services/pdfHeader');
+const { renderActivityReceipt } = require('../services/activityReceiptPdf');
 
 // GET /api/activities — catalog
 router.get('/', auth, async (req, res) => {
@@ -112,8 +115,61 @@ router.post('/bookings', auth, async (req, res) => {
       bookedVia: 'staff', createdBy: req.user.id, autoConfirm: true,
     });
     if (result.code === 'CAPACITY_FULL') return res.status(409).json({ error: result.error, code: result.code });
+    // Any other coded error is a validation failure (bad/missing payment
+    // method) — a 400, not a 404. Only the uncoded "Activity not found"
+    // falls through to 404.
+    if (result.code) return res.status(400).json({ error: result.error, code: result.code });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json(result.booking);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/activities/bookings/:id/receipt — printable payment receipt for
+// an activity booking paid directly (cash/QRIS/etc). Deliberately separate
+// from the room stay's own Invoice/Pro Forma (routes/folio.js) — a
+// room_charge activity already appears there; this is for the money that
+// never touches the guest's folio at all.
+router.get('/bookings/:id/receipt', auth, async (req, res) => {
+  try {
+    const { rows: [data] } = await db.query(
+      `SELECT ab.id, ab.scheduled_date, ab.scheduled_time, ab.num_participants, ab.unit_price, ab.total_amount,
+              ab.payment_method, ab.guest_name AS walkup_guest_name, ab.guest_phone AS walkup_guest_phone,
+              ab.pickup_location, ab.notes, ab.created_at,
+              a.name AS activity_name,
+              g.name AS room_guest_name, u.name AS unit_name,
+              creator.name AS issued_by,
+              pm.label AS payment_method_label
+       FROM activity_bookings ab
+       JOIN activities a ON a.id = ab.activity_id
+       LEFT JOIN bookings b ON b.id = ab.booking_id
+       LEFT JOIN guests g ON g.id = b.guest_id
+       LEFT JOIN units u ON u.id = b.unit_id
+       LEFT JOIN users creator ON creator.id = ab.created_by
+       LEFT JOIN payment_methods pm ON pm.id = ab.payment_method AND pm.property_id = ab.property_id
+       WHERE ab.id = $1 AND ab.property_id = $2`,
+      [req.params.id, req.propertyId]
+    );
+    if (!data) return res.status(404).json({ error: 'Activity booking not found' });
+
+    const { rows: [property] } = await db.query(
+      `SELECT property_name, property_address, property_phone, property_email, logo_url
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+
+    data.guest_name = data.room_guest_name || data.walkup_guest_name;
+    data.guest_phone = data.walkup_guest_phone;
+    data.payment_method_label = data.payment_method === 'room_charge' ? 'Room Charge' : (data.payment_method_label || data.payment_method);
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="activity-receipt-${req.params.id.slice(0, 8)}.pdf"`);
+    doc.pipe(res);
+    drawDocumentHeader(doc, property || {}, { title: 'Receipt', refLine: `Activity Booking #${req.params.id.slice(0, 8).toUpperCase()}` });
+    renderActivityReceipt(doc, { property: property || {}, data });
+    doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

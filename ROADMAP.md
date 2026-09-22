@@ -1210,7 +1210,81 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
-## Next migration number: 064
+## ✅ Link staff desk activity bookings to an existing reservation
+
+- `Activities.jsx`'s "New Activity Booking" modal always required a
+  free-text guest name (walk-up only) even though the backend
+  (`activity_bookings.booking_id`,
+  `server/services/activityBookingService.js`) already fully supported
+  linking to a real stay and posting a `room_charge` to its folio — the
+  client just never sent `booking_id`. Client-only fix, no migration.
+- New optional reservation picker reuses `GET /api/bookings?q=` (same
+  endpoint + debounce pattern `Reservations.jsx` already uses), filtered
+  to `pending`/`deposit_paid`/`confirmed`/`checked_in` so staff can book
+  ahead of arrival, not just for already-checked-in guests. Picking a
+  result sets `booking_id`, clears the walk-up name/phone fields, and
+  reveals "Room Charge" as a payment option (hidden otherwise — it
+  needs a linked booking to actually post anywhere). Leaving the picker
+  empty still books a walk-up guest exactly as before.
+- Status: ✅ Implemented (verified against the live dev DB with a real
+  HTTP round trip — search, linked room-charge booking creation, the
+  resulting `folio_charges` row, and the bookings list's existing
+  `room_guest_name` display all confirmed; test rows cleaned up
+  afterward. Not yet clicked through in a browser).
+
+---
+
+## ✅ `activity_bookings.payment_method` joins the dynamic payment methods (migration 064)
+
+- Was a hardcoded `cash`/`qris`/`room_charge` DB `CHECK` (migration 037)
+  — a property that renamed/added payment methods in Settings (Bank
+  Transfer, Wise, ...) couldn't select them for an activity booking.
+  Same gap `sales.payment_method` already had, fixed the same way back
+  in migration 048.
+- Migration 064 drops the `CHECK`, widens to `VARCHAR(50)`.
+  `server/services/activityBookingService.js`'s `createBooking` gained
+  the same validation `salesService.createSale` already has:
+  `room_charge` requires a `booking_id` (now a real 400 error instead
+  of silently posting nothing), anything else validated against the
+  property's real `payment_methods` table.
+- `Activities.jsx`'s Payment Method dropdown now renders the property's
+  real active payment methods instead of two hardcoded options.
+- Status: ✅ Implemented (verified against the live dev DB: a
+  previously-unselectable real method now works, an invalid method and
+  a booking-less `room_charge` both 400 with the right error code; test
+  rows cleaned up. Not yet clicked through in a browser).
+
+---
+
+## ✅ Activity payment receipt (directly-paid activities)
+
+- A directly-paid activity (cash/QRIS/etc, not Room Charge) had no
+  printable proof of payment — the room stay's own Invoice/Pro Forma
+  only ever carries activity charges billed as Room Charge.
+- New `GET /api/activities/bookings/:id/receipt` +
+  `server/services/activityReceiptPdf.js`, reusing the room Invoice's
+  `drawDocumentHeader` *and* its Guest/Stay-block-then-line-item-table
+  structure (Description/Qty/Unit Price/Amount table, bold Total Paid,
+  a Payments-Received-style row) — reworked from an initial flat
+  label:value layout once seen printed, to actually match the Invoice's
+  structure rather than just its header. Titled "Receipt" (money
+  already received for one transaction), deliberately distinct from
+  the room stay's "Invoice."
+- `Activities.jsx`'s Bookings table gained a "🖨 Receipt" button per
+  row — only shown when payment method is set, isn't `room_charge`, and
+  the booking isn't cancelled/no-show, since a room-charged activity
+  already has its own paper trail on the room's Invoice/Pro Forma.
+- No new migration — reads existing tables only.
+- Status: ✅ Implemented (verified against the live dev DB — a real
+  walk-up QRIS booking produced a correctly branded, properly
+  structured PDF with the real payment-method label resolved from
+  `payment_methods`; caught and fixed a real `doc.x` reset bug that was
+  clipping the Notes section into the right margin; test rows cleaned
+  up. Not yet clicked through in a browser).
+
+---
+
+## Next migration number: 065
 
 ---
 
