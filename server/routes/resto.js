@@ -38,8 +38,8 @@ router.get('/context', auth, gate, async (req, res) => {
       [req.propertyId]
     );
     const { rows: categories } = await db.query(
-      `SELECT DISTINCT category FROM products WHERE property_id = $1 AND is_available = true AND category IN ('drinks', 'food') ORDER BY category`,
-      [req.propertyId]
+      `SELECT DISTINCT category FROM products WHERE property_id = $1 AND is_available = true AND category = ANY($2) ORDER BY category`,
+      [req.propertyId, salesService.FNB_CATEGORIES]
     );
     res.json({ property: propertyRows[0] || null, payment_methods: paymentMethods, categories: categories.map(c => c.category) });
   } catch (err) {
@@ -55,9 +55,9 @@ router.get('/menu', auth, gate, async (req, res) => {
       `SELECT id, name, category, price, description
          FROM products
         WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
-          AND category IN ('drinks', 'food')
+          AND category = ANY($2)
         ORDER BY category, name`,
-      [req.propertyId]
+      [req.propertyId, salesService.FNB_CATEGORIES]
     );
     res.json(products);
   } catch (err) {
@@ -99,8 +99,8 @@ router.post('/orders', auth, gate, async (req, res) => {
   try {
     const productIds = items.map(i => i.product_id);
     const { rows: products } = await db.query(
-      'SELECT id, price FROM products WHERE id = ANY($1) AND property_id = $2 AND is_available = true',
-      [productIds, req.propertyId]
+      'SELECT id, price FROM products WHERE id = ANY($1) AND property_id = $2 AND is_available = true AND category = ANY($3)',
+      [productIds, req.propertyId, salesService.FNB_CATEGORIES]
     );
     if (products.length !== new Set(productIds).size) {
       return res.status(404).json({ error: 'One or more items are no longer available' });

@@ -179,7 +179,7 @@ router.get('/:bookingId/registration-card', auth, async (req, res) => {
        LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
        LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = (
          SELECT p.method FROM payments p
-         WHERE p.booking_id = b.id AND p.status = 'received'
+         WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')
          ORDER BY p.received_at DESC NULLS LAST LIMIT 1
        )
        WHERE b.id = $1 AND b.property_id = $2`,

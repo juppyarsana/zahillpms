@@ -127,6 +127,14 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
     const enabledModules = new Map(moduleRows.map(m => [m.module, m.is_enabled]));
 
+    // The Dining tab only makes sense if there's F&B to order — since
+    // migration 067 the sales module also carries hotel extras (extra bed,
+    // transfers, …) that guests never self-order from the tablet.
+    const { rows: [fnbRow] } = await db.query(
+      'SELECT EXISTS (SELECT 1 FROM products WHERE property_id = $1 AND is_available = true AND category = ANY($2)) AS has_fnb',
+      [unit.property_id, salesService.FNB_CATEGORIES]
+    );
+
     // Oldest unread message first — so a burst of sends doesn't skip earlier
     // ones; the next poll picks up the next one after this one's dismissed.
     const { rows: messageRows } = await db.query(
@@ -162,7 +170,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
       weather,
       property: propertyRows[0] || null,
-      orderingEnabled: enabledModules.get('sales') || false,
+      orderingEnabled: (enabledModules.get('sales') || false) && fnbRow.has_fnb,
       activitiesEnabled: enabledModules.get('activities') || false,
       roomControllerEnabled: enabledModules.get('room_controller') || false,
       callingEnabled: enabledModules.get('calling') || false,
@@ -425,9 +433,9 @@ router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
       `SELECT id, name, category, price, description
        FROM products
        WHERE property_id = $1 AND is_available = true AND (track_stock = false OR stock_quantity > 0)
-         AND category IN ('drinks', 'food')
+         AND category = ANY($2)
        ORDER BY category, name`,
-      [req.propertyId]
+      [req.propertyId, salesService.FNB_CATEGORIES]
     );
     res.json(products);
   } catch (err) {
@@ -461,8 +469,8 @@ router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
 
     const productIds = items.map(i => i.product_id);
     const { rows: products } = await db.query(
-      'SELECT id, price FROM products WHERE id = ANY($1) AND property_id = $2 AND is_available = true',
-      [productIds, req.propertyId]
+      'SELECT id, price FROM products WHERE id = ANY($1) AND property_id = $2 AND is_available = true AND category = ANY($3)',
+      [productIds, req.propertyId, salesService.FNB_CATEGORIES]
     );
     if (products.length !== new Set(productIds).size) {
       return res.status(404).json({ error: 'One or more items are no longer available' });

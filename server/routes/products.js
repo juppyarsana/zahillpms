@@ -4,6 +4,10 @@ const auth = require('../middleware/auth');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const canManageMenu = requireOwnerOrMenu('resto_menu');
 
+// Mirrors products_category_check (migration 067): F&B for the resto app /
+// Room Display Dining, the rest are hotel extras sold from the PMS Sales page.
+const CATEGORIES = ['drinks', 'food', 'room_addon', 'transport', 'laundry', 'service', 'merchandise', 'other'];
+
 // GET /api/products
 router.get('/', auth, async (req, res) => {
   const { category, available } = req.query;
@@ -24,12 +28,22 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, canManageMenu, async (req, res) => {
   const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
+  if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
   try {
     const { rows } = await db.query(
       `INSERT INTO products (name, category, price, description, property_id, track_stock, stock_quantity, low_stock_threshold)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [name, category || 'other', price, description, req.propertyId, !!track_stock, stock_quantity || 0, low_stock_threshold || null]
     );
+    // Log the opening count so the item's stock history starts from a real
+    // entry instead of an unexplained number.
+    if (rows[0].track_stock && rows[0].stock_quantity > 0) {
+      await db.query(
+        `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, note, created_by)
+         VALUES ($1,$2,$3,'restock','Starting stock',$4)`,
+        [req.propertyId, rows[0].id, rows[0].stock_quantity, req.user.id]
+      );
+    }
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -39,6 +53,7 @@ router.post('/', auth, canManageMenu, async (req, res) => {
 // PUT /api/products/:id
 router.put('/:id', auth, canManageMenu, async (req, res) => {
   const { name, category, price, description, is_available, track_stock, low_stock_threshold } = req.body;
+  if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
   try {
     const { rows } = await db.query(
       `UPDATE products SET
@@ -100,8 +115,10 @@ router.get('/:id/stock/movements', auth, async (req, res) => {
     const { rows: [product] } = await db.query('SELECT id FROM products WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!product) return res.status(404).json({ error: 'Product not found' });
     const { rows } = await db.query(
-      `SELECT sm.*, u.name AS created_by_name
-       FROM stock_movements sm LEFT JOIN users u ON u.id = sm.created_by
+      `SELECT sm.*, u.name AS created_by_name, po.po_number
+       FROM stock_movements sm
+       LEFT JOIN users u ON u.id = sm.created_by
+       LEFT JOIN purchase_orders po ON po.id = sm.purchase_order_id
        WHERE sm.product_id = $1 AND sm.property_id = $2
        ORDER BY sm.created_at DESC LIMIT 50`,
       [req.params.id, req.propertyId]

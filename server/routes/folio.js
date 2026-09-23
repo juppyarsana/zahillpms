@@ -144,15 +144,17 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
   let y = tableTop + 22;
 
   // Group the itemised lines: Accommodation (room) → Food & Beverage (fnb +
-  // sale) → Other. 'fnb' is the rate plan's included meal (migration 044);
-  // 'sale' is an actual ordered item (POS/Room Display/resto app,
-  // migration 049) — both read as food & beverage to a guest, just posted
-  // by two different code paths. Keep in sync with the same grouping in
+  // food/drink sales) → Other. 'fnb' is the rate plan's included meal
+  // (migration 044); a 'sale' is an actual ordered item (migration 049) and
+  // counts as F&B only when it contains food/drinks (c.is_fnb, from
+  // folioService) — a front-desk extra like an extra bed (migration 067)
+  // goes under Other. Keep in sync with the same grouping in
   // client/src/pages/BookingDetail.jsx's Folio tab.
+  const isFnb = c => c.type === 'fnb' || (c.type === 'sale' && c.is_fnb);
   const GROUPS = [
     { key: 'Accommodation', match: c => c.type === 'room' },
-    { key: 'Food & Beverage', match: c => c.type === 'fnb' || c.type === 'sale' },
-    { key: 'Other', match: c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale' },
+    { key: 'Food & Beverage', match: isFnb },
+    { key: 'Other', match: c => c.type !== 'room' && !isFnb(c) },
   ];
   const renderLine = c => {
     if (y > 720) { doc.addPage(); y = 50; }
@@ -209,7 +211,12 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
     doc.font('Helvetica-Bold').fontSize(10).text('Payments Received', colX.desc, y);
     y += 16;
     for (const p of received) {
-      doc.font('Helvetica').text(`${p.type} — ${(p.method || '').replace('_', ' ')} · ${String(p.received_at || '').slice(0, 10)}`, colX.desc, y, { width: 240 });
+      // 'incidental' = an extra paid at the front desk (migration 067).
+      // received_at is a TIMESTAMPTZ (a JS Date from pg), so format it rather
+      // than String().slice(), which yields "Thu Sep 24" instead of a date.
+      const typeLabel = p.type === 'incidental' ? 'extras' : p.type;
+      const when = p.received_at ? new Date(p.received_at).toLocaleDateString('en-GB') : '';
+      doc.font('Helvetica').text(`${typeLabel} — ${(p.method || '').replace('_', ' ')} · ${when}`, colX.desc, y, { width: 240 });
       doc.text(fmtIDR(p.amount), colX.amount, y, { width: 90, align: 'right' });
       y += 16;
     }

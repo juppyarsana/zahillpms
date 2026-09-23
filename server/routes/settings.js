@@ -105,7 +105,8 @@ router.get('/branding', auth, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT COALESCE(property_name, (SELECT name FROM properties WHERE id = $1)) AS name,
-              logo_url, brand_color
+              logo_url, brand_color,
+              tax_rate, service_charge_rate -- the Sales till shows tax on directly-paid extras
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );

@@ -74,7 +74,13 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+            -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
+            -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
+            -- migration 067) groups under Other. Categories mirror
+            -- salesService.FNB_CATEGORIES (not imported: circular require).
+            EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
+                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
@@ -127,7 +133,9 @@ async function computeProforma(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const extraChargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+            EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
+                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb')
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,

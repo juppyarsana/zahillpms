@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 
-const CATEGORIES = ['food', 'drinks', 'merchandise', 'tour', 'other'];
-const CATEGORY_LABELS = { food: 'Food', drinks: 'Drinks', merchandise: 'Merchandise', tour: 'Tours & Activities', other: 'Other' };
-const CATEGORY_ICONS = { food: 'restaurant', drinks: 'local_bar', merchandise: 'checkroom', tour: 'hiking', other: 'inventory_2' };
+// F&B only — the server's menu endpoint filters to these (migration 067).
+const CATEGORIES = ['food', 'drinks'];
+const CATEGORY_LABELS = { food: 'Food', drinks: 'Drinks' };
+const CATEGORY_ICONS = { food: 'restaurant', drinks: 'local_bar' };
 const CONFIRMATION_MS = 4000;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }

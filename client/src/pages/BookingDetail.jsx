@@ -700,11 +700,12 @@ export default function BookingDetail() {
                 {[
                   ['Accommodation', c => c.type === 'room'],
                   // 'fnb' = the rate plan's included meal (per-night, migration 044);
-                  // 'sale' = an actual ordered item (POS/Room Display/resto app,
-                  // migration 049) — both are food & beverage from a guest's
-                  // perspective, just posted by two different code paths.
-                  ['Food & Beverage', c => c.type === 'fnb' || c.type === 'sale'],
-                  ['Other', c => c.type !== 'room' && c.type !== 'fnb' && c.type !== 'sale'],
+                  // a 'sale' (migration 049) is F&B only when it contains
+                  // food/drinks (c.is_fnb from the server) — a front-desk extra
+                  // like an extra bed (migration 067) goes under Other.
+                  // Same grouping as server/routes/folio.js's invoice.
+                  ['Food & Beverage', c => c.type === 'fnb' || (c.type === 'sale' && c.is_fnb)],
+                  ['Other', c => c.type !== 'room' && c.type !== 'fnb' && !(c.type === 'sale' && c.is_fnb)],
                 ].map(([groupLabel, match]) => {
                   const lines = folio.charges.filter(match);
                   if (!lines.length) return null;
@@ -790,7 +791,7 @@ export default function BookingDetail() {
                   <div className="card-title" style={{ fontSize: 13 }}>Payments Received</div>
                   {folio.payments.filter(p => p.status === 'received').map(p => (
                     <div key={p.id} className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                      <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type} · {p.method?.replace('_', ' ')}</span>
+                      <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type === 'incidental' ? 'Extras (paid at desk)' : p.type} · {p.method?.replace('_', ' ')}</span>
                       <span>{fmtIDR(p.amount)}</span>
                     </div>
                   ))}

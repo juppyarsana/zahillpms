@@ -1,8 +1,13 @@
 const db = require('../db');
 const sse = require('../sse');
 const tableSessionService = require('./tableSessionService');
+const { computeFolioTotals } = require('./folioService');
 
-const KITCHEN_CATEGORIES = ['drinks', 'food'];
+// F&B categories: the only products that go to the kitchen board and the only
+// ones guest-facing menus (Room Display Dining, resto QR/staff menu) list.
+// Every other category is a hotel extra sold from the PMS Sales page
+// (migration 067).
+const FNB_CATEGORIES = ['drinks', 'food'];
 
 // Validates products belong to the property, computes the total and whether
 // the order needs a kitchen ticket, and inserts the sale + sale_items in one
@@ -30,7 +35,16 @@ const KITCHEN_CATEGORIES = ['drinks', 'food'];
 // 050): placed and fired to the kitchen, but not yet paid. It's stored as
 // 'unpaid' and settled later by restoSettleService when staff close the
 // table. No booking or folio posting at this point.
-async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource }) {
+//
+// taxDirectPay (PMS Sales page only, migration 067): item prices are before
+// tax, like rooms. When the sale is paid directly (a real payment method —
+// not room_charge, where the folio adds tax at checkout, and not unpaid),
+// service charge + tax are computed at the property's rates and stored on
+// the sale; the guest pays the gross. If the sale is also linked to a
+// booking ("Pay now" for an in-house guest), it's posted to the folio as the
+// NET charge (the folio adds its own tax) plus a received 'incidental'
+// payment of the gross, so the folio shows it while its balance stays zero.
+async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource, taxDirectPay }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -97,15 +111,23 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       sessionId = session.id;
     }
 
-    const needsKitchen = items.some(i => KITCHEN_CATEGORIES.includes(productById.get(i.product_id).category));
+    const needsKitchen = items.some(i => FNB_CATEGORIES.includes(productById.get(i.product_id).category));
     const pending = !!holdForConfirmation;
     const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * parseInt(i.quantity), 0);
+    const paidDirectly = paymentMethodValue !== 'room_charge' && paymentMethodValue !== 'unpaid';
+    let taxes = null;
+    if (taxDirectPay && paidDirectly) {
+      const { rows: [ps] } = await client.query(
+        'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]
+      );
+      taxes = computeFolioTotals(total, ps?.tax_rate, ps?.service_charge_rate);
+    }
     const { rows: [sale] } = await client.query(
       `INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id, order_type, table_number, table_id, kitchen_status,
-                          table_session_id, confirmation_status, order_source)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+                          table_session_id, confirmation_status, order_source, service_charge_amount, tax_amount)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [bookingId || null, paymentMethodValue, total, servedBy || null, propertyId, orderType || 'takeaway', resolvedTableNumber, tableId || null, needsKitchen ? 'new' : null,
-       sessionId, pending ? 'pending' : null, orderSource || null]
+       sessionId, pending ? 'pending' : null, orderSource || null, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null]
     );
     for (const item of items) {
       const subtotal = parseFloat(item.unit_price) * parseInt(item.quantity);
@@ -135,15 +157,22 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // as decrementing stock immediately — the charge is real from the moment
     // the guest orders); a rejected room-service order's charge is voided by
     // routes/resto.js's reject handler via sale_id.
-    if (paymentMethodValue === 'room_charge') {
-      const desc = items
-        .map(i => `${i.quantity}× ${productById.get(i.product_id).name}`)
-        .join(', ')
-        .slice(0, 200);
+    const folioDesc = items
+      .map(i => `${i.quantity}× ${productById.get(i.product_id).name}`)
+      .join(', ')
+      .slice(0, 200);
+    if (paymentMethodValue === 'room_charge' || (taxes && bookingId)) {
       await client.query(
         `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, sale_id)
          VALUES ($1,'sale',$2,1,$3,$3,$4,$5)`,
-        [bookingId, desc, total, servedBy || null, sale.id]
+        [bookingId, folioDesc, total, servedBy || null, sale.id]
+      );
+    }
+    if (taxes && bookingId) {
+      await client.query(
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, sale_id)
+         VALUES ($1,'incidental',$2,'received',$3,NOW(),$4,$5,$6)`,
+        [bookingId, taxes.total, paymentMethodValue, servedBy || null, `Paid at front desk: ${folioDesc}`.slice(0, 250), sale.id]
       );
     }
 
@@ -159,4 +188,4 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
   }
 }
 
-module.exports = { createSale };
+module.exports = { createSale, FNB_CATEGORIES };

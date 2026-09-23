@@ -1169,8 +1169,6 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
   return-to-service/task-close/double-return-guard all confirmed; not yet
   clicked through in a browser).
 
----
-
 ## ✅ Guest Registration Card (migration 063)
 
 - Front desk had no in-system version of the paper registration card
@@ -1377,7 +1375,31 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
 
 ---
 
-## Next migration number: 067
+### Sales → hotel extras (ancillary) till — migration 067
+
+- F&B moves out of the PMS (external POS / resto app), so `/sales` now sells
+  hotel extras only: extra bed, airport transfer, laundry, services,
+  merchandise. Scheduled experiences (jeep tour, yoga, trekking) stay in
+  Activities because they're booked from the room tablet with date/capacity.
+- `products.category` gains `room_addon`/`transport`/`laundry`/`service`
+  (`drinks`/`food` kept for the resto app + Room Display Dining; `tour`
+  retired → relabelled `service`). Sales page hides F&B, drops the Tables tab
+  and dine-in/takeaway, uses the property's real payment methods, typed
+  quantity (extra bed = qty × nights, one-off charge — no per-night
+  auto-posting yet). Guest menus (Room Display Dining, resto QR/staff) are
+  F&B-only server-side; Dining tab hidden when a property has no F&B.
+- Prices are before tax. Paid directly (walk-in or an in-house guest's "Pay
+  now") the till adds service + tax; an in-house Pay now also posts to the
+  folio as a charge + received `incidental` payment (balance unchanged).
+  Printable sales receipt PDF; stock history per item; invoice/folio now
+  group extras under Other instead of Food & Beverage.
+- Status: ✅ Implemented (HTTP round-trips verified against a running server;
+  not yet clicked through in a browser).
+
+
+---
+
+## Next migration number: 068
 
 ---
 
