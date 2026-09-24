@@ -106,4 +106,22 @@ async function getSourceOutstanding(propertyId, sourceId) {
   return round2(parseFloat(row.outstanding));
 }
 
-module.exports = { settleCheckout, getSourceOutstanding, resolveSource, computeCommission, CITY_LEDGER, COMMISSION };
+// A booking's price was corrected after checkout (PUT /api/bookings/:id/price):
+// re-derive its commission from the re-posted folio. Only an 'unpaid'
+// commission changes — one already paid out to the agent is left as it was.
+// Runs after the price correction commits, since loadFolio reads via the pool.
+async function recomputeCommission(propertyId, bookingId) {
+  const { rows: [row] } = await db.query(
+    "SELECT id, source_id FROM agent_commissions WHERE booking_id = $1 AND property_id = $2 AND status = 'unpaid'",
+    [bookingId, propertyId]
+  );
+  if (!row) return null;
+  const source = await resolveSource(db, propertyId, row.source_id);
+  if (!source) return null;
+  const folio = await loadFolio(bookingId, propertyId);
+  const amount = computeCommission(source, folio ? folio.agent_billable_total : 0);
+  await db.query('UPDATE agent_commissions SET amount = $1, computed_at = NOW() WHERE id = $2', [amount, row.id]);
+  return amount;
+}
+
+module.exports = { settleCheckout, recomputeCommission, getSourceOutstanding, resolveSource, computeCommission, CITY_LEDGER, COMMISSION };

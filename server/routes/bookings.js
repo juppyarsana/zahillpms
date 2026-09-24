@@ -2,6 +2,9 @@ const router = require('express').Router();
 const PDFDocument = require('pdfkit');
 const db = require('../db');
 const auth = require('../middleware/auth');
+const requireRole = require('../middleware/role');
+const { recomputeBookingStatus } = require('../services/paymentStatusService');
+const agentBilling = require('../services/agentBillingService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
@@ -21,6 +24,17 @@ async function grossFactor(client, propertyId) {
 }
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
+
+// A booking can carry more than one 'balance' payment line: a price
+// correction (PUT /:id/price) that raises an already fully-paid booking adds a
+// second, pending line for the difference. balance_paid = every balance line
+// received; balance_amount = what is still pending, or (all paid) the total
+// received — the same values the single-line case always produced.
+const BALANCE_PAID_SQL = `(EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received')
+             AND NOT EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'pending' AND p.amount > 0))`;
+const BALANCE_AMOUNT_SQL = `COALESCE(
+               (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'pending' AND p.amount > 0),
+               (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance'))`;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
@@ -212,8 +226,8 @@ router.get('/today/departures', auth, async (req, res) => {
     const { rows } = await db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp,
              u.name as unit_name,
-             EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received') as balance_paid,
-             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount,
+             ${BALANCE_PAID_SQL} as balance_paid,
+             ${BALANCE_AMOUNT_SQL} as balance_amount,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size
@@ -238,8 +252,8 @@ router.get('/in-house', auth, async (req, res) => {
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp,
              u.name as unit_name,
              b.check_out_date < CURRENT_DATE as overdue,
-             EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'received') as balance_paid,
-             (SELECT p.amount FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance') as balance_amount,
+             ${BALANCE_PAID_SQL} as balance_paid,
+             ${BALANCE_AMOUNT_SQL} as balance_amount,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size
@@ -839,6 +853,122 @@ router.put('/:id/dates', auth, async (req, res) => {
   }
 });
 
+// PUT /api/bookings/:id/price — owner corrects a wrongly-entered booking
+// price. `total_amount` is the same figure New Booking takes (gross, tax
+// included, before any discount); `reason` is required and goes to the Edit
+// History. Everything derived from the price is recomputed together, the same
+// way booking creation derives it: discount amount, the net room/F&B split
+// (reports, dashboard, night audit, reg card, yield history), the folio's
+// posted room/F&B nights (void + re-post), and the pending deposit/balance
+// lines. Received payments are never touched: if the new price is higher than
+// everything already received, the difference becomes a pending balance line;
+// if it's lower, the overpayment shows as a credit on the folio (no refund
+// flow yet — returned by hand). An unpaid agent commission is re-derived.
+// Blocked for cancelled/no-show bookings, group rooms (group discount/deposit
+// are prorated across rooms) and stays already invoiced to an agent.
+router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
+  const newTotal = parseFloat(req.body.total_amount);
+  const reason = String(req.body.reason || '').trim();
+  if (!Number.isFinite(newTotal) || newTotal < 0) return res.status(400).json({ error: 'total_amount must be a number of 0 or more' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [before] } = await client.query(
+      'SELECT * FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]
+    );
+    if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (['cancelled', 'no_show'].includes(before.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot change the price — booking is ${before.status.replace('_', '-')}` });
+    }
+    if (before.reservation_group_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Price changes are not supported for group bookings yet' });
+    }
+    if (['invoiced', 'paid'].includes(before.folio_status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Agent Billing' });
+    }
+
+    // Same derivation as POST / (booking creation).
+    let discountAmount = 0;
+    const dValue = parseFloat(before.discount_value || 0);
+    if (before.discount_type === 'fixed')      discountAmount = Math.min(dValue, newTotal);
+    if (before.discount_type === 'percentage') discountAmount = Math.round(newTotal * dValue / 100);
+    const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, before.rate_plan_id || null);
+    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+    const { roomNet, mealNet } = splitRevenue({
+      grossNet: newTotal - discountAmount,
+      nights: Math.max(1, parseInt(before.nights, 10) || 1),
+      ratePlan,
+      numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
+      F,
+    });
+    const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
+    const storedTotal = round2(payable + discountAmount);
+
+    // Room payment lines: keep received ones, reshape the pending ones so
+    // they add up to what's still owed.
+    const { rows: lines } = await client.query(
+      "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY created_at FOR UPDATE",
+      [before.id]
+    );
+    const received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
+    let remaining = round2(payable - received);
+    let depositAmount = parseFloat(before.deposit_amount || 0);
+    for (const l of lines.filter(x => x.status === 'pending')) {
+      let amt;
+      if (l.type === 'deposit') {
+        amt = round2(Math.max(0, Math.min(parseFloat(l.amount), remaining)));
+        depositAmount = amt;
+      } else {
+        amt = round2(Math.max(0, remaining));
+      }
+      remaining = round2(remaining - amt);
+      if (amt !== parseFloat(l.amount)) {
+        await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
+      }
+    }
+    if (remaining > 0) {
+      // Everything owed was already on received lines — add the difference.
+      await client.query(
+        "INSERT INTO payments (booking_id, type, amount, notes) VALUES ($1, 'balance', $2, $3)",
+        [before.id, remaining, 'Price correction — additional amount due']
+      );
+    }
+    const credit = remaining < 0 ? round2(-remaining) : 0;
+
+    const { rows: [after] } = await client.query(
+      `UPDATE bookings SET total_amount = $1, discount_amount = $2, room_revenue = $3, fnb_revenue = $4,
+                           deposit_amount = $5, updated_at = NOW()
+       WHERE id = $6 RETURNING *`,
+      [storedTotal, discountAmount, roomNet, mealNet, depositAmount, before.id]
+    );
+    await roomCharge.repostStay(client, after, req.user.id);
+    await recomputeBookingStatus(client, before.id);
+
+    const oldNet = round2(parseFloat(before.total_amount) - parseFloat(before.discount_amount || 0));
+    await client.query(
+      'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [before.id, `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}. Reason: ${reason}`.slice(0, 1000), req.user.id]
+    );
+    await client.query('COMMIT');
+
+    if (before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out') {
+      await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
+    }
+
+    res.json({ old_total: oldNet, new_total: payable, received, credit });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // PUT /api/bookings/:id/no-show
 router.put('/:id/no-show', auth, async (req, res) => {
   try {
@@ -881,6 +1011,12 @@ router.post('/:id/message', auth, async (req, res) => {
 // PUT /api/bookings/:id
 router.put('/:id', auth, async (req, res) => {
   const { num_guests, source, total_amount, special_requests, internal_notes, status, rate_plan_id, bed_preference, purpose_of_stay } = req.body;
+  // Changing the price here would leave the room/F&B split, posted folio
+  // nights and pending payment lines on the old price — PUT /:id/price does
+  // all of that together.
+  if (total_amount !== undefined) {
+    return res.status(400).json({ error: 'Use PUT /api/bookings/:id/price to change the booking price' });
+  }
   if (bed_preference !== undefined && bed_preference !== null && bed_preference !== '' && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { recomputeBookingStatus } = require('../services/paymentStatusService');
 
 // GET /api/payments/pending
 router.get('/pending', auth, async (req, res) => {
@@ -63,32 +64,7 @@ router.put('/:id', auth, async (req, res) => {
 
     if (status === 'received') {
       // Recompute booking status from actual payment records (order-independent)
-      const { rows: allPmts } = await client.query(
-        "SELECT type, status FROM payments WHERE booking_id = $1 AND amount > 0",
-        [rows[0].booking_id]
-      );
-      const { rows: [bkg] } = await client.query(
-        "SELECT status, deposit_amount FROM bookings WHERE id = $1",
-        [rows[0].booking_id]
-      );
-
-      if (bkg && ['pending', 'deposit_paid', 'confirmed'].includes(bkg.status)) {
-        const noDeposit = !bkg.deposit_amount || parseFloat(bkg.deposit_amount) === 0;
-        const depositPmt = allPmts.find(p => p.type === 'deposit');
-        const balancePmt = allPmts.find(p => p.type === 'balance');
-
-        const depositOk = noDeposit || depositPmt?.status === 'received';
-        const balanceOk = !balancePmt || balancePmt.status === 'received';
-
-        const newStatus = (depositOk && balanceOk) ? 'confirmed'
-          : depositOk ? 'deposit_paid'
-          : 'pending';
-
-        await client.query(
-          "UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2",
-          [newStatus, rows[0].booking_id]
-        );
-      }
+      await recomputeBookingStatus(client, rows[0].booking_id);
     }
 
     await client.query('COMMIT');
