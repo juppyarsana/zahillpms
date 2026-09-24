@@ -1392,6 +1392,28 @@ export default function BookingDetail() {
                   <input className="form-input" value={recForm.notes} placeholder="e.g. BCA ref 1234 — extra beds" onChange={e => setRecForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
               </div>
+              {(() => {
+                // Quick amounts: one night of the room (the booking's price ÷
+                // nights, incl. tax — e.g. a guest paying night by night) and
+                // the full balance still owed.
+                const nights = Math.max(1, parseInt(booking.nights, 10) || 1);
+                const perNight = Math.round((parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0)) / nights);
+                const full = estimate ? Math.max(0, Math.round(parseFloat(estimate.balance_due))) : null;
+                return (
+                  <div className="flex gap-2" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+                    {nights > 1 && perNight > 0 && (
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => setRecForm(f => ({ ...f, amount: String(perNight) }))}>
+                        1 night · {fmtIDR(perNight)}
+                      </button>
+                    )}
+                    {full != null && full > 0 && (
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => setRecForm(f => ({ ...f, amount: String(full) }))}>
+                        Full balance · {fmtIDR(full)}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="text-muted" style={{ fontSize: 12 }}>
                 Settles the room's unpaid deposit/balance first, then extras charged to the room (extra bed, laundry, activities…). A smaller amount is recorded as a part payment.
               </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
+import PayLaterOption from '../components/PayLaterOption';
 import { useSettings } from '../context/SettingsContext';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
@@ -83,6 +84,8 @@ export default function QuickCheckIn() {
   const [ciLoading, setCiLoading]     = useState(false);
   const [ciMsg, setCiMsg]             = useState('');
   const [depositBlockId, setDepositBlockId] = useState(null);
+  // Set when front desk chose "Check-in dulu, bayar nanti" (with a reason).
+  const [payLaterReason, setPayLaterReason] = useState(null);
   const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
   const [groupCheckinResults, setGroupCheckinResults] = useState(null);
 
@@ -116,6 +119,7 @@ export default function QuickCheckIn() {
     setIdFile(null);
     setCiMsg('');
     setDepositBlockId(null);
+    setPayLaterReason(null);
     if (!isOTA) {
       if (b.status === 'deposit_paid')  { setDepositBlockId(b.id); setCiMsg('balance_unpaid'); }
       else if (!b.deposit_paid)         { setDepositBlockId(b.id); setCiMsg('deposit_unpaid'); }
@@ -142,7 +146,7 @@ export default function QuickCheckIn() {
     setCiLoading(true);
     // /start commits the check-in; treat errors here as the real failure
     try {
-      await api.post(`/api/checkin/${ciSelected.id}/start`);
+      await api.post(`/api/checkin/${ciSelected.id}/start`, payLaterReason ? { pay_later_reason: payLaterReason } : {});
     } catch (err) {
       const data = err.response?.data;
       if (data?.code === 'BALANCE_UNPAID')      { setDepositBlockId(ciSelected.id); setCiMsg('balance_unpaid'); }
@@ -374,6 +378,7 @@ export default function QuickCheckIn() {
                     style={{ width: '100%', justifyContent: 'center' }} onClick={closeCiModal}>
                     → Catat Pembayaran
                   </Link>
+                  <PayLaterOption lang="id" onConfirm={r => { setPayLaterReason(r); setDepositBlockId(null); setCiMsg(''); }} />
                 </div>
               ) : ciMsg === 'deposit_unpaid' ? (
                 <div>
@@ -384,6 +389,7 @@ export default function QuickCheckIn() {
                     style={{ width: '100%', justifyContent: 'center' }} onClick={closeCiModal}>
                     → Catat Pembayaran
                   </Link>
+                  <PayLaterOption lang="id" onConfirm={r => { setPayLaterReason(r); setDepositBlockId(null); setCiMsg(''); }} />
                 </div>
               ) : ciMsg ? (
                 <div className="alert alert-error">{ciMsg}</div>

@@ -37,7 +37,13 @@ const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 // (mirrors the res.status(409)/code shape the single-room route used to
 // return directly) so the group route can catch per-room without one
 // room's failure aborting the others.
-async function checkinOneBooking(bookingId, propertyId, userId) {
+//
+// payLaterReason: front desk lets a direct/walk-in guest in before the room
+// is fully paid (EDC down, etc.) — the unpaid deposit/balance simply stays
+// owed (Balance Due, checkout warning, folio) and the reason is logged to
+// Edit History. Any FO staff may do it (owner's choice); without a reason
+// the full-payment rule applies as before.
+async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason } = {}) {
   const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [bookingId, propertyId]);
   if (!booking) { const err = new Error('Booking not found'); err.status = 404; throw err; }
   const isOTA = OTA_SOURCES.includes(booking.source);
@@ -47,6 +53,17 @@ async function checkinOneBooking(bookingId, propertyId, userId) {
     if (!['confirmed', 'deposit_paid', 'pending'].includes(booking.status)) {
       const err = new Error(`Cannot check in — booking status is ${booking.status}`); err.status = 409; throw err;
     }
+  } else if (payLaterReason && ['deposit_paid', 'pending'].includes(booking.status)) {
+    // Checked in without full payment — record how much is still owed and why.
+    const { rows: [{ unpaid }] } = await db.query(
+      `SELECT COALESCE(SUM(amount), 0) AS unpaid FROM payments
+       WHERE booking_id = $1 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0`,
+      [bookingId]
+    );
+    await db.query(
+      'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [bookingId, `Checked in without full payment — Rp ${Math.round(parseFloat(unpaid)).toLocaleString('id-ID')} unpaid (pay later). Reason: ${payLaterReason}`.slice(0, 1000), userId]
+    );
   } else {
     // Direct / walk-in: full payment required before check-in
     if (booking.status === 'deposit_paid') {
@@ -76,7 +93,8 @@ async function checkinOneBooking(bookingId, propertyId, userId) {
 // POST /api/checkin/:bookingId/start
 router.post('/:bookingId/start', auth, async (req, res) => {
   try {
-    const record = await checkinOneBooking(req.params.bookingId, req.propertyId, req.user.id);
+    const payLaterReason = String(req.body?.pay_later_reason || '').trim() || null;
+    const record = await checkinOneBooking(req.params.bookingId, req.propertyId, req.user.id, { payLaterReason });
     res.json(record);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
@@ -97,11 +115,13 @@ router.post('/group/:groupId/start', auth, async (req, res) => {
         AND b.status NOT IN ('cancelled','no_show','checked_in','checked_out')
     `, [req.params.groupId, req.propertyId]);
     if (bookings.length === 0) return res.status(404).json({ error: 'Group not found or no eligible rooms' });
+    // Optional: let the group's unpaid rooms in too (pay later), same rule as a single room.
+    const payLaterReason = String(req.body?.pay_later_reason || '').trim() || null;
 
     const results = [];
     for (const b of bookings) {
       try {
-        const record = await checkinOneBooking(b.id, req.propertyId, req.user.id);
+        const record = await checkinOneBooking(b.id, req.propertyId, req.user.id, { payLaterReason });
         results.push({ booking_id: b.id, ok: true, checkin_record: record });
       } catch (err) {
         results.push({ booking_id: b.id, ok: false, code: err.code || null, error: err.message });

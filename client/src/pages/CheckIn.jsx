@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
+import PayLaterOption from '../components/PayLaterOption';
 import { useSettings } from '../context/SettingsContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 
@@ -73,6 +74,8 @@ export default function CheckIn() {
   const [msg, setMsg]               = useState('');
   const [showRegCard, setShowRegCard] = useState(false);
   const [depositBlockId, setDepositBlockId] = useState(null);
+  // Set when front desk chose "Check in anyway — pay later" (with a reason).
+  const [payLaterReason, setPayLaterReason] = useState(null);
   const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
   const [groupCheckinResults, setGroupCheckinResults] = useState(null);
 
@@ -103,6 +106,7 @@ export default function CheckIn() {
     setStep(1);
     setChecklist({});
     setIdFile(null);
+    setPayLaterReason(null);
 
     if (!otaSources.includes(b.source)) {
       if (b.status === 'deposit_paid') {
@@ -145,7 +149,7 @@ export default function CheckIn() {
     setLoading(true);
     setDepositBlockId(null);
     try {
-      await api.post(`/api/checkin/${selected.id}/start`);
+      await api.post(`/api/checkin/${selected.id}/start`, payLaterReason ? { pay_later_reason: payLaterReason } : {});
       const fd = new FormData();
       fd.append('checklist_data', JSON.stringify(checklist));
       if (idFile) fd.append('id_document', idFile);
@@ -447,6 +451,7 @@ export default function CheckIn() {
                   <Link to={`/reservations/${depositBlockId}`} className="btn btn-primary" onClick={() => setSelected(null)}>
                     → Go to Booking &amp; Record Payment
                   </Link>
+                  <PayLaterOption lang="en" onConfirm={r => { setPayLaterReason(r); setDepositBlockId(null); setMsg(''); }} />
                 </div>
               ) : msg === 'deposit_unpaid' ? (
                 <div>
@@ -457,11 +462,17 @@ export default function CheckIn() {
                   <Link to={`/reservations/${depositBlockId}`} className="btn btn-primary" onClick={() => setSelected(null)}>
                     → Go to Booking &amp; Record Payment
                   </Link>
+                  <PayLaterOption lang="en" onConfirm={r => { setPayLaterReason(r); setDepositBlockId(null); setMsg(''); }} />
                 </div>
               ) : msg ? (
                 <div className="alert alert-error">{msg}</div>
               ) : (
                 <>
+                  {payLaterReason && (
+                    <div className="alert alert-warn" style={{ marginBottom: 12, fontSize: 13 }}>
+                      ⚠ Checking in <b>without full payment</b> — the unpaid amount stays as balance due. Reason: {payLaterReason}
+                    </div>
+                  )}
                   {/* Step indicator */}
                   <div className="steps" style={{ marginBottom: 20 }}>
                     <div className={`step ${step > 1 ? 'done' : step === 1 ? 'active' : ''}`}>
