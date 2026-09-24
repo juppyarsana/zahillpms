@@ -8,6 +8,7 @@ const agentBilling = require('../services/agentBillingService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, computeProforma, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
+const { nightlyRoomRates } = require('../services/pricingService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
 const telegramService = require('../services/telegramService');
@@ -1201,6 +1202,113 @@ router.put('/:id/dates', auth, async (req, res) => {
   }
 });
 
+// Sets a booking's price (total_amount: the gross, tax-included figure New
+// Booking takes, before discount) and recomputes everything derived from it
+// the way booking creation does: discount, the net room/F&B split (reports,
+// dashboard, night audit, reg card, yield), the folio's posted room/F&B
+// nights (repostStay), the pending deposit/balance lines and the booking
+// status. Received payments are never touched unless receivedWasTypo === true
+// (the received amount was typed from the same wrong price) — then they're
+// trimmed newest-first down to the new price. Shared by Edit Price (PUT
+// /:id/price) and Change Room (PUT /:id/change-room). Runs inside the
+// caller's transaction; `before` is the booking row, locked FOR UPDATE.
+//   keepDiscount — keep the booking's current discount amount as-is instead
+//     of re-deriving it (Change Room: an upgrade charge isn't discounted, and
+//     a group room's discount is its prorated share of the group discount).
+//   receivedWasTypo — required (true/false) when more has been received than
+//     the new price; undefined then → { error: RECEIVED_EXCEEDS_PRICE }.
+//   balanceNote — note on a new pending balance line, if one is needed.
+async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due' }) {
+  const reqBody = { received_was_typo: receivedWasTypo };
+  // Same derivation as POST / (booking creation).
+  let discountAmount = 0;
+  const dValue = parseFloat(before.discount_value || 0);
+  if (keepDiscount)                               discountAmount = Math.min(parseFloat(before.discount_amount || 0), newTotal);
+  else if (before.discount_type === 'fixed')      discountAmount = Math.min(dValue, newTotal);
+  else if (before.discount_type === 'percentage') discountAmount = Math.round(newTotal * dValue / 100);
+  const ratePlan = await ratePlanService.resolveForBooking(propertyId, before.rate_plan_id || null);
+  const { F, tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
+  const { roomNet, mealNet } = splitRevenue({
+    grossNet: newTotal - discountAmount,
+    nights: Math.max(1, parseInt(before.nights, 10) || 1),
+    ratePlan,
+    numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
+    F,
+  });
+  const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
+  const storedTotal = round2(payable + discountAmount);
+
+  // Room payment lines: keep received ones, reshape the pending ones so
+  // they add up to what's still owed.
+  const { rows: lines } = await client.query(
+    "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY created_at FOR UPDATE",
+    [before.id]
+  );
+  let received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
+  let depositAmount = parseFloat(before.deposit_amount || 0);
+
+  // More recorded as received than the new price: was the received amount a
+  // typo too, or did the guest really pay more? Only the owner knows.
+  const receivedFixes = [];
+  if (received > payable) {
+    if (typeof reqBody.received_was_typo !== 'boolean') {
+      return { status: 400, error: {
+        error: 'More has been recorded as received than the new price — say whether the received amount was a typo',
+        code: 'RECEIVED_EXCEEDS_PRICE', received, new_total: payable,
+      } };
+    }
+    if (reqBody.received_was_typo) {
+      // Trim received lines, newest first, until they add up to the new price.
+      let excess = round2(received - payable);
+      for (const l of lines.filter(x => x.status === 'received').reverse()) {
+        if (excess <= 0) break;
+        const oldAmt = parseFloat(l.amount);
+        const cut = round2(Math.min(excess, oldAmt));
+        const amt = round2(oldAmt - cut);
+        await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
+        receivedFixes.push(`${l.type} ${fmtIDR(oldAmt)} → ${fmtIDR(amt)}`);
+        if (l.type === 'deposit') depositAmount = amt;
+        l.amount = amt;
+        excess = round2(excess - cut);
+      }
+      received = payable;
+    }
+  }
+  let remaining = round2(payable - received);
+  for (const l of lines.filter(x => x.status === 'pending')) {
+    let amt;
+    if (l.type === 'deposit') {
+      amt = round2(Math.max(0, Math.min(parseFloat(l.amount), remaining)));
+      depositAmount = amt;
+    } else {
+      amt = round2(Math.max(0, remaining));
+    }
+    remaining = round2(remaining - amt);
+    if (amt !== parseFloat(l.amount)) {
+      await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
+    }
+  }
+  if (remaining > 0) {
+    // Everything owed was already on received lines — add the difference.
+    await client.query(
+      "INSERT INTO payments (booking_id, type, amount, notes) VALUES ($1, 'balance', $2, $3)",
+      [before.id, remaining, balanceNote]
+    );
+  }
+  const credit = remaining < 0 ? round2(-remaining) : 0;
+
+  const { rows: [after] } = await client.query(
+    `UPDATE bookings SET total_amount = $1, discount_amount = $2, room_revenue = $3, fnb_revenue = $4,
+                         deposit_amount = $5, updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [storedTotal, discountAmount, roomNet, mealNet, depositAmount, before.id]
+  );
+  await roomCharge.repostStay(client, after, userId);
+  await recomputeBookingStatus(client, before.id);
+
+  return { after, payable, storedTotal, received, credit, receivedFixes, discountAmount };
+}
+
 // PUT /api/bookings/:id/price — owner corrects a wrongly-entered booking
 // price. `total_amount` is the same figure New Booking takes (gross, tax
 // included, before any discount); `reason` is required and goes to the Edit
@@ -1244,91 +1352,12 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
       return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Agent Billing' });
     }
 
-    // Same derivation as POST / (booking creation).
-    let discountAmount = 0;
-    const dValue = parseFloat(before.discount_value || 0);
-    if (before.discount_type === 'fixed')      discountAmount = Math.min(dValue, newTotal);
-    if (before.discount_type === 'percentage') discountAmount = Math.round(newTotal * dValue / 100);
-    const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, before.rate_plan_id || null);
-    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
-    const { roomNet, mealNet } = splitRevenue({
-      grossNet: newTotal - discountAmount,
-      nights: Math.max(1, parseInt(before.nights, 10) || 1),
-      ratePlan,
-      numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
-      F,
+    const result = await applyBookingPrice(client, {
+      propertyId: req.propertyId, before, newTotal, userId: req.user.id,
+      receivedWasTypo: req.body.received_was_typo,
     });
-    const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
-    const storedTotal = round2(payable + discountAmount);
-
-    // Room payment lines: keep received ones, reshape the pending ones so
-    // they add up to what's still owed.
-    const { rows: lines } = await client.query(
-      "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY created_at FOR UPDATE",
-      [before.id]
-    );
-    let received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
-    let depositAmount = parseFloat(before.deposit_amount || 0);
-
-    // More recorded as received than the new price: was the received amount a
-    // typo too, or did the guest really pay more? Only the owner knows.
-    const receivedFixes = [];
-    if (received > payable) {
-      if (typeof req.body.received_was_typo !== 'boolean') {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: 'More has been recorded as received than the new price — say whether the received amount was a typo',
-          code: 'RECEIVED_EXCEEDS_PRICE', received, new_total: payable,
-        });
-      }
-      if (req.body.received_was_typo) {
-        // Trim received lines, newest first, until they add up to the new price.
-        let excess = round2(received - payable);
-        for (const l of lines.filter(x => x.status === 'received').reverse()) {
-          if (excess <= 0) break;
-          const oldAmt = parseFloat(l.amount);
-          const cut = round2(Math.min(excess, oldAmt));
-          const amt = round2(oldAmt - cut);
-          await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
-          receivedFixes.push(`${l.type} ${fmtIDR(oldAmt)} → ${fmtIDR(amt)}`);
-          if (l.type === 'deposit') depositAmount = amt;
-          l.amount = amt;
-          excess = round2(excess - cut);
-        }
-        received = payable;
-      }
-    }
-    let remaining = round2(payable - received);
-    for (const l of lines.filter(x => x.status === 'pending')) {
-      let amt;
-      if (l.type === 'deposit') {
-        amt = round2(Math.max(0, Math.min(parseFloat(l.amount), remaining)));
-        depositAmount = amt;
-      } else {
-        amt = round2(Math.max(0, remaining));
-      }
-      remaining = round2(remaining - amt);
-      if (amt !== parseFloat(l.amount)) {
-        await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
-      }
-    }
-    if (remaining > 0) {
-      // Everything owed was already on received lines — add the difference.
-      await client.query(
-        "INSERT INTO payments (booking_id, type, amount, notes) VALUES ($1, 'balance', $2, $3)",
-        [before.id, remaining, 'Price correction — additional amount due']
-      );
-    }
-    const credit = remaining < 0 ? round2(-remaining) : 0;
-
-    const { rows: [after] } = await client.query(
-      `UPDATE bookings SET total_amount = $1, discount_amount = $2, room_revenue = $3, fnb_revenue = $4,
-                           deposit_amount = $5, updated_at = NOW()
-       WHERE id = $6 RETURNING *`,
-      [storedTotal, discountAmount, roomNet, mealNet, depositAmount, before.id]
-    );
-    await roomCharge.repostStay(client, after, req.user.id);
-    await recomputeBookingStatus(client, before.id);
+    if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json(result.error); }
+    const { payable, received, credit, receivedFixes } = result;
 
     const oldNet = round2(parseFloat(before.total_amount) - parseFloat(before.discount_amount || 0));
     let note = `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}.`;
@@ -1510,6 +1539,145 @@ router.put('/group/:groupId/guests', auth, async (req, res) => {
     await client.query('COMMIT');
     for (const c of notify) sse.notify(c, { type: 'guest_changed' });
     res.json({ changed });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Change Room (upgrade / downgrade / plain move) ──────────────────────────
+// Replaces the old price-less Transfer Room in the UI. The price difference
+// is the two rooms' NORMAL rates (base rate + pricing periods — the same
+// numbers as New Booking's suggestion, services/pricingService.js) for the
+// nights still to come: all nights for a stay that hasn't started, from today
+// for a guest already in house. Grossed up with service/tax, so it's what the
+// guest pays on top. Negative = downgrade (a credit).
+async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
+  const today = roomCharge.todayWITA();
+  const ci = String(booking.check_in_date).slice(0, 10);
+  const co = String(booking.check_out_date).slice(0, 10);
+  const from = booking.status === 'checked_in' && today > ci ? today : ci;
+  const [cur, next] = await Promise.all([
+    nightlyRoomRates(propertyId, booking.unit_id, from, co, client),
+    nightlyRoomRates(propertyId, targetUnitId, from, co, client),
+  ]);
+  if (!next) return null;
+  const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
+  const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
+  const nights = from < co ? next.night_breakdown.length : 0;
+  const curTotal = nights ? gross(cur.room_total) : 0;
+  const nextTotal = nights ? gross(next.room_total) : 0;
+  return {
+    from, to: co, nights,
+    current: { unit_id: cur.unit.id, name: cur.unit.name, type: cur.unit.type, total: curTotal },
+    next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal },
+    difference: round2(nextTotal - curTotal),
+  };
+}
+
+const CHANGEABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+
+// GET /api/bookings/:id/change-room/quote?unit_id= — the price difference
+// shown before confirming.
+router.get('/:id/change-room/quote', auth, async (req, res) => {
+  if (!req.query.unit_id) return res.status(400).json({ error: 'unit_id required' });
+  try {
+    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const quote = await changeRoomQuote(db, { propertyId: req.propertyId, booking, targetUnitId: req.query.unit_id });
+    if (!quote) return res.status(404).json({ error: 'Room not found' });
+    res.json(quote);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/:id/change-room — { unit_id, charge, amount?, reason }
+//   charge: 'difference' (the quoted difference) | 'complimentary' (no price
+//   change) | 'custom' (amount, may be negative for a refund/credit).
+// Moves the booking; the charge is added to the booking price as room
+// revenue (applyBookingPrice with keepDiscount — the charge isn't
+// discounted), so the folio, pending balance lines, reports and Balance Due
+// all follow. In house: the old room is freed and flagged for cleaning, both
+// rooms' tablets refresh. Logged to Edit History with the reason.
+router.put('/:id/change-room', auth, async (req, res) => {
+  const { unit_id, charge = 'difference', reason: rawReason } = req.body;
+  const reason = String(rawReason || '').trim();
+  if (!unit_id) return res.status(400).json({ error: 'unit_id required' });
+  if (!['difference', 'complimentary', 'custom'].includes(charge)) return res.status(400).json({ error: 'charge must be difference, complimentary or custom' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  const custom = parseFloat(req.body.amount);
+  if (charge === 'custom' && !Number.isFinite(custom)) return res.status(400).json({ error: 'amount required for a custom charge' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [before] } = await client.query(
+      'SELECT * FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]
+    );
+    if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (!CHANGEABLE.includes(before.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot change room — booking is ${before.status.replace('_', ' ')}` });
+    }
+    if (before.unit_id === unit_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The booking is already in this room' }); }
+
+    const { rows: [conflict] } = await client.query(`
+      SELECT b.id, g.name AS guest_name FROM bookings b JOIN guests g ON g.id = b.guest_id
+      WHERE b.unit_id = $1 AND b.property_id = $2 AND b.id <> $3
+        AND b.status NOT IN ('cancelled', 'no_show')
+        AND b.check_in_date < $5 AND b.check_out_date > $4
+      LIMIT 1`, [unit_id, req.propertyId, before.id, before.check_in_date, before.check_out_date]);
+    if (conflict) { await client.query('ROLLBACK'); return res.status(409).json({ error: `That room is booked for these dates (${conflict.guest_name})` }); }
+
+    const quote = await changeRoomQuote(client, { propertyId: req.propertyId, booking: before, targetUnitId: unit_id });
+    if (!quote) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Room not found' }); }
+    const amount = charge === 'complimentary' ? 0 : charge === 'custom' ? round2(custom) : quote.difference;
+    if (amount !== 0 && ['invoiced', 'paid'].includes(before.folio_status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the room without a charge, or correct it through Agent Billing' });
+    }
+
+    const { rows: [oldUnit] } = await client.query('SELECT id, name, type, controller_id FROM units WHERE id = $1', [before.unit_id]);
+    const { rows: [newUnit] } = await client.query('SELECT id, name, type, controller_id FROM units WHERE id = $1', [unit_id]);
+    await client.query('UPDATE bookings SET unit_id = $1, updated_at = NOW() WHERE id = $2', [unit_id, before.id]);
+    if (before.status === 'checked_in') {
+      await client.query(
+        "UPDATE units SET status = 'available', housekeeping_status = 'dirty', housekeeping_updated_at = NOW() WHERE id = $1 AND property_id = $2",
+        [before.unit_id, req.propertyId]
+      );
+      await client.query("UPDATE units SET status = 'occupied' WHERE id = $1 AND property_id = $2", [unit_id, req.propertyId]);
+    }
+
+    let priced = null;
+    if (amount !== 0) {
+      const { rows: [moved] } = await client.query('SELECT * FROM bookings WHERE id = $1', [before.id]);
+      priced = await applyBookingPrice(client, {
+        propertyId: req.propertyId, before: moved, userId: req.user.id,
+        newTotal: Math.max(0, round2(parseFloat(before.total_amount) + amount)),
+        keepDiscount: true, receivedWasTypo: false,
+        balanceNote: `Room change ${oldUnit.name} → ${newUnit.name} — additional amount due`,
+      });
+      if (priced.error) { await client.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
+    }
+
+    const label = u => `${u.name}${u.type ? ` (${u.type})` : ''}`;
+    let note = `Room changed: ${label(oldUnit)} → ${label(newUnit)}.`;
+    if (charge === 'complimentary') note += ` Complimentary — no charge (normal difference ${fmtIDR(quote.difference)}).`;
+    else if (amount > 0) note += ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''} for ${quote.nights} night${quote.nights === 1 ? '' : 's'}.`;
+    else if (amount < 0) note += ` Credit ${fmtIDR(-amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+    if (priced?.credit > 0) note += ` Guest overpaid ${fmtIDR(priced.credit)} — to be refunded.`;
+    note += ` Reason: ${reason}`;
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [before.id, note.slice(0, 1000), req.user.id]);
+    await client.query('COMMIT');
+
+    for (const c of [oldUnit.controller_id, newUnit.controller_id]) if (c) sse.notify(c, { type: 'room_changed' });
+    if (amount !== 0 && (before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out')) {
+      await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
+    }
+    res.json({ from: oldUnit.name, to: newUnit.name, charged: amount, quote, credit: priced?.credit || 0 });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

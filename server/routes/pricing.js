@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { nightlyRoomRates } = require('../services/pricingService');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
@@ -37,39 +38,11 @@ router.get('/suggest', auth, async (req, res) => {
     );
     if (nights === 0) return res.json({ nights: 0, suggested_total: 0, period: null, night_breakdown: [] });
 
-    const { rows: [unit] } = await db.query('SELECT * FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
-    if (!unit) return res.status(404).json({ error: 'Unit not found' });
-
-    const baseRate = parseFloat(unit.base_rate);
-
-    // Every active period overlapping ANY night of the stay, highest-priority first.
-    const { rows: periods } = await db.query(`
-      SELECT * FROM pricing_periods
-      WHERE property_id = $3
-        AND is_active = true
-        AND date_from < $2
-        AND date_to >= $1
-        AND (unit_ids = '[]'::jsonb OR unit_ids @> $4::jsonb)
-      ORDER BY sort_order DESC
-    `, [check_in, check_out, req.propertyId, JSON.stringify([unit_id])]);
-
-    // Resolve one rate per night: check_in .. check_out-1 (matches
-    // roomChargeService.stayNights' convention — no charge for the departure day).
-    const night_breakdown = [];
-    for (let t = new Date(check_in + 'T00:00:00Z').getTime(); t < new Date(check_out + 'T00:00:00Z').getTime(); t += 86400000) {
-      const dateStr = new Date(t).toISOString().slice(0, 10);
-      const period = periods.find(p => p.date_from <= dateStr && p.date_to >= dateStr) || null;
-      const room_rate = Math.round(period
-        ? (period.type === 'fixed' ? parseFloat(period.value) : baseRate * parseFloat(period.value))
-        : baseRate);
-      night_breakdown.push({
-        date: dateStr,
-        room_rate,
-        period: period ? { name: period.name, type: period.type, value: period.value, color: period.color } : null,
-      });
-    }
-
-    const room_total = night_breakdown.reduce((sum, n) => sum + n.room_rate, 0); // NET
+    // Per-night rate resolution lives in services/pricingService.js, shared
+    // with the Change Room upgrade quote so both price a room the same way.
+    const rates = await nightlyRoomRates(req.propertyId, unit_id, check_in, check_out);
+    if (!rates) return res.status(404).json({ error: 'Unit not found' });
+    const { baseRate, night_breakdown, room_total } = rates; // room_total is NET
     const varies_by_night = new Set(night_breakdown.map(n => n.room_rate)).size > 1;
     // Back-compat single-rate/period fields: only meaningful when every night
     // agrees — otherwise null, and callers should read night_breakdown instead.

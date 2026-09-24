@@ -22,6 +22,8 @@ const EDIT_BED_PREFS = [
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+// '2026-09-25' → '25 Sep' (local date, no UTC shift)
+function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 
 export default function BookingDetail() {
   const { id } = useParams();
@@ -47,6 +49,14 @@ export default function BookingDetail() {
   const [transferUnits, setTransferUnits] = useState([]);
   const [transferTarget, setTransferTarget] = useState(null);
   const [transferLoading, setTransferLoading] = useState(false);
+  // Change Room (upgrade / downgrade / move): quote for the picked room and
+  // how to charge the difference.
+  const [changeQuote, setChangeQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [chargeMode, setChargeMode] = useState('difference'); // difference | complimentary | custom
+  const [customAmount, setCustomAmount] = useState('');
+  const [changeReason, setChangeReason] = useState('');
+  const [changeError, setChangeError] = useState('');
   const [amending, setAmending] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [editDetailsForm, setEditDetailsForm] = useState({});
@@ -244,6 +254,11 @@ export default function BookingDetail() {
 
   async function openTransfer() {
     setTransferTarget(null);
+    setChangeQuote(null);
+    setChargeMode('difference');
+    setCustomAmount('');
+    setChangeReason('');
+    setChangeError('');
     setTransferring(true);
     try {
       const r = await api.get('/api/bookings/transfer-availability', {
@@ -260,15 +275,39 @@ export default function BookingDetail() {
     }
   }
 
-  async function doTransfer() {
-    if (!transferTarget) return;
-    setTransferLoading(true);
+  async function pickChangeRoom(unitId) {
+    setTransferTarget(unitId);
+    setChangeQuote(null);
+    setChangeError('');
+    setQuoteLoading(true);
     try {
-      await api.put(`/api/bookings/${id}/transfer`, { unit_id: transferTarget });
+      const r = await api.get(`/api/bookings/${id}/change-room/quote`, { params: { unit_id: unitId } });
+      setChangeQuote(r.data);
+      setCustomAmount(String(Math.round(r.data.difference)));
+    } catch (err) {
+      setChangeError(err.response?.data?.error || 'Could not price this room');
+    } finally {
+      setQuoteLoading(false);
+    }
+  }
+
+  async function doTransfer() {
+    if (!transferTarget || !changeQuote) return;
+    setTransferLoading(true);
+    setChangeError('');
+    try {
+      await api.put(`/api/bookings/${id}/change-room`, {
+        unit_id: transferTarget,
+        charge: chargeMode,
+        ...(chargeMode === 'custom' ? { amount: parseFloat(customAmount) } : {}),
+        reason: changeReason.trim(),
+      });
       setTransferring(false);
+      setFolio(null);
+      setEstimate(null);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Transfer failed');
+      setChangeError(err.response?.data?.error || 'Could not change the room');
     } finally {
       setTransferLoading(false);
     }
@@ -467,7 +506,7 @@ export default function BookingDetail() {
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
-      { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
+      { label: 'Change Room', icon: '🔀', onClick: openTransfer },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
@@ -1234,59 +1273,122 @@ export default function BookingDetail() {
         </div>
       )}
 
-      {transferring && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-title">Transfer Room — {booking.guest_name}</div>
-              <button className="btn btn-icon" onClick={() => setTransferring(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
-                Current room: <strong>{booking.unit_name}</strong> · {booking.check_in_date?.slice(0,10)} → {booking.check_out_date?.slice(0,10)}
+      {transferring && (() => {
+        const q = changeQuote;
+        const charge = !q ? 0 : chargeMode === 'complimentary' ? 0 : chargeMode === 'custom' ? (parseFloat(customAmount) || 0) : q.difference;
+        const canSave = !!q && !quoteLoading && changeReason.trim().length > 0
+          && (chargeMode !== 'custom' || Number.isFinite(parseFloat(customAmount)));
+        const fmtStay = (a, b) => `${fmtShortDate(a)} – ${fmtShortDate(b)}`;
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 600, width: '100%' }}>
+              <div className="modal-header">
+                <div className="modal-title">Change Room — {booking.guest_name}</div>
+                <button className="btn btn-icon" onClick={() => setTransferring(false)}>✕</button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {transferUnits.map(u => {
-                  const isAvailable = u.available;
-                  const isSelected = transferTarget === u.id;
-                  return (
-                    <button
-                      key={u.id}
-                      onClick={() => isAvailable && setTransferTarget(u.id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '10px 14px', borderRadius: 8, cursor: isAvailable ? 'pointer' : 'not-allowed',
-                        border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
-                        background: isSelected ? 'var(--primary-light, #eff6ff)' : isAvailable ? 'var(--bg-card)' : 'var(--bg-muted, #f9fafb)',
-                        opacity: isAvailable ? 1 : 0.6,
-                        textAlign: 'left', width: '100%',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
-                        {!isAvailable && u.conflict && (
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                            Booked by {u.conflict.guest_name} · {u.conflict.check_in_date?.slice(0,10)} → {u.conflict.check_out_date?.slice(0,10)}
-                          </div>
+              <div className="modal-body">
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Current room: <strong>{booking.unit_name}</strong> · {booking.check_in_date?.slice(0, 10)} → {booking.check_out_date?.slice(0, 10)}
+                  {booking.status === 'checked_in' && ' · guest is in house'}
+                </div>
+
+                <label className="form-label">New room</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto', marginBottom: 12 }}>
+                  {[...transferUnits].sort((a, b) => Number(b.available) - Number(a.available)).map(u => {
+                    const isAvailable = u.available;
+                    const isSelected = transferTarget === u.id;
+                    return (
+                      <button key={u.id} type="button"
+                        onClick={() => isAvailable && pickChangeRoom(u.id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '8px 12px', borderRadius: 8, cursor: isAvailable ? 'pointer' : 'not-allowed',
+                          border: isSelected ? '2px solid var(--green-dark)' : '1px solid var(--border)',
+                          background: isSelected ? 'var(--green-light)' : isAvailable ? 'var(--bg-card)' : 'var(--bg-muted, #f9fafb)',
+                          opacity: isAvailable ? 1 : 0.55, textAlign: 'left', width: '100%',
+                        }}>
+                        <div>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</span>
+                          {u.type && <span className="text-muted" style={{ fontSize: 12 }}> · {u.type}</span>}
+                          {!isAvailable && u.conflict && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Booked by {u.conflict.guest_name}</div>
+                          )}
+                          {isAvailable && u.status === 'out_of_order' && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Out of order now</div>
+                          )}
+                        </div>
+                        <span className={`badge badge-${isAvailable ? 'green' : 'red'}`}>{isAvailable ? 'Available' : 'Booked'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {quoteLoading && <div className="text-muted" style={{ fontSize: 13 }}>Calculating price difference…</div>}
+
+                {q && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                      Normal room rate for the {q.nights} {q.nights === 1 ? 'night' : 'nights'} {booking.status === 'checked_in' ? 'still to come' : 'of the stay'}
+                      {q.nights > 0 && ` (${fmtStay(q.from, q.to)})`}, incl. service & tax
+                    </div>
+                    <div className="flex-between" style={{ fontSize: 13 }}><span>{q.current.name}{q.current.type ? ` · ${q.current.type}` : ''} (current)</span><span>{fmtIDR(q.current.total)}</span></div>
+                    <div className="flex-between" style={{ fontSize: 13 }}><span>{q.next.name}{q.next.type ? ` · ${q.next.type}` : ''} (new)</span><span>{fmtIDR(q.next.total)}</span></div>
+                    <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
+                      <span>{q.difference >= 0 ? 'Difference' : 'Difference (cheaper room)'}</span>
+                      <span>{q.difference >= 0 ? '+' : '−'}{fmtIDR(Math.abs(q.difference))}</span>
+                    </div>
+
+                    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="charge" checked={chargeMode === 'difference'} onChange={() => setChargeMode('difference')} />
+                        {q.difference > 0 ? `Charge the difference (+${fmtIDR(q.difference)})`
+                          : q.difference < 0 ? `Give the difference back as credit (−${fmtIDR(-q.difference)})`
+                          : 'No price change (same rate)'}
+                      </label>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="charge" checked={chargeMode === 'complimentary'} onChange={() => setChargeMode('complimentary')} />
+                        Complimentary — keep the current price
+                      </label>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="charge" checked={chargeMode === 'custom'} onChange={() => setChargeMode('custom')} />
+                        Other amount
+                        {chargeMode === 'custom' && (
+                          <input className="form-input" type="number" value={customAmount} onChange={e => setCustomAmount(e.target.value)}
+                            style={{ maxWidth: 160, padding: '4px 8px' }} aria-label="Amount to charge" />
                         )}
-                      </div>
-                      <span className={`badge badge-${isAvailable ? 'green' : 'red'}`}>
-                        {isAvailable ? 'Available' : 'Unavailable'}
-                      </span>
-                    </button>
-                  );
-                })}
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">Reason *</label>
+                  <input className="form-input" value={changeReason} onChange={e => setChangeReason(e.target.value)}
+                    placeholder="e.g. Guest requested a villa for their anniversary / AC broken" />
+                </div>
+
+                {q && (
+                  <div className="alert alert-success" style={{ fontSize: 13 }}>
+                    {charge > 0
+                      ? <>The booking price goes up by <b>{fmtIDR(charge)}</b> — it's added to the balance still to pay.</>
+                      : charge < 0
+                        ? <>The booking price goes down by <b>{fmtIDR(-charge)}</b>. If the guest has already paid more, it shows as a credit to refund.</>
+                        : <>The booking price stays the same.</>}
+                    {booking.status === 'checked_in' && ' The old room is marked for cleaning.'}
+                  </div>
+                )}
+                {changeError && <div className="alert alert-error">{changeError}</div>}
               </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setTransferring(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={doTransfer} disabled={!transferTarget || transferLoading}>
-                {transferLoading ? 'Transferring…' : 'Confirm Transfer'}
-              </button>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setTransferring(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={doTransfer} disabled={!canSave || transferLoading}>
+                  {transferLoading ? 'Saving…' : 'Change Room'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {checkingOut && (
         <div className="modal-backdrop">
