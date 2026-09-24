@@ -6,6 +6,7 @@ const { todayWITA } = require('./roomChargeService');
 const dailyClose = require('./dailyClose');
 const tomorrowPreview = require('./tomorrowPreview');
 const weeklyOwner = require('./weeklyOwner');
+const monthlyReport = require('./monthlyReport');
 
 // Reports & Alerts (migration 068): everything sent to a property's
 // notification_recipients (Settings → Reports & Alerts).
@@ -68,6 +69,15 @@ const REPORTS = {
     label: 'Weekly Owner Report',
     when: 'Every Monday at 08:00, for last week',
     description: "Last week vs the week before (revenue, occupancy, ADR, RevPAR, net income when expenses are recorded), what's already booked for the next 14 and 30 days with the weak nights to push, booking pace, where bookings came from, and what agents owe.",
+    defaultRoles: ['owner'],
+    channels: ['telegram', 'email'],
+    paid: true,
+  },
+  monthly_report: {
+    type: 'scheduled',
+    label: 'Monthly Report',
+    when: 'The 1st of every month at 08:00, for last month',
+    description: "Last month vs the month before and the same month last year (revenue, net income, occupancy, ADR, RevPAR), money received by method, stays by source and what agents owe. The email attaches a PDF summary plus the revenue and expenses CSV files — ready to forward to your accountant.",
     defaultRoles: ['owner'],
     channels: ['telegram', 'email'],
     paid: true,
@@ -328,6 +338,7 @@ function morningBriefEmail(b) {
 const BUILDERS = {
   morning_brief: { build: buildMorningBrief, telegram: morningBriefTelegram, email: morningBriefEmail },
   daily_close: { build: dailyClose.buildDailyClose, telegram: dailyClose.dailyCloseTelegram, email: dailyClose.dailyCloseEmail },
+  monthly_report: { build: monthlyReport.buildMonthlyReport, telegram: monthlyReport.monthlyTelegram, email: monthlyReport.monthlyEmail },
   weekly_owner: { build: weeklyOwner.buildWeeklyOwner, telegram: weeklyOwner.weeklyOwnerTelegram, email: weeklyOwner.weeklyOwnerEmail },
   tomorrow_preview: { build: tomorrowPreview.buildTomorrowPreview, telegram: tomorrowPreview.tomorrowPreviewTelegram, email: tomorrowPreview.tomorrowPreviewEmail },
 };
@@ -344,6 +355,7 @@ async function deliver(recipient, rendered, ps) {
   try {
     await nodemailer.createTransport(smtp.transportConfig).sendMail({
       from: smtp.from, to: recipient.address, subject: rendered.email.subject, html: rendered.email.html,
+      ...(rendered.email.attachments?.length ? { attachments: rendered.email.attachments } : {}),
     });
     return { ok: true };
   } catch (err) {
@@ -416,7 +428,11 @@ async function renderPreview(propertyId, reportKey, buildOptions = {}) {
   const builder = BUILDERS[reportKey];
   if (!builder) return null;
   const data = await builder.build(propertyId, buildOptions);
-  return { telegram: builder.telegram(data), email: builder.email(data) };
+  const email = builder.email(data);
+  return {
+    telegram: builder.telegram(data),
+    email: { subject: email.subject, html: email.html, attachments: (email.attachments || []).map(a => a.filename) },
+  };
 }
 
 // Scheduled run: every active property with the module on.

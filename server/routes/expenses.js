@@ -98,40 +98,59 @@ function csvEscape(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+const EXPENSE_CSV_SELECT = `SELECT e.incurred_on, e.category, e.amount, e.payment_method, s.name AS supplier_name, e.reference, e.description, u.name AS created_by_name
+       FROM expenses e
+       LEFT JOIN suppliers s ON s.id = e.supplier_id
+       LEFT JOIN users u ON u.id = e.created_by`;
+
+function expenseRowsCsv(rows) {
+  const header = ['Date', 'Category', 'Amount', 'Payment Method', 'Supplier', 'Reference', 'Description', 'Recorded By'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      csvEscape(String(r.incurred_on).slice(0, 10)),
+      csvEscape(r.category),
+      csvEscape(r.amount),
+      csvEscape(r.payment_method),
+      csvEscape(r.supplier_name),
+      csvEscape(r.reference),
+      csvEscape(r.description),
+      csvEscape(r.created_by_name),
+    ].join(','));
+  }
+  return lines.join('\n');
+}
+
+// Non-voided expenses in a date range as CSV (null when there are none) —
+// used by the Monthly Report email (services/monthlyReport.js).
+async function expensesCsv(propertyId, from, to) {
+  const { rows } = await db.query(
+    `${EXPENSE_CSV_SELECT}
+     WHERE e.property_id = $1 AND e.is_voided = false AND e.incurred_on BETWEEN $2::date AND $3::date
+     ORDER BY e.incurred_on ASC`,
+    [propertyId, from, to]
+  );
+  return rows.length ? expenseRowsCsv(rows) : null;
+}
+
 // GET /api/expenses/export?month=&year=&category= — CSV, for handing to an
 // outside accountant/bookkeeper. Same filters as the list endpoint.
 router.get('/export', ownerOnly, async (req, res) => {
   try {
     const { where, params, month, year } = buildFilter(req);
     const { rows } = await db.query(
-      `SELECT e.incurred_on, e.category, e.amount, e.payment_method, s.name AS supplier_name, e.reference, e.description, u.name AS created_by_name
-       FROM expenses e
-       LEFT JOIN suppliers s ON s.id = e.supplier_id
-       LEFT JOIN users u ON u.id = e.created_by
+      `${EXPENSE_CSV_SELECT}
        WHERE ${where}
        ORDER BY e.incurred_on ASC`,
       params
     );
-    const header = ['Date', 'Category', 'Amount', 'Payment Method', 'Supplier', 'Reference', 'Description', 'Recorded By'];
-    const lines = [header.join(',')];
-    for (const r of rows) {
-      lines.push([
-        csvEscape(String(r.incurred_on).slice(0, 10)),
-        csvEscape(r.category),
-        csvEscape(r.amount),
-        csvEscape(r.payment_method),
-        csvEscape(r.supplier_name),
-        csvEscape(r.reference),
-        csvEscape(r.description),
-        csvEscape(r.created_by_name),
-      ].join(','));
-    }
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="expenses-${year}-${String(month).padStart(2, '0')}.csv"`);
-    res.send(lines.join('\n'));
+    res.send(expenseRowsCsv(rows));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 module.exports = router;
+module.exports.expensesCsv = expensesCsv;

@@ -208,43 +208,51 @@ router.get('/revenue/export', auth, requireRole('owner'), async (req, res) => {
   if (period.error) return res.status(400).json({ error: period.error });
   try {
     const data = await getReport(req.propertyId, period.from, period.to);
-    const label = period.from === period.to ? period.from : `${period.from} to ${period.to}`;
-    const lines = [
-      'Metric,Value',
-      `Period,${csvEscape(label)}`,
-      `Room Revenue,${data.room_revenue}`,
-      `F&B Revenue,${data.fnb_revenue}`,
-      `Ancillary Revenue,${data.ancillary_revenue}`,
-      `Total Revenue,${data.total_revenue}`,
-      `Expenses,${data.expenses_total}`,
-      `Net Income,${data.net_income}`,
-      `Bookings,${data.bookings_count}`,
-      `Room Nights,${data.total_nights}`,
-      '',
-      'Source,Bookings,Revenue',
-      ...data.by_source.map(r => `${csvEscape(r.source)},${r.count},${Math.round(parseFloat(r.revenue) * 100) / 100}`),
-    ];
-    // Daily breakdown for multi-day periods — one row per day, same rules as
-    // the summary (room/F&B night-based, sales by WITA day, expenses by date),
-    // so the rows add up to the summary above.
-    if (period.from !== period.to) {
-      const r2 = n => Math.round(parseFloat(n) * 100) / 100;
-      lines.push('', 'Date,Room Revenue,F&B Revenue,Ancillary Revenue,Total Revenue,Expenses,Net Income,Room Nights');
-      for (const d of data.daily_revenue) {
-        const total = r2(parseFloat(d.room_revenue) + parseFloat(d.fnb_revenue) + d.ancillary_revenue);
-        lines.push([String(d.date).slice(0, 10), r2(d.room_revenue), r2(d.fnb_revenue), r2(d.ancillary_revenue),
-          total, r2(d.expenses), r2(total - d.expenses), d.nights_sold].join(','));
-      }
-    }
     res.setHeader('Content-Type', 'text/csv');
     const fileLabel = period.from === period.to ? period.from : `${period.from}_to_${period.to}`;
     res.setHeader('Content-Disposition', `attachment; filename="revenue-${fileLabel}.csv"`);
-    res.send(lines.join('\n'));
+    res.send(revenueCsv(data));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// The revenue CSV for a getReport() result — shared by the export route above
+// and the Monthly Report email (services/monthlyReport.js).
+function revenueCsv(data) {
+  const period = { from: data.from, to: data.to };
+  const label = period.from === period.to ? period.from : `${period.from} to ${period.to}`;
+  const lines = [
+    'Metric,Value',
+    `Period,${csvEscape(label)}`,
+    `Room Revenue,${data.room_revenue}`,
+    `F&B Revenue,${data.fnb_revenue}`,
+    `Ancillary Revenue,${data.ancillary_revenue}`,
+    `Total Revenue,${data.total_revenue}`,
+    `Expenses,${data.expenses_total}`,
+    `Net Income,${data.net_income}`,
+    `Bookings,${data.bookings_count}`,
+    `Room Nights,${data.total_nights}`,
+    '',
+    'Source,Bookings,Revenue',
+    ...data.by_source.map(r => `${csvEscape(r.source)},${r.count},${Math.round(parseFloat(r.revenue) * 100) / 100}`),
+  ];
+  // Daily breakdown for multi-day periods — one row per day, same rules as
+  // the summary (room/F&B night-based, sales by WITA day, expenses by date),
+  // so the rows add up to the summary above.
+  if (period.from !== period.to) {
+    const r2 = n => Math.round(parseFloat(n) * 100) / 100;
+    lines.push('', 'Date,Room Revenue,F&B Revenue,Ancillary Revenue,Total Revenue,Expenses,Net Income,Room Nights');
+    for (const d of data.daily_revenue) {
+      const total = r2(parseFloat(d.room_revenue) + parseFloat(d.fnb_revenue) + d.ancillary_revenue);
+      lines.push([String(d.date).slice(0, 10), r2(d.room_revenue), r2(d.fnb_revenue), r2(d.ancillary_revenue),
+        total, r2(d.expenses), r2(total - d.expenses), d.nights_sold].join(','));
+    }
+  }
+  return lines.join('\n');
+}
+
 module.exports = router;
 // Shared with services/dailyClose.js (Smart Reports), so its figures match this page.
 module.exports.getReport = getReport;
+module.exports.revenueCsv = revenueCsv;

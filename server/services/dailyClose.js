@@ -53,31 +53,32 @@ async function dayFigures(propertyId, date, sellable) {
 // extras paid at the desk), extras paid directly with no booking, and agent
 // payments. A pay-now extra for an in-house guest has BOTH a sale and an
 // 'incidental' payment row — counted once, via the payment.
-async function collected(propertyId, date) {
+// from–to inclusive (one day by default); also used by the Monthly Report.
+async function collected(propertyId, from, to = from) {
   const { rows } = await db.query(`
     WITH money AS (
       SELECT p.method, p.amount
       FROM payments p JOIN bookings b ON b.id = p.booking_id
       WHERE b.property_id = $1 AND p.status = 'received'
-        AND (p.received_at AT TIME ZONE 'Asia/Makassar')::date = $2::date
+        AND (p.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
       UNION ALL
       SELECT s.payment_method, s.total_amount + COALESCE(s.service_charge_amount, 0) + COALESCE(s.tax_amount, 0)
       FROM sales s
       WHERE s.property_id = $1
         AND s.payment_method NOT IN ('room_charge', 'unpaid')
         AND s.confirmation_status IS DISTINCT FROM 'rejected'
-        AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date = $2::date
+        AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
         AND NOT EXISTS (SELECT 1 FROM payments p2 WHERE p2.sale_id = s.id)
       UNION ALL
       SELECT ap.method, ap.amount
       FROM agent_payments ap
-      WHERE ap.property_id = $1 AND ap.received_on = $2::date
+      WHERE ap.property_id = $1 AND ap.received_on BETWEEN $2::date AND $3::date
     )
     SELECT COALESCE(pm.label, money.method, 'Other') AS method, SUM(money.amount) AS amount
     FROM money
     LEFT JOIN payment_methods pm ON pm.id = money.method AND pm.property_id = $1
     GROUP BY 1 ORDER BY 2 DESC
-  `, [propertyId, date]);
+  `, [propertyId, from, to]);
   const byMethod = rows.map(r => ({ method: r.method, amount: parseFloat(r.amount) })).filter(r => r.amount > 0);
   return { total: byMethod.reduce((s, r) => s + r.amount, 0), by_method: byMethod };
 }
@@ -285,4 +286,4 @@ async function dailyCloseReplacesAuditEmail(propertyId) {
   return r.yes;
 }
 
-module.exports = { buildDailyClose, dailyCloseTelegram, dailyCloseEmail, dailyCloseReplacesAuditEmail };
+module.exports = { collected, buildDailyClose, dailyCloseTelegram, dailyCloseEmail, dailyCloseReplacesAuditEmail };

@@ -340,7 +340,7 @@ export default function SettingsReports() {
           </div>
         ))}
         <p style={{ ...muted, marginTop: 10, marginBottom: 0 }}>
-          Coming next: Daily Close, Tomorrow Preview, and Weekly and Monthly owner reports.
+          All reports are sent in English, on Bali time (WITA).
         </p>
       </div>
 
@@ -510,6 +510,9 @@ export default function SettingsReports() {
             ) : (
               <>
                 <div style={{ ...muted, fontSize: 12, marginBottom: 6 }}>Subject: {preview.email.subject}</div>
+                {preview.email.attachments?.length > 0 && (
+                  <div style={{ ...muted, fontSize: 12, marginBottom: 6 }}>📎 Attached: {preview.email.attachments.join(', ')}</div>
+                )}
                 <iframe title="Email preview" sandbox="" srcDoc={preview.email.html}
                   style={{ width: '100%', height: 520, border: '1px solid var(--border)', borderRadius: 8, background: '#fff' }} />
               </>
