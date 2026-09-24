@@ -1023,6 +1023,32 @@ export default function BookingDetail() {
                   {fmtIDR(folio.balance_due)}
                 </span>
               </div>
+              {(() => {
+                // Room/meal nights post one at a time at night audit, so until
+                // then the ledger above is missing them and Posted Balance can
+                // even look like a credit. Say which nights are still to come.
+                if (!estimate || ['cancelled', 'no_show'].includes(booking.status)) return null;
+                const postedDates = new Set(folio.charges
+                  .filter(c => c.type === 'room' || c.type === 'fnb')
+                  .map(c => String(c.service_date || '').slice(0, 10)));
+                const pending = (estimate.charges || []).filter(c =>
+                  (c.type === 'room' || c.type === 'fnb') && !postedDates.has(String(c.service_date || '').slice(0, 10)));
+                if (!pending.length) return null;
+                const net = pending.reduce((s, c) => s + parseFloat(c.amount), 0);
+                const gross = net * (1 + (parseFloat(estimate.service_charge_rate) || 0) / 100) * (1 + (parseFloat(estimate.tax_rate) || 0) / 100);
+                const dates = [...new Set(pending.map(c => String(c.service_date).slice(0, 10)))].sort();
+                const d = new Date();
+                const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const what = dates.length === 1
+                  ? (dates[0] === today ? 'Tonight’s room charge' : `The room charge for ${fmtShortDate(dates[0])}`)
+                  : `Room charges for ${dates.length} nights (${fmtShortDate(dates[0])} – ${fmtShortDate(dates[dates.length - 1])})`;
+                return (
+                  <div style={{ fontSize: 12, marginTop: 6, padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
+                    🌙 {what} — <b>{fmtIDR(Math.round(gross))}</b> — {dates.length === 1 ? 'posts' : 'post'} at night audit, one night at a time.
+                    Estimated Balance Due above already includes {dates.length === 1 ? 'it' : 'them'}.
+                  </div>
+                );
+              })()}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                 Based only on charges already posted to the ledger above — see "Estimated Balance Due" up top for what the guest actually still owes overall.
               </div>
