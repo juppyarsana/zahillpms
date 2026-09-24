@@ -4,6 +4,7 @@ const { resolveSmtp } = require('./mailer');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 const dailyClose = require('./dailyClose');
+const tomorrowPreview = require('./tomorrowPreview');
 
 // Reports & Alerts (migration 068): everything sent to a property's
 // notification_recipients (Settings → Reports & Alerts).
@@ -49,6 +50,15 @@ const REPORTS = {
     when: 'Every night at 00:30, for the day that just ended',
     description: "Yesterday's revenue (room, meals, extras), occupancy, ADR and RevPAR — each compared with the same day last week — money received by payment method, new bookings, cancellations, no-shows; plus today's arrivals, guests overdue to check out, and balances to collect. Replaces the night audit email once anyone gets it.",
     defaultRoles: ['owner', 'manager'],
+    channels: ['telegram', 'email'],
+    paid: true,
+  },
+  tomorrow_preview: {
+    type: 'scheduled',
+    label: 'Tomorrow Preview',
+    when: 'Every day at 19:00',
+    description: "Tomorrow's arrivals (requests, bed setup, groups), rooms to get ready (not cleaned, same-day turnover, out of order), departures and balances to collect, and the breakfast and dinner count — so the team and the kitchen can plan.",
+    defaultRoles: ['manager', 'front_desk', 'kitchen'],
     channels: ['telegram', 'email'],
     paid: true,
   },
@@ -308,6 +318,7 @@ function morningBriefEmail(b) {
 const BUILDERS = {
   morning_brief: { build: buildMorningBrief, telegram: morningBriefTelegram, email: morningBriefEmail },
   daily_close: { build: dailyClose.buildDailyClose, telegram: dailyClose.dailyCloseTelegram, email: dailyClose.dailyCloseEmail },
+  tomorrow_preview: { build: tomorrowPreview.buildTomorrowPreview, telegram: tomorrowPreview.tomorrowPreviewTelegram, email: tomorrowPreview.tomorrowPreviewEmail },
 };
 
 // ── Delivery ─────────────────────────────────────────────────────────────────
