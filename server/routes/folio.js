@@ -45,6 +45,8 @@ router.get('/group/:groupId', auth, async (req, res) => {
         subtotal: f.subtotal, total: f.total, balance_due: f.balance_due,
       })),
       subtotal: sum('subtotal'),
+      service_charge_rate: folios[0]?.service_charge_rate ?? 0,
+      tax_rate: folios[0]?.tax_rate ?? 0,
       service_charge_amount: sum('service_charge_amount'),
       tax_amount: sum('tax_amount'),
       total: sum('total'),
@@ -289,9 +291,13 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
     y += opts.bold ? 20 : 16;
   }
 
-  totalsLine('Subtotal', fmtIDR(subtotal));
-  totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
-  totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
+  // A property at 0% (rates published all-in) prints no service/tax lines,
+  // and no Subtotal either since it would just repeat the Total.
+  const hasSc = parseFloat(service_charge_rate) > 0;
+  const hasTax = parseFloat(tax_rate) > 0;
+  if (hasSc || hasTax) totalsLine('Subtotal', fmtIDR(subtotal));
+  if (hasSc) totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
+  if (hasTax) totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
   totalsLine('Total', fmtIDR(total), { bold: true });
 
   const received = payments.filter(p => p.status === 'received');
@@ -467,9 +473,11 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
       doc.text(value, 460, doc.y, { width: 90, align: 'right' });
       doc.moveDown(opts.bold ? 0.9 : 0.7);
     }
-    grandLine('Subtotal', fmtIDR(grand.subtotal));
-    grandLine(`Service Charge (${grand.service_charge_rate}%)`, fmtIDR(grand.service_charge_amount));
-    grandLine(`Tax (${grand.tax_rate}%)`, fmtIDR(grand.tax_amount));
+    const hasSc = parseFloat(grand.service_charge_rate) > 0;
+    const hasTax = parseFloat(grand.tax_rate) > 0;
+    if (hasSc || hasTax) grandLine('Subtotal', fmtIDR(grand.subtotal));
+    if (hasSc) grandLine(`Service Charge (${grand.service_charge_rate}%)`, fmtIDR(grand.service_charge_amount));
+    if (hasTax) grandLine(`Tax (${grand.tax_rate}%)`, fmtIDR(grand.tax_amount));
     grandLine('Total', fmtIDR(grand.total), { bold: true });
     grandLine('Estimated Balance Due', fmtIDR(grand.balance_due), { bold: true });
 

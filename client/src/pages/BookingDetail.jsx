@@ -1000,15 +1000,21 @@ export default function BookingDetail() {
               )}
 
               <div className="divider" />
-              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
-              </div>
-              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                <span className="text-muted">Service Charge ({folio.service_charge_rate}%)</span><span>{fmtIDR(folio.service_charge_amount)}</span>
-              </div>
-              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                <span className="text-muted">Tax ({folio.tax_rate}%)</span><span>{fmtIDR(folio.tax_amount)}</span>
-              </div>
+              {(parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
+                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                  <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
+                </div>
+              )}
+              {parseFloat(folio.service_charge_rate) > 0 && (
+                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                  <span className="text-muted">Service Charge ({folio.service_charge_rate}%)</span><span>{fmtIDR(folio.service_charge_amount)}</span>
+                </div>
+              )}
+              {parseFloat(folio.tax_rate) > 0 && (
+                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                  <span className="text-muted">Tax ({folio.tax_rate}%)</span><span>{fmtIDR(folio.tax_amount)}</span>
+                </div>
+              )}
               <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 10 }}>
                 <span>Total</span><span>{fmtIDR(folio.total)}</span>
               </div>
