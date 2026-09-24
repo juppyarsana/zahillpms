@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
 import GuestPicker from '../components/GuestPicker';
+import { useSettings } from '../context/SettingsContext';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -73,6 +74,55 @@ export default function GroupDetail() {
   // Assign the guest actually staying in each room (the group is usually
   // booked under one name; the guest list arrives later). Room / TV Display,
   // Registration Card and the police Guest Report all follow the room's guest.
+  // Group payment: one payment from the group (e.g. the booker's single
+  // transfer) marks several rooms' deposit/balance lines received at once;
+  // each room's status updates like "Mark Received" on the room itself.
+  const { paymentMethods } = useSettings();
+  const payMethods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
+  const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const [paying, setPaying] = useState(false);
+  const [paySel, setPaySel] = useState(new Set());
+  const [payForm, setPayForm] = useState({ method: '', received_at: todayStr, notes: '' });
+  const [paySaving, setPaySaving] = useState(false);
+  const [payError, setPayError] = useState('');
+
+  // Every unpaid room payment line in the group, room by room.
+  function pendingLines() {
+    if (!data) return [];
+    return data.bookings
+      .filter(b => !['cancelled', 'no_show'].includes(b.status))
+      .flatMap(b => (b.payments || [])
+        .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status !== 'received' && parseFloat(p.amount) > 0)
+        .map(p => ({ ...p, unit_name: b.unit_name, guest_name: b.guest_name })));
+  }
+
+  function openGroupPayment() {
+    const lines = pendingLines();
+    // Start with the deposits ticked when any are open (the usual first
+    // transfer), otherwise everything that's left.
+    const deposits = lines.filter(l => l.type === 'deposit');
+    setPaySel(new Set((deposits.length ? deposits : lines).map(l => l.id)));
+    setPayForm({ method: payMethods.find(m => m.id === 'bank_transfer')?.id || payMethods[0]?.id || '', received_at: todayStr, notes: '' });
+    setPayError('');
+    setPaying(true);
+  }
+
+  async function saveGroupPayment() {
+    setPaySaving(true);
+    setPayError('');
+    try {
+      await api.post(`/api/bookings/group/${groupId}/payments`, {
+        payment_ids: [...paySel], method: payForm.method, received_at: payForm.received_at, notes: payForm.notes,
+      });
+      setPaying(false);
+      load();
+    } catch (err) {
+      setPayError(err.response?.data?.error || 'Could not record the payment');
+    } finally {
+      setPaySaving(false);
+    }
+  }
+
   const [assigning, setAssigning] = useState(false);
   const [assignments, setAssignments] = useState({}); // booking_id -> GuestPicker value
   const [assignSaving, setAssignSaving] = useState(false);
@@ -208,7 +258,23 @@ export default function GroupDetail() {
                   </span>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{b.num_guests} guest{b.num_guests !== 1 ? 's' : ''} · {fmtIDR(b.total_amount)}</div>
                 </div>
-                <span className={`badge badge-${STATUS_BADGE[b.status] || 'gray'}`}>{STATUS_LABEL[b.status] || b.status}</span>
+                <div className="flex gap-2" style={{ alignItems: 'center' }}>
+                  {(() => {
+                    // Unpaid room payment lines → shortcut to that room's
+                    // Payment Tracking to mark them received.
+                    const unpaid = (b.payments || [])
+                      .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status !== 'received' && parseFloat(p.amount) > 0)
+                      .reduce((s, p) => s + parseFloat(p.amount), 0);
+                    if (unpaid <= 0 || ['cancelled', 'no_show'].includes(b.status)) return null;
+                    return (
+                      <>
+                        <span style={{ fontSize: 12, color: 'var(--color-danger, #dc2626)', fontWeight: 600 }}>{fmtIDR(unpaid)} unpaid</span>
+                        <Link to={`/reservations/${b.id}#payment`} className="btn btn-sm btn-secondary">Pay →</Link>
+                      </>
+                    );
+                  })()}
+                  <span className={`badge badge-${STATUS_BADGE[b.status] || 'gray'}`}>{STATUS_LABEL[b.status] || b.status}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -235,9 +301,83 @@ export default function GroupDetail() {
                 {fmtIDR(rollup.balance_due)}
               </span>
             </div>
+            {pendingLines().length > 0 && (
+              <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={openGroupPayment}>💳 Record Group Payment</button>
+                <span className="text-muted" style={{ fontSize: 12, alignSelf: 'center' }}>
+                  One payment for several rooms — each room's status updates.
+                </span>
+              </div>
+            )}
           </div>
         </>
       )}
+
+      {paying && (() => {
+        const lines = pendingLines();
+        const total = lines.filter(l => paySel.has(l.id)).reduce((sum, l) => sum + parseFloat(l.amount), 0);
+        const toggle = lineId => setPaySel(sel => { const n = new Set(sel); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n; });
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 560, width: '100%' }}>
+              <div className="modal-header">
+                <div className="modal-title">Record Group Payment</div>
+                <button className="btn btn-icon" onClick={() => setPaying(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="flex gap-2" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
+                  <span className="text-muted" style={{ fontSize: 13, alignSelf: 'center' }}>This payment covers:</span>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set(lines.filter(l => l.type === 'deposit').map(l => l.id)))}>All deposits</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set(lines.map(l => l.id)))}>Everything unpaid</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set())}>Clear</button>
+                </div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 6, marginBottom: 12 }}>
+                  {lines.map(l => (
+                    <label key={l.id} className="flex-between" style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13 }}>
+                      <span className="flex gap-2" style={{ alignItems: 'center' }}>
+                        <input type="checkbox" checked={paySel.has(l.id)} onChange={() => toggle(l.id)} />
+                        <b>{l.unit_name}</b>
+                        <span style={{ textTransform: 'capitalize' }}>{l.type}</span>
+                        <span className="text-muted" style={{ fontSize: 11 }}>{l.guest_name}</span>
+                      </span>
+                      <span style={{ fontWeight: 600 }}>{fmtIDR(l.amount)}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Method</label>
+                    <select className="form-select" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))}>
+                      {payMethods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Date received</label>
+                    <input className="form-input" type="date" value={payForm.received_at} onChange={e => setPayForm(f => ({ ...f, received_at: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <input className="form-input" value={payForm.notes} placeholder="e.g. BCA transfer ref 1234" onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
+                  <span>Total received</span><span>{fmtIDR(total)}</span>
+                </div>
+                <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  Should match what the group actually paid. For a different amount, adjust that room's line on its booking first.
+                </div>
+                {payError && <div className="alert alert-error" style={{ marginTop: 10 }}>{payError}</div>}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method}>
+                  {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {assigning && (
         <div className="modal-backdrop">

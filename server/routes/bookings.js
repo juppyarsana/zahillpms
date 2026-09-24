@@ -566,6 +566,61 @@ router.get('/transfer-availability', auth, async (req, res) => {
   }
 });
 
+// GET /api/bookings/groups?when=current|past|all&q= — one row per group
+// booking for the Reservations page's Groups view. when: current (default —
+// not yet checked out: upcoming + in house), past, or all. q matches the
+// booker's name or any room guest's name. Money uses the same formula as the
+// group page's payment summary (GET /group/:groupId rollup), so the two
+// always agree: rooms' totals − group discount − received room payments.
+router.get('/groups', auth, async (req, res) => {
+  const when = ['current', 'past', 'all'].includes(req.query.when) ? req.query.when : 'current';
+  const params = [req.propertyId];
+  let where = 'rg.property_id = $1';
+  if (when !== 'all') {
+    params.push(roomCharge.todayWITA());
+    where += ` AND rg.check_out_date ${when === 'current' ? '>=' : '<'} $${params.length}::date`;
+  }
+  if (req.query.q) {
+    params.push(`%${req.query.q}%`);
+    where += ` AND (g.name ILIKE $${params.length} OR EXISTS (
+      SELECT 1 FROM bookings b3 JOIN guests g3 ON g3.id = b3.guest_id
+      WHERE b3.reservation_group_id = rg.id AND g3.name ILIKE $${params.length}))`;
+  }
+  try {
+    const { rows } = await db.query(`
+      SELECT rg.id, rg.check_in_date, rg.check_out_date, rg.status AS group_status,
+             g.name AS booker_name, g.whatsapp AS booker_whatsapp,
+             COUNT(b.id)::int AS room_count,
+             COUNT(b.id) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show'))::int AS active_rooms,
+             COUNT(b.id) FILTER (WHERE b.status = 'checked_in')::int AS checked_in_rooms,
+             COUNT(b.id) FILTER (WHERE b.status = 'checked_out')::int AS checked_out_rooms,
+             COALESCE(SUM(b.num_guests) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')), 0)::int AS pax,
+             COUNT(b.id) FILTER (WHERE b.guest_id = rg.primary_guest_id
+                                  AND b.status NOT IN ('cancelled', 'no_show', 'checked_out'))::int AS rooms_with_booker,
+             string_agg(u.name, ', ' ORDER BY u.name) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')) AS room_names,
+             COALESCE(SUM(b.total_amount), 0) - COALESCE(rg.group_discount_amount, 0) AS net_amount,
+             COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b2 ON b2.id = p.booking_id
+                        WHERE b2.reservation_group_id = rg.id AND p.status = 'received'
+                          AND p.type IN ('deposit', 'balance')), 0) AS paid_amount
+      FROM reservation_groups rg
+      JOIN guests g ON g.id = rg.primary_guest_id
+      LEFT JOIN bookings b ON b.reservation_group_id = rg.id
+      LEFT JOIN units u ON u.id = b.unit_id
+      WHERE ${where}
+      GROUP BY rg.id, g.name, g.whatsapp
+      ORDER BY ${when === 'past' ? 'rg.check_in_date DESC' : 'rg.check_in_date'}
+    `, params);
+    res.json(rows.map(r => ({
+      ...r,
+      net_amount: parseFloat(r.net_amount),
+      paid_amount: parseFloat(r.paid_amount),
+      balance_due: round2(parseFloat(r.net_amount) - parseFloat(r.paid_amount)),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/bookings/group/:groupId
 router.get('/group/:groupId', auth, async (req, res) => {
   try {
@@ -1214,6 +1269,59 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
     }
 
     res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/bookings/group/:groupId/payments — record ONE payment from the
+// group (e.g. the booker's single transfer) against several rooms' pending
+// deposit/balance lines at once: { payment_ids: [...], method, received_at?,
+// notes? }. Each line is marked received exactly as "Mark Received" on a
+// room does (routes/payments.js PUT), and each room's status is recomputed
+// (pending → deposit_paid → confirmed). All-or-nothing.
+router.post('/group/:groupId/payments', auth, async (req, res) => {
+  const ids = Array.isArray(req.body.payment_ids) ? [...new Set(req.body.payment_ids)] : [];
+  const { method, notes } = req.body;
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one payment line' });
+  if (!method) return res.status(400).json({ error: 'Payment method required' });
+  const receivedAt = req.body.received_at || null;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: lines } = await client.query(
+      `SELECT p.id, p.booking_id, p.status, p.type, p.amount
+       FROM payments p JOIN bookings b ON b.id = p.booking_id
+       WHERE p.id = ANY($1::uuid[]) AND b.reservation_group_id = $2 AND b.property_id = $3
+         AND b.status NOT IN ('cancelled', 'no_show')
+       FOR UPDATE OF p`,
+      [ids, req.params.groupId, req.propertyId]
+    );
+    if (lines.length !== ids.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Some payment lines are not part of this group' });
+    }
+    if (lines.some(l => l.status === 'received')) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Some of these lines are already marked received — refresh and try again' });
+    }
+    await client.query(
+      `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
+                           received_by = $3, notes = COALESCE(NULLIF($4, ''), notes)
+       WHERE id = ANY($5::uuid[])`,
+      [method, receivedAt, req.user.id, notes || '', ids]
+    );
+    const bookingIds = [...new Set(lines.map(l => l.booking_id))];
+    for (const bid of bookingIds) await recomputeBookingStatus(client, bid);
+    await client.query('COMMIT');
+    res.json({
+      lines: lines.length,
+      rooms: bookingIds.length,
+      total: round2(lines.reduce((s, l) => s + parseFloat(l.amount), 0)),
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

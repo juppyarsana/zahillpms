@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +26,7 @@ function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 export default function BookingDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const location = useLocation();
   const { paymentMethods, sources } = useSettings();
   const { hasModule, user } = useAuth();
   const isOwner = user?.role === 'owner';
@@ -85,6 +86,14 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { load(); }, [id]);
+
+  // Opened via a "Pay →" shortcut (e.g. from the group page): jump straight
+  // to Payment Tracking once the booking has loaded.
+  useEffect(() => {
+    if (!booking || location.hash !== '#payment') return;
+    setTab('details');
+    requestAnimationFrame(() => document.getElementById('payment-tracking')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [booking?.id, location.hash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadFolio() {
     setFolioLoading(true);
@@ -601,7 +610,7 @@ export default function BookingDetail() {
         </div>
       </div>
 
-      <div className="card mt-3">
+      <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
         <div className="card-title">Payment Tracking</div>
         {parseFloat(booking.fnb_revenue || 0) > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
@@ -656,7 +665,8 @@ export default function BookingDetail() {
               )}
               {p.status === 'received' ? (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                  ✓ {p.method?.replace('_',' ')} · {p.received_at?.slice(0,10)}
+                  {/* received_at is a timestamp — show the local (Bali) date, not the UTC one */}
+                  ✓ {p.method?.replace('_',' ')} · {p.received_at ? new Date(p.received_at).toLocaleDateString('en-CA') : ''}
                 </div>
               ) : (
                 <button className="btn btn-sm btn-primary mt-2" onClick={() => markPaid(p)}>Mark Received</button>

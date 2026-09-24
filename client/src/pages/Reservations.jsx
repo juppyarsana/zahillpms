@@ -68,6 +68,109 @@ function formatRate(rate) {
   return String(rate);
 }
 
+// Small "👥 Group" tag on a booking that belongs to a group booking — click it
+// to open the group page (stops the row's own click from opening the room).
+function GroupTag({ groupId, nav }) {
+  if (!groupId) return null;
+  return (
+    <span className="badge badge-blue" title="Part of a group booking — open the group"
+      style={{ marginLeft: 6, cursor: 'pointer', fontSize: 10 }}
+      onClick={e => { e.stopPropagation(); nav(`/reservations/group/${groupId}`); }}>
+      👥 Group
+    </span>
+  );
+}
+
+// Groups view: one row per group booking (booker, dates, rooms, guests still
+// to assign, balance) → click to open the group page.
+function GroupsView({ nav }) {
+  const [when, setWhen] = useState('current');
+  const [qInput, setQInput] = useState('');
+  const [q, setQ] = useState('');
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { const t = setTimeout(() => setQ(qInput.trim()), 300); return () => clearTimeout(t); }, [qInput]);
+  useEffect(() => {
+    setLoading(true);
+    api.get('/api/bookings/groups', { params: { when, ...(q ? { q } : {}) } })
+      .then(r => setGroups(r.data))
+      .catch(() => setGroups([]))
+      .finally(() => setLoading(false));
+  }, [when, q]);
+
+  const statusOf = g => {
+    if (g.group_status === 'cancelled' || g.active_rooms === 0) return ['Cancelled', 'badge-red'];
+    if (g.checked_out_rooms === g.active_rooms) return ['Checked out', 'badge-gray'];
+    if (g.checked_in_rooms > 0) return [`In house ${g.checked_in_rooms}/${g.active_rooms}`, 'badge-blue'];
+    return ['Upcoming', 'badge-green'];
+  };
+
+  return (
+    <>
+      <div className="card mb-3">
+        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ flex: '1 1 220px', marginBottom: 0 }}>
+            <label className="form-label">Search</label>
+            <input className="form-input" placeholder="Booker or guest name…" value={qInput} onChange={e => setQInput(e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Show</label>
+            <select className="form-select" value={when} onChange={e => setWhen(e.target.value)}>
+              <option value="current">Upcoming &amp; in house</option>
+              <option value="past">Past</option>
+              <option value="all">All groups</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Booked by</th><th>Dates</th><th>Rooms</th><th>Guests</th><th>Status</th><th>Guest names</th><th>Balance due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading && groups.map(g => {
+                const [label, cls] = statusOf(g);
+                return (
+                  <tr key={g.id} style={{ cursor: 'pointer', opacity: label === 'Cancelled' ? 0.5 : 1 }} onClick={() => nav(`/reservations/group/${g.id}`)}>
+                    <td style={{ fontWeight: 600 }}>{g.booker_name}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{g.check_in_date?.slice(0, 10)} → {g.check_out_date?.slice(0, 10)}</td>
+                    <td>
+                      {g.active_rooms} room{g.active_rooms === 1 ? '' : 's'}
+                      {g.room_names && <div className="text-muted" style={{ fontSize: 11 }}>{g.room_names}</div>}
+                    </td>
+                    <td>{g.pax}</td>
+                    <td><span className={`badge ${cls}`}>{label}</span></td>
+                    <td>
+                      {g.rooms_with_booker > 0
+                        ? <span className="badge badge-amber" title="Rooms still under the booker's name — use Assign Guests on the group page">{g.rooms_with_booker} to assign</span>
+                        : <span className="text-muted" style={{ fontSize: 12 }}>✓ Assigned</span>}
+                    </td>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', color: g.balance_due > 0.5 ? 'var(--danger-text)' : undefined }}>
+                      {g.balance_due > 0.5 ? `Rp ${Math.round(g.balance_due).toLocaleString('id-ID')}` : 'Paid'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {loading && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>Loading…</td></tr>}
+              {!loading && groups.length === 0 && (
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                  {q ? 'No group matches this search' : when === 'past' ? 'No past group bookings' : 'No upcoming or in-house group bookings'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function Reservations() {
   const nav = useNavigate();
   const { sources } = useSettings();
@@ -299,14 +402,14 @@ export default function Reservations() {
       const bg   = STATUS_BG[info.booking.status]   || '#F3F4F6';
       const tc   = STATUS_TEXT[info.booking.status]  || '#6B7280';
       const dot  = srcColor(info.booking.source);
-      const text = info.isCI ? (isT ? '▶' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
+      const text = info.isCI ? (isT ? '▶' : '') + (info.booking.reservation_group_id ? '👥' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
       const doneStyle = info.booking.status === 'checked_out' ? { opacity: 0.4, filter: 'grayscale(0.6)' } : {};
       return (
         <div
           key={key}
           className={`cal-cell${todayCls}`}
           style={{ background: bg, color: tc, ...doneStyle }}
-          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}${info.booking.rate_plan_code && info.booking.rate_plan_code !== 'RO' ? ` · ${info.booking.rate_plan_code}` : ''}${info.booking.bed_preference ? ` · ${info.booking.bed_preference} bed` : ''}`}
+          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}${info.booking.rate_plan_code && info.booking.rate_plan_code !== 'RO' ? ` · ${info.booking.rate_plan_code}` : ''}${info.booking.bed_preference ? ` · ${info.booking.bed_preference} bed` : ''}${info.booking.reservation_group_id ? ' · Group booking' : ''}`}
           onClick={() => nav(`/reservations/${info.booking.id}`)}
         >
           <div style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: dot, border: '1.5px solid rgba(255,255,255,0.9)' }} />
@@ -361,15 +464,19 @@ export default function Reservations() {
         <div>
           <div className="page-title">Reservations</div>
           <div className="page-subtitle">
-            {monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : 'List view'}
+            {monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}
           </div>
         </div>
         <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
       </div>
 
       <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
-        <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
+        {view !== 'groups' && (
+          <>
+            <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
+            <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
+          </>
+        )}
 
         {view === 'calendar' && allTypes.length > 1 && (
           <div style={{ position: 'relative' }}>
@@ -395,6 +502,7 @@ export default function Reservations() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button className={`btn btn-sm ${view === 'calendar' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('calendar')}>Calendar</button>
           <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('list')}>List</button>
+          <button className={`btn btn-sm ${view === 'groups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('groups')}>👥 Groups</button>
         </div>
       </div>
 
@@ -479,7 +587,7 @@ export default function Reservations() {
                   {initials(b.guest_name)}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}<GroupTag groupId={b.reservation_group_id} nav={nav} /></div>
                   <div className="text-muted" style={{ fontSize: 11 }}>
                     {b.unit_name} · {b.check_in_date?.slice(0,10)} – {b.check_out_date?.slice(0,10)} · {b.num_guests} guest{b.num_guests > 1 ? 's' : ''} · {b.nights} night{b.nights > 1 ? 's' : ''}
                   </div>
@@ -494,6 +602,8 @@ export default function Reservations() {
             ))}
           </div>
         </>
+      ) : view === 'groups' ? (
+        <GroupsView nav={nav} />
       ) : (
         /* List view */
         <>
@@ -575,6 +685,7 @@ export default function Reservations() {
                         >
                           <td style={{ fontWeight: 600 }}>
                             {b.guest_name}
+                            <GroupTag groupId={b.reservation_group_id} nav={nav} />
                             {b.has_condition_notes && (
                               <span title="Has unit condition notes" style={{ marginLeft: 6, fontSize: 12, cursor: 'default' }}>📋</span>
                             )}
