@@ -1,4 +1,5 @@
 const db = require('../db');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 
@@ -206,15 +207,8 @@ function dailyCloseEmail(b) {
   const t = b.today;
   const lw = b.last_week;
   const cmp = (pct, suffix = '%') => pct == null ? '' :
-    `<div style="font-size:12px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? 'same as last week' : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs last week`}</div>`;
-  const tile = (label, value, sub) => `
-    <td style="width:33%;padding:5px;vertical-align:top;">
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${label}</div>
-        <div style="font-size:19px;font-weight:700;color:#111827;white-space:nowrap;">${value}</div>
-        ${sub || ''}
-      </div>
-    </td>`;
+    `<div style="font-size:12px;line-height:17px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? 'same as last week' : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs last week`}</div>`;
+  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.two });
   const section = (title, inner) => `
     <div style="margin-top:22px;">
       <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>${inner}
@@ -237,15 +231,15 @@ function dailyCloseEmail(b) {
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · compared with ${esc(fmtDay(lw.date))}</div>
 
-    <table style="width:100%;border-collapse:collapse;"><tr>
+    ${CARD_TABLE_OPEN}<tr>
       ${tile('Revenue', esc(fmtIDR(t.total)), cmp(b.change.total))}
-      ${tile('Occupancy', `${t.occupancy}%`, `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${t.rooms_sold} of ${b.sellable} rooms</div>${cmp(b.change.occupancy_pts, ' pts')}`)}
-      ${tile('Collected', esc(fmtIDR(b.collected.total)), '<div style="font-size:12px;color:#6b7280;margin-top:2px;">money received</div>')}
+      ${tile('Occupancy', `${t.occupancy}%`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${t.rooms_sold} of ${b.sellable} rooms</div>${cmp(b.change.occupancy_pts, ' pts')}`)}
+      ${tile('Collected', esc(fmtIDR(b.collected.total)), '<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">money received</div>')}
     </tr><tr>
       ${tile('ADR', esc(fmtIDR(t.adr)), cmp(b.change.adr))}
       ${tile('RevPAR', esc(fmtIDR(t.revpar)), '')}
-      ${tile('New bookings', `${b.new_bookings.length}`, `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${b.new_nights} nights · ${esc(fmtIDR(b.new_value))}</div>`)}
-    </tr></table>
+      ${tile('New bookings', `${b.new_bookings.length}`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${b.new_nights} nights · ${esc(fmtIDR(b.new_value))}</div>`)}
+    </tr>${CARD_TABLE_CLOSE}
 
     ${section('Revenue', table([{ label: '' }, { label: 'This day', right: true }, { label: 'Last week', right: true }], revRows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],

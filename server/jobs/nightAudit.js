@@ -1,5 +1,6 @@
 const db = require('../db');
 const nodemailer = require('nodemailer');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('../services/emailCards');
 const roomChargeService = require('../services/roomChargeService');
 const { resolveSmtp } = require('../services/mailer');
 
@@ -73,15 +74,8 @@ async function sendAuditEmail(propertyId, businessDate, data) {
 
   const tomorrow = nextDate(businessDate);
 
-  function statCard(label, value, color) {
-    return `
-      <td style="width:50%;padding:6px;">
-        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:18px 16px;">
-          <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">${label}</div>
-          <div style="font-size:20px;font-weight:700;color:${color || '#111827'};white-space:nowrap;">${value}</div>
-        </div>
-      </td>`;
-  }
+  // Equal-size summary cards, shared with the Smart Reports emails.
+  const statCard = (label, value, color) => card(label, value, '', { height: CARD_HEIGHT.none, valueColor: color || '#111827' });
 
   function listRows(items, emptyMsg) {
     if (!items.length) return `<tr><td colspan="3" style="padding:12px;color:#9ca3af;font-size:13px;">${emptyMsg}</td></tr>`;
@@ -133,20 +127,21 @@ async function sendAuditEmail(propertyId, businessDate, data) {
         <tr>
           <td style="background:#ffffff;padding:28px 32px;">
 
-            <!-- Stat grid (2x2) -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            <!-- Stat grid (3x2, equal cards) -->
+            <div style="margin-bottom:20px;">
+            ${CARD_TABLE_OPEN}
               <tr>
                 ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
                 ${statCard('Room Revenue (net)', fmtIDR(roomRevenue), '#111827')}
-              </tr>
-              <tr>
                 ${statCard('F&B Revenue (net)', fmtIDR(fnbRevenue), '#111827')}
-                ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
               </tr>
               <tr>
+                ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
                 ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
+                ${statCard('Arriving Today', arrivingToday.length, '#111827')}
               </tr>
-            </table>
+            ${CARD_TABLE_CLOSE}
+            </div>
 
             <!-- No-shows -->
             <div style="margin-bottom:24px;">

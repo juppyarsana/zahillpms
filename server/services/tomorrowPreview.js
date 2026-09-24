@@ -1,4 +1,5 @@
 const db = require('../db');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 
@@ -119,14 +120,7 @@ function tomorrowPreviewTelegram(b) {
 
 function tomorrowPreviewEmail(b) {
   const esc = telegram.escapeHtml;
-  const tile = (label, value, sub) => `
-    <td style="width:33%;padding:5px;vertical-align:top;">
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${label}</div>
-        <div style="font-size:19px;font-weight:700;color:#111827;white-space:nowrap;">${value}</div>
-        ${sub ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${sub}</div>` : ''}
-      </div>
-    </td>`;
+  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.one });
   const section = (title, inner) => `
     <div style="margin-top:22px;">
       <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>${inner}
@@ -148,7 +142,7 @@ function tomorrowPreviewEmail(b) {
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
 
-    <table style="width:100%;border-collapse:collapse;"><tr>
+    ${CARD_TABLE_OPEN}<tr>
       ${tile('Arriving', rooms(b.arrivals.rooms), `${b.arrivals.pax} pax${b.group_arrivals ? ` · ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`)}
       ${tile('Departing', rooms(b.departures.rooms), `${b.departures.pax} pax`)}
       ${tile('Occupancy', `${b.occupancy.pct}%`, `${b.occupancy.rooms} of ${b.occupancy.sellable} rooms`)}
@@ -156,7 +150,7 @@ function tomorrowPreviewEmail(b) {
       ${tile('Breakfast', `${b.breakfast_pax} pax`, 'that morning')}
       ${tile('Dinner', `${b.dinner_pax} pax`, 'that night')}
       ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), `from ${rooms(b.to_collect.rows.length)} leaving`)}
-    </tr></table>
+    </tr>${CARD_TABLE_CLOSE}
 
     ${section('Rooms to get ready', prepare)}
     ${section('Arriving', table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Stay' }, { label: 'Notes' }],

@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const db = require('../db');
 const { resolveSmtp } = require('./mailer');
 const telegram = require('./telegramService');
@@ -268,14 +269,7 @@ function morningBriefTelegram(b) {
 function morningBriefEmail(b) {
   const esc = telegram.escapeHtml;
   const a = b.attention;
-  const tile = (label, value, sub) => `
-    <td style="width:33%;padding:5px;vertical-align:top;">
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 14px;">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${label}</div>
-        <div style="font-size:20px;font-weight:700;color:#111827;white-space:nowrap;">${value}</div>
-        ${sub ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${sub}</div>` : ''}
-      </div>
-    </td>`;
+  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.one });
   const section = (title, inner) => `
     <div style="margin-top:22px;">
       <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>
@@ -304,7 +298,7 @@ function morningBriefEmail(b) {
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDateLong(b.date))}</div>
 
-    <table style="width:100%;border-collapse:collapse;"><tr>
+    ${CARD_TABLE_OPEN}<tr>
       ${tile('Arriving', rooms(b.arrivals.rooms), `${b.arrivals.pax} pax`)}
       ${tile('In-house', rooms(b.in_house.rooms), `${b.in_house.pax} pax`)}
       ${tile('Departing', rooms(b.departures.rooms), `${b.departures.pax} pax`)}
@@ -312,7 +306,7 @@ function morningBriefEmail(b) {
       ${tile('Tonight', `${b.tonight.pct}%`, `${b.tonight.rooms} of ${b.tonight.sellable} rooms`)}
       ${tile('Breakfast', `${b.breakfast_pax} pax`, b.dinner_pax > 0 ? `Dinner tonight: ${b.dinner_pax} pax` : '')}
       ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), `from ${rooms(b.to_collect.rooms)} leaving`)}
-    </tr></table>
+    </tr>${CARD_TABLE_CLOSE}
 
     ${section('Needs attention', attention)}
     ${section('Arriving today', table(

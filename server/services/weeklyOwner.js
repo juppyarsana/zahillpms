@@ -1,4 +1,5 @@
 const db = require('../db');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 
@@ -193,14 +194,8 @@ function weeklyOwnerEmail(b) {
   const w = b.week;
   const p = b.prev;
   const cmp = (pct, suffix = '%') => pct == null ? '' :
-    `<div style="font-size:12px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? 'same as the week before' : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs the week before`}</div>`;
-  const tile = (label, value, sub) => `
-    <td style="width:33%;padding:5px;vertical-align:top;">
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${label}</div>
-        <div style="font-size:19px;font-weight:700;color:#111827;white-space:nowrap;">${value}</div>${sub || ''}
-      </div>
-    </td>`;
+    `<div style="font-size:12px;line-height:17px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? 'same as the week before' : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs the week before`}</div>`;
+  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.two });
   const section = (title, inner) => `
     <div style="margin-top:22px;">
       <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>${inner}
@@ -210,7 +205,7 @@ function weeklyOwnerEmail(b) {
       <tr>${heads.map(h => `<th style="text-align:${h.right ? 'right' : 'left'};padding:6px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:600;font-size:11px;text-transform:uppercase;">${h.label}</th>`).join('')}</tr>
       ${rows.map(r => `<tr>${r.map((c, i) => `<td style="padding:8px;border-bottom:1px solid #f3f4f6;text-align:${heads[i].right ? 'right' : 'left'};">${c}</td>`).join('')}</tr>`).join('')}
     </table>` : `<div style="font-size:13px;color:#9ca3af;">${empty}</div>`;
-  const sub = t => `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${t}</div>`;
+  const sub = t => `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${t}</div>`;
 
   const revRows = [['Room', w.room, p.room], ['Meals (rate plan)', w.fnb, p.fnb], ['Extras', w.extras, p.extras]]
     .filter(([, a, c]) => a || c).map(([k, a, c]) => [k, esc(fmtIDR(a)), esc(fmtIDR(c))]);
@@ -227,7 +222,7 @@ function weeklyOwnerEmail(b) {
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.from, { weekday: 'short', day: 'numeric', month: 'short' }))} – ${esc(fmtDay(b.to, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))} · compared with the week before</div>
 
-    <table style="width:100%;border-collapse:collapse;"><tr>
+    ${CARD_TABLE_OPEN}<tr>
       ${tile('Revenue', esc(fmtIDR(w.total)), cmp(b.change.total))}
       ${tile('Occupancy', `${w.occupancy}%`, sub(`${w.rooms_sold} room-nights`) + cmp(b.change.occupancy_pts, ' pts'))}
       ${tile('ADR', esc(fmtIDR(w.adr)), cmp(b.change.adr))}
@@ -235,7 +230,7 @@ function weeklyOwnerEmail(b) {
       ${tile('RevPAR', esc(fmtIDR(w.revpar)), cmp(b.change.revpar))}
       ${tile('Booked · next 14 days', `${b.books.next14.occupancy}%`, sub(esc(fmtIDR(b.books.next14.revenue))))}
       ${tile('Booked · next 30 days', `${b.books.next30.occupancy}%`, sub(esc(fmtIDR(b.books.next30.revenue))))}
-    </tr></table>
+    </tr>${CARD_TABLE_CLOSE}
 
     ${section('Revenue', table([{ label: '' }, { label: 'Last week', right: true }, { label: 'Week before', right: true }], revRows, ''))}
     ${b.books.weak_nights.length ? section('⚠️ Weak nights ahead (under 30% booked)', `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#78350f;">${b.books.weak_nights.length > 7 ? `<b>${b.books.weak_nights.length} of the next 14 nights</b> are under 30% booked. The next ones:<br>` : ''}${b.books.weak_nights.slice(0, 7).map(n => `${esc(fmtDay(n.night, { weekday: 'short', day: 'numeric', month: 'short' }))} — ${n.occupancy}% (${n.rooms} of ${b.sellable})`).join('<br>')}<div style="font-size:12px;margin-top:6px;">Worth a promotion, a rate adjustment or a push on your channels.</div></div>`) : ''}

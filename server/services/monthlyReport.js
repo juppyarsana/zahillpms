@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const db = require('../db');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
@@ -202,14 +203,8 @@ function monthlyEmail(b) {
   const esc = telegram.escapeHtml;
   const c = b.month;
   const cmp = (pct, label, suffix = '%') => pct == null ? '' :
-    `<div style="font-size:12px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? `same as ${label}` : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs ${label}`}</div>`;
-  const tile = (label, value, sub) => `
-    <td style="width:33%;padding:5px;vertical-align:top;">
-      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">${label}</div>
-        <div style="font-size:19px;font-weight:700;color:#111827;white-space:nowrap;">${value}</div>${sub || ''}
-      </div>
-    </td>`;
+    `<div style="font-size:12px;line-height:17px;margin-top:2px;color:${pct > 0 ? '#15803d' : pct < 0 ? '#b91c1c' : '#6b7280'};">${pct === 0 ? `same as ${label}` : `${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}${suffix} vs ${label}`}</div>`;
+  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.two });
   const section = (title, inner) => `<div style="margin-top:22px;"><div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>${inner}</div>`;
   const table = (heads, rows, empty) => rows.length ? `
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -232,15 +227,15 @@ function monthlyEmail(b) {
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(c.label)}</div>
 
-    <table style="width:100%;border-collapse:collapse;"><tr>
+    ${CARD_TABLE_OPEN}<tr>
       ${tile('Revenue', esc(fmtIDR(c.total)), cmp(b.change.vs_prev, prevShort) + (b.last_year ? cmp(b.change.vs_last_year, 'last year') : ''))}
       ${tile(b.has_expenses ? 'Net income' : 'Money received', esc(fmtIDR(b.has_expenses ? c.net_income : b.collected.total)), '')}
-      ${tile('Occupancy', `${c.occupancy}%`, `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${c.rooms_sold} room-nights</div>` + cmp(b.change.occupancy_pts, prevShort, ' pts'))}
+      ${tile('Occupancy', `${c.occupancy}%`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${c.rooms_sold} room-nights</div>` + cmp(b.change.occupancy_pts, prevShort, ' pts'))}
     </tr><tr>
       ${tile('ADR', esc(fmtIDR(c.adr)), '')}
       ${tile('RevPAR', esc(fmtIDR(c.revpar)), '')}
-      ${tile('Agents owe', esc(fmtIDR(b.agents.total)), b.agents.overdue > 0 ? `<div style="font-size:12px;color:#b91c1c;margin-top:2px;">${esc(fmtIDR(b.agents.overdue))} overdue</div>` : '')}
-    </tr></table>
+      ${tile('Agents owe', esc(fmtIDR(b.agents.total)), b.agents.overdue > 0 ? `<div style="font-size:12px;line-height:17px;color:#b91c1c;margin-top:2px;">${esc(fmtIDR(b.agents.overdue))} overdue</div>` : '')}
+    </tr>${CARD_TABLE_CLOSE}
 
     ${section('Month by month', table(cols, rows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],
