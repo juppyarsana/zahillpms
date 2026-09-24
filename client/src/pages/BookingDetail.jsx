@@ -95,6 +95,12 @@ export default function BookingDetail() {
   const [chargeForm, setChargeForm] = useState({ type: 'misc', description: '', quantity: 1, unit_price: '' });
   const [chargeError, setChargeError] = useState('');
   const [activityBookings, setActivityBookings] = useState(null);
+  // Record Payment on the folio — settles what's owed on the stay incl.
+  // extras charged to the room (room lines first, the rest as extras).
+  const [recording, setRecording] = useState(false);
+  const [recForm, setRecForm] = useState({ amount: '', method: '', received_at: '', notes: '' });
+  const [recSaving, setRecSaving] = useState(false);
+  const [recError, setRecError] = useState('');
 
   async function load() {
     try {
@@ -105,6 +111,47 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { load(); }, [id]);
+
+  // Opened via Balance Due's "Record payment →": Folio tab + the form open.
+  useEffect(() => {
+    if (!booking || location.hash !== '#record-payment') return;
+    setTab('folio');
+  }, [booking?.id, location.hash]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (location.hash === '#record-payment' && estimate && parseFloat(estimate.balance_due) > 0 && !recording) openRecordPayment();
+  }, [estimate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function openRecordPayment() {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
+    setRecForm({
+      amount: estimate ? String(Math.max(0, Math.round(parseFloat(estimate.balance_due)))) : '',
+      method: methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || '',
+      received_at: today,
+      notes: '',
+    });
+    setRecError('');
+    setRecording(true);
+  }
+
+  async function saveRecordPayment() {
+    setRecSaving(true);
+    setRecError('');
+    try {
+      await api.post(`/api/folio/${id}/payment`, {
+        amount: parseFloat(recForm.amount), method: recForm.method, received_at: recForm.received_at, notes: recForm.notes,
+      });
+      setRecording(false);
+      if (location.hash === '#record-payment') nav(`/reservations/${id}`, { replace: true });
+      loadFolio();
+      load();
+    } catch (err) {
+      setRecError(err.response?.data?.error || 'Could not record the payment');
+    } finally {
+      setRecSaving(false);
+    }
+  }
 
   // Opened via a "Pay →" shortcut (e.g. from the group page): jump straight
   // to Payment Tracking once the booking has loaded.
@@ -853,6 +900,9 @@ export default function BookingDetail() {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                     Projected for the whole stay, including room/meal nights not yet posted below. Use this to know what the guest actually still owes.
                   </div>
+                  {parseFloat(estimate.balance_due) > 0 && !['cancelled', 'no_show'].includes(booking.status) && (
+                    <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
+                  )}
                 </div>
               )}
               {(() => {
@@ -1301,6 +1351,57 @@ export default function BookingDetail() {
               <button className="btn btn-secondary" onClick={() => setChangingGuest(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={doChangeGuest} disabled={guestSaving || !changingGuest}>
                 {guestSaving ? 'Saving…' : 'Save Guest'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {recording && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Record Payment — {booking.guest_name}</div>
+              <button className="btn btn-icon" onClick={() => setRecording(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {estimate && (
+                <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+                  <span>Still owed on this stay</span><span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(estimate.balance_due)}</span>
+                </div>
+              )}
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Amount received</label>
+                  <input className="form-input" type="number" min={1} value={recForm.amount} onChange={e => setRecForm(f => ({ ...f, amount: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Method</label>
+                  <select className="form-select" value={recForm.method} onChange={e => setRecForm(f => ({ ...f, method: e.target.value }))}>
+                    {paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed').map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Date received</label>
+                  <input className="form-input" type="date" value={recForm.received_at} onChange={e => setRecForm(f => ({ ...f, received_at: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <input className="form-input" value={recForm.notes} placeholder="e.g. BCA ref 1234 — extra beds" onChange={e => setRecForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+              </div>
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                Settles the room's unpaid deposit/balance first, then extras charged to the room (extra bed, laundry, activities…). A smaller amount is recorded as a part payment.
+              </div>
+              {recError && <div className="alert alert-error" style={{ marginTop: 10 }}>{recError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setRecording(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveRecordPayment}
+                disabled={recSaving || !(parseFloat(recForm.amount) > 0) || !recForm.method}>
+                {recSaving ? 'Saving…' : `Record ${fmtIDR(parseFloat(recForm.amount) || 0)}`}
               </button>
             </div>
           </div>

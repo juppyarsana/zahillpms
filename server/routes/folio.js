@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const { loadFolio, computeProforma, round2 } = require('../services/folioService');
 const { drawDocumentHeader } = require('../services/pdfHeader');
+const { recomputeBookingStatus } = require('../services/paymentStatusService');
 
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 
@@ -106,6 +107,94 @@ router.post('/:bookingId/charge', auth, async (req, res) => {
     res.status(201).json(charge);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/folio/:bookingId/payment — record money received against the
+// whole folio: { amount, method, received_at?, notes? }. Settles what's
+// owed on the stay, e.g. extras charged to the room (extra bed, laundry,
+// activities) that no room payment line covers — before this there was no
+// way to mark those paid, so a checked-out guest could stay "owing" forever.
+// Applied in order: the room's own pending deposit/balance lines first
+// (oldest first; a partial payment splits a line into a received part and a
+// pending remainder), so Payment Tracking and the booking status stay
+// right; whatever is left is recorded as an 'incidental' payment (extras
+// paid at the desk, migration 067 — never mistaken for the room's payment).
+router.post('/:bookingId/payment', auth, async (req, res) => {
+  const amount = round2(parseFloat(req.body.amount));
+  const { method, notes } = req.body;
+  const receivedAt = req.body.received_at || null;
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'amount must be more than 0' });
+  if (!method) return res.status(400).json({ error: 'Payment method required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [booking] } = await client.query(
+      'SELECT id, status FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.bookingId, req.propertyId]
+    );
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (['cancelled', 'no_show'].includes(booking.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot record a payment — booking is ${booking.status.replace('_', '-')}` });
+    }
+    const { rows: [pm] } = await client.query(
+      'SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]
+    );
+    if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
+
+    const cleanNotes = String(notes || '').trim() || null;
+    let remaining = amount;
+    const applied = [];
+    const { rows: lines } = await client.query(
+      `SELECT id, type, amount FROM payments
+       WHERE booking_id = $1 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0
+       ORDER BY CASE type WHEN 'deposit' THEN 0 ELSE 1 END, created_at FOR UPDATE`,
+      [booking.id]
+    );
+    for (const l of lines) {
+      if (remaining <= 0) break;
+      const lineAmt = parseFloat(l.amount);
+      if (remaining >= lineAmt) {
+        await client.query(
+          `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
+                               received_by = $3, notes = COALESCE($4, notes)
+           WHERE id = $5`,
+          [method, receivedAt, req.user.id, cleanNotes, l.id]
+        );
+        applied.push({ type: l.type, amount: lineAmt });
+        remaining = round2(remaining - lineAmt);
+      } else {
+        // Partial: keep the unpaid remainder pending, record the paid part.
+        await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [round2(lineAmt - remaining), l.id]);
+        await client.query(
+          `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+           VALUES ($1, $2, $3, 'received', $4, COALESCE($5::timestamptz, NOW()), $6, $7)`,
+          [booking.id, l.type, remaining, method, receivedAt, req.user.id, cleanNotes]
+        );
+        applied.push({ type: l.type, amount: remaining });
+        remaining = 0;
+      }
+    }
+    if (remaining > 0) {
+      await client.query(
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+         VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6)`,
+        [booking.id, remaining, method, receivedAt, req.user.id, cleanNotes || 'Folio payment (extras)']
+      );
+      applied.push({ type: 'incidental', amount: remaining });
+    }
+    await recomputeBookingStatus(client, booking.id);
+    await client.query(
+      'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [booking.id, `Payment recorded on folio: Rp ${Math.round(amount).toLocaleString('id-ID')} (${method})${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ amount, applied });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

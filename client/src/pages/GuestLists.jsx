@@ -110,7 +110,7 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
 }
 
 // Balance Due tab: one section of unpaid guests (departing / overdue / staying).
-function BalanceSection({ title, icon, rows, total, empty, onOpen }) {
+function BalanceSection({ title, icon, rows, total, empty, onOpen, onOpenPay }) {
   return (
     <div className="card mb-3">
       <div className="flex-between" style={{ marginBottom: 8 }}>
@@ -150,6 +150,12 @@ function BalanceSection({ title, icon, rows, total, empty, onOpen }) {
                     <td style={{ textAlign: 'right' }}>{fmtIDR(r.paid)}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: r.agent_billed ? 'var(--text-muted)' : 'var(--danger-text)' }}>
                       {fmtIDR(r.balance_due)}
+                      {onOpen && !r.agent_billed && (
+                        <div>
+                          <a href={`/reservations/${r.id}#record-payment`} style={{ fontSize: 11, fontWeight: 600 }}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); onOpenPay(r.id); }}>Record payment →</a>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -326,13 +332,13 @@ export default function GuestLists() {
             Balance = the whole stay (all nights + extras charged to the room + service/tax) minus payments received — the same as the Pro Forma on the booking's Folio tab. Guests with nothing to pay aren't listed.
           </div>
           <BalanceSection title="Departing" icon="🧳" rows={balance.departing} total={balance.totals.departing} onOpen={openBooking}
-            empty="No departing guests owe anything." />
+            onOpenPay={id => nav(`/reservations/${id}#record-payment`)} empty="No departing guests owe anything." />
           {balance.is_today && (
             <BalanceSection title="Overdue departures (still checked in)" icon="⏰" rows={balance.overdue} total={balance.totals.overdue} onOpen={openBooking}
-              empty="No overdue guests owe anything." />
+              onOpenPay={id => nav(`/reservations/${id}#record-payment`)} empty="No overdue guests owe anything." />
           )}
           <BalanceSection title="Staying" icon="🛏" rows={balance.staying} total={balance.totals.staying} onOpen={openBooking}
-            empty="No staying guests owe anything." />
+            onOpenPay={id => nav(`/reservations/${id}#record-payment`)} empty="No staying guests owe anything." />
         </>
       )) : data && (
         <>
