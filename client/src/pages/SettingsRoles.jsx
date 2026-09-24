@@ -11,6 +11,7 @@ export const MENU_DEFS = [
   { key: 'reservations',     label: 'Reservations',         group: 'Front Desk' },
   { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
+  { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
   { key: 'loyalty',          label: 'Loyalty',              group: 'Front Desk' },
   { key: 'sales',            label: 'Sales',                group: 'Guest Experience' },

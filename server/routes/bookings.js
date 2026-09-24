@@ -12,6 +12,8 @@ const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
 const telegramService = require('../services/telegramService');
 const { renderGuestReport } = require('../services/guestReportPdf');
+const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
+const { drawDocumentHeader } = require('../services/pdfHeader');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
 async function grossFactor(client, propertyId) {
@@ -265,6 +267,107 @@ router.get('/in-house', auth, async (req, res) => {
       ORDER BY b.check_out_date, g.name
     `, [req.propertyId]);
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/guest-lists?date=YYYY-MM-DD (default today, WITA)
+// Morning briefing for one date — every live booking lands in exactly one list:
+//   arrivals   — check-in on the date (expected, or already arrived)
+//   in_house   — staying over: arrived before the date, leaves after it
+//   departures — check-out on the date; for today, also guests still checked
+//                in past their check-out date (overdue), since they're still here
+// Meal counts for the kitchen: breakfast this morning = guests who slept here
+// last night (in-house + departures) on a plan that includes breakfast;
+// dinner tonight = guests sleeping here tonight (arrivals + in-house) on a
+// plan that includes dinner.
+// Shared by the JSON endpoint and the PDF download so both always show the
+// same lists. Returns null for a malformed date.
+async function loadGuestLists(propertyId, requestedDate) {
+  const today = roomCharge.todayWITA();
+  const date = requestedDate || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
+  {
+    const { rows } = await db.query(`
+      SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status,
+             b.special_requests, b.bed_preference, b.reservation_group_id,
+             g.name AS guest_name, g.nationality, g.whatsapp AS guest_whatsapp,
+             u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
+             rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
+             COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
+             COALESCE((SELECT SUM(p.amount) FROM payments p
+                        WHERE p.booking_id = b.id AND p.type IN ('deposit', 'balance')
+                          AND p.status = 'pending' AND p.amount > 0), 0) AS balance_due,
+             CASE WHEN b.check_in_date = $2::date THEN 'arrival'
+                  WHEN b.check_out_date <= $2::date THEN 'departure'
+                  ELSE 'in_house' END AS list,
+             (b.check_out_date < $2::date) AS overdue
+      FROM bookings b
+      JOIN guests g ON g.id = b.guest_id
+      JOIN units u ON u.id = b.unit_id
+      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+      WHERE b.property_id = $1
+        AND b.status NOT IN ('cancelled', 'no_show')
+        AND (
+          (b.check_in_date <= $2::date AND b.check_out_date >= $2::date)
+          OR ($2::date = $3::date AND b.status = 'checked_in' AND b.check_out_date < $2::date)
+        )
+      ORDER BY u.name, g.name
+    `, [propertyId, date, today]);
+
+    const lists = { arrivals: [], in_house: [], departures: [] };
+    for (const r of rows) {
+      if (r.list === 'arrival') lists.arrivals.push(r);
+      else if (r.list === 'departure') lists.departures.push(r);
+      else lists.in_house.push(r);
+    }
+    const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+    const mealPax = (list, flag) => list.filter(r => r[flag]).reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+    return {
+      date,
+      is_today: date === today,
+      ...lists,
+      summary: {
+        arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals) },
+        in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house) },
+        departures: { rooms: lists.departures.length, pax: pax(lists.departures) },
+        breakfast_pax: mealPax(lists.in_house, 'includes_breakfast') + mealPax(lists.departures, 'includes_breakfast'),
+        dinner_pax: mealPax(lists.arrivals, 'includes_dinner') + mealPax(lists.in_house, 'includes_dinner'),
+      },
+    };
+  }
+}
+
+router.get('/guest-lists', auth, async (req, res) => {
+  try {
+    const data = await loadGuestLists(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/guest-lists/pdf?date= — the same lists as a branded PDF
+// download (same header as the invoice / guest report).
+router.get('/guest-lists/pdf', auth, async (req, res) => {
+  try {
+    const data = await loadGuestLists(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const { rows: [property] } = await db.query(
+      `SELECT property_name, property_address, property_phone, property_email, logo_url
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="guest-lists-${data.date}.pdf"`);
+    doc.pipe(res);
+    drawDocumentHeader(doc, property || {}, { title: 'Guest Lists', refLine: fmtLongDate(data.date) });
+    renderGuestLists(doc, data);
+    doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

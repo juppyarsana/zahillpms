@@ -8,6 +8,7 @@ const ORDERED_PATHS = [
   { key: 'quick_checkin', path: '/quick-checkin' },
   { key: 'reservations',  path: '/reservations' },
   { key: 'checkin_full',  path: '/checkin' },
+  { key: 'guest_lists',   path: '/guest-lists' },
   { key: 'guests',        path: '/guests' },
   { key: 'operations',    path: '/operations' },
   { key: 'sales',         path: '/sales' },

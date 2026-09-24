@@ -14,6 +14,7 @@ import NewBooking from './pages/NewBooking';
 import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
+import GuestLists from './pages/GuestLists';
 import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
 import GuestProfile from './pages/GuestProfile';
@@ -61,6 +62,7 @@ function BottomNav() {
   const moreGroups = [
     { label: 'Front Desk', items: [
       can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
+      can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
       can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
     ]},
@@ -262,6 +264,7 @@ export default function App() {
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
+                  <Route path="/guest-lists"      element={<RequireMenu menuKey="guest_lists"><RequireModule moduleName="reservations"><GuestLists /></RequireModule></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />
