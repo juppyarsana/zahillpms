@@ -246,3 +246,5 @@ router.get('/revenue/export', auth, requireRole('owner'), async (req, res) => {
 });
 
 module.exports = router;
+// Shared with services/dailyClose.js (Smart Reports), so its figures match this page.
+module.exports.getReport = getReport;

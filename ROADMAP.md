@@ -1424,7 +1424,7 @@ Agreed plan (English only; times WITA):
 | Report | When | To | Status |
 |---|---|---|---|
 | Morning Brief | daily 07:00 | Manager (owner optional) — Telegram/email | ✅ built |
-| Daily Close (better night-audit summary, vs same day last week) | after night audit | Owner + Manager | 🔵 |
+| Daily Close (better night-audit summary, vs same day last week) | 00:30, after night audit | Owner + Manager | ✅ built |
 | Tomorrow Preview (arrivals, breakfast count) | daily 19:00 | Manager + FO/kitchen group | 🔵 |
 | Weekly Owner Report (last week vs previous, on-the-books next 14/30 days, source mix, agent AR, net income) | Mon 08:00 | Owner | 🔵 |
 | Monthly Report (PDF + CSV, accountant) | 1st, 08:00 | Owner (+ accountant) | 🔵 |

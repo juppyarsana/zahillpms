@@ -3,6 +3,7 @@ const db = require('../db');
 const { resolveSmtp } = require('./mailer');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
+const dailyClose = require('./dailyClose');
 
 // Reports & Alerts (migration 068): everything sent to a property's
 // notification_recipients (Settings → Reports & Alerts).
@@ -40,6 +41,15 @@ const REPORTS = {
     description: 'A price edited, a free or discounted upgrade or stay extension, or a guest checked in without full payment — with who did it and why.',
     defaultRoles: ['owner'],
     channels: ['telegram'],
+    paid: true,
+  },
+  daily_close: {
+    type: 'scheduled',
+    label: 'Daily Close',
+    when: 'Every night at 00:30, for the day that just ended',
+    description: "Yesterday's revenue (room, meals, extras), occupancy, ADR and RevPAR — each compared with the same day last week — money received by payment method, new bookings, cancellations, no-shows, and what's coming today.",
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram', 'email'],
     paid: true,
   },
   morning_brief: {
@@ -297,6 +307,7 @@ function morningBriefEmail(b) {
 
 const BUILDERS = {
   morning_brief: { build: buildMorningBrief, telegram: morningBriefTelegram, email: morningBriefEmail },
+  daily_close: { build: dailyClose.buildDailyClose, telegram: dailyClose.dailyCloseTelegram, email: dailyClose.dailyCloseEmail },
 };
 
 // ── Delivery ─────────────────────────────────────────────────────────────────
@@ -330,7 +341,8 @@ async function recordResult(recipientId, result) {
 // Builds `reportKey` for the property and sends it. recipientIds limits it to
 // those recipients (the settings page's "Send test"), whether or not they are
 // subscribed; otherwise every active recipient subscribed to the report.
-async function sendReport(propertyId, reportKey, { recipientIds = null } = {}) {
+// buildOptions: passed to the report's builder (e.g. { date } for Daily Close).
+async function sendReport(propertyId, reportKey, { recipientIds = null, buildOptions = {} } = {}) {
   if (REPORTS[reportKey]?.type === 'alert') return sendTestAlert(propertyId, reportKey, recipientIds || []);
   const builder = BUILDERS[reportKey];
   if (!builder) throw new Error(`Unknown report: ${reportKey}`);
@@ -345,7 +357,7 @@ async function sendReport(propertyId, reportKey, { recipientIds = null } = {}) {
       );
   if (!recipients.length) return [];
 
-  const data = await builder.build(propertyId);
+  const data = await builder.build(propertyId, buildOptions);
   const rendered = { telegram: builder.telegram(data), email: builder.email(data) };
   const ps = await propertySettings(propertyId);
   const results = [];
@@ -378,10 +390,10 @@ async function sendTestAlert(propertyId, key, recipientIds) {
   return results;
 }
 
-async function renderPreview(propertyId, reportKey) {
+async function renderPreview(propertyId, reportKey, buildOptions = {}) {
   const builder = BUILDERS[reportKey];
   if (!builder) return null;
-  const data = await builder.build(propertyId);
+  const data = await builder.build(propertyId, buildOptions);
   return { telegram: builder.telegram(data), email: builder.email(data) };
 }
 

@@ -102,7 +102,16 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  console.log('[Jobs] Smart Reports scheduled — Morning Brief daily 07:00 WITA');
+  // Daily Close — 00:30 WITA, after the 00:05 night audit has closed the day.
+  cron.schedule('30 0 * * *', async () => {
+    try {
+      await smartReports.runReportAllProperties('daily_close');
+    } catch (err) {
+      console.error('[Jobs] Daily Close cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Smart Reports scheduled — Daily Close 00:30, Morning Brief 07:00 WITA');
 
   // Telegram Connect links still waiting for a Start press survive a restart.
   require('../services/telegramLink').ensurePolling();
