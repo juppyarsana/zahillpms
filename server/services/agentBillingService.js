@@ -64,7 +64,9 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
     // charges are always posted (and committed) during the stay, well before
     // checkout; nothing in the checkout transaction touches folio_charges.
     const folio = await loadFolio(bookingId, propertyId);
-    const amount = computeCommission(source, folio ? folio.total : 0);
+    // Commission base excludes extras the guest paid at the desk (migration
+    // 067) — the agent didn't sell or bill those.
+    const amount = computeCommission(source, folio ? folio.agent_billable_total : 0);
     if (amount > 0) {
       const { rowCount } = await client.query(
         `INSERT INTO agent_commissions (property_id, booking_id, source_id, amount)

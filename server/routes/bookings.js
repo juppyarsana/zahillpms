@@ -365,7 +365,11 @@ router.get('/group/:groupId', auth, async (req, res) => {
 
     const statusBreakdown = {};
     bookings.forEach(b => { statusBreakdown[b.status] = (statusBreakdown[b.status] || 0) + 1; });
-    const paidAmount = paymentsByBooking.rows.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
+    // Room payments only — an 'incidental' payment (an extra paid at the desk,
+    // migration 067) settles its own sale, not the group's room balance.
+    const paidAmount = paymentsByBooking.rows
+      .filter(p => p.status === 'received' && (p.type === 'deposit' || p.type === 'balance'))
+      .reduce((s, p) => s + parseFloat(p.amount), 0);
     const totalAmount = bookings.reduce((s, b) => s + parseFloat(b.total_amount), 0);
     const netAmount = totalAmount - parseFloat(group.group_discount_amount || 0);
 

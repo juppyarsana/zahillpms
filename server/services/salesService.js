@@ -50,7 +50,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     await client.query('BEGIN');
     const productIds = items.map(i => i.product_id);
     const { rows: ownedProducts } = await client.query(
-      'SELECT id, category, track_stock, stock_quantity, name FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
+      'SELECT id, category, track_stock, stock_quantity, name, price FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
       [productIds, propertyId]
     );
     if (ownedProducts.length !== new Set(productIds).size) {
@@ -58,6 +58,10 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       return { error: 'One or more products not found' };
     }
     const productById = new Map(ownedProducts.map(p => [p.id, p]));
+    // Price always comes from the product row, never from the caller — the
+    // staff till (routes/sales.js) forwards the browser's cart as-is, and
+    // these amounts reach the folio, receipts and tax.
+    items = items.map(i => ({ ...i, unit_price: productById.get(i.product_id).price }));
 
     const outOfStock = items
       .filter(i => productById.get(i.product_id).track_stock && productById.get(i.product_id).stock_quantity < parseInt(i.quantity))

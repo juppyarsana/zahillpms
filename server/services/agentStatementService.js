@@ -1,5 +1,5 @@
 const db = require('../db');
-const { round2, computeFolioTotals } = require('./folioService');
+const { round2, computeFolioTotals, PAID_AT_DESK_SQL } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice C.
 //
@@ -39,8 +39,9 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
             g.name AS guest_name, u.name AS unit_name,
             bs.label AS source_label,
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
-            COALESCE((SELECT SUM(amount) FROM folio_charges
-                      WHERE booking_id = b.id AND is_voided = false), 0) AS charge_subtotal,
+            -- extras the guest paid at the desk are never billed to the agent
+            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations
                       WHERE booking_id = b.id), 0) AS allocated
      FROM bookings b
@@ -203,7 +204,8 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
     );
     if (!b || !['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status)) continue;
     const { rows: [{ subtotal }] } = await client.query(
-      'SELECT COALESCE(SUM(amount), 0) AS subtotal FROM folio_charges WHERE booking_id = $1 AND is_voided = false',
+      `SELECT COALESCE(SUM(fc.amount), 0) AS subtotal FROM folio_charges fc
+       WHERE fc.booking_id = $1 AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}`,
       [id]
     );
     const { rows: [{ allocated }] } = await client.query(
@@ -458,7 +460,8 @@ async function invoicePayload(propertyId, invoiceId) {
   );
   const { rows: bookings } = await db.query(
     `SELECT b.id AS booking_id, b.check_in_date, b.check_out_date, g.name AS guest_name, u.name AS unit_name,
-            COALESCE((SELECT SUM(amount) FROM folio_charges WHERE booking_id = b.id AND is_voided = false), 0) AS charge_subtotal,
+            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations WHERE booking_id = b.id), 0) AS allocated
      FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
      WHERE b.agent_invoice_id = $1 AND b.property_id = $2

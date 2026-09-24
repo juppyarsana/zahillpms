@@ -61,6 +61,14 @@ function computeFolioTotals(subtotal, taxRate, serviceChargeRate) {
 // `booking` also carries the resolved booking source (source_payment_status,
 // source_label, folio_status) via a LEFT JOIN so callers can decide whether
 // to offer a "Bill to Agent" checkout without a second query.
+// SQL predicate (folio_charges aliased `fc`): the charge is a sale the guest
+// already paid at the front desk ("Pay now", migration 067). It sits on the
+// folio so the stay's record is complete — offset there by its 'incidental'
+// payment — but it was never on credit, so it must never be billed to an
+// agent (statement, consolidated invoice, commission base). A room_charge
+// sale (incl. a resto tab settled to the room) is still agent-billable.
+const PAID_AT_DESK_SQL = `EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))`;
+
 async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status,
@@ -80,7 +88,8 @@ async function loadFolio(bookingId, propertyId) {
             -- migration 067) groups under Other. Categories mirror
             -- salesService.FNB_CATEGORIES (not imported: circular require).
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
-                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb
+                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb,
+            ${PAID_AT_DESK_SQL} AS paid_at_desk
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
@@ -103,10 +112,16 @@ async function loadFolio(bookingId, propertyId) {
     computeFolioTotals(rawSubtotal, settings?.tax_rate, settings?.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
+  // What an agent can be billed / paid commission on: everything except
+  // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
+  const agent_billable_total = computeFolioTotals(
+    charges.filter(c => !c.paid_at_desk).reduce((sum, c) => sum + parseFloat(c.amount), 0),
+    settings?.tax_rate, settings?.service_charge_rate
+  ).total;
 
   return {
     booking, charges, payments,
-    subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
+    subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, agent_billable_total,
     property: settings || {},
   };
 }
@@ -179,4 +194,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
