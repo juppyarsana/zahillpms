@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import GuestIdDocument from '../components/GuestIdDocument';
 import { SourceBadge } from '../context/SettingsContext';
 import CountrySelect from '../components/CountrySelect';
 
@@ -112,7 +113,9 @@ export default function GuestProfile() {
           <div className="card">
             <div className="card-title">Notes</div>
             <p style={{ fontSize: 13, color: guest.notes ? 'inherit' : 'var(--text-muted)' }}>{guest.notes||'No notes'}</p>
-            {guest.id_document_url && <div className="mt-2"><a href={guest.id_document_url} target="_blank" rel="noreferrer" className="btn btn-sm btn-secondary">🪪 View ID</a></div>}
+            {/* Loaded through the API with the login token — the old plain link to
+                /uploads/… returned "No token provided". */}
+            <GuestIdDocument guestId={guest.id} hasDocument={!!guest.id_document_url} onChanged={load} />
           </div>
         </div>
       )}

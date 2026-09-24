@@ -9,26 +9,12 @@ const multer = require('multer');
 function todayWITA() {
   return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 }
-const sharp = require('sharp');
-const path = require('path');
-const fs = require('fs');
 const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { renderRegistrationCard } = require('../services/registrationCardPdf');
-
-const UPLOAD_DIR = path.join(__dirname, '../uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const { saveIdDocument } = require('../services/idDocument');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-async function saveResized(buffer, filename) {
-  const outPath = path.join(UPLOAD_DIR, filename);
-  await sharp(buffer)
-    .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 82 })
-    .toFile(outPath);
-  return `/uploads/${filename}`;
-}
 
 const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 
@@ -146,8 +132,7 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
 
     let id_document_url = null;
     if (req.file) {
-      const filename = `${req.params.bookingId}-${Date.now()}.jpg`;
-      id_document_url = await saveResized(req.file.buffer, filename);
+      id_document_url = await saveIdDocument(req.file, req.params.bookingId);
       await client.query('UPDATE guests SET id_document_url = $1 WHERE id = $2', [id_document_url, scopedBooking.guest_id]);
     }
 
@@ -182,46 +167,96 @@ router.put('/:bookingId/complete', auth, upload.single('id_document'), async (re
 // prepares this ahead of arrival as often as at/after check-in — see
 // the Dashboard "Registration Card" shortcut and BookingDetail's
 // Download menu, both of which hit this same route.
+// Card data for one or more bookings — shared by the single card and the
+// "all arrival cards" PDF. `where` is appended after the joins; b = bookings.
+async function loadRegCardData(where, params) {
+  const { rows } = await db.query(
+    `SELECT
+       b.id AS booking_id,
+       g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
+       b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount,
+       u.name AS unit_name, u.type AS room_type_name,
+       bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
+       lt.name AS membership,
+       pm.label AS payment_method_label,
+       cu.name AS checked_in_by
+     FROM bookings b
+     JOIN guests g ON g.id = b.guest_id
+     JOIN units u ON u.id = b.unit_id
+     LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
+     -- "Checked In By" = whoever actually checked the guest in; blank (to
+     -- fill in by hand) on a card printed before arrival.
+     LEFT JOIN checkin_records cr ON cr.booking_id = b.id
+     LEFT JOIN users cu ON cu.id = cr.processed_by
+     LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = (
+       SELECT p.method FROM payments p
+       WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')
+       ORDER BY p.received_at DESC NULLS LAST LIMIT 1
+     )
+     ${where}`,
+    params
+  );
+  for (const d of rows) d.room_rate = d.nights > 0 ? Number(d.room_revenue || 0) / d.nights : null;
+  return rows;
+}
+
+async function loadRegCardProperty(propertyId) {
+  const { rows: [property] } = await db.query(
+    `SELECT property_name, property_address, property_phone, property_email, logo_url, registration_notice
+     FROM property_settings WHERE property_id = $1`,
+    [propertyId]
+  );
+  return property || {};
+}
+
+// One registration card on the current page.
+function drawRegCard(doc, property, data) {
+  drawDocumentHeader(doc, property, { title: 'Registration Card', refLine: `Booking #${String(data.booking_id).slice(0, 8).toUpperCase()}`, compact: true });
+  renderRegistrationCard(doc, { property, data });
+}
+
 router.get('/:bookingId/registration-card', auth, async (req, res) => {
   try {
-    const { rows: [data] } = await db.query(
-      `SELECT
-         g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
-         b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount,
-         u.name AS unit_name, u.type AS room_type_name,
-         bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
-         lt.name AS membership,
-         pm.label AS payment_method_label
-       FROM bookings b
-       JOIN guests g ON g.id = b.guest_id
-       JOIN units u ON u.id = b.unit_id
-       LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
-       LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
-       LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = (
-         SELECT p.method FROM payments p
-         WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')
-         ORDER BY p.received_at DESC NULLS LAST LIMIT 1
-       )
-       WHERE b.id = $1 AND b.property_id = $2`,
-      [req.params.bookingId, req.propertyId]
-    );
+    const [data] = await loadRegCardData('WHERE b.id = $1 AND b.property_id = $2', [req.params.bookingId, req.propertyId]);
     if (!data) return res.status(404).json({ error: 'Booking not found' });
-
-    const { rows: [property] } = await db.query(
-      `SELECT property_name, property_address, property_phone, property_email, logo_url, registration_notice
-       FROM property_settings WHERE property_id = $1`,
-      [req.propertyId]
-    );
-
-    data.room_rate = data.nights > 0 ? Number(data.room_revenue || 0) / data.nights : null;
-    data.checked_in_by = req.user.name;
+    const property = await loadRegCardProperty(req.propertyId);
 
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="registration-card-${req.params.bookingId.slice(0, 8)}.pdf"`);
     doc.pipe(res);
-    drawDocumentHeader(doc, property || {}, { title: 'Registration Card', refLine: `Booking #${req.params.bookingId.slice(0, 8).toUpperCase()}`, compact: true });
-    renderRegistrationCard(doc, { property: property || {}, data });
+    drawRegCard(doc, property, data);
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/checkin/registration-cards?date=YYYY-MM-DD — every arrival of the
+// date (check-in that day, not cancelled / no-show), one card per page, in
+// room order — so front desk can print them ahead (e.g. the evening before)
+// and have them ready when guests arrive.
+router.get('/registration-cards', auth, async (req, res) => {
+  const date = String(req.query.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  try {
+    const cards = await loadRegCardData(
+      `WHERE b.property_id = $1 AND b.check_in_date = $2::date AND b.status NOT IN ('cancelled', 'no_show')
+       ORDER BY u.name, g.name`,
+      [req.propertyId, date]
+    );
+    if (!cards.length) return res.status(404).json({ error: 'No arrivals on this date' });
+    const property = await loadRegCardProperty(req.propertyId);
+
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="registration-cards-${date}.pdf"`);
+    doc.pipe(res);
+    cards.forEach((data, i) => {
+      if (i > 0) doc.addPage();
+      drawRegCard(doc, property, data);
+    });
     doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });

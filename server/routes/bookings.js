@@ -784,6 +784,7 @@ router.get('/:id', auth, async (req, res) => {
     const bookingQ = db.query(`
       SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.email as guest_email,
              g.address as guest_address, g.id_number,
+             (g.id_document_url IS NOT NULL) AS guest_has_id_document,
              u.name as unit_name, u.bed_config, u.type as room_type_name,
              rp.code as rate_plan_code, rp.name as rate_plan_name,
              (b.deposit_amount = 0 OR b.deposit_amount IS NULL OR EXISTS(

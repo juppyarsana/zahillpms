@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import RegistrationCardModal from '../components/RegistrationCardModal';
 
 // Morning briefing: who arrives, who stays over and who leaves on a date —
 // read-only, with a branded PDF download (same as the other documents) for
@@ -175,13 +176,16 @@ function BalanceSection({ title, icon, rows, total, empty, onOpen, onOpenPay }) 
 }
 
 // One list section. `extra` = additional columns [{ label, render }].
-function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen }) {
+function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, action = null }) {
   return (
     <div className="card mb-3 guest-list-section">
-      <div className="flex-between" style={{ marginBottom: 8 }}>
+      <div className="flex-between" style={{ marginBottom: 8, gap: 10, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
-        <div className="text-muted" style={{ fontSize: 13 }}>
-          {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}
+        <div className="flex gap-2" style={{ alignItems: 'center' }}>
+          <span className="text-muted" style={{ fontSize: 13 }}>
+            {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}
+          </span>
+          {action}
         </div>
       </div>
       {rows.length === 0 ? (
@@ -231,6 +235,29 @@ export default function GuestLists() {
   const [tab, setTab] = useState('lists');
   const [balance, setBalance] = useState(null);
   const [kitchen, setKitchen] = useState(null);
+  // Registration Cards: one arrival's card, or all of the date's arrivals in
+  // one PDF (one card per page) to print ahead of time.
+  const [regCardFor, setRegCardFor] = useState(null);
+  const [printingCards, setPrintingCards] = useState(false);
+
+  async function printAllArrivalCards() {
+    setPrintingCards(true);
+    try {
+      const r = await api.get('/api/checkin/registration-cards', { params: { date }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `registration-cards-${date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Could not generate the registration cards');
+    } finally {
+      setPrintingCards(false);
+    }
+  }
 
   useEffect(() => {
     if (!date) return;
@@ -360,11 +387,21 @@ export default function GuestLists() {
 
           <ListSection
             title="Arriving" icon="🛬" rows={data.arrivals} summary={data.summary.arrivals} onOpen={openBooking}
+            action={data.arrivals.length > 0 && (
+              <button className="btn btn-sm btn-secondary" onClick={printAllArrivalCards} disabled={printingCards}
+                title="One PDF, one card per page — print ahead so they're ready when guests arrive">
+                {printingCards ? 'Generating…' : '🖨 Print all arrival cards'}
+              </button>
+            )}
             empty="No arrivals on this date."
             extra={[
               { label: 'Status', render: r => r.status === 'checked_in' || r.status === 'checked_out'
                   ? <span className="badge badge-green">Arrived</span>
                   : <span className="badge badge-amber">Expected</span> },
+              { label: 'Reg. Card', render: r => (
+                  <button className="btn btn-sm btn-secondary" title="Print this guest's Registration Card"
+                    onClick={e => { e.stopPropagation(); setRegCardFor(r.id); }}>🖨</button>
+                ) },
               // Room condition is live (now), so only meaningful for today's list.
               ...(isToday ? [{ label: 'Room', render: r => r.housekeeping_status === 'dirty'
                   ? <span className="badge badge-orange">Needs cleaning</span>
@@ -399,6 +436,7 @@ export default function GuestLists() {
 
         </>
       )}
+      {regCardFor && <RegistrationCardModal bookingId={regCardFor} onClose={() => setRegCardFor(null)} />}
     </div>
   );
 }

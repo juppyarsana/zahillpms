@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
+import RegistrationCardModal from '../components/RegistrationCardModal';
 import { useSettings } from '../context/SettingsContext';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
@@ -86,6 +87,9 @@ export default function QuickCheckIn() {
   const [depositBlockId, setDepositBlockId] = useState(null);
   // Set when front desk chose "Check-in dulu, bayar nanti" (with a reason).
   const [payLaterReason, setPayLaterReason] = useState(null);
+  // Registration Card for the guest being checked in (printed first, then
+  // the guest fills it in while front desk scans the ID).
+  const [regCardFor, setRegCardFor] = useState(null);
   const [groupCheckinLoading, setGroupCheckinLoading] = useState(null);
   const [groupCheckinResults, setGroupCheckinResults] = useState(null);
 
@@ -395,6 +399,10 @@ export default function QuickCheckIn() {
                 <div className="alert alert-error">{ciMsg}</div>
               ) : (
                 <>
+                  <button className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', marginBottom: 12 }}
+                    onClick={() => setRegCardFor(ciSelected.id)}>
+                    🖨 Cetak Kartu Registrasi
+                  </button>
                   <div
                     onClick={() => document.getElementById('qci-file').click()}
                     style={{
@@ -517,6 +525,9 @@ export default function QuickCheckIn() {
             )}
           </div>
         </div>
+      )}
+      {regCardFor && (
+        <RegistrationCardModal bookingId={regCardFor} onClose={() => setRegCardFor(null)} />
       )}
     </div>
   );

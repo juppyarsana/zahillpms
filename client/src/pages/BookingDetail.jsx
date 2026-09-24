@@ -7,6 +7,7 @@ import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
+import GuestIdDocument from '../components/GuestIdDocument';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -674,6 +675,7 @@ export default function BookingDetail() {
           <div className="mt-2">
             <Link to={`/guests/${booking.guest_id}`} className="btn btn-sm btn-secondary">View Profile</Link>
           </div>
+          <GuestIdDocument guestId={booking.guest_id} hasDocument={!!booking.guest_has_id_document} onChanged={load} compact />
         </div>
 
         <div className="card">

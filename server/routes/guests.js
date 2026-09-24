@@ -1,6 +1,10 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const multer = require('multer');
+const { saveIdDocument, idDocumentPath } = require('../services/idDocument');
+
+const uploadId = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // GET /api/guests
 router.get('/', auth, async (req, res) => {
@@ -151,6 +155,37 @@ router.delete('/:id', auth, async (req, res) => {
     res.json({ message: 'Guest deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/guests/:id/id-document — the guest's ID photo / scan, only for
+// staff of the guest's own property (the file itself is never public).
+router.get('/:id/id-document', auth, async (req, res) => {
+  try {
+    const { rows: [g] } = await db.query('SELECT id_document_url FROM guests WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!g) return res.status(404).json({ error: 'Guest not found' });
+    const file = idDocumentPath(g.id_document_url);
+    if (!file) return res.status(404).json({ error: 'No ID document on file' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.sendFile(file);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/guests/:id/id-document — add or replace the guest's ID (field
+// "id_document": a photo, or a PDF from the scanner). Front desk often scans
+// the ID after the guest hands it over, separately from the check-in steps.
+router.post('/:id/id-document', auth, uploadId.single('id_document'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'id_document file required' });
+  try {
+    const { rows: [g] } = await db.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!g) return res.status(404).json({ error: 'Guest not found' });
+    const url = await saveIdDocument(req.file, `guest-${g.id}`);
+    await db.query('UPDATE guests SET id_document_url = $1 WHERE id = $2 AND property_id = $3', [url, g.id, req.propertyId]);
+    res.status(201).json({ has_id_document: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

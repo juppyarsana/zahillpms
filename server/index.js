@@ -40,7 +40,9 @@ app.use('/api/', limiter);
 
 // Protected uploads (served only to authenticated users via separate route)
 const auth = require('./middleware/auth');
-app.use('/uploads', auth, express.static(path.join(__dirname, 'uploads')));
+// (uploads/ is no longer served statically: guest ID documents are personal
+// data and are only served per property via GET /api/guests/:id/id-document.
+// Logos and Guest Board images keep their own public routes below.)
 
 // Board card images are guest-facing — served without auth
 app.use('/board-images', express.static(path.join(__dirname, 'uploads/board')));

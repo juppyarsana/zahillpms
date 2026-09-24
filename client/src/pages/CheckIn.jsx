@@ -73,6 +73,9 @@ export default function CheckIn() {
   const [loading, setLoading]       = useState(false);
   const [msg, setMsg]               = useState('');
   const [showRegCard, setShowRegCard] = useState(false);
+  // Registration Card straight from an arrival row — printed as the guest
+  // walks up (or ahead of time), before the check-in steps.
+  const [regCardFor, setRegCardFor] = useState(null);
   const [depositBlockId, setDepositBlockId] = useState(null);
   // Set when front desk chose "Check in anyway — pay later" (with a reason).
   const [payLaterReason, setPayLaterReason] = useState(null);
@@ -293,6 +296,13 @@ export default function CheckIn() {
                     </div>
                     <button
                       className="btn btn-ghost btn-sm"
+                      style={{ marginTop: 4, padding: '2px 8px', fontSize: 11 }}
+                      onClick={() => setRegCardFor(b.id)}
+                    >
+                      🖨 Reg. Card
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
                       style={{ marginTop: 4, padding: '2px 8px', fontSize: 11, color: 'var(--text-muted)' }}
                       onClick={() => markNoShow(b)}
                     >
@@ -488,6 +498,9 @@ export default function CheckIn() {
                   {/* ── Step 1: Guest Info Review ── */}
                   {step === 1 && (
                     <>
+                      <button className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }} onClick={() => setShowRegCard(true)}>
+                        🖨 Print Registration Card
+                      </button>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <Row label="Guest"      value={selected.guest_name} bold />
                         <Row label="Nationality" value={selected.nationality || '—'} />
@@ -670,6 +683,9 @@ export default function CheckIn() {
             )}
           </div>
         </div>
+      )}
+      {regCardFor && (
+        <RegistrationCardModal bookingId={regCardFor} onClose={() => setRegCardFor(null)} />
       )}
       {showRegCard && selected && (
         <RegistrationCardModal bookingId={selected.id} onClose={() => setShowRegCard(false)} />
