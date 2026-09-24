@@ -840,7 +840,7 @@ router.post('/group', auth, async (req, res) => {
     const { rows: guestRows } = await client.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
     if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
 
-    const { rows: unitRows } = await client.query('SELECT id FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
+    const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
     if (unitRows.length !== unitIds.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'One or more units not found' }); }
 
     for (const unitId of unitIds) {
@@ -852,7 +852,8 @@ router.post('/group', auth, async (req, res) => {
       `, [unitId, check_in_date, check_out_date, req.propertyId]);
       if (conflict.rows.length > 0) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: `Unit ${unitId} is not available for the selected dates` });
+        const unitName = unitRows.find(u => u.id === unitId)?.name || unitId;
+        return res.status(409).json({ error: `Room ${unitName} is not available for the selected dates` });
       }
     }
 

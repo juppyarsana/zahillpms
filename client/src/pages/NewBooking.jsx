@@ -83,6 +83,18 @@ function AllotmentNote({ allotment, source, checkIn, sources }) {
   );
 }
 
+// YYYY-MM-DD date math on local calendar dates (toISOString is UTC).
+function addDaysYmd(ymd, n) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+function nightsBetween(a, b) {
+  const [y1, m1, d1] = a.split('-').map(Number);
+  const [y2, m2, d2] = b.split('-').map(Number);
+  return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
+}
+
 const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '' };
 
 const BED_PREFS = [
@@ -100,7 +112,7 @@ export default function NewBooking() {
   const [guestSearch, setGuestSearch] = useState('');
   const [form, setForm] = useState({
     guest_id: '',
-    check_in_date: sp.get('date') || '', check_out_date: '',
+    check_in_date: sp.get('date') || '', check_out_date: sp.get('date') ? addDaysYmd(sp.get('date'), 1) : '',
     source: 'direct', deposit_pct: 50, special_requests: '', status: 'pending',
     discount_type: '', discount_value: '',
   });
@@ -113,8 +125,50 @@ export default function NewBooking() {
   const [availabilities, setAvailabilities] = useState([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [creditCheck, setCreditCheck] = useState(null);
+  // Nights ↔ check-out stay in sync: type nights and check-out follows, pick
+  // check-out and nights follows; moving check-in keeps the number of nights.
+  const [nights, setNights] = useState(sp.get('date') ? '1' : '');
+  // Every unit's availability for the chosen dates (booked / free), so the
+  // Unit dropdown can grey out rooms that are taken.
+  const [unitAvail, setUnitAvail] = useState({});
 
   const isGroup = rooms.length > 1;
+
+  function onCheckIn(v) {
+    const n = parseInt(nights, 10) || 1;
+    setNights(String(n));
+    setForm(f => ({ ...f, check_in_date: v, check_out_date: v ? addDaysYmd(v, n) : f.check_out_date }));
+  }
+  function onNights(v) {
+    setNights(v);
+    const n = parseInt(v, 10);
+    if (n >= 1 && form.check_in_date) setForm(f => ({ ...f, check_out_date: addDaysYmd(f.check_in_date, n) }));
+  }
+  function onCheckOut(v) {
+    setForm(f => ({ ...f, check_out_date: v }));
+    if (v && form.check_in_date && v > form.check_in_date) setNights(String(nightsBetween(form.check_in_date, v)));
+  }
+
+  useEffect(() => {
+    if (!form.check_in_date || !form.check_out_date || form.check_out_date <= form.check_in_date) { setUnitAvail({}); return; }
+    api.get('/api/bookings/transfer-availability', { params: { check_in: form.check_in_date, check_out: form.check_out_date } })
+      .then(r => setUnitAvail(Object.fromEntries(r.data.map(u => [u.id, u]))))
+      .catch(() => setUnitAvail({}));
+  }, [form.check_in_date, form.check_out_date]);
+
+  // Dropdown label + whether it can be picked for room row `i`.
+  function unitOption(u, i) {
+    const otherRow = rooms.findIndex((r, j) => j !== i && r.unit_id === u.id);
+    const a = unitAvail[u.id];
+    let note = '';
+    let blocked = false;
+    if (otherRow !== -1) { note = ` — already in this group (Room ${otherRow + 1})`; blocked = true; }
+    else if (a && !a.available) { note = ` — booked${a.conflict?.guest_name ? ` (${a.conflict.guest_name})` : ''}`; blocked = true; }
+    // Out of order is a current status, not date-based — the room may be back
+    // by these dates, so it's flagged but still selectable.
+    else if (u.status === 'out_of_order') note = ' — out of order now';
+    return { label: `${u.name}${u.type ? ` · ${u.type}` : ''}${note}`, disabled: blocked && rooms[i].unit_id !== u.id };
+  }
 
   useEffect(() => {
     api.get('/api/units').then(r => setUnits(r.data));
@@ -304,11 +358,17 @@ export default function NewBooking() {
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Check-in *</label>
-              <input className="form-input" type="date" value={form.check_in_date} onChange={e => set('check_in_date', e.target.value)} required />
+              <input className="form-input" type="date" value={form.check_in_date} onChange={e => onCheckIn(e.target.value)} required />
+            </div>
+            <div className="form-group" style={{ maxWidth: 110 }}>
+              <label className="form-label">Nights</label>
+              <input className="form-input" type="number" min={1} max={365} inputMode="numeric" value={nights}
+                onChange={e => onNights(e.target.value)} placeholder="1" />
             </div>
             <div className="form-group">
               <label className="form-label">Check-out *</label>
-              <input className="form-input" type="date" value={form.check_out_date} min={form.check_in_date} onChange={e => set('check_out_date', e.target.value)} required />
+              <input className="form-input" type="date" value={form.check_out_date} min={form.check_in_date ? addDaysYmd(form.check_in_date, 1) : undefined}
+                onChange={e => onCheckOut(e.target.value)} required />
             </div>
           </div>
           <div className="form-group">
@@ -340,8 +400,8 @@ export default function NewBooking() {
                 <div className="form-group">
                   <label className="form-label">Unit *</label>
                   <select className="form-select" value={room.unit_id} onChange={e => setRoom(i, 'unit_id', e.target.value)} required>
-                    <option value="">Select unit…</option>
-                    {units.map(u => <option key={u.id} value={u.id}>{u.name}{u.type ? ` · ${u.type}` : ''}</option>)}
+                    <option value="">{Object.keys(unitAvail).length ? 'Select unit…' : 'Select unit… (pick dates first to see what\'s free)'}</option>
+                    {units.map(u => { const o = unitOption(u, i); return <option key={u.id} value={u.id} disabled={o.disabled}>{o.label}</option>; })}
                   </select>
                 </div>
                 <div className="form-group">
