@@ -200,7 +200,7 @@ router.get('/:bookingId/registration-card', auth, async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="registration-card-${req.params.bookingId.slice(0, 8)}.pdf"`);
     doc.pipe(res);
-    drawDocumentHeader(doc, property || {}, { title: 'Registration Card', refLine: `Booking #${req.params.bookingId.slice(0, 8).toUpperCase()}` });
+    drawDocumentHeader(doc, property || {}, { title: 'Registration Card', refLine: `Booking #${req.params.bookingId.slice(0, 8).toUpperCase()}`, compact: true });
     renderRegistrationCard(doc, { property: property || {}, data });
     doc.end();
   } catch (err) {

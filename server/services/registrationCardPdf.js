@@ -51,7 +51,7 @@ function renderRegistrationCard(doc, { property, data }) {
   const titleY = doc.y;
   doc.fontSize(13).font('Helvetica-Bold').fillColor('#000')
     .text(title, 50, titleY, { width: 495, align: 'center' });
-  doc.y = titleY + doc.heightOfString(title, { width: 495 }) + 10;
+  doc.y = titleY + doc.heightOfString(title, { width: 495 }) + 8;
 
   // Room Rate / Deposit are hidden for a booking source with
   // publish_rate=false (OTA/travel-agent — migration 065): the rate the
@@ -100,28 +100,44 @@ function renderRegistrationCard(doc, { property, data }) {
   doc.y += 12;
 
   // ── House rules (plain text, not boxed — matches the original) ────
-  if (property.registration_notice) {
+  // Saved from a browser textarea, the notice has Windows line endings -
+  // pdfkit's standard font prints the stray carriage return as a stray
+  // glyph, so normalise to plain newlines first.
+  const notice = String(property.registration_notice || '').replace(/\r\n?/g, '\n').trim();
+  if (notice) {
     if (doc.y > 600) doc.addPage();
     const headingY = doc.y;
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#000')
       .text('PLEASE NOTE', 50, headingY, { width: 495 });
     const bodyY = headingY + doc.heightOfString('PLEASE NOTE', { width: 495 }) + 4;
     doc.font('Helvetica').fontSize(8).fillColor('#333')
-      .text(property.registration_notice, 50, bodyY, { width: 495, lineGap: 2 });
-    const bodyHeight = doc.heightOfString(property.registration_notice, { width: 495, lineGap: 2 });
+      .text(notice, 50, bodyY, { width: 495, lineGap: 2 });
+    const bodyHeight = doc.heightOfString(notice, { width: 495, lineGap: 2 });
     doc.fillColor('#000');
     doc.y = bodyY + bodyHeight + 16;
   }
 
-  if (doc.y > 660) doc.addPage();
+  // ── Guest signature ────────────────────────────────────────────────
+  // Same "GUEST SIGNATURE :" label + line as the original form, centred on
+  // the page. The line sits at the bottom of whatever space is left above
+  // the room & booking table (which stays at the foot of the page), so the
+  // guest gets as much room to sign as the page allows — kept on one page.
+  const BOTTOM_TABLE_H = 38 + 38 + 44;
+  const PAGE_BOTTOM = doc.page.height - 50;
+  let sigH = PAGE_BOTTOM - BOTTOM_TABLE_H - 16 - doc.y;
+  if (sigH < 70) { doc.addPage(); sigH = 150; }
+  sigH = Math.min(sigH, 280);
+  const SIG_W = 240;
+  const sigX = (doc.page.width - SIG_W) / 2;
+  const sigTop = doc.y;
   doc.font('Helvetica').fontSize(9).fillColor('#000')
-    .text('GUEST SIGNATURE :', 50, doc.y);
-  doc.y += 32;
-  doc.moveTo(50, doc.y).lineTo(260, doc.y).strokeColor('#000').stroke();
-  doc.y += 20;
+    .text('GUEST SIGNATURE :', sigX, sigTop, { width: SIG_W, align: 'center' });
+  const lineY = sigTop + sigH - 6;
+  doc.moveTo(sigX, lineY).lineTo(sigX + SIG_W, lineY).lineWidth(0.75).strokeColor('#000').stroke();
+  doc.x = 50;
+  doc.y = sigTop + sigH + 16;
 
   // ── Room & booking details ─────────────────────────────────────────
-  if (doc.y > 700) doc.addPage();
   gridRow(doc, {
     cells: [
       { label: 'Room Number', value: data.unit_name },

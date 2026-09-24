@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
-const sharp = require('sharp');
+const { processLogo } = require('../services/logoImage');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
@@ -147,10 +147,9 @@ router.post('/properties/:id/logo', uploadLogo.single('logo'), async (req, res) 
   if (!req.file) return res.status(400).json({ error: 'logo file required' });
   try {
     const filename = `${req.params.id}-${Date.now()}.png`;
-    await sharp(req.file.buffer)
-      .resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true })
-      .png()
-      .toFile(path.join(LOGO_DIR, filename));
+    // Trims the empty border around the artwork, then fits 512×512 — see
+    // services/logoImage.js for why.
+    fs.writeFileSync(path.join(LOGO_DIR, filename), await processLogo(req.file.buffer));
     const logoUrl = `/property-logos/${filename}`;
 
     const { rows } = await db.query(
