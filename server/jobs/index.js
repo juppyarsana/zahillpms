@@ -120,7 +120,16 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  console.log('[Jobs] Smart Reports scheduled — Daily Close 00:30, Morning Brief 07:00, Tomorrow Preview 19:00 WITA');
+  // Weekly Owner Report — Monday 08:00 WITA, for last week (Mon–Sun).
+  cron.schedule('0 8 * * 1', async () => {
+    try {
+      await smartReports.runReportAllProperties('weekly_owner');
+    } catch (err) {
+      console.error('[Jobs] Weekly Owner Report cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Smart Reports scheduled — Daily Close 00:30, Morning Brief 07:00, Tomorrow Preview 19:00, Weekly Mon 08:00 WITA');
 
   // Telegram Connect links still waiting for a Start press survive a restart.
   require('../services/telegramLink').ensurePolling();

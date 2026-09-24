@@ -5,6 +5,7 @@ const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 const dailyClose = require('./dailyClose');
 const tomorrowPreview = require('./tomorrowPreview');
+const weeklyOwner = require('./weeklyOwner');
 
 // Reports & Alerts (migration 068): everything sent to a property's
 // notification_recipients (Settings → Reports & Alerts).
@@ -59,6 +60,15 @@ const REPORTS = {
     when: 'Every day at 19:00',
     description: "Tomorrow's arrivals (requests, bed setup, groups), rooms to get ready (not cleaned, same-day turnover, out of order), departures and balances to collect, and the breakfast and dinner count — so the team and the kitchen can plan.",
     defaultRoles: ['manager', 'front_desk', 'kitchen'],
+    channels: ['telegram', 'email'],
+    paid: true,
+  },
+  weekly_owner: {
+    type: 'scheduled',
+    label: 'Weekly Owner Report',
+    when: 'Every Monday at 08:00, for last week',
+    description: "Last week vs the week before (revenue, occupancy, ADR, RevPAR, net income when expenses are recorded), what's already booked for the next 14 and 30 days with the weak nights to push, booking pace, where bookings came from, and what agents owe.",
+    defaultRoles: ['owner'],
     channels: ['telegram', 'email'],
     paid: true,
   },
@@ -318,6 +328,7 @@ function morningBriefEmail(b) {
 const BUILDERS = {
   morning_brief: { build: buildMorningBrief, telegram: morningBriefTelegram, email: morningBriefEmail },
   daily_close: { build: dailyClose.buildDailyClose, telegram: dailyClose.dailyCloseTelegram, email: dailyClose.dailyCloseEmail },
+  weekly_owner: { build: weeklyOwner.buildWeeklyOwner, telegram: weeklyOwner.weeklyOwnerTelegram, email: weeklyOwner.weeklyOwnerEmail },
   tomorrow_preview: { build: tomorrowPreview.buildTomorrowPreview, telegram: tomorrowPreview.tomorrowPreviewTelegram, email: tomorrowPreview.tomorrowPreviewEmail },
 };
 
