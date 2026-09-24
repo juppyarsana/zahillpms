@@ -50,7 +50,7 @@ export default function BookingDetail() {
   const [editDetailsForm, setEditDetailsForm] = useState({});
   const [editDetailsLoading, setEditDetailsLoading] = useState(false);
   const [editingPrice, setEditingPrice] = useState(false);
-  const [priceForm, setPriceForm] = useState({ total_amount: '', reason: '' });
+  const [priceForm, setPriceForm] = useState({ total_amount: '', reason: '', received_was_typo: null });
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState('');
   const [priceResult, setPriceResult] = useState(null); // { old_total, new_total, received, credit }
@@ -333,7 +333,7 @@ export default function BookingDetail() {
   // everything derived from it (room/F&B split, posted folio nights, pending
   // deposit/balance lines, discount) — see PUT /api/bookings/:id/price.
   function openEditPrice() {
-    setPriceForm({ total_amount: String(parseFloat(booking.total_amount) || ''), reason: '' });
+    setPriceForm({ total_amount: String(parseFloat(booking.total_amount) || ''), reason: '', received_was_typo: null });
     setPriceError('');
     setPriceResult(null);
     setEditingPrice(true);
@@ -346,6 +346,7 @@ export default function BookingDetail() {
       const { data } = await api.put(`/api/bookings/${id}/price`, {
         total_amount: parseFloat(priceForm.total_amount),
         reason: priceForm.reason.trim(),
+        ...(priceForm.received_was_typo !== null ? { received_was_typo: priceForm.received_was_typo } : {}),
       });
       setPriceResult(data);
       setFolio(null);
@@ -411,6 +412,8 @@ export default function BookingDetail() {
   // correction on a fully-paid booking adds a second balance line for the
   // difference — so render and total every line, not just the first.
   const roomPaymentLines = (booking.payments || []).filter(p => (p.type === 'deposit' || p.type === 'balance') && parseFloat(p.amount) > 0);
+  const roomPaid = roomPaymentLines.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
+  const bookingNet = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
   const pendingBalance = roomPaymentLines
     .filter(p => p.type === 'balance' && p.status !== 'received')
     .reduce((s, p) => s + parseFloat(p.amount), 0);
@@ -633,8 +636,23 @@ export default function BookingDetail() {
         <div className="divider" />
         <div className="flex-between" style={{ fontWeight: 700 }}>
           <span>Total</span>
-          <span>{fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0))}</span>
+          <span>{fmtIDR(bookingNet)}</span>
         </div>
+        {roomPaymentLines.length > 0 && (
+          <>
+            <div className="flex-between" style={{ fontSize: 13, marginTop: 6 }}>
+              <span className="text-muted">Paid</span>
+              <span>{fmtIDR(roomPaid)}</span>
+            </div>
+            {Math.abs(bookingNet - roomPaid) >= 1 && (
+              <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
+                color: roomPaid > bookingNet ? 'var(--color-danger, #dc2626)' : undefined }}>
+                <span>{roomPaid > bookingNet ? 'Overpaid — refund to guest' : 'Balance due'}</span>
+                <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {booking.special_requests && (
@@ -1011,7 +1029,9 @@ export default function BookingDetail() {
           : 0;
         const newNet = Number.isFinite(newGross) ? newGross - newDiscount : null;
         const received = roomPaymentLines.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
-        const valid = Number.isFinite(newGross) && newGross >= 0 && priceForm.reason.trim().length > 0;
+        const overReceived = newNet !== null && received > 0 && newNet < received;
+        const valid = Number.isFinite(newGross) && newGross >= 0 && priceForm.reason.trim().length > 0
+          && (!overReceived || priceForm.received_was_typo !== null);
         return (
           <div className="modal-backdrop">
             <div className="modal">
@@ -1024,6 +1044,7 @@ export default function BookingDetail() {
                   <div className="modal-body">
                     <div className="alert alert-success" style={{ marginBottom: 12 }}>
                       Price changed from {fmtIDR(priceResult.old_total)} to <strong>{fmtIDR(priceResult.new_total)}</strong>.
+                      {priceResult.received_corrected && ' The received payment was corrected to match.'}
                     </div>
                     {priceResult.credit > 0 ? (
                       <div className="alert alert-error">
@@ -1067,13 +1088,25 @@ export default function BookingDetail() {
                       <textarea className="form-textarea" value={priceForm.reason} placeholder="e.g. FO typed 1,500,000 instead of 1,050,000"
                         onChange={e => setPriceForm(f => ({ ...f, reason: e.target.value }))} />
                     </div>
-                    {newNet !== null && received > 0 && newNet < received && (
-                      <div className="alert alert-error" style={{ marginBottom: 8 }}>
-                        The guest has already paid {fmtIDR(received)}, more than the new price. The difference stays as a credit on the folio — refund it by hand.
+                    {overReceived && (
+                      <div className="form-group" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          <strong>{fmtIDR(received)}</strong> is recorded as received — more than the new price. What did the guest actually pay?
+                        </div>
+                        <label className="flex gap-2" style={{ fontSize: 13, cursor: 'pointer', marginBottom: 6, alignItems: 'flex-start' }}>
+                          <input type="radio" name="received_was_typo" checked={priceForm.received_was_typo === true}
+                            onChange={() => setPriceForm(f => ({ ...f, received_was_typo: true }))} />
+                          <span>Guest paid {fmtIDR(newNet)} — the received amount was the same typo. <b>Correct it to {fmtIDR(newNet)}.</b></span>
+                        </label>
+                        <label className="flex gap-2" style={{ fontSize: 13, cursor: 'pointer', alignItems: 'flex-start' }}>
+                          <input type="radio" name="received_was_typo" checked={priceForm.received_was_typo === false}
+                            onChange={() => setPriceForm(f => ({ ...f, received_was_typo: false }))} />
+                          <span>Guest really paid {fmtIDR(received)} — keep it. {fmtIDR(received - newNet)} is owed back to the guest (refund by hand).</span>
+                        </label>
                       </div>
                     )}
                     <div className="alert alert-success">
-                      Payments already received stay as they are; unpaid deposit/balance amounts, the folio's room charges and the revenue reports are updated to the new price. The change and reason are saved in Edit History.
+                      Payments already received stay as they are (unless corrected above); unpaid deposit/balance amounts, the folio's room charges and the revenue reports are updated to the new price. The change and reason are saved in Edit History.
                     </div>
                     {priceError && <div className="alert alert-error" style={{ marginTop: 8 }}>{priceError}</div>}
                   </div>

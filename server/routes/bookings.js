@@ -862,8 +862,12 @@ router.put('/:id/dates', auth, async (req, res) => {
 // posted room/F&B nights (void + re-post), and the pending deposit/balance
 // lines. Received payments are never touched: if the new price is higher than
 // everything already received, the difference becomes a pending balance line;
-// if it's lower, the overpayment shows as a credit on the folio (no refund
-// flow yet — returned by hand). An unpaid agent commission is re-derived.
+// if it's lower than what's recorded as received, the owner must say which is
+// true (`received_was_typo`): the received amount was typed from the same
+// wrong price (the guest actually paid the new price) → the received lines
+// are corrected down to it; or the guest really paid more → the overpayment
+// stays as a credit on the folio (no refund flow yet — returned by hand).
+// An unpaid agent commission is re-derived.
 // Blocked for cancelled/no-show bookings, group rooms (group discount/deposit
 // are prorated across rooms) and stays already invoiced to an agent.
 router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
@@ -915,9 +919,38 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
       "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY created_at FOR UPDATE",
       [before.id]
     );
-    const received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
-    let remaining = round2(payable - received);
+    let received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
     let depositAmount = parseFloat(before.deposit_amount || 0);
+
+    // More recorded as received than the new price: was the received amount a
+    // typo too, or did the guest really pay more? Only the owner knows.
+    const receivedFixes = [];
+    if (received > payable) {
+      if (typeof req.body.received_was_typo !== 'boolean') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'More has been recorded as received than the new price — say whether the received amount was a typo',
+          code: 'RECEIVED_EXCEEDS_PRICE', received, new_total: payable,
+        });
+      }
+      if (req.body.received_was_typo) {
+        // Trim received lines, newest first, until they add up to the new price.
+        let excess = round2(received - payable);
+        for (const l of lines.filter(x => x.status === 'received').reverse()) {
+          if (excess <= 0) break;
+          const oldAmt = parseFloat(l.amount);
+          const cut = round2(Math.min(excess, oldAmt));
+          const amt = round2(oldAmt - cut);
+          await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [amt, l.id]);
+          receivedFixes.push(`${l.type} ${fmtIDR(oldAmt)} → ${fmtIDR(amt)}`);
+          if (l.type === 'deposit') depositAmount = amt;
+          l.amount = amt;
+          excess = round2(excess - cut);
+        }
+        received = payable;
+      }
+    }
+    let remaining = round2(payable - received);
     for (const l of lines.filter(x => x.status === 'pending')) {
       let amt;
       if (l.type === 'deposit') {
@@ -950,9 +983,13 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
     await recomputeBookingStatus(client, before.id);
 
     const oldNet = round2(parseFloat(before.total_amount) - parseFloat(before.discount_amount || 0));
+    let note = `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}.`;
+    if (receivedFixes.length) note += ` Received payment was a typo too, corrected: ${receivedFixes.join(', ')}.`;
+    if (credit > 0) note += ` Guest overpaid ${fmtIDR(credit)} — to be refunded.`;
+    note += ` Reason: ${reason}`;
     await client.query(
       'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
-      [before.id, `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}. Reason: ${reason}`.slice(0, 1000), req.user.id]
+      [before.id, note.slice(0, 1000), req.user.id]
     );
     await client.query('COMMIT');
 
@@ -960,7 +997,7 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
       await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
     }
 
-    res.json({ old_total: oldNet, new_total: payable, received, credit });
+    res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
