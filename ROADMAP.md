@@ -1,10 +1,52 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
 ---
 
-## 🔖 Session handoff — 2026-09-24 (on site at Zahill)
+## 🔖 Session handoff — 2026-09-25 (evening)
+
+Everything is **committed and pushed to `dev` and fast-forwarded to `main`**. **Migration 068**
+(Reports & Alerts) is new — next migration number is **069**.
+
+**Shipped tonight** (one commit each; full write-ups in `CLAUDE.md`):
+- **Folio / invoice:** service charge and tax lines hidden when the rate is 0 (properties that
+  publish all-in rates set both rates to 0 in Property Details).
+- **Printed documents:** one compact header for every PDF (the registration card's layout —
+  details left, logo centred, title right); agent invoice + police guest report now use it too.
+- **Booking page:** "Agent billing" badge for city-ledger stays (Not invoiced yet / Invoiced —
+  awaiting payment / Paid by agent) with a link to the agent statement for owners.
+- **Reports & Alerts** (Settings → Reports & Alerts, migration 068) — see the section below:
+  a recipient list per property (email or Telegram, anyone, with or without a PMS login);
+  Telegram connects with a **Connect link / QR** (no Chat ID); each property can use **its own
+  Telegram bot**; **free** instant alerts (new bookings; guest requests & calls — moved here from
+  Email & Communication, old chats copied over); **paid `smart_reports` add-on**: owner control
+  alerts, Daily Close (00:30, replaces the night-audit email once someone receives it), Morning
+  Brief (07:00), Tomorrow Preview (19:00), Weekly Owner Report (Mon 08:00), Monthly Report (1st
+  08:00, PDF + CSV attachments for the accountant). Equal-size summary cards in every email; no
+  links into the PMS in any message.
+
+**Production deploy — safe order (`deploy.sh` already does it; it stops on the first error and
+only restarts PM2 at the very end, so a failed step leaves the running server untouched):**
+1. Run `./deploy.sh` on the VM (pull → server `npm install` → **`npm run migrate` (068)** →
+   client `npm install` (new `qrcode` package) + build → other apps → `pm2 restart`). Never
+   restart the server before the migration has run — Telegram alerts read the new table.
+2. **Telegram bot per server:** production must NOT use the same bot token as a dev machine —
+   only one server can receive a bot's Start presses. Dev currently uses **@Zahill_bot**
+   (token in the dev laptop's `server/.env`); if that is also production's bot, give dev a new
+   bot in @BotFather (or `/revoke` + reissue). Existing linked chats keep getting alerts either
+   way (migration copies them).
+3. Nothing changes for any property until you act: `smart_reports` is off everywhere, the free
+   alerts go to the same chats as before, and the night-audit email keeps going out.
+4. To sell it to a property: Superadmin → property → Modules → **Smart Reports on**; the owner
+   adds recipients in Settings → Reports & Alerts.
+
+**Not yet done:** Reports & Alerts page not clicked through in a browser (API + real Telegram
+messages + real test emails verified); Telegram delivery on production untested until deploy.
+
+---
+
+## 🔖 Previous session handoff — 2026-09-24 (on site at Zahill)
 
 Everything is **committed and pushed to both `dev` and `main`** (last commit `f781bbc`).
 **No new migration today** — still at 067 (067 itself shipped 2026-09-24 01:40, see
@@ -22,7 +64,7 @@ clicked through in a browser**.
 Master Folio / Balance Due); no refund flow — credits are returned by hand; voiding a Pay-now
 sale's folio charge doesn't reverse its incidental payment; Change Room's charge is spread
 evenly across all nights in the folio; deferred ideas — Dashboard "Breakfast tomorrow: N pax"
-line and an evening Telegram kitchen message (needs per-chat alert selection).
+line; ~~an evening Telegram kitchen message~~ — done 2026-09-25 as the Tomorrow Preview report.
 
 ---
 

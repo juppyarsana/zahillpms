@@ -260,14 +260,20 @@ function dailyCloseEmail(b) {
 // True when the property has the Daily Close going out (add-on on + at least
 // one active recipient with it ticked) — then the night-audit owner email,
 // whose content the Daily Close now carries, is skipped.
+// Fails safe: on any error the night-audit email is sent as before.
 async function dailyCloseReplacesAuditEmail(propertyId) {
-  const { rows: [r] } = await db.query(`
-    SELECT EXISTS (
-      SELECT 1 FROM notification_recipients nr
-      JOIN property_modules pm ON pm.property_id = nr.property_id AND pm.module = 'smart_reports' AND pm.is_enabled
-      WHERE nr.property_id = $1 AND nr.is_active AND nr.address IS NOT NULL AND 'daily_close' = ANY(nr.reports)
-    ) AS yes`, [propertyId]);
-  return r.yes;
+  try {
+    const { rows: [r] } = await db.query(`
+      SELECT EXISTS (
+        SELECT 1 FROM notification_recipients nr
+        JOIN property_modules pm ON pm.property_id = nr.property_id AND pm.module = 'smart_reports' AND pm.is_enabled
+        WHERE nr.property_id = $1 AND nr.is_active AND nr.address IS NOT NULL AND 'daily_close' = ANY(nr.reports)
+      ) AS yes`, [propertyId]);
+    return r.yes;
+  } catch (err) {
+    console.error('[Daily Close] could not check recipients — night audit email will be sent:', err.message);
+    return false;
+  }
 }
 
 module.exports = { collected, buildDailyClose, dailyCloseTelegram, dailyCloseEmail, dailyCloseReplacesAuditEmail };
