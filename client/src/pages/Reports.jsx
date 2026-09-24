@@ -46,6 +46,59 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+// Local calendar date as YYYY-MM-DD (not toISOString — that's UTC, which is
+// the previous day before 08:00 in Bali).
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+
+const PRESETS = [
+  { key: 'today',      label: 'Today' },
+  { key: 'yesterday',  label: 'Yesterday' },
+  { key: 'this_week',  label: 'This week' },
+  { key: 'last_7',     label: 'Last 7 days' },
+  { key: 'this_month', label: 'This month' },
+  { key: 'last_month', label: 'Last month' },
+  { key: 'month',      label: 'Pick a month…' },
+  { key: 'custom',     label: 'Custom range…' },
+];
+
+// Inclusive { from, to } for a preset, relative to today.
+function periodFor(preset, { month, year, customFrom, customTo }) {
+  const today = new Date();
+  switch (preset) {
+    case 'today':      return { from: ymd(today), to: ymd(today) };
+    case 'yesterday':  { const y = addDays(today, -1); return { from: ymd(y), to: ymd(y) }; }
+    case 'this_week':  { const mon = addDays(today, -((today.getDay() + 6) % 7)); return { from: ymd(mon), to: ymd(addDays(mon, 6)) }; }
+    case 'last_7':     return { from: ymd(addDays(today, -6)), to: ymd(today) };
+    case 'last_month': {
+      const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      return { from: ymd(first), to: ymd(new Date(today.getFullYear(), today.getMonth(), 0)) };
+    }
+    case 'month':      return { from: ymd(new Date(year, month - 1, 1)), to: ymd(new Date(year, month, 0)) };
+    case 'custom':     return { from: customFrom, to: customTo };
+    case 'this_month':
+    default:           return { from: ymd(new Date(today.getFullYear(), today.getMonth(), 1)), to: ymd(new Date(today.getFullYear(), today.getMonth() + 1, 0)) };
+  }
+}
+
+function parseYmd(str) { const [y, m, d] = String(str).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
+
+// "Thursday, 24 September 2026" / "September 2026" / "1 Sep – 7 Sep 2026"
+function periodLabel(from, to) {
+  if (!from || !to) return '';
+  const a = parseYmd(from), b = parseYmd(to);
+  if (from === to) return a.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const wholeMonth = a.getDate() === 1 && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
+    && addDays(b, 1).getDate() === 1;
+  if (wholeMonth) return `${MONTHS[a.getMonth()]} ${a.getFullYear()}`;
+  const sameYear = a.getFullYear() === b.getFullYear();
+  const fa = a.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+  const fb = b.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${fa} – ${fb}`;
+}
+
 const TH = {
   padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700,
   color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap',
@@ -56,22 +109,31 @@ const SOURCE_COLORS = ['#2563EB', '#7C3AED', '#0D9488', '#D97706', '#DB2777', '#
 
 export default function Reports() {
   const now = new Date();
+  const [preset, setPreset] = useState('this_month');
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [customFrom, setCustomFrom] = useState(ymd(addDays(now, -6)));
+  const [customTo, setCustomTo] = useState(ymd(now));
+  const { from, to } = periodFor(preset, { month, year, customFrom, customTo });
+  const rangeValid = !!from && !!to && from <= to;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hoverIdx, setHoverIdx] = useState(null);
 
   useEffect(() => {
+    if (!rangeValid) return;
     setLoading(true);
     setError(null);
     setHoverIdx(null);
-    api.get('/api/reports/revenue', { params: { month, year } })
+    api.get('/api/reports/revenue', { params: { from, to } })
       .then(r => setData(r.data))
       .catch(err => setError(err.response?.data?.error || 'Failed to load report'))
       .finally(() => setLoading(false));
-  }, [month, year]);
+  }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const label = periodLabel(from, to);
+  const singleDay = from === to;
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i);
   const maxDaily = data ? Math.max(1, ...data.daily_revenue.map(d => Number(d.room_revenue))) : 1;
@@ -79,7 +141,10 @@ export default function Reports() {
   const sourceTotal = bySource.reduce((s, r) => s + Number(r.revenue), 0);
   const adr = data && data.total_nights > 0 ? data.room_revenue / data.total_nights : 0;
   const hasDailyRevenue = data && data.daily_revenue.some(d => Number(d.room_revenue) > 0);
-  const xLabelStep = data && data.daily_revenue.length > 20 ? 5 : data && data.daily_revenue.length > 10 ? 3 : 1;
+  const dayCount = data ? data.daily_revenue.length : 0;
+  const xLabelStep = dayCount > 60 ? 14 : dayCount > 20 ? 5 : dayCount > 10 ? 3 : 1;
+  // Day numbers when the chart stays inside one month, "3 Sep" otherwise.
+  const chartOneMonth = from && to && from.slice(0, 7) === to.slice(0, 7);
   const dailyStats = data && hasDailyRevenue ? (() => {
     const days = data.daily_revenue;
     const total = days.reduce((s, d) => s + Number(d.room_revenue), 0);
@@ -92,18 +157,36 @@ export default function Reports() {
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">Monthly revenue summary · Owner only</div>
+          <div className="page-subtitle">{label} · Owner only</div>
         </div>
-        <div className="flex gap-2">
-          <select className="form-select" style={{ width: 150 }} value={month} onChange={e => setMonth(Number(e.target.value))}>
-            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+        <div className="flex gap-2" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <select className="form-select" style={{ width: 160 }} value={preset} onChange={e => setPreset(e.target.value)} aria-label="Period">
+            {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
-          <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <button className="btn btn-secondary" onClick={() => downloadCsv(`/api/reports/revenue/export?month=${month}&year=${year}`, `revenue-${year}-${String(month).padStart(2, '0')}.csv`)}>⬇ Export CSV</button>
+          {preset === 'month' && (
+            <>
+              <select className="form-select" style={{ width: 150 }} value={month} onChange={e => setMonth(Number(e.target.value))}>
+                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </>
+          )}
+          {preset === 'custom' && (
+            <>
+              <input className="form-input" type="date" style={{ width: 160 }} value={customFrom} max={customTo || undefined}
+                onChange={e => setCustomFrom(e.target.value)} aria-label="From" />
+              <input className="form-input" type="date" style={{ width: 160 }} value={customTo} min={customFrom || undefined}
+                onChange={e => setCustomTo(e.target.value)} aria-label="To" />
+            </>
+          )}
+          <button className="btn btn-secondary" disabled={!rangeValid}
+            onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}>⬇ Export CSV</button>
         </div>
       </div>
+
+      {!rangeValid && <div className="alert alert-error">Choose a start date on or before the end date.</div>}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -139,7 +222,7 @@ export default function Reports() {
           <div className="card" style={{ display: 'flex', padding: 0, marginBottom: 20, overflow: 'hidden' }}>
             {[
               ['Bookings', data.bookings_count, 'checked-in / confirmed'],
-              ['Room Nights', data.total_nights, 'sold this month'],
+              ['Room Nights', data.total_nights, singleDay ? 'occupied that night' : 'sold in this period'],
               ['ADR', fmtIDR(adr), 'room revenue ÷ nights'],
             ].map(([label, value, sub], i) => (
               <div
@@ -153,15 +236,16 @@ export default function Reports() {
             ))}
           </div>
 
-          {/* ── Daily room revenue ── */}
+          {/* ── Daily room revenue (not useful for a single day) ── */}
+          {!singleDay && (
           <div className="card" style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
               <div className="card-title">Daily Room Revenue</div>
-              <div style={{ fontSize: 12, color: '#9CA3AF' }}>{MONTHS[month - 1]} {year}</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>{label}</div>
             </div>
             {!hasDailyRevenue ? (
               <div style={{ fontSize: 13, color: '#9CA3AF', padding: '20px 0', textAlign: 'center' }}>
-                No room revenue posted this month.
+                No room revenue in this period.
               </div>
             ) : (
               <>
@@ -277,10 +361,11 @@ export default function Reports() {
                     <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
                       {data.daily_revenue.map((d, i) => {
                         const day = Number(String(d.date).slice(8, 10));
-                        const showLabel = i === 0 || i === data.daily_revenue.length - 1 || day % xLabelStep === 0;
+                        const showLabel = i === 0 || i === data.daily_revenue.length - 1
+                          || (chartOneMonth ? day % xLabelStep === 0 : i % xLabelStep === 0);
                         return (
-                          <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#9CA3AF' }}>
-                            {showLabel ? day : ''}
+                          <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#9CA3AF', whiteSpace: 'nowrap', overflow: 'visible' }}>
+                            {showLabel ? (chartOneMonth ? day : fmtDay(d.date)) : ''}
                           </div>
                         );
                       })}
@@ -296,12 +381,13 @@ export default function Reports() {
               </>
             )}
           </div>
+          )}
 
           {/* ── Revenue by source ── */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div className="card-title" style={{ padding: '14px 14px 0' }}>Revenue by Source</div>
             {bySource.length === 0 ? (
-              <div style={{ fontSize: 13, color: '#9CA3AF', padding: 14 }}>No bookings this month.</div>
+              <div style={{ fontSize: 13, color: '#9CA3AF', padding: 14 }}>No room nights in this period.</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
                 <thead>
@@ -370,7 +456,7 @@ export default function Reports() {
             </div>
             {data.expenses_total === 0 && (
               <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>
-                No expenses logged this month — Net Income currently just mirrors Total Revenue. Record costs under Back Office → Expenses to see a real profit figure here.
+                No expenses logged in this period — Net Income currently just mirrors Total Revenue. Record costs under Back Office → Expenses to see a real profit figure here.
               </div>
             )}
           </div>
