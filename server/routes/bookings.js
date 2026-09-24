@@ -61,6 +61,8 @@ const BALANCE_AMOUNT_SQL = `COALESCE(
                (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance'))`;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+// '2026-09-08' → '8 Sep' (for Edit History notes)
+function fmtShortYmd(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 
 // Compares the before/after rows PUT /:id produces and writes one
 // booking_events row summarizing whatever actually changed — a single
@@ -1156,9 +1158,58 @@ router.put('/:id/transfer', auth, async (req, res) => {
 });
 
 // PUT /api/bookings/:id/dates  (amend check-in/check-out dates, same unit)
+// Amend Dates pricing: the room's NORMAL rate (base rate + pricing periods,
+// services/pricingService.js — same as New Booking and Change Room) for the
+// new dates minus the old dates, incl. service/tax. Extending charges the
+// added nights, shortening credits the removed ones, shifting the stay only
+// differs when the nights fall in a different pricing period.
+async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
+  const oldCi = String(booking.check_in_date).slice(0, 10);
+  const oldCo = String(booking.check_out_date).slice(0, 10);
+  const [oldR, newR] = await Promise.all([
+    nightlyRoomRates(propertyId, booking.unit_id, oldCi, oldCo, client),
+    nightlyRoomRates(propertyId, booking.unit_id, checkIn, checkOut, client),
+  ]);
+  const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
+  const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
+  const oldTotal = gross(oldR.room_total);
+  const newTotal = gross(newR.room_total);
+  return {
+    old: { check_in: oldCi, check_out: oldCo, nights: oldR.night_breakdown.length, total: oldTotal },
+    new: { check_in: checkIn, check_out: checkOut, nights: newR.night_breakdown.length, total: newTotal },
+    difference: round2(newTotal - oldTotal),
+  };
+}
+
+// GET /api/bookings/:id/dates/quote?check_in=&check_out= — price difference
+// shown before saving new dates.
+router.get('/:id/dates/quote', auth, async (req, res) => {
+  const { check_in, check_out } = req.query;
+  if (!check_in || !check_out || check_out <= check_in) return res.status(400).json({ error: 'check_in and a later check_out are required' });
+  try {
+    const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    res.json(await datesQuote(db, { propertyId: req.propertyId, booking, checkIn: check_in, checkOut: check_out }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/:id/dates — { check_in_date, check_out_date, charge,
+// amount?, reason }. charge: 'difference' (the quoted normal-rate
+// difference — an extension is charged, a shortening credited) |
+// 'complimentary' (keep the current price) | 'custom' (amount, may be
+// negative). The charge goes onto the booking price via applyBookingPrice
+// (same as Change Room — not discounted; a credit if the guest already paid
+// more). Reason required; logged to Edit History.
 router.put('/:id/dates', auth, async (req, res) => {
-  const { check_in_date, check_out_date } = req.body;
+  const { check_in_date, check_out_date, charge = 'difference' } = req.body;
+  const reason = String(req.body.reason || '').trim();
   if (!check_in_date || !check_out_date) return res.status(400).json({ error: 'check_in_date, check_out_date required' });
+  if (!['difference', 'complimentary', 'custom'].includes(charge)) return res.status(400).json({ error: 'charge must be difference, complimentary or custom' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  const custom = parseFloat(req.body.amount);
+  if (charge === 'custom' && !Number.isFinite(custom)) return res.status(400).json({ error: 'amount required for a custom charge' });
   if (new Date(check_out_date) <= new Date(check_in_date)) {
     return res.status(400).json({ error: 'Check-out date must be after check-in date' });
   }
@@ -1199,17 +1250,48 @@ router.put('/:id/dates', auth, async (req, res) => {
       return res.status(409).json({ error: 'Unit is not available for the new dates' });
     }
 
+    const quote = await datesQuote(client, { propertyId: req.propertyId, booking, checkIn: check_in_date, checkOut: check_out_date });
+    const amount = charge === 'complimentary' ? 0 : charge === 'custom' ? round2(custom) : quote.difference;
+    if (amount !== 0 && ['invoiced', 'paid'].includes(booking.folio_status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing' });
+    }
+
     await client.query(
       'UPDATE bookings SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3 AND property_id = $4',
       [check_in_date, check_out_date, req.params.id, req.propertyId]
     );
-
-    // Re-spread the (unchanged) net room/F&B totals over the new night count
-    // and re-post the folio nights.
     const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-    await roomCharge.repostStay(client, fresh, req.user.id);
+
+    let priced = null;
+    if (amount !== 0) {
+      // New price → split, folio nights, pending lines, status (also reposts).
+      priced = await applyBookingPrice(client, {
+        propertyId: req.propertyId, before: fresh, userId: req.user.id,
+        newTotal: Math.max(0, round2(parseFloat(booking.total_amount) + amount)),
+        keepDiscount: true, receivedWasTypo: false,
+        balanceNote: `Date change ${quote.old.check_in}–${quote.old.check_out} → ${check_in_date}–${check_out_date} — additional amount due`,
+      });
+      if (priced.error) { await client.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
+    } else {
+      // Same price: re-spread the unchanged room/F&B totals over the new
+      // night count and re-post the folio nights.
+      await roomCharge.repostStay(client, fresh, req.user.id);
+    }
+
+    const span = q => `${fmtShortYmd(q.check_in)}–${fmtShortYmd(q.check_out)} (${q.nights} night${q.nights === 1 ? '' : 's'})`;
+    let note = `Dates changed: ${span(quote.old)} → ${span(quote.new)}.`;
+    if (charge === 'complimentary') note += ` Price kept — no charge (normal difference ${fmtIDR(quote.difference)}).`;
+    else if (amount > 0) note += ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+    else if (amount < 0) note += ` Credit ${fmtIDR(-amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+    if (priced?.credit > 0) note += ` Guest overpaid ${fmtIDR(priced.credit)} — to be refunded.`;
+    note += ` Reason: ${reason}`;
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [booking.id, note.slice(0, 1000), req.user.id]);
 
     await client.query('COMMIT');
+    if (amount !== 0 && booking.folio_status === 'pending_agent_invoice') {
+      await agentBilling.recomputeCommission(req.propertyId, booking.id).catch(err => console.error('Commission recompute failed:', err));
+    }
     const { rows: [updated] } = await db.query(`
       SELECT b.*, g.name as guest_name, u.name as unit_name
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id

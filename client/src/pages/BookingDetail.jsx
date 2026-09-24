@@ -22,6 +22,9 @@ const EDIT_BED_PREFS = [
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+// YYYY-MM-DD date math on local calendar dates (not UTC).
+function addDaysYmd(ymd, n) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
+function nightsBetween(a, b) { const [y1, m1, d1] = a.split('-').map(Number); const [y2, m2, d2] = b.split('-').map(Number); return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000); }
 // '2026-09-25' → '25 Sep' (local date, no UTC shift)
 function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 
@@ -74,6 +77,12 @@ export default function BookingDetail() {
   const [amendAvailability, setAmendAvailability] = useState(null);
   const [amendChecking, setAmendChecking] = useState(false);
   const [amendLoading, setAmendLoading] = useState(false);
+  // Amend Dates pricing (normal-rate difference) + how to charge it.
+  const [amendQuote, setAmendQuote] = useState(null);
+  const [amendCharge, setAmendCharge] = useState('difference'); // difference | complimentary | custom
+  const [amendCustom, setAmendCustom] = useState('');
+  const [amendReason, setAmendReason] = useState('');
+  const [amendError, setAmendError] = useState('');
   const [messaging, setMessaging] = useState(false);
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -317,6 +326,11 @@ export default function BookingDetail() {
     setAmendCheckIn(booking.check_in_date?.slice(0, 10) || '');
     setAmendCheckOut(booking.check_out_date?.slice(0, 10) || '');
     setAmendAvailability(null);
+    setAmendQuote(null);
+    setAmendCharge('difference');
+    setAmendCustom('');
+    setAmendReason('');
+    setAmendError('');
     setAmending(true);
   }
 
@@ -330,17 +344,28 @@ export default function BookingDetail() {
     }).then(r => { if (!cancelled) setAmendAvailability(r.data); })
       .catch(() => { if (!cancelled) setAmendAvailability(null); })
       .finally(() => { if (!cancelled) setAmendChecking(false); });
+    setAmendQuote(null);
+    api.get(`/api/bookings/${id}/dates/quote`, { params: { check_in: amendCheckIn, check_out: amendCheckOut } })
+      .then(r => { if (!cancelled) { setAmendQuote(r.data); setAmendCustom(String(Math.round(r.data.difference))); } })
+      .catch(() => { if (!cancelled) setAmendQuote(null); });
     return () => { cancelled = true; };
   }, [amending, amendCheckIn, amendCheckOut]);
 
   async function doAmendDates() {
     setAmendLoading(true);
     try {
-      await api.put(`/api/bookings/${id}/dates`, { check_in_date: amendCheckIn, check_out_date: amendCheckOut });
+      await api.put(`/api/bookings/${id}/dates`, {
+        check_in_date: amendCheckIn, check_out_date: amendCheckOut,
+        charge: amendCharge,
+        ...(amendCharge === 'custom' ? { amount: parseFloat(amendCustom) } : {}),
+        reason: amendReason.trim(),
+      });
       setAmending(false);
+      setFolio(null);
+      setEstimate(null);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to amend dates');
+      setAmendError(err.response?.data?.error || 'Failed to amend dates');
     } finally {
       setAmendLoading(false);
     }
@@ -994,7 +1019,18 @@ export default function BookingDetail() {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Check-in</label>
-                  <input className="form-input" type="date" value={amendCheckIn} onChange={e => setAmendCheckIn(e.target.value)} />
+                  <input className="form-input" type="date" value={amendCheckIn} onChange={e => {
+                    // keep the number of nights when check-in moves
+                    const n = amendCheckIn && amendCheckOut ? nightsBetween(amendCheckIn, amendCheckOut) : 1;
+                    setAmendCheckIn(e.target.value);
+                    if (e.target.value && n > 0) setAmendCheckOut(addDaysYmd(e.target.value, n));
+                  }} />
+                </div>
+                <div className="form-group" style={{ maxWidth: 100 }}>
+                  <label className="form-label">Nights</label>
+                  <input className="form-input" type="number" min={1} max={365}
+                    value={amendCheckIn && amendCheckOut && amendCheckOut > amendCheckIn ? nightsBetween(amendCheckIn, amendCheckOut) : ''}
+                    onChange={e => { const n = parseInt(e.target.value, 10); if (n >= 1 && amendCheckIn) setAmendCheckOut(addDaysYmd(amendCheckIn, n)); }} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Check-out</label>
@@ -1010,9 +1046,50 @@ export default function BookingDetail() {
                   Unit is not available for these dates — conflicts with {amendAvailability.conflicts.map(c => c.guest_name).join(', ')}.
                 </div>
               )}
-              <div className="alert alert-success" style={{ marginTop: 12 }}>
-                This doesn't recalculate the total amount — adjust it under Payment Tracking if needed.
+              {amendQuote && (amendCheckIn !== booking.check_in_date?.slice(0,10) || amendCheckOut !== booking.check_out_date?.slice(0,10)) && (() => {
+                const q = amendQuote;
+                const charge = amendCharge === 'complimentary' ? 0 : amendCharge === 'custom' ? (parseFloat(amendCustom) || 0) : q.difference;
+                return (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, margin: '12px 0' }}>
+                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>Normal room rate, incl. service &amp; tax</div>
+                    <div className="flex-between" style={{ fontSize: 13 }}><span>Current dates · {q.old.nights} night{q.old.nights === 1 ? '' : 's'}</span><span>{fmtIDR(q.old.total)}</span></div>
+                    <div className="flex-between" style={{ fontSize: 13 }}><span>New dates · {q.new.nights} night{q.new.nights === 1 ? '' : 's'}</span><span>{fmtIDR(q.new.total)}</span></div>
+                    <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
+                      <span>Difference</span><span>{q.difference >= 0 ? '+' : '−'}{fmtIDR(Math.abs(q.difference))}</span>
+                    </div>
+                    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="amendCharge" checked={amendCharge === 'difference'} onChange={() => setAmendCharge('difference')} />
+                        {q.difference > 0 ? `Charge the difference (+${fmtIDR(q.difference)})`
+                          : q.difference < 0 ? `Give the difference back as credit (−${fmtIDR(-q.difference)})`
+                          : 'No price change'}
+                      </label>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="amendCharge" checked={amendCharge === 'complimentary'} onChange={() => setAmendCharge('complimentary')} />
+                        Keep the current price (no charge)
+                      </label>
+                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
+                        <input type="radio" name="amendCharge" checked={amendCharge === 'custom'} onChange={() => setAmendCharge('custom')} />
+                        Other amount
+                        {amendCharge === 'custom' && (
+                          <input className="form-input" type="number" value={amendCustom} onChange={e => setAmendCustom(e.target.value)}
+                            style={{ maxWidth: 160, padding: '4px 8px' }} aria-label="Amount to charge" />
+                        )}
+                      </label>
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
+                      {charge > 0 ? `The booking price goes up by ${fmtIDR(charge)} — added to the balance still to pay.`
+                        : charge < 0 ? `The booking price goes down by ${fmtIDR(-charge)}. If the guest already paid more, it shows as a credit to refund.`
+                        : 'The booking price stays the same.'}
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="form-group">
+                <label className="form-label">Reason *</label>
+                <input className="form-input" value={amendReason} onChange={e => setAmendReason(e.target.value)} placeholder="e.g. Guest extended 2 nights" />
               </div>
+              {amendError && <div className="alert alert-error">{amendError}</div>}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setAmending(false)}>Cancel</button>
@@ -1024,7 +1101,9 @@ export default function BookingDetail() {
                   !amendCheckIn || !amendCheckOut ||
                   new Date(amendCheckOut) <= new Date(amendCheckIn) ||
                   (amendCheckIn === booking.check_in_date?.slice(0,10) && amendCheckOut === booking.check_out_date?.slice(0,10)) ||
-                  (amendAvailability && !amendAvailability.available)
+                  (amendAvailability && !amendAvailability.available) ||
+                  !amendQuote || !amendReason.trim() ||
+                  (amendCharge === 'custom' && !Number.isFinite(parseFloat(amendCustom)))
                 }
               >
                 {amendLoading ? 'Saving…' : 'Save New Dates'}
