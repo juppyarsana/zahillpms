@@ -300,6 +300,31 @@ router.get('/in-house', auth, async (req, res) => {
   }
 });
 
+// Who is where on a date — ONE definition shared by Guest Lists and the
+// Kitchen tab, matching the Check-in/out page and the Dashboard.
+//   Today: by STATUS (what has actually happened) —
+//     arriving   = not checked in yet (pending / deposit_paid / confirmed),
+//                  arrival date today or earlier (late arrivals flagged)
+//     in house   = checked in, leaving after today
+//     departing  = checked in and due out today (or overdue), or already
+//                  checked out today
+//   Any other date: by the booked DATES (nothing has happened yet / history).
+// Meals: breakfast on the date's morning = guests who slept here the night
+// before; dinner that night = guests sleeping here that night. For today
+// only guests actually checked in count for breakfast (a late arrival who
+// never came didn't sleep here).
+const PRE_ARRIVAL = "('pending', 'deposit_paid', 'confirmed')";
+// $2 = the date, $3 = today (WITA)
+const MEAL_FLAGS_SQL = `
+  CASE WHEN $2::date = $3::date
+       THEN (b.status = 'checked_in' AND b.check_in_date < $2::date)
+         OR (b.status = 'checked_out' AND b.check_out_date = $2::date AND b.check_in_date < $2::date)
+       ELSE b.check_in_date < $2::date AND b.check_out_date >= $2::date END AS breakfast_here,
+  CASE WHEN $2::date = $3::date
+       THEN (b.status = 'checked_in' AND b.check_out_date > $2::date)
+         OR (b.status IN ${PRE_ARRIVAL} AND b.check_in_date <= $2::date AND b.check_out_date > $2::date)
+       ELSE b.check_in_date <= $2::date AND b.check_out_date > $2::date END AS dinner_here`;
+
 // GET /api/bookings/guest-lists?date=YYYY-MM-DD (default today, WITA)
 // Morning briefing for one date — every live booking lands in exactly one list:
 //   arrivals   — check-in on the date (expected, or already arrived)
@@ -324,10 +349,18 @@ async function loadGuestLists(propertyId, requestedDate) {
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
              COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
-             CASE WHEN b.check_in_date = $2::date THEN 'arrival'
-                  WHEN b.check_out_date <= $2::date THEN 'departure'
-                  ELSE 'in_house' END AS list,
-             (b.check_out_date < $2::date) AS overdue
+             CASE WHEN $2::date = $3::date THEN
+                    CASE WHEN b.status IN ${PRE_ARRIVAL} THEN 'arrival'
+                         WHEN b.status = 'checked_out' OR b.check_out_date <= $2::date THEN 'departure'
+                         ELSE 'in_house' END
+                  ELSE
+                    CASE WHEN b.check_in_date = $2::date THEN 'arrival'
+                         WHEN b.check_out_date <= $2::date THEN 'departure'
+                         ELSE 'in_house' END
+             END AS list,
+             (b.status = 'checked_in' AND b.check_out_date < $2::date) AS overdue,
+             ($2::date = $3::date AND b.status IN ${PRE_ARRIVAL} AND b.check_in_date < $2::date) AS late_arrival,
+             ${MEAL_FLAGS_SQL}
       FROM bookings b
       JOIN guests g ON g.id = b.guest_id
       JOIN units u ON u.id = b.unit_id
@@ -335,10 +368,13 @@ async function loadGuestLists(propertyId, requestedDate) {
       LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
       WHERE b.property_id = $1
         AND b.status NOT IN ('cancelled', 'no_show')
-        AND (
-          (b.check_in_date <= $2::date AND b.check_out_date >= $2::date)
-          OR ($2::date = $3::date AND b.status = 'checked_in' AND b.check_out_date < $2::date)
-        )
+        AND CASE WHEN $2::date = $3::date THEN
+              -- today: everyone not yet arrived (incl. late), everyone in
+              -- the house (incl. overdue), and whoever left today
+              (b.status IN ${PRE_ARRIVAL} AND b.check_in_date <= $2::date)
+              OR b.status = 'checked_in'
+              OR (b.status = 'checked_out' AND b.check_out_date = $2::date)
+            ELSE b.check_in_date <= $2::date AND b.check_out_date >= $2::date END
       ORDER BY u.name, g.name
     `, [propertyId, date, today]);
 
@@ -363,8 +399,8 @@ async function loadGuestLists(propertyId, requestedDate) {
         arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals) },
         in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house) },
         departures: { rooms: lists.departures.length, pax: pax(lists.departures) },
-        breakfast_pax: mealPax(lists.in_house, 'includes_breakfast') + mealPax(lists.departures, 'includes_breakfast'),
-        dinner_pax: mealPax(lists.arrivals, 'includes_dinner') + mealPax(lists.in_house, 'includes_dinner'),
+        breakfast_pax: mealPax(rows.filter(r => r.breakfast_here), 'includes_breakfast'),
+        dinner_pax: mealPax(rows.filter(r => r.dinner_here), 'includes_dinner'),
       },
     };
   }
@@ -412,7 +448,8 @@ router.get('/guest-lists/pdf', auth, async (req, res) => {
 // Counted in guests (num_guests), not rooms. Also reports how many guests are
 // in house without the meal (room only), since the kitchen may still sell it.
 async function loadKitchen(propertyId, requestedDate) {
-  const date = requestedDate || roomCharge.todayWITA();
+  const today = roomCharge.todayWITA();
+  const date = requestedDate || today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
   const { rows } = await db.query(`
     SELECT b.id, b.check_in_date, b.check_out_date, b.num_guests, b.status, b.special_requests,
@@ -420,21 +457,21 @@ async function loadKitchen(propertyId, requestedDate) {
            rp.code AS rate_plan_code,
            COALESCE(rp.includes_breakfast, false) AS includes_breakfast,
            COALESCE(rp.includes_dinner, false) AS includes_dinner,
-           (b.check_in_date < $2::date AND b.check_out_date >= $2::date) AS here_last_night,
-           (b.check_in_date <= $2::date AND b.check_out_date > $2::date) AS here_tonight
+           ${MEAL_FLAGS_SQL}
     FROM bookings b
     JOIN guests g ON g.id = b.guest_id
     JOIN units u ON u.id = b.unit_id
     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
     WHERE b.property_id = $1
       AND b.status NOT IN ('cancelled', 'no_show')
-      AND b.check_in_date <= $2::date AND b.check_out_date >= $2::date
+      AND (b.check_in_date <= $2::date AND b.check_out_date >= $2::date
+           OR ($2::date = $3::date AND b.status = 'checked_in'))  -- overdue guests are still here
     ORDER BY u.name, g.name
-  `, [propertyId, date]);
+  `, [propertyId, date, today]);
 
   const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
-  const breakfastIn = rows.filter(r => r.here_last_night);
-  const dinnerIn = rows.filter(r => r.here_tonight);
+  const breakfastIn = rows.filter(r => r.breakfast_here);
+  const dinnerIn = rows.filter(r => r.dinner_here);
   const breakfast = breakfastIn.filter(r => r.includes_breakfast);
   const dinner = dinnerIn.filter(r => r.includes_dinner);
   const without = (all, withMeal) => ({ rooms: all.length - withMeal.length, pax: pax(all) - pax(withMeal) });

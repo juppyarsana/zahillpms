@@ -397,7 +397,9 @@ export default function GuestLists() {
             extra={[
               { label: 'Status', render: r => r.status === 'checked_in' || r.status === 'checked_out'
                   ? <span className="badge badge-green">Arrived</span>
-                  : <span className="badge badge-amber">Expected</span> },
+                  : r.late_arrival
+                    ? <span className="badge badge-red">Late · was due {fmtShort(r.check_in_date)}</span>
+                    : <span className="badge badge-amber">Expected</span> },
               { label: 'Reg. Card', render: r => (
                   <button className="btn btn-sm btn-secondary" title="Print this guest's Registration Card"
                     onClick={e => { e.stopPropagation(); setRegCardFor(r.id); }}>🖨</button>
@@ -418,7 +420,7 @@ export default function GuestLists() {
                   ? <span className="badge badge-blue">In house</span>
                   : r.status === 'checked_out'
                     ? <span className="badge badge-gray">Checked out</span>
-                    : <span className="badge badge-amber">Not checked in</span> },
+                    : <span className="badge badge-gray">Booked</span> },
             ]}
           />
 

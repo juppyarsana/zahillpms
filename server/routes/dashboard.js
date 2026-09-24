@@ -27,11 +27,11 @@ router.get('/summary', auth, async (req, res) => {
           arr.num_guests as arriving_num_guests, arr.check_out_date as arriving_check_out,
           ag.name as arriving_guest_name, ag.nationality as arriving_nationality,
           (SELECT nb.check_in_date FROM bookings nb
-           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','pending')
+           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','deposit_paid','pending')
              AND nb.check_in_date > CURRENT_DATE
            ORDER BY nb.check_in_date LIMIT 1) as next_booking_date,
           (SELECT nb.check_in_date - CURRENT_DATE FROM bookings nb
-           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','pending')
+           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','deposit_paid','pending')
              AND nb.check_in_date > CURRENT_DATE
            ORDER BY nb.check_in_date LIMIT 1) as gap_nights,
           rdd.battery_level as tablet_battery_level,
@@ -47,7 +47,7 @@ router.get('/summary', auth, async (req, res) => {
         FROM units u
         LEFT JOIN bookings b ON b.unit_id = u.id AND b.property_id = u.property_id AND b.status = 'checked_in'
         LEFT JOIN guests g ON b.guest_id = g.id
-        LEFT JOIN bookings arr ON arr.unit_id = u.id AND arr.property_id = u.property_id AND arr.status IN ('confirmed','pending') AND arr.check_in_date = CURRENT_DATE
+        LEFT JOIN bookings arr ON arr.unit_id = u.id AND arr.property_id = u.property_id AND arr.status IN ('confirmed','deposit_paid','pending') AND arr.check_in_date = CURRENT_DATE
         LEFT JOIN guests ag ON arr.guest_id = ag.id
         LEFT JOIN room_display_devices rdd ON rdd.controller_id = u.controller_id AND rdd.property_id = u.property_id
         LEFT JOIN users sub ON sub.id = u.status_updated_by
@@ -57,7 +57,7 @@ router.get('/summary', auth, async (req, res) => {
       db.query(`
         SELECT b.id, g.name as guest_name, u.name as unit_name, b.num_guests, b.source
         FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
-        WHERE b.property_id = $1 AND b.check_in_date = CURRENT_DATE AND b.status IN ('confirmed','pending')
+        WHERE b.property_id = $1 AND b.check_in_date = CURRENT_DATE AND b.status IN ('confirmed','deposit_paid','pending')
       `, [req.propertyId]),
       db.query(`
         SELECT b.id, g.name as guest_name, u.name as unit_name

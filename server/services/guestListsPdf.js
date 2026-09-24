@@ -30,11 +30,12 @@ function fmtIDR(n) { return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('i
 // Same status wording as the page.
 function statusText(list, r, isToday) {
   if (list === 'arrivals') {
-    const s = (r.status === 'checked_in' || r.status === 'checked_out') ? 'Arrived' : 'Expected';
+    const s = (r.status === 'checked_in' || r.status === 'checked_out') ? 'Arrived'
+      : r.late_arrival ? `Late (due ${fmtShort(r.check_in_date)})` : 'Expected';
     return isToday && r.housekeeping_status === 'dirty' ? `${s} · Needs cleaning` : s;
   }
   if (list === 'in_house') {
-    return r.status === 'checked_in' ? 'In house' : r.status === 'checked_out' ? 'Checked out' : 'Not checked in';
+    return r.status === 'checked_in' ? 'In house' : r.status === 'checked_out' ? 'Checked out' : 'Booked';
   }
   if (r.status === 'checked_out') return 'Checked out';
   return r.overdue ? `Overdue (due ${fmtShort(r.check_out_date)})` : 'Due out';
@@ -97,7 +98,7 @@ function drawSection(doc, y, { title, list, rows, summary, empty, isToday }) {
         if (rest.length) doc.font('Helvetica').fontSize(7).fillColor('#666').text(rest.join('\n'), col.x, doc.y, { width: col.w });
         doc.fontSize(8).fillColor('#000');
       } else {
-        const alert = (col.key === 'status' && /Overdue|Not checked in|Needs cleaning/.test(c.status))
+        const alert = (col.key === 'status' && /Overdue|Late|Needs cleaning/.test(c.status))
           || (col.key === 'balance' && c.balance !== 'Paid');
         doc.font(alert ? 'Helvetica-Bold' : 'Helvetica').fillColor(alert ? '#B91C1C' : '#000')
           .text(c[col.key], col.x, y, { width: col.w, align: col.align || 'left' });
