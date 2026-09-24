@@ -5,17 +5,14 @@ const telegram = require('./telegramService');
 // smart_reports module): an instant Telegram message to the owner when staff
 // do something that costs the hotel money or lets money slip — a price edit,
 // a free/discounted upgrade or extension, a check-in without full payment.
-// Each says what happened, for which stay, who did it and why. Fire-and-
+// Each says what happened, for which stay, who did it and why (no link into
+// the PMS — recipients may not have a login). Fire-and-
 // forget: never throws, never blocks the action that triggered it.
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 function fmtShort(ymd) {
   const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-}
-function bookingUrl(id) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}/reservations/${id}` : null;
 }
 
 // bookingIds: one stay, or several (a group check-in) listed in one message.
@@ -40,8 +37,6 @@ async function sendControlAlert(propertyId, { bookingIds, userId, headline, deta
     if (stays.length > 10) lines.push(`…and ${stays.length - 10} more rooms`);
     lines.push(`👤 By: ${user?.name || 'unknown'}${user?.role ? ` (${user.role.replace(/-[0-9a-f-]{36}$/, '').replace(/_/g, ' ')})` : ''}`);
     if (reason) lines.push(`📝 Reason: ${reason}`);
-    const url = stays.length === 1 && bookingUrl(stays[0].id);
-    if (url) lines.push(url);
     await telegram.sendAlert(propertyId, 'alert_owner_control', lines.join('\n'));
   } catch (err) {
     console.error('Owner alert failed:', err.message);
