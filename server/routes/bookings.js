@@ -719,7 +719,7 @@ router.post('/', auth, async (req, res) => {
     const net = payable;
     const depositAmount = deposit_amount !== undefined
       ? Math.min(parseFloat(deposit_amount), net)
-      : Math.round(net * 0.3);
+      : Math.round(net * 0.5); // default deposit 50% (same as New Booking)
     const balanceAmount = round2(net - depositAmount);
 
     const { rows } = await client.query(

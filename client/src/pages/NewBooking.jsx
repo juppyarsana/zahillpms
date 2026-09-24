@@ -101,7 +101,7 @@ export default function NewBooking() {
   const [form, setForm] = useState({
     guest_id: '',
     check_in_date: sp.get('date') || '', check_out_date: '',
-    source: 'direct', deposit_pct: 30, special_requests: '', status: 'pending',
+    source: 'direct', deposit_pct: 50, special_requests: '', status: 'pending',
     discount_type: '', discount_value: '',
   });
   const [rooms, setRooms] = useState([{ ...EMPTY_ROOM, unit_id: sp.get('unit') || '' }]);
