@@ -4,7 +4,16 @@ const trends = require('../services/trends');
 const claude = require('../services/claude');
 const holidayApi = require('../services/holidayApi');
 
-const TREND_TERMS = ['kintamani glamping', 'bali glamping'];
+// Market settings per property (migration 069): market_area, market_keywords,
+// market_description on property_settings.
+async function marketSettings(propertyId) {
+  const { rows: [ps] } = await db.query(
+    `SELECT property_name, property_address, market_area, market_keywords, market_description
+     FROM property_settings WHERE property_id = $1`,
+    [propertyId]
+  );
+  return ps || {};
+}
 const HOLIDAY_SYNC_YEARS_AHEAD = 2; // covers yield's max 365-day lookahead even from Dec 31
 
 async function getActiveProperties() {
@@ -26,12 +35,13 @@ async function refreshCompetitors(propertyId) {
     [propertyId]
   );
 
+  const { market_area: area } = await marketSettings(propertyId);
   for (const c of competitors) {
     try {
       let placeId = c.place_id;
 
       if (!placeId) {
-        const match = await places.findPlace(c.name);
+        const match = await places.findPlace(c.name, area);
         if (!match) {
           console.log(`[Insights] No Google Places match for "${c.name}"`);
           continue;
@@ -53,8 +63,10 @@ async function refreshCompetitors(propertyId) {
   console.log(`[Insights] Competitor ratings refreshed for property ${propertyId} — ${competitors.length} active competitor(s)`);
 }
 
+// The property's own search terms (Settings → Property Details → Market Insights).
 async function refreshSearchTrends(propertyId) {
-  for (const term of TREND_TERMS) {
+  const { market_keywords: terms = [] } = await marketSettings(propertyId);
+  for (const term of terms) {
     try {
       const points = await trends.fetchInterestOverTime(term, 90);
       for (const p of points) {
@@ -115,12 +127,27 @@ async function refreshAiSummary(propertyId) {
     `SELECT holiday_date, name FROM holidays WHERE holiday_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '45 days' ORDER BY holiday_date`
   );
 
+  // Who the briefing is for — from the property's own settings, not hardcoded.
+  const ms = await marketSettings(propertyId);
+  const { rows: [{ rooms }] } = await db.query('SELECT COUNT(*)::int AS rooms FROM units WHERE property_id = $1', [propertyId]);
+  const property = {
+    name: ms.property_name || 'the property',
+    description: ms.market_description || null,
+    area: ms.market_area || ms.property_address || null,
+    rooms,
+  };
+
   try {
     const summary = await claude.generateMarketSummary({
+      property,
       competitors: competitorData,
       trends: trendData,
       holidays: holidayRows,
     });
+    if (!summary) {
+      console.log(`[Insights] No AI summary this time for property ${propertyId} — keeping the previous one`);
+      return;
+    }
     await db.query(
       'UPDATE ai_market_summary SET summary = $1, generated_at = NOW() WHERE property_id = $2',
       [JSON.stringify(summary), propertyId]

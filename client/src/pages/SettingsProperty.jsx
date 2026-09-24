@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function SettingsProperty() {
+  const { hasModule } = useAuth();
   const [propertyForm, setPropertyForm] = useState(null);
   const [propertySaving, setPropertySaving] = useState(false);
   const [propertySaved, setPropertySaved] = useState(false);
@@ -114,6 +116,118 @@ export default function SettingsProperty() {
           </div>
         )}
       </div>
+
+      {hasModule('insights') && <MarketInsightsCard />}
+    </div>
+  );
+}
+
+// Dashboard → Market Insights, per property (migration 069): where the
+// property is, its own Google listing, which Google searches to follow, and a
+// short description for the weekly AI briefing.
+function MarketInsightsCard() {
+  const [form, setForm] = useState(null);
+  const [keywordsText, setKeywordsText] = useState('');
+  const [selfName, setSelfName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const [msg, setMsg] = useState(null);   // { ok, text }
+
+  function apply(data) {
+    setForm(data);
+    setKeywordsText(data.keywords.join(', '));
+  }
+  useEffect(() => {
+    api.get('/api/insights/settings').then(r => apply(r.data)).catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const keywords = keywordsText.split(',').map(k => k.trim()).filter(Boolean);
+      const r = await api.put('/api/insights/settings', { area: form.area, description: form.description, keywords });
+      apply(r.data);
+      setMsg({ ok: true, text: 'Saved. New search terms appear on the Dashboard in a minute or two.' });
+    } catch (err) {
+      setMsg({ ok: false, text: err.response?.data?.error || 'Failed to save' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function findSelf() {
+    if (!selfName.trim()) return;
+    setFinding(true);
+    setMsg(null);
+    try {
+      const r = await api.put('/api/insights/self', { name: selfName.trim() });
+      apply(r.data);
+      setSelfName('');
+      setMsg({ ok: true, text: `Your listing is now "${r.data.self?.name}".` });
+    } catch (err) {
+      setMsg({ ok: false, text: err.response?.data?.error || 'Could not find that listing' });
+    } finally {
+      setFinding(false);
+    }
+  }
+
+  if (!form) return null;
+  const muted = { fontSize: 12, color: 'var(--text-muted)' };
+
+  return (
+    <div className="card mt-3">
+      <div className="card-title">Market Insights</div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+        Sets up the Dashboard's Competitor Ratings, Search Interest and AI Weekly Briefing for this property.
+      </p>
+
+      <div className="form-group">
+        <label className="form-label">Area</label>
+        <input className="form-input" placeholder="e.g. Kintamani, Bali" value={form.area}
+          onChange={e => setForm(f => ({ ...f, area: e.target.value }))} />
+        <div style={muted}>Used to find the right Google listings (yours and your competitors') and in the AI briefing.</div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Google searches to follow (up to 5, comma-separated)</label>
+        <input className="form-input" placeholder="e.g. kintamani glamping, bali glamping" value={keywordsText}
+          onChange={e => setKeywordsText(e.target.value)} />
+        <div style={muted}>What guests type into Google when looking for a place like yours. Shown on the Search Interest card.</div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Short description (for the AI briefing)</label>
+        <input className="form-input" placeholder="e.g. glamping resort with volcano and lake views" value={form.description}
+          onChange={e => setForm(f => ({ ...f, description: e.target.value }))} maxLength={300} />
+      </div>
+
+      <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 14 }}>
+        <label className="form-label">Your Google listing</label>
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          {form.self
+            ? <>✓ <strong>{form.self.name}</strong>{form.self.matched_address ? <span style={muted}> — {form.self.matched_address}</span> : null}</>
+            : <span style={muted}>Not set — the Competitor Ratings card has no "You" row to compare with.</span>}
+        </div>
+        {form.places_configured ? (
+          <div className="flex gap-2">
+            <input className="form-input" placeholder={form.self ? 'Change: type your property name as on Google' : 'Type your property name as on Google'}
+              value={selfName} onChange={e => setSelfName(e.target.value)} />
+            <button className="btn btn-secondary btn-sm" onClick={findSelf} disabled={finding || !selfName.trim()}>
+              {finding ? 'Finding…' : 'Find'}
+            </button>
+          </div>
+        ) : (
+          <div style={muted}>Google Places isn't set up on the server (GOOGLE_PLACES_API_KEY).</div>
+        )}
+        <div style={{ ...muted, marginTop: 4 }}>Save the Area first so the search looks in the right place.</div>
+      </div>
+
+      {msg && (
+        <div style={{ fontSize: 12, marginTop: 10, color: msg.ok ? 'var(--color-success, #16a34a)' : 'var(--danger, #dc2626)' }}>{msg.text}</div>
+      )}
     </div>
   );
 }

@@ -1127,6 +1127,12 @@ function CompetitorRatingsCard({ competitors, isOwner, onChanged }) {
       ) : (
         <>
           {self && <CompetitorRow c={self} highlight />}
+          {!self && isOwner && (
+            <p style={{ color: '#6B7280', fontSize: 12, margin: '0 0 8px' }}>
+              Compare with your own rating: set your Google listing in{' '}
+              <Link to="/settings/property">Settings → Property Details → Market Insights</Link>.
+            </p>
+          )}
           {others.length > 0 ? (
             others.map(c => <CompetitorRow key={c.id} c={c} isOwner={isOwner} onRemove={() => handleRemove(c.id)} />)
           ) : (
@@ -1165,13 +1171,18 @@ function trendAverage(points) {
   return points.reduce((sum, p) => sum + p.interest, 0) / points.length;
 }
 
-function SearchTrendsCard({ trends }) {
+function SearchTrendsCard({ trends, isOwner }) {
   const terms = Object.keys(trends);
   if (terms.length === 0) {
     return (
       <div className="card">
         <div className="card-title">Search Interest</div>
-        <p style={{ color: '#6B7280', fontSize: 13 }}>No data yet — trends refresh weekly.</p>
+        <p style={{ color: '#6B7280', fontSize: 13 }}>
+          No data yet — follow the Google searches your guests make (e.g. "ubud villa")
+          {isOwner
+            ? <> in <Link to="/settings/property">Settings → Property Details → Market Insights</Link>.</>
+            : '. The owner sets them in Settings.'}
+        </p>
       </div>
     );
   }
@@ -1573,7 +1584,7 @@ export default function Dashboard() {
       {/* ── Market Insights ── */}
       <div className="grid-2" style={{ gap: 16, marginTop: 16 }}>
         <CompetitorRatingsCard competitors={competitors} isOwner={user?.role === 'owner'} onChanged={load} />
-        <SearchTrendsCard trends={trends} />
+        <SearchTrendsCard trends={trends} isOwner={user?.role === 'owner'} />
       </div>
       <div style={{ marginTop: 16 }}>
         <AiSummaryCard summary={aiSummary} />

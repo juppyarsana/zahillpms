@@ -11,10 +11,12 @@ function isConfigured() {
   return !!process.env.GOOGLE_PLACES_API_KEY;
 }
 
-// Resolves a free-text name (as typed by the owner) to a Google Place — biased toward
-// Kintamani, Bali since that's always where competitors are located.
-async function findPlace(name) {
-  const url = `${SEARCH_URL}?query=${encodeURIComponent(`${name} Kintamani Bali`)}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+// Resolves a free-text name (as typed by the owner) to a Google Place. `area` is
+// the property's market area (property_settings.market_area, e.g. "Kintamani,
+// Bali") appended to the search so a common name finds the local listing.
+async function findPlace(name, area) {
+  const query = area ? `${name} ${area}` : name;
+  const url = `${SEARCH_URL}?query=${encodeURIComponent(query)}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {

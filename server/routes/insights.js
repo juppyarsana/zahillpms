@@ -50,6 +50,96 @@ router.get('/competitors', auth, async (req, res) => {
   }
 });
 
+// ── Market settings (migration 069) ─────────────────────────────────────────
+// Per property: where it is (for Google searches + the AI briefing), which
+// search terms to follow, a short description for the AI briefing, and its
+// own Google listing (the competitors row with is_self = true).
+
+async function loadMarketSettings(propertyId) {
+  const [{ rows: [ps] }, { rows: [self] }] = await Promise.all([
+    db.query('SELECT market_area, market_keywords, market_description FROM property_settings WHERE property_id = $1', [propertyId]),
+    db.query('SELECT name, matched_address FROM competitors WHERE property_id = $1 AND is_self AND is_active LIMIT 1', [propertyId]),
+  ]);
+  return {
+    area: ps?.market_area || '',
+    keywords: ps?.market_keywords || [],
+    description: ps?.market_description || '',
+    self: self || null,
+    places_configured: places.isConfigured(),
+  };
+}
+
+// GET /api/insights/settings (owner)
+router.get('/settings', auth, requireRole('owner'), async (req, res) => {
+  try {
+    res.json(await loadMarketSettings(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/insights/settings { area, keywords[], description } (owner)
+router.put('/settings', auth, requireRole('owner'), async (req, res) => {
+  const area = String(req.body.area || '').trim().slice(0, 120) || null;
+  const description = String(req.body.description || '').trim().slice(0, 300) || null;
+  const raw = Array.isArray(req.body.keywords) ? req.body.keywords : [];
+  const keywords = [...new Set(raw.map(k => String(k).trim().toLowerCase()).filter(Boolean))];
+  if (keywords.length > 5) return res.status(400).json({ error: 'Follow at most 5 search terms' });
+  if (keywords.some(k => k.length > 60)) return res.status(400).json({ error: 'A search term can be at most 60 characters' });
+  try {
+    const { rows: [before] } = await db.query('SELECT market_keywords FROM property_settings WHERE property_id = $1', [req.propertyId]);
+    await db.query(
+      'UPDATE property_settings SET market_area = $1, market_keywords = $2, market_description = $3 WHERE property_id = $4',
+      [area, keywords, description, req.propertyId]
+    );
+    // New search terms: fetch their data now (in the background) so the
+    // Dashboard card fills in without waiting for Monday's refresh.
+    const added = keywords.filter(k => !(before?.market_keywords || []).includes(k));
+    if (added.length) refreshSearchTrends(req.propertyId).catch(err => console.error('[Insights] Trend refresh after settings change failed:', err.message));
+    res.json(await loadMarketSettings(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/insights/self { name } (owner) — find the property's own Google
+// listing and use it as the "You" row on the Competitor Ratings card.
+router.put('/self', auth, requireRole('owner'), async (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  if (!places.isConfigured()) return res.status(400).json({ error: 'Google Places API key not configured' });
+  const client = await db.pool.connect();
+  try {
+    const { rows: [ps] } = await client.query('SELECT market_area FROM property_settings WHERE property_id = $1', [req.propertyId]);
+    const match = await places.findPlace(name, ps?.market_area);
+    if (!match) return res.status(404).json({ error: `No Google listing found for "${name}"` });   // released in finally
+    await client.query('BEGIN');
+    // Only one "You" row: the previous one is retired (its history is kept).
+    await client.query(
+      'UPDATE competitors SET is_self = false, is_active = false WHERE property_id = $1 AND is_self AND place_id IS DISTINCT FROM $2',
+      [req.propertyId, match.placeId]
+    );
+    const { rows: [row] } = await client.query(
+      `INSERT INTO competitors (name, place_id, matched_address, is_self, is_active, property_id)
+       VALUES ($1, $2, $3, true, true, $4)
+       ON CONFLICT (place_id, property_id) DO UPDATE SET name = EXCLUDED.name, matched_address = EXCLUDED.matched_address, is_self = true, is_active = true
+       RETURNING id`,
+      [match.name, match.placeId, match.address, req.propertyId]
+    );
+    await client.query(
+      'INSERT INTO competitor_snapshots (competitor_id, rating, review_count, price_level) VALUES ($1, $2, $3, $4)',
+      [row.id, match.rating, match.userRatingCount, match.priceLevel]
+    );
+    await client.query('COMMIT');
+    res.json(await loadMarketSettings(req.propertyId));
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/insights/competitors — add a competitor by name (owner only)
 // Looks the name up on Google Places so the owner can see exactly what it resolved to.
 router.post('/competitors', auth, requireRole('owner'), async (req, res) => {
@@ -58,7 +148,8 @@ router.post('/competitors', auth, requireRole('owner'), async (req, res) => {
   if (!places.isConfigured()) return res.status(400).json({ error: 'Google Places API key not configured' });
 
   try {
-    const match = await places.findPlace(name);
+    const { rows: [ps] } = await db.query('SELECT market_area FROM property_settings WHERE property_id = $1', [req.propertyId]);
+    const match = await places.findPlace(name, ps?.market_area);
     if (!match) return res.status(404).json({ error: `No Google listing found for "${name}"` });
 
     const { rows: [competitor] } = await db.query(
@@ -106,10 +197,14 @@ router.post('/competitors/refresh', auth, requireRole('owner'), async (req, res)
 // GET /api/insights/trends
 router.get('/trends', auth, async (req, res) => {
   try {
+    // Only the terms the property follows now (a removed term's history stays
+    // in search_trends but isn't shown).
     const { rows } = await db.query(
-      `SELECT term, point_date, interest FROM search_trends
-       WHERE property_id = $1 AND point_date >= CURRENT_DATE - INTERVAL '90 days'
-       ORDER BY term, point_date`,
+      `SELECT st.term, st.point_date, st.interest FROM search_trends st
+       JOIN property_settings ps ON ps.property_id = st.property_id
+       WHERE st.property_id = $1 AND st.point_date >= CURRENT_DATE - INTERVAL '90 days'
+         AND st.term = ANY(ps.market_keywords)
+       ORDER BY st.term, st.point_date`,
       [req.propertyId]
     );
     const byTerm = {};
