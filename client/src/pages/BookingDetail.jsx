@@ -13,6 +13,13 @@ import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
+// bookings.folio_status — set when a city-ledger stay is checked out billed
+// to the agent (migrations 042/043); tracked on the Agent Billing page.
+const AGENT_BILLING = {
+  pending_agent_invoice: { label: 'Not invoiced yet', badge: 'amber' },
+  invoiced:              { label: 'Invoiced — awaiting payment', badge: 'blue' },
+  paid:                  { label: 'Paid by agent', badge: 'green' },
+};
 const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 const ACTIVITY_STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
 // Same list NewBooking.jsx uses for the same field.
@@ -726,6 +733,21 @@ export default function BookingDetail() {
             <span className="text-muted">Status</span>
             <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
           </div>
+          {AGENT_BILLING[booking.folio_status] && (
+            <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
+              <span className="text-muted">Agent billing</span>
+              <span style={{ textAlign: 'right' }}>
+                <span className={`badge badge-${AGENT_BILLING[booking.folio_status].badge}`}>{AGENT_BILLING[booking.folio_status].label}</span>
+                {booking.agent_invoice_number && <span style={{ fontSize: 12, marginLeft: 6 }}>{booking.agent_invoice_number}</span>}
+                {booking.folio_status === 'invoiced' && parseFloat(booking.agent_paid_amount) > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtIDR(booking.agent_paid_amount)} received so far</div>
+                )}
+                {isOwner && (
+                  <div style={{ fontSize: 12 }}><Link to={`/agents/${booking.source}`}>Agent statement →</Link></div>
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

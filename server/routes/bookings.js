@@ -820,9 +820,14 @@ router.get('/:id', auth, async (req, res) => {
              )) as deposit_paid,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
-             END AS group_size
+             END AS group_size,
+             -- Agent billing (city ledger): shown as a badge on the booking page.
+             ai.invoice_number AS agent_invoice_number,
+             (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
+               WHERE apa.booking_id = b.id) AS agent_paid_amount
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+      LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id AND ai.property_id = b.property_id
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
     const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [req.params.id]);
     const notesQ = db.query(`
