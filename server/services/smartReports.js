@@ -1,5 +1,5 @@
 const nodemailer = require('nodemailer');
-const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card, emailDocument } = require('./emailCards');
 const db = require('../db');
 const { resolveSmtp } = require('./mailer');
 const telegram = require('./telegramService');
@@ -284,20 +284,25 @@ function morningBriefEmail(b) {
     : `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;font-size:13px;color:#166534;">✅ Nothing needs attention this morning.</div>`;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
+  <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Morning Brief</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDateLong(b.date))}</div>
 
-    ${CARD_TABLE_OPEN}<tr>
+    ${CARD_TABLE_OPEN}
+    <tr>
       ${tile('Arriving', rooms(b.arrivals.rooms), `${b.arrivals.pax} pax`)}
       ${tile('In-house', rooms(b.in_house.rooms), `${b.in_house.pax} pax`)}
+    </tr>
+    <tr>
       ${tile('Departing', rooms(b.departures.rooms), `${b.departures.pax} pax`)}
-    </tr><tr>
       ${tile('Tonight', `${b.tonight.pct}%`, `${b.tonight.rooms} of ${b.tonight.sellable} rooms`)}
+    </tr>
+    <tr>
       ${tile('Breakfast', `${b.breakfast_pax} pax`, b.dinner_pax > 0 ? `Dinner tonight: ${b.dinner_pax} pax` : '')}
       ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), `from ${rooms(b.to_collect.rooms)} leaving`)}
-    </tr>${CARD_TABLE_CLOSE}
+    </tr>
+    ${CARD_TABLE_CLOSE}
 
     ${section('Needs attention', attention)}
     ${section('Arriving today', table(
@@ -338,7 +343,7 @@ async function deliver(recipient, rendered, ps) {
   if (!smtp) return { ok: false, error: 'No email server configured (property SMTP or PLATFORM_SMTP_*)' };
   try {
     await nodemailer.createTransport(smtp.transportConfig).sendMail({
-      from: smtp.from, to: recipient.address, subject: rendered.email.subject, html: rendered.email.html,
+      from: smtp.from, to: recipient.address, subject: rendered.email.subject, html: emailDocument(rendered.email.html, rendered.email.subject),
       ...(rendered.email.attachments?.length ? { attachments: rendered.email.attachments } : {}),
     });
     return { ok: true };

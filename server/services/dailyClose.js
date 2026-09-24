@@ -220,20 +220,25 @@ function dailyCloseEmail(b) {
 
   const n = b.next_day;
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
+  <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Daily Close</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · compared with ${esc(fmtDay(lw.date))}</div>
 
-    ${CARD_TABLE_OPEN}<tr>
+    ${CARD_TABLE_OPEN}
+    <tr>
       ${tile('Revenue', esc(fmtIDR(t.total)), cmp(b.change.total))}
       ${tile('Occupancy', `${t.occupancy}%`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${t.rooms_sold} of ${b.sellable} rooms</div>${cmp(b.change.occupancy_pts, ' pts')}`)}
+    </tr>
+    <tr>
       ${tile('Collected', esc(fmtIDR(b.collected.total)), '<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">money received</div>')}
-    </tr><tr>
       ${tile('ADR', esc(fmtIDR(t.adr)), cmp(b.change.adr))}
+    </tr>
+    <tr>
       ${tile('RevPAR', esc(fmtIDR(t.revpar)), '')}
       ${tile('New bookings', `${b.new_bookings.length}`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${b.new_nights} nights · ${esc(fmtIDR(b.new_value))}</div>`)}
-    </tr>${CARD_TABLE_CLOSE}
+    </tr>
+    ${CARD_TABLE_CLOSE}
 
     ${section('Revenue', table([{ label: '' }, { label: 'This day', right: true }, { label: 'Last week', right: true }], revRows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],

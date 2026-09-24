@@ -1,6 +1,6 @@
 const db = require('../db');
 const nodemailer = require('nodemailer');
-const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('../services/emailCards');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, MOBILE_STYLE, card } = require('../services/emailCards');
 const roomChargeService = require('../services/roomChargeService');
 const { resolveSmtp } = require('../services/mailer');
 
@@ -103,7 +103,7 @@ async function sendAuditEmail(propertyId, businessDate, data) {
   const html = `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${MOBILE_STYLE}</style></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px;">
@@ -130,16 +130,18 @@ async function sendAuditEmail(propertyId, businessDate, data) {
             <!-- Stat grid (3x2, equal cards) -->
             <div style="margin-bottom:20px;">
             ${CARD_TABLE_OPEN}
-              <tr>
-                ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
-                ${statCard('Room Revenue (net)', fmtIDR(roomRevenue), '#111827')}
-                ${statCard('F&B Revenue (net)', fmtIDR(fnbRevenue), '#111827')}
-              </tr>
-              <tr>
-                ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
-                ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
-                ${statCard('Arriving Today', arrivingToday.length, '#111827')}
-              </tr>
+            <tr>
+              ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
+              ${statCard('Room Revenue (net)', fmtIDR(roomRevenue), '#111827')}
+            </tr>
+            <tr>
+              ${statCard('F&B Revenue (net)', fmtIDR(fnbRevenue), '#111827')}
+              ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
+            </tr>
+            <tr>
+              ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
+              ${statCard('Arriving Today', arrivingToday.length, '#111827')}
+            </tr>
             ${CARD_TABLE_CLOSE}
             </div>
 

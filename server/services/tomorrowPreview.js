@@ -128,20 +128,25 @@ function tomorrowPreviewEmail(b) {
     : `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;font-size:13px;color:#166534;">✅ Every arriving guest's room is clean and free.</div>`;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
+  <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Tomorrow Preview</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
 
-    ${CARD_TABLE_OPEN}<tr>
+    ${CARD_TABLE_OPEN}
+    <tr>
       ${tile('Arriving', rooms(b.arrivals.rooms), `${b.arrivals.pax} pax${b.group_arrivals ? ` · ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`)}
       ${tile('Departing', rooms(b.departures.rooms), `${b.departures.pax} pax`)}
+    </tr>
+    <tr>
       ${tile('Occupancy', `${b.occupancy.pct}%`, `${b.occupancy.rooms} of ${b.occupancy.sellable} rooms`)}
-    </tr><tr>
       ${tile('Breakfast', `${b.breakfast_pax} pax`, 'that morning')}
+    </tr>
+    <tr>
       ${tile('Dinner', `${b.dinner_pax} pax`, 'that night')}
       ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), `from ${rooms(b.to_collect.rows.length)} leaving`)}
-    </tr>${CARD_TABLE_CLOSE}
+    </tr>
+    ${CARD_TABLE_CLOSE}
 
     ${section('Rooms to get ready', prepare)}
     ${section('Arriving', table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Stay' }, { label: 'Notes' }],

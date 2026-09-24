@@ -216,20 +216,25 @@ function monthlyEmail(b) {
   ];
   const stayRev = c.room + c.fnb;
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
+  <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Monthly Report</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(c.label)}</div>
 
-    ${CARD_TABLE_OPEN}<tr>
+    ${CARD_TABLE_OPEN}
+    <tr>
       ${tile('Revenue', esc(fmtIDR(c.total)), cmp(b.change.vs_prev, prevShort) + (b.last_year ? cmp(b.change.vs_last_year, 'last year') : ''))}
       ${tile(b.has_expenses ? 'Net income' : 'Money received', esc(fmtIDR(b.has_expenses ? c.net_income : b.collected.total)), '')}
+    </tr>
+    <tr>
       ${tile('Occupancy', `${c.occupancy}%`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${c.rooms_sold} room-nights</div>` + cmp(b.change.occupancy_pts, prevShort, ' pts'))}
-    </tr><tr>
       ${tile('ADR', esc(fmtIDR(c.adr)), '')}
+    </tr>
+    <tr>
       ${tile('RevPAR', esc(fmtIDR(c.revpar)), '')}
       ${tile('Agents owe', esc(fmtIDR(b.agents.total)), b.agents.overdue > 0 ? `<div style="font-size:12px;line-height:17px;color:#b91c1c;margin-top:2px;">${esc(fmtIDR(b.agents.overdue))} overdue</div>` : '')}
-    </tr>${CARD_TABLE_CLOSE}
+    </tr>
+    ${CARD_TABLE_CLOSE}
 
     ${section('Month by month', table(cols, rows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],

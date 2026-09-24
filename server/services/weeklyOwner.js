@@ -208,20 +208,25 @@ function weeklyOwnerEmail(b) {
   const stayRevenue = w.room + w.fnb;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
+  <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Weekly Owner Report</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.from, { weekday: 'short', day: 'numeric', month: 'short' }))} – ${esc(fmtDay(b.to, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))} · compared with the week before</div>
 
-    ${CARD_TABLE_OPEN}<tr>
+    ${CARD_TABLE_OPEN}
+    <tr>
       ${tile('Revenue', esc(fmtIDR(w.total)), cmp(b.change.total))}
       ${tile('Occupancy', `${w.occupancy}%`, sub(`${w.rooms_sold} room-nights`) + cmp(b.change.occupancy_pts, ' pts'))}
+    </tr>
+    <tr>
       ${tile('ADR', esc(fmtIDR(w.adr)), cmp(b.change.adr))}
-    </tr><tr>
       ${tile('RevPAR', esc(fmtIDR(w.revpar)), cmp(b.change.revpar))}
+    </tr>
+    <tr>
       ${tile('Booked · next 14 days', `${b.books.next14.occupancy}%`, sub(esc(fmtIDR(b.books.next14.revenue))))}
       ${tile('Booked · next 30 days', `${b.books.next30.occupancy}%`, sub(esc(fmtIDR(b.books.next30.revenue))))}
-    </tr>${CARD_TABLE_CLOSE}
+    </tr>
+    ${CARD_TABLE_CLOSE}
 
     ${section('Revenue', table([{ label: '' }, { label: 'Last week', right: true }, { label: 'Week before', right: true }], revRows, ''))}
     ${b.books.weak_nights.length ? section('⚠️ Weak nights ahead (under 30% booked)', `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#78350f;">${b.books.weak_nights.length > 7 ? `<b>${b.books.weak_nights.length} of the next 14 nights</b> are under 30% booked. The next ones:<br>` : ''}${b.books.weak_nights.slice(0, 7).map(n => `${esc(fmtDay(n.night, { weekday: 'short', day: 'numeric', month: 'short' }))} — ${n.occupancy}% (${n.rooms} of ${b.sellable})`).join('<br>')}<div style="font-size:12px;margin-top:6px;">Worth a promotion, a rate adjustment or a push on your channels.</div></div>`) : ''}
