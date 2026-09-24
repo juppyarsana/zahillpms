@@ -6,8 +6,11 @@ Last updated: 2026-09-25
 
 ## 🔖 Session handoff — 2026-09-25 (evening)
 
-Everything is **committed and pushed to `dev` and fast-forwarded to `main`**. **Migration 068**
-(Reports & Alerts) is new — next migration number is **069**.
+Everything is **committed and pushed to `dev` and fast-forwarded to `main`** (last commit `c52df84`).
+**Migrations 068** (Reports & Alerts) and **069** (Market Insights per property) are new — next
+migration number is **070**. Production deploy was started the same evening (`deploy.sh` needed
+`git checkout -- client/package-lock.json` first — the server's `npm install` rewrites that file;
+a one-line fix in `deploy.sh` was deferred by the owner).
 
 **Shipped tonight** (one commit each; full write-ups in `CLAUDE.md`):
 - **Folio / invoice:** service charge and tax lines hidden when the rate is 0 (properties that
@@ -24,7 +27,14 @@ Everything is **committed and pushed to `dev` and fast-forwarded to `main`**. **
   alerts, Daily Close (00:30, replaces the night-audit email once someone receives it), Morning
   Brief (07:00), Tomorrow Preview (19:00), Weekly Owner Report (Mon 08:00), Monthly Report (1st
   08:00, PDF + CSV attachments for the accountant). Equal-size summary cards in every email; no
-  links into the PMS in any message.
+  links into the PMS in any message. Booking values in Daily Close / Weekly are NET (same basis
+  as revenue).
+- **Market Insights per property** (migration 069): Settings → Property Details → Market Insights
+  (area, Google searches to follow, short description, own Google listing) — was hardcoded for
+  Zahill (search terms, "Kintamani Bali" suffix, "5-unit" AI description). AI briefing moved to
+  `claude-opus-5` with refusal fallbacks. Manual refresh: no button yet — owner runs
+  `fetch('/api/insights/summary/refresh',{method:'POST',headers:{Authorization:'Bearer '+localStorage.getItem('token')}})`
+  in the browser console (a ↻ button on the card was offered, not built).
 
 **Production deploy — safe order (`deploy.sh` already does it; it stops on the first error and
 only restarts PM2 at the very end, so a failed step leaves the running server untouched):**
