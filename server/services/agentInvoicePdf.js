@@ -1,5 +1,4 @@
-const path = require('path');
-const fs = require('fs');
+const { drawDocumentHeader } = require('./pdfHeader');
 
 function fmtIDR(n) {
   // Fixed 2 decimals — see routes/folio.js's fmtIDR for why the bare
@@ -12,42 +11,16 @@ function fmtIDR(n) {
 // that working code stays untouched. `doc` is a live PDFDocument already
 // piped to the response.
 function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid, balance }) {
-  // Header: logo (if any) sits top-right; the title block is pinned to a
-  // fixed y BELOW the logo's bottom edge rather than following the
-  // auto-flowing cursor, so it can never collide with the logo regardless of
-  // how many lines the property name/address block above takes. Same fix as
-  // routes/folio.js's invoice header.
-  const headerTop = doc.y;
-  const LOGO_SIZE = 65;
-  const LOGO_X = 545 - LOGO_SIZE;
-
-  if (property.logo_url) {
-    try {
-      const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
-      if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
-    } catch (_) {
-      // missing/corrupt logo — text header only
-    }
-  }
-
-  doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
-  doc.fontSize(9).font('Helvetica').fillColor('#555');
-  if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
-  const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
-  if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
-  doc.fillColor('#000');
-  const leftColBottom = doc.y;
-
-  const rightColTop = headerTop + LOGO_SIZE + 10;
-  doc.fontSize(14).font('Helvetica-Bold').text('Agent Invoice', 350, rightColTop, { width: 200, align: 'right' });
-  doc.fontSize(9).font('Helvetica').text(invoice.invoice_number, 350, doc.y, { width: 200, align: 'right' });
-  doc.text(`Issued ${String(invoice.issued_on).slice(0, 10)}`, 350, doc.y, { width: 200, align: 'right' });
-  if (invoice.period_start || invoice.period_end) {
-    doc.text(`Period ${String(invoice.period_start || '').slice(0, 10)} – ${String(invoice.period_end || '').slice(0, 10)}`, 350, doc.y, { width: 200, align: 'right' });
-  }
-
-  doc.x = 50;
-  doc.y = Math.max(leftColBottom, doc.y) + 20;
+  const period = (invoice.period_start || invoice.period_end)
+    ? `Period ${String(invoice.period_start || '').slice(0, 10)} – ${String(invoice.period_end || '').slice(0, 10)}`
+    : null;
+  drawDocumentHeader(doc, property, {
+    title: 'Agent Invoice',
+    refLine: invoice.invoice_number,
+    extraLines: [`Issued ${String(invoice.issued_on).slice(0, 10)}`, period].filter(Boolean),
+    dateLine: null,
+  });
+  doc.moveDown(0.5);
   doc.fontSize(10).font('Helvetica-Bold').text('Bill To');
   doc.font('Helvetica').text(agent.label || '');
   if (agent.billing_address) doc.text(agent.billing_address);

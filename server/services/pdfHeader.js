@@ -1,54 +1,23 @@
 const path = require('path');
 const fs = require('fs');
 
-// Draws the header block shared by every pdfkit document in this app:
-// logo top-right, property name/address/contact top-left, and a
-// right-aligned title block (e.g. "Invoice" / "Pro Forma Invoice" /
-// "Registration Card") pinned to a fixed y BELOW the logo's bottom edge
-// rather than following the auto-flowing cursor, so it can never collide
-// with the logo regardless of how many lines the address block takes.
-// Leaves doc.y positioned to start the body content right after it.
+// The header band shared by every pdfkit document in this app (invoice, pro
+// forma, registration card, receipts, guest/kitchen/balance lists, agent
+// invoice, guest report): property details left, logo centred on the page,
+// title block right. Leaves doc.y positioned to start the body content.
 //
-// Extracted out of routes/folio.js (where invoice/pro-forma originated)
-// so routes/checkin.js's registration card can reuse it without
-// duplicating the layout math.
-//
-// compact: a single short band instead — property details left, logo
-// centred, title block right. Used by the
-// registration card, which needs the page space for the guest to sign.
-function drawDocumentHeader(doc, property, { title, refLine, compact = false }) {
-  const headerTop = doc.y;
-  if (compact) return drawCompactHeader(doc, property, { title, refLine, headerTop });
-  const LOGO_SIZE = 65;
-  const LOGO_X = 545 - LOGO_SIZE;
-
-  if (property.logo_url) {
-    try {
-      const logoPath = path.join(__dirname, '../uploads/property-logos', path.basename(property.logo_url));
-      if (fs.existsSync(logoPath)) doc.image(logoPath, LOGO_X, headerTop, { fit: [LOGO_SIZE, LOGO_SIZE] });
-    } catch (_) {
-      // Corrupt/missing logo file — fall back to text-only header below.
-    }
-  }
-
-  doc.fontSize(18).font('Helvetica-Bold').text(property.property_name || 'Zahill', 50, headerTop, { width: 300 });
-  doc.fontSize(9).font('Helvetica').fillColor('#555');
-  if (property.property_address) doc.text(property.property_address, 50, doc.y, { width: 300 });
-  const contactLine = [property.property_phone, property.property_email].filter(Boolean).join('  ·  ');
-  if (contactLine) doc.text(contactLine, 50, doc.y, { width: 300 });
-  doc.fillColor('#000');
-  const leftColBottom = doc.y;
-
-  const rightColTop = headerTop + LOGO_SIZE + 10;
-  doc.fontSize(14).font('Helvetica-Bold').text(title, 300, rightColTop, { width: 250, align: 'right' });
-  doc.fontSize(9).font('Helvetica').text(refLine, 300, doc.y, { width: 250, align: 'right' });
-  doc.text(new Date().toLocaleDateString('id-ID'), 300, doc.y, { width: 250, align: 'right' });
-
-  doc.x = 50;
-  doc.y = Math.max(leftColBottom, doc.y) + 20;
+// refLine: the line under the title (booking ref, date shown, …).
+// extraLines: optional further lines under it (e.g. an agent invoice's period).
+// dateLine: defaults to today's date; pass null to leave it out.
+function drawDocumentHeader(doc, property, { title, refLine, extraLines = [], dateLine }) {
+  return drawCompactHeader(doc, property, {
+    title,
+    lines: [refLine, ...extraLines, dateLine === undefined ? new Date().toLocaleDateString('id-ID') : dateLine].filter(Boolean),
+    headerTop: doc.y,
+  });
 }
 
-function drawCompactHeader(doc, property, { title, refLine, headerTop }) {
+function drawCompactHeader(doc, property, { title, lines, headerTop }) {
   // Three columns in one band: property details left, logo centred on the
   // page, title block right. Logos are trimmed to their artwork on upload
   // (services/logoImage.js), so this is roughly the size the mark prints at.
@@ -82,13 +51,12 @@ function drawCompactHeader(doc, property, { title, refLine, headerTop }) {
   const detailsH = leftLines.reduce((h, l) => h + doc.heightOfString(l, { width: colW }), 0);
   const leftH = nameH + 2 + detailsH;
 
-  // Right: title, booking ref, date.
-  const dateStr = new Date().toLocaleDateString('id-ID');
+  // Right: title, then ref/date lines.
   const rightW = pageW - 50 - rightX;
   doc.fontSize(15).font('Helvetica-Bold');
   const titleH = doc.heightOfString(title, { width: rightW });
   doc.fontSize(9).font('Helvetica');
-  const rightH = titleH + doc.heightOfString(refLine, { width: rightW }) + doc.heightOfString(dateStr, { width: rightW });
+  const rightH = titleH + lines.reduce((h, l) => h + doc.heightOfString(l, { width: rightW }), 0);
 
   // Both side blocks share one top line (property name and title level with
   // each other), centred as a group on the logo's height.
@@ -102,8 +70,8 @@ function drawCompactHeader(doc, property, { title, refLine, headerTop }) {
   const leftBottom = doc.y;
 
   doc.fontSize(15).font('Helvetica-Bold').text(title, rightX, blockTop, { width: rightW, align: 'right' });
-  doc.fontSize(9).font('Helvetica').text(refLine, rightX, doc.y, { width: rightW, align: 'right' });
-  doc.text(dateStr, rightX, doc.y, { width: rightW, align: 'right' });
+  doc.fontSize(9).font('Helvetica');
+  for (const l of lines) doc.text(l, rightX, doc.y, { width: rightW, align: 'right' });
 
   doc.x = 50;
   doc.y = Math.max(leftBottom, doc.y, headerTop + bandH) + 14;

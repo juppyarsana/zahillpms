@@ -214,7 +214,7 @@ async function loadRegCardProperty(propertyId) {
 
 // One registration card on the current page.
 function drawRegCard(doc, property, data) {
-  drawDocumentHeader(doc, property, { title: 'Registration Card', refLine: `Booking #${String(data.booking_id).slice(0, 8).toUpperCase()}`, compact: true });
+  drawDocumentHeader(doc, property, { title: 'Registration Card', refLine: `Booking #${String(data.booking_id).slice(0, 8).toUpperCase()}` });
   renderRegistrationCard(doc, { property, data });
 }
 
