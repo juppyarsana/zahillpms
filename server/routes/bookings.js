@@ -32,6 +32,23 @@ async function grossFactor(client, propertyId) {
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
+// When a booking stops occupying its room, for availability checks. Normally
+// its check-out date — but a guest still checked in AFTER their check-out
+// date (overdue: staff haven't checked them out yet) is physically still in
+// the room, so it stays occupied through tonight until someone checks them
+// out or extends the stay. A guest due out today isn't affected (they leave
+// before the next arrival). `a` = the bookings table alias ('' for none).
+const TODAY_WITA_SQL = "(NOW() AT TIME ZONE 'Asia/Makassar')::date";
+function occupiedUntilSql(a = 'b') {
+  const c = a ? `${a}.` : '';
+  return `(CASE WHEN ${c}status = 'checked_in' AND ${c}check_out_date < ${TODAY_WITA_SQL}
+               THEN ${TODAY_WITA_SQL} + 1 ELSE ${c}check_out_date END)`;
+}
+function overdueSql(a = 'b') {
+  const c = a ? `${a}.` : '';
+  return `(${c}status = 'checked_in' AND ${c}check_out_date < ${TODAY_WITA_SQL})`;
+}
+
 // A booking can carry more than one 'balance' payment line: a price
 // correction (PUT /:id/price) that raises an already fully-paid booking adds a
 // second, pending line for the difference. balance_paid = every balance line
@@ -117,7 +134,7 @@ function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomReve
 
 // Shared by GET / (JSON list) and GET /guest-report/pdf, so the exported
 // report always matches exactly what the list view is currently showing.
-function buildBookingsQuery(propertyId, { month, year, unit_id, status, source, group_id, q, date_from, date_to }) {
+function buildBookingsQuery(propertyId, { month, year, unit_id, status, source, group_id, q, date_from, date_to, include_overdue }) {
   let query = `
     SELECT b.*, g.name as guest_name, g.whatsapp as guest_whatsapp, g.nationality, g.id_number, u.name as unit_name,
            u.bed_config, rp.code as rate_plan_code, rp.name as rate_plan_name,
@@ -139,7 +156,11 @@ function buildBookingsQuery(propertyId, { month, year, unit_id, status, source, 
   // single-month view) when both are somehow present.
   if (date_from && date_to) {
     params.push(date_from, date_to);
-    query += ` AND b.check_in_date <= $${params.length} AND b.check_out_date > $${params.length - 1}`;
+    // include_overdue (Reservations calendar): also guests still checked in
+    // past their check-out, whose stay effectively runs on to today.
+    query += include_overdue
+      ? ` AND b.check_in_date <= $${params.length} AND (b.check_out_date > $${params.length - 1} OR ${overdueSql('b')})`
+      : ` AND b.check_in_date <= $${params.length} AND b.check_out_date > $${params.length - 1}`;
   } else if (month && year) {
     params.push(year, month);
     query += ` AND EXTRACT(YEAR FROM b.check_in_date) = $${params.length-1} AND EXTRACT(MONTH FROM b.check_in_date) = $${params.length}`;
@@ -576,14 +597,14 @@ router.get('/availability', auth, async (req, res) => {
     let excludeClause = '';
     if (exclude_booking_id) { conflictParams.push(exclude_booking_id); excludeClause = `AND b.id != $${conflictParams.length}`; }
     const conflictQ = db.query(`
-      SELECT b.id, b.check_in_date, b.check_out_date, b.status, g.name as guest_name
+      SELECT b.id, b.check_in_date, b.check_out_date, b.status, g.name as guest_name, ${overdueSql('b')} AS overdue
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       WHERE b.unit_id = $1
         AND b.property_id = $4
         AND b.status NOT IN ('cancelled','no_show')
         AND b.check_in_date < $3
-        AND b.check_out_date > $2
+        AND ${occupiedUntilSql('b')} > $2
         ${excludeClause}
     `, conflictParams);
 
@@ -603,6 +624,7 @@ router.get('/availability', auth, async (req, res) => {
         check_in_date: c.check_in_date,
         check_out_date: c.check_out_date,
         status: c.status,
+        overdue: c.overdue, // still checked in after check-out — blocks the room until checked out
       })),
       allotment: allotmentRows[0] || null,
     });
@@ -622,13 +644,13 @@ router.get('/transfer-availability', auth, async (req, res) => {
     let excludeClause = '';
     if (exclude_booking_id) { params.push(exclude_booking_id); excludeClause = `AND b.id != $${params.length}`; }
     const { rows: conflicts } = await db.query(`
-      SELECT b.unit_id, g.name as guest_name, b.check_in_date, b.check_out_date
+      SELECT b.unit_id, g.name as guest_name, b.check_in_date, b.check_out_date, ${overdueSql('b')} AS overdue
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       WHERE b.property_id = $3
         AND b.status NOT IN ('cancelled','no_show')
         AND b.check_in_date < $2
-        AND b.check_out_date > $1
+        AND ${occupiedUntilSql('b')} > $1
         ${excludeClause}
     `, params);
     const conflictMap = {};
@@ -820,7 +842,7 @@ router.post('/', auth, async (req, res) => {
         AND property_id = $4
         AND status NOT IN ('cancelled','no_show')
         AND check_in_date < $3
-        AND check_out_date > $2
+        AND ${occupiedUntilSql('')} > $2
     `, [unit_id, check_in_date, check_out_date, req.propertyId]);
     if (conflict.rows.length > 0) {
       await client.query('ROLLBACK');
@@ -925,7 +947,7 @@ router.post('/group', auth, async (req, res) => {
         SELECT id FROM bookings
         WHERE unit_id = $1 AND property_id = $4
           AND status NOT IN ('cancelled','no_show')
-          AND check_in_date < $3 AND check_out_date > $2
+          AND check_in_date < $3 AND ${occupiedUntilSql('')} > $2
       `, [unitId, check_in_date, check_out_date, req.propertyId]);
       if (conflict.rows.length > 0) {
         await client.query('ROLLBACK');
@@ -1103,7 +1125,7 @@ router.put('/:id/transfer', auth, async (req, res) => {
         AND id != $2
         AND status NOT IN ('cancelled','no_show')
         AND check_in_date < $4
-        AND check_out_date > $3
+        AND ${occupiedUntilSql('')} > $3
     `, [unit_id, req.params.id, booking.check_in_date, booking.check_out_date, req.propertyId]);
     if (conflicts.length > 0) {
       await client.query('ROLLBACK');
@@ -1170,7 +1192,7 @@ router.put('/:id/dates', auth, async (req, res) => {
         AND id != $2
         AND status NOT IN ('cancelled','no_show')
         AND check_in_date < $4
-        AND check_out_date > $3
+        AND ${occupiedUntilSql('')} > $3
     `, [booking.unit_id, req.params.id, check_in_date, check_out_date, req.propertyId]);
     if (conflicts.length > 0) {
       await client.query('ROLLBACK');
@@ -1628,7 +1650,7 @@ router.put('/:id/change-room', auth, async (req, res) => {
       SELECT b.id, g.name AS guest_name FROM bookings b JOIN guests g ON g.id = b.guest_id
       WHERE b.unit_id = $1 AND b.property_id = $2 AND b.id <> $3
         AND b.status NOT IN ('cancelled', 'no_show')
-        AND b.check_in_date < $5 AND b.check_out_date > $4
+        AND b.check_in_date < $5 AND ${occupiedUntilSql('b')} > $4
       LIMIT 1`, [unit_id, req.propertyId, before.id, before.check_in_date, before.check_out_date]);
     if (conflict) { await client.query('ROLLBACK'); return res.status(409).json({ error: `That room is booked for these dates (${conflict.guest_name})` }); }
 

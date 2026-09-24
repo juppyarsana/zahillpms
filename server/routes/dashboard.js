@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
+const { computeProforma } = require('../services/folioService');
 
 // GET /api/dashboard/summary
 router.get('/summary', auth, async (req, res) => {
@@ -96,10 +97,28 @@ router.get('/summary', auth, async (req, res) => {
     const units = occupancyQ.rows;
     const occupied = units.filter(u => u.status === 'occupied').length;
 
+    // Guests still checked in AFTER their check-out date (staff forgot to
+    // check them out, or the stay was extended without amending the dates).
+    // Their room stays blocked until it's sorted (see bookings.js
+    // occupiedUntilSql) — the Dashboard banner makes sure someone notices.
+    const { rows: overdue } = await db.query(`
+      SELECT b.id, b.check_out_date, g.name AS guest_name, u.name AS unit_name,
+             ((NOW() AT TIME ZONE 'Asia/Makassar')::date - b.check_out_date) AS days_overdue
+      FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
+      WHERE b.property_id = $1 AND b.status = 'checked_in'
+        AND b.check_out_date < (NOW() AT TIME ZONE 'Asia/Makassar')::date
+      ORDER BY b.check_out_date, u.name
+    `, [req.propertyId]);
+    for (const o of overdue) {
+      const pf = await computeProforma(o.id, req.propertyId);
+      o.balance_due = pf ? Math.max(0, pf.balance_due) : 0;
+    }
+
     res.json({
       occupancy: { occupied, total: units.length, units },
       arrivals_today: arrivalsQ.rows,
       departures_today: departuresQ.rows,
+      overdue_checkouts: overdue,
       pending_payments_count: parseInt(pendingPaymentsQ.rows[0].count),
       open_tasks_count: parseInt(openTasksQ.rows[0].count),
       upcoming_birthdays_count: parseInt(birthdaysQ.rows[0].count),

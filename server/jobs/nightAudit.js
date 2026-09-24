@@ -30,7 +30,7 @@ async function getBusinessDate() {
 // what this function did before multi-tenancy (every property's audit used to land in
 // one inbox under a "[Zahill]" subject regardless of which property it was actually for).
 async function sendAuditEmail(propertyId, businessDate, data) {
-  const { unitsOccupied, noShows, roomRevenue, fnbRevenue = 0, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated } = data;
+  const { unitsOccupied, noShows, roomRevenue, fnbRevenue = 0, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated, overdueCheckouts = [] } = data;
 
   const { rows: [ps] } = await db.query(
     `SELECT property_name, property_address, smtp_host, smtp_port, smtp_user, smtp_password, smtp_from
@@ -192,6 +192,22 @@ async function sendAuditEmail(propertyId, businessDate, data) {
                 <tbody>${arrivalRows(arrivingToday)}</tbody>
               </table>
             </div>
+
+            <!-- Still checked in past check-out: staff forgot to check them out,
+                 or the stay was extended without amending the dates. -->
+            ${overdueCheckouts.length ? `
+            <div style="margin-bottom:24px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px 16px;">
+              <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:8px;">
+                ⚠ Still checked in past check-out (${overdueCheckouts.length})
+              </div>
+              ${overdueCheckouts.map(o => `
+                <div style="font-size:13px;color:#7f1d1d;padding:3px 0;">
+                  <b>${o.unit_name}</b> · ${o.guest_name} — was due out ${fmtDateShort(String(o.check_out_date).slice(0, 10))}
+                </div>`).join('')}
+              <div style="font-size:12px;color:#991b1b;margin-top:8px;">
+                Their rooms stay blocked for new bookings until front desk checks them out or amends the dates.
+              </div>
+            </div>` : ''}
 
             <!-- Pending balances -->
             <div style="margin-bottom:24px;">
@@ -361,6 +377,20 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
     [tomorrow, propertyId]
   );
 
+  // 7. Guests still checked in on or after their check-out date. The audit
+  // runs at night, so anyone due out today who hasn't been checked out by now
+  // counts too. Reported to the owner; their rooms stay blocked for new
+  // bookings (routes/bookings.js occupiedUntilSql) until it's sorted.
+  const { rows: overdueCheckouts } = await db.query(
+    `SELECT b.id, g.name AS guest_name, u.name AS unit_name, b.check_out_date
+     FROM bookings b
+     JOIN guests g ON g.id = b.guest_id
+     JOIN units u  ON u.id = b.unit_id
+     WHERE b.status = 'checked_in' AND b.check_out_date <= $1 AND b.property_id = $2
+     ORDER BY b.check_out_date, u.name`,
+    [businessDate, propertyId]
+  );
+
   // 8. Housekeeping task auto-generation for tomorrow's checkouts
   const { rows: checkouts } = await db.query(
     `SELECT b.id AS booking_id, u.id AS unit_id, u.name AS unit_name
@@ -403,7 +433,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   const unitsOccupied = parseInt(occRows[0].count);
 
   const folioNote = inHouse.length ? ` · ${folioPosted} folio night(s) posted${folioFailed ? ` (${folioFailed} failed)` : ''}` : '';
-  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow${folioNote}`;
+  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow${overdueCheckouts.length ? ` · ${overdueCheckouts.length} still checked in past check-out` : ''}${folioNote}`;
 
   // 10. Write audit log
   await db.query(
@@ -422,7 +452,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
 
   // 11. Owner email — best-effort, never blocks or fails the audit
   try {
-    await sendAuditEmail(propertyId, businessDate, { unitsOccupied, noShows, roomRevenue, fnbRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated });
+    await sendAuditEmail(propertyId, businessDate, { unitsOccupied, noShows, roomRevenue, fnbRevenue, ancillaryRevenue, pendingBalances, arrivingToday, tasksCreated, overdueCheckouts });
   } catch (err) {
     console.error('[Night Audit] Email failed (audit still complete):', err.message);
   }

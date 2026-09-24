@@ -163,7 +163,12 @@ export default function NewBooking() {
     let note = '';
     let blocked = false;
     if (otherRow !== -1) { note = ` — already in this group (Room ${otherRow + 1})`; blocked = true; }
-    else if (a && !a.available) { note = ` — booked${a.conflict?.guest_name ? ` (${a.conflict.guest_name})` : ''}`; blocked = true; }
+    else if (a && !a.available) {
+      note = a.conflict?.overdue
+        ? ` — ${a.conflict.guest_name} still checked in (overdue)`
+        : ` — booked${a.conflict?.guest_name ? ` (${a.conflict.guest_name})` : ''}`;
+      blocked = true;
+    }
     // Out of order is a current status, not date-based — the room may be back
     // by these dates, so it's flagged but still selectable.
     else if (u.status === 'out_of_order') note = ' — out of order now';
@@ -445,7 +450,10 @@ export default function NewBooking() {
                       <strong>Not available</strong> — conflicting booking{availability.conflicts.length > 1 ? 's' : ''}:
                       {availability.conflicts.map(c => (
                         <div key={c.id} style={{ marginTop: 4, fontSize: 12 }}>
-                          {c.guest_name} · {c.check_in_date?.slice(0,10)} → {c.check_out_date?.slice(0,10)} ({c.status})
+                          {c.guest_name} · {c.check_in_date?.slice(0,10)} → {c.check_out_date?.slice(0,10)}{' '}
+                          {c.overdue
+                            ? <b>— still checked in past check-out (overdue). Check them out or extend their stay first.</b>
+                            : `(${c.status})`}
                         </div>
                       ))}
                     </div>

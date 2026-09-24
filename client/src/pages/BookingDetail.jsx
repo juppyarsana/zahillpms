@@ -1311,7 +1311,9 @@ export default function BookingDetail() {
                           <span style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</span>
                           {u.type && <span className="text-muted" style={{ fontSize: 12 }}> · {u.type}</span>}
                           {!isAvailable && u.conflict && (
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Booked by {u.conflict.guest_name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              {u.conflict.overdue ? `${u.conflict.guest_name} still checked in (overdue)` : `Booked by ${u.conflict.guest_name}`}
+                            </div>
                           )}
                           {isAvailable && u.status === 'out_of_order' && (
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Out of order now</div>

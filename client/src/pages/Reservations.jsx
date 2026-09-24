@@ -256,7 +256,15 @@ export default function Reservations() {
 
   useEffect(() => { api.get('/api/units').then(r => setUnits(r.data)); }, []);
   useEffect(() => {
-    api.get(`/api/bookings?month=${month}&year=${year}`).then(r => setBookings(r.data));
+    // Every stay overlapping this month (not just ones that check in in it —
+    // a 28 Sep–3 Oct stay belongs on October's calendar too), from the day
+    // before the 1st so a stay checking out on the 1st still draws its "out"
+    // half-cell; plus guests still checked in past their check-out (overdue).
+    const pad = n => String(n).padStart(2, '0');
+    const prev = new Date(year, month - 1, 0);
+    const from = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(prev.getDate())}`;
+    const to = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+    api.get('/api/bookings', { params: { date_from: from, date_to: to, include_overdue: 1 } }).then(r => setBookings(r.data));
     api.get(`/api/pricing/calendar?month=${month}&year=${year}`).then(r => setRates(r.data));
   }, [month, year]);
 
@@ -326,9 +334,16 @@ export default function Reservations() {
   // pre-parsed to epoch ms so getCellInfo does no Date work in the loop.
   const bookingsByUnit = useMemo(() => {
     const m = new Map();
+    // Overdue = still checked in after check-out: draw the stay on up to
+    // today (red from the original check-out), since the guest is still here.
+    const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     for (const b of bookings) {
       if (b.status === 'cancelled' || b.status === 'no_show') continue;
       const rec = { ...b, _ci: toDate(b.check_in_date).getTime(), _co: toDate(b.check_out_date).getTime() };
+      if (b.status === 'checked_in' && rec._co < todayMs) {
+        rec._overdueFrom = rec._co;
+        rec._co = todayMs + 86400000;
+      }
       if (!m.has(b.unit_id)) m.set(b.unit_id, []);
       m.get(b.unit_id).push(rec);
     }
@@ -344,7 +359,12 @@ export default function Reservations() {
     if (checkout && arrival) return { type: 'split', checkout, arrival };
     if (checkout) return { type: 'out', booking: checkout };
     const stay = list.find(b => t >= b._ci && t < b._co);
-    if (stay) return { type: 'stay', booking: stay, isCI: stay._ci === t };
+    if (stay) return {
+      type: 'stay', booking: stay,
+      isCI: stay._ci === t,
+      overdue: stay._overdueFrom != null && t >= stay._overdueFrom,
+      overdueStart: stay._overdueFrom === t,
+    };
     return { type: 'avail' };
   }
 
@@ -399,17 +419,18 @@ export default function Reservations() {
     }
 
     if (info.type === 'stay') {
-      const bg   = STATUS_BG[info.booking.status]   || '#F3F4F6';
-      const tc   = STATUS_TEXT[info.booking.status]  || '#6B7280';
+      const bg   = info.overdue ? '#FCA5A5' : (STATUS_BG[info.booking.status] || '#F3F4F6');
+      const tc   = info.overdue ? '#7F1D1D' : (STATUS_TEXT[info.booking.status] || '#6B7280');
       const dot  = srcColor(info.booking.source);
-      const text = info.isCI ? (isT ? '▶' : '') + (info.booking.reservation_group_id ? '👥' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
+      const text = info.overdueStart ? '⏰ overdue'
+        : info.isCI ? (isT ? '▶' : '') + (info.booking.reservation_group_id ? '👥' : '') + (info.booking.guest_name?.split(' ')[0] || '') : '';
       const doneStyle = info.booking.status === 'checked_out' ? { opacity: 0.4, filter: 'grayscale(0.6)' } : {};
       return (
         <div
           key={key}
           className={`cal-cell${todayCls}`}
           style={{ background: bg, color: tc, ...doneStyle }}
-          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}${info.booking.rate_plan_code && info.booking.rate_plan_code !== 'RO' ? ` · ${info.booking.rate_plan_code}` : ''}${info.booking.bed_preference ? ` · ${info.booking.bed_preference} bed` : ''}${info.booking.reservation_group_id ? ' · Group booking' : ''}`}
+          title={`${info.booking.guest_name} · ${STATUS_LABELS[info.booking.status] || info.booking.status} · ${sources.find(s => s.id === info.booking.source)?.label || info.booking.source}${info.booking.rate_plan_code && info.booking.rate_plan_code !== 'RO' ? ` · ${info.booking.rate_plan_code}` : ''}${info.booking.bed_preference ? ` · ${info.booking.bed_preference} bed` : ''}${info.booking.reservation_group_id ? ' · Group booking' : ''}${info.overdue ? ` · OVERDUE — was due out ${String(info.booking.check_out_date).slice(0, 10)}, still checked in` : ''}`}
           onClick={() => nav(`/reservations/${info.booking.id}`)}
         >
           <div style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, borderRadius: '50%', background: dot, border: '1.5px solid rgba(255,255,255,0.9)' }} />

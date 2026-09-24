@@ -734,7 +734,10 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
       : health?.lowBattery
         ? { icon: '🔋', title: `Tablet battery ${health.battery}%` }
         : null;
+  // Still checked in past check-out (nights_left < 0) — see the Dashboard banner.
+  const overdue = unit.status === 'occupied' && unit.guest_name && unit.nights_left != null && unit.nights_left < 0;
   const title = `${unit.name}`
+    + (overdue ? ' · Overdue — still checked in past check-out' : '')
     + (flags?.dnd ? ' · Do Not Disturb' : '')
     + (flags?.clean ? ' · Clean requested' : '')
     + (tabletBadge ? ` · ${tabletBadge.title}` : '');
@@ -747,8 +750,9 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
     >
       <span className="unit-tile-icon">{TILE_ICON[state]}</span>
       <span className="unit-tile-num">{shortRoomName(unit.name, unit.type)}</span>
-      {(flags || tabletBadge) && (
+      {(flags || tabletBadge || overdue) && (
         <span className="unit-tile-badges">
+          {overdue && <span className="unit-tile-badge warn" title="Overdue — still checked in past check-out">⏰</span>}
           {flags?.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
           {flags?.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
           {tabletBadge && <span className="unit-tile-badge warn" title={tabletBadge.title}>{tabletBadge.icon}</span>}
@@ -1348,6 +1352,30 @@ export default function Dashboard() {
           </span>
         </div>
       </div>
+
+      {/* ── Overdue check-outs: still checked in past their check-out date.
+           Their room stays blocked for new bookings until someone checks
+           them out or amends the dates, so this goes first. ── */}
+      {data.overdue_checkouts?.length > 0 && (
+        <div className="alert alert-error" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+          <div style={{ fontWeight: 700 }}>
+            ⚠ {data.overdue_checkouts.length} guest{data.overdue_checkouts.length !== 1 ? 's are' : ' is'} past check-out and still checked in
+          </div>
+          <div style={{ fontSize: 12 }}>
+            Check them out, or use Amend Dates if they've extended. Until then their room can't be booked.
+          </div>
+          {data.overdue_checkouts.map(o => (
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13 }}>
+                <b>{o.unit_name}</b> · {o.guest_name} — was due out {new Date(o.check_out_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                {' '}({o.days_overdue} day{o.days_overdue !== 1 ? 's' : ''} ago)
+                {o.balance_due > 0 && <> · <b>Rp {Math.round(o.balance_due).toLocaleString('id-ID')} unpaid</b></>}
+              </span>
+              <Link to={`/reservations/${o.id}`} className="btn btn-secondary btn-sm" style={{ fontSize: 11, padding: '4px 10px' }}>Open booking →</Link>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Alert banner for actionable guest requests (Clean Room) ──
            DND is excluded — it's a room state shown passively on the Live
