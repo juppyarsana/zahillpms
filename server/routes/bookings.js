@@ -13,6 +13,7 @@ const { nightlyRoomRates } = require('../services/pricingService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
 const telegramService = require('../services/telegramService');
+const { sendControlAlert } = require('../services/ownerAlerts');
 const sse = require('../sse');
 const { renderGuestReport } = require('../services/guestReportPdf');
 const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
@@ -1326,6 +1327,16 @@ router.put('/:id/dates', auth, async (req, res) => {
     if (amount !== 0 && booking.folio_status === 'pending_agent_invoice') {
       await agentBilling.recomputeCommission(req.propertyId, booking.id).catch(err => console.error('Commission recompute failed:', err));
     }
+    // Owner alert: extra nights (or pricier dates) given free or below the normal price.
+    if (quote.difference > 0 && amount < quote.difference) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: booking.id, userId: req.user.id, reason,
+        headline: amount <= 0
+          ? `🎁 Free stay change: ${span(quote.old)} → ${span(quote.new)}, no charge`
+          : `🏷 Discounted stay change: ${span(quote.old)} → ${span(quote.new)}, charged ${fmtIDR(amount)}`,
+        details: [`Normal price ${fmtIDR(quote.difference)} — given away ${fmtIDR(quote.difference - Math.max(0, amount))}`],
+      });
+    }
     const { rows: [updated] } = await db.query(`
       SELECT b.*, g.name as guest_name, u.name as unit_name
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
@@ -1404,6 +1415,13 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
 
     if (before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out') {
       await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
+    }
+    if (payable !== oldNet) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: before.id, userId: req.user.id, reason,
+        headline: `💰 Price edited: ${fmtIDR(oldNet)} → ${fmtIDR(payable)} (${payable > oldNet ? '+' : '−'}${fmtIDR(Math.abs(payable - oldNet))})`,
+        details: credit > 0 ? [`Guest has overpaid ${fmtIDR(credit)} — to be refunded`] : [],
+      });
     }
 
     res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
@@ -1706,6 +1724,16 @@ router.put('/:id/change-room', auth, async (req, res) => {
     await client.query('COMMIT');
 
     for (const c of [oldUnit.controller_id, newUnit.controller_id]) if (c) sse.notify(c, { type: 'room_changed' });
+    // Owner alert: an upgrade given free or below the normal difference.
+    if (quote.difference > 0 && amount < quote.difference) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: before.id, userId: req.user.id, reason,
+        headline: amount <= 0
+          ? `🎁 Free upgrade: ${label(oldUnit)} → ${label(newUnit)}, no charge`
+          : `🏷 Discounted upgrade: ${label(oldUnit)} → ${label(newUnit)}, charged ${fmtIDR(amount)}`,
+        details: [`Normal difference ${fmtIDR(quote.difference)} for ${quote.nights} night${quote.nights === 1 ? '' : 's'} — given away ${fmtIDR(quote.difference - Math.max(0, amount))}`],
+      });
+    }
     if (amount !== 0 && (before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out')) {
       await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
     }

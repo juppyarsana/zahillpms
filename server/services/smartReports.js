@@ -33,6 +33,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_owner_control: {
+    type: 'alert',
+    label: 'Owner control alerts',
+    when: 'Instantly',
+    description: 'A price edited, a free or discounted upgrade or stay extension, or a guest checked in without full payment — with who did it and why.',
+    defaultRoles: ['owner'],
+    channels: ['telegram'],
+    paid: true,
+  },
   morning_brief: {
     type: 'scheduled',
     label: 'Morning Brief',

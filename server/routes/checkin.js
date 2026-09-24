@@ -13,6 +13,7 @@ function todayWITA() {
 }
 const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
+const { sendControlAlert } = require('../services/ownerAlerts');
 const { renderRegistrationCard } = require('../services/registrationCardPdf');
 const { saveIdDocument } = require('../services/idDocument');
 
@@ -35,6 +36,7 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
   const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [bookingId, propertyId]);
   if (!booking) { const err = new Error('Booking not found'); err.status = 404; throw err; }
   const isOTA = OTA_SOURCES.includes(booking.source);
+  let payLaterUnpaid = null;   // set when checked in without full payment
 
   if (isOTA) {
     // OTA manages payment externally — allow from any pre-checkin status
@@ -43,14 +45,14 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
     }
   } else if (payLaterReason && ['deposit_paid', 'pending'].includes(booking.status)) {
     // Checked in without full payment — record how much is still owed and why.
-    const { rows: [{ unpaid }] } = await db.query(
+    ({ rows: [{ unpaid: payLaterUnpaid }] } = await db.query(
       `SELECT COALESCE(SUM(amount), 0) AS unpaid FROM payments
        WHERE booking_id = $1 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0`,
       [bookingId]
-    );
+    ));
     await db.query(
       'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
-      [bookingId, `Checked in without full payment — Rp ${Math.round(parseFloat(unpaid)).toLocaleString('id-ID')} unpaid (pay later). Reason: ${payLaterReason}`.slice(0, 1000), userId]
+      [bookingId, `Checked in without full payment — Rp ${Math.round(parseFloat(payLaterUnpaid)).toLocaleString('id-ID')} unpaid (pay later). Reason: ${payLaterReason}`.slice(0, 1000), userId]
     );
   } else {
     // Direct / walk-in: full payment required before check-in
@@ -75,14 +77,24 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
      VALUES ($1, NOW(), $2) ON CONFLICT (booking_id) DO UPDATE SET checkin_time = NOW(), processed_by = $2 RETURNING *`,
     [bookingId, userId]
   );
-  return rows[0];
+  // pay_later_unpaid: set (the amount still owed) when checked in without full
+  // payment, so the caller can alert the owner.
+  return payLaterUnpaid != null ? { ...rows[0], pay_later_unpaid: parseFloat(payLaterUnpaid) } : rows[0];
 }
+
+const fmtRp = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 
 // POST /api/checkin/:bookingId/start
 router.post('/:bookingId/start', auth, async (req, res) => {
   try {
     const payLaterReason = String(req.body?.pay_later_reason || '').trim() || null;
     const record = await checkinOneBooking(req.params.bookingId, req.propertyId, req.user.id, { payLaterReason });
+    if (record.pay_later_unpaid != null) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: req.params.bookingId, userId: req.user.id, reason: payLaterReason,
+        headline: `⚠️ Checked in without full payment — ${fmtRp(record.pay_later_unpaid)} unpaid`,
+      });
+    }
     res.json(record);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
@@ -116,6 +128,15 @@ router.post('/group/:groupId/start', auth, async (req, res) => {
       }
     }
     const succeeded = results.filter(r => r.ok).length;
+    // One owner alert for the whole group, not one per room.
+    const unpaidRooms = results.filter(r => r.ok && r.checkin_record.pay_later_unpaid != null);
+    if (unpaidRooms.length) {
+      const total = unpaidRooms.reduce((s, r) => s + r.checkin_record.pay_later_unpaid, 0);
+      sendControlAlert(req.propertyId, {
+        bookingIds: unpaidRooms.map(r => r.booking_id), userId: req.user.id, reason: payLaterReason,
+        headline: `⚠️ Group checked in without full payment — ${unpaidRooms.length} room${unpaidRooms.length === 1 ? '' : 's'}, ${fmtRp(total)} unpaid`,
+      });
+    }
     res.json({ group_id: req.params.groupId, attempted: results.length, succeeded, failed: results.length - succeeded, results });
   } catch (err) {
     res.status(500).json({ error: err.message });

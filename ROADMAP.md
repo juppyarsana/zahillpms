@@ -1428,7 +1428,7 @@ Agreed plan (English only; times WITA):
 | Tomorrow Preview (arrivals, breakfast count) | daily 19:00 | Manager + FO/kitchen group | 🔵 |
 | Weekly Owner Report (last week vs previous, on-the-books next 14/30 days, source mix, agent AR, net income) | Mon 08:00 | Owner | 🔵 |
 | Monthly Report (PDF + CSV, accountant) | 1st, 08:00 | Owner (+ accountant) | 🔵 |
-| Owner control alerts — price edited, complimentary upgrade/extension, check-in without full payment | instantly | Owner | 🔵 |
+| Owner control alerts — price edited, complimentary upgrade/extension, check-in without full payment | instantly | Owner (Telegram) | ✅ built |
 
 ---
 

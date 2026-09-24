@@ -94,6 +94,9 @@ async function sendAlert(propertyId, alertKey, message) {
   try {
     const token = await botTokenFor(propertyId);
     if (!token) return;
+    // Paid alerts (e.g. owner control alerts) only with the smart_reports add-on.
+    const { REPORTS, isModuleEnabled } = require('./smartReports');   // lazy: circular
+    if (REPORTS[alertKey]?.paid && !(await isModuleEnabled(propertyId))) return;
     const { rows: chats } = await db.query(
       `SELECT address FROM notification_recipients
        WHERE property_id = $1 AND channel = 'telegram' AND is_active

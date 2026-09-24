@@ -307,7 +307,10 @@ export default function SettingsReports() {
         <div className="card-title">Instant alerts <span style={{ ...muted, fontWeight: 400 }}>· Telegram</span></div>
         {reports.filter(r => r.type === 'alert').map(r => (
           <div key={r.key} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontWeight: 600 }}>{r.label}</div>
+            <div style={{ fontWeight: 600 }}>
+              {r.label}
+              {r.paid && !catalog?.module_enabled && <span className="badge badge-amber" style={{ marginLeft: 8 }}>🔒 Smart Reports add-on</span>}
+            </div>
             <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
           </div>
         ))}
@@ -337,7 +340,7 @@ export default function SettingsReports() {
           </div>
         ))}
         <p style={{ ...muted, marginTop: 10, marginBottom: 0 }}>
-          Coming next: Daily Close, Tomorrow Preview, Weekly and Monthly owner reports, and instant owner alerts (price edits, free upgrades, check-in without payment).
+          Coming next: Daily Close, Tomorrow Preview, and Weekly and Monthly owner reports.
         </p>
       </div>
 
