@@ -22,10 +22,6 @@ function fmtDay(ymd, opts = { weekday: 'short', day: 'numeric', month: 'short' }
   const [y, m, d] = ymd.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', opts);
 }
-function appUrl(path) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}${path}` : null;
-}
 
 // % change vs last week, or null when last week was 0 (nothing to compare).
 function change(now, before) {
@@ -163,7 +159,6 @@ async function buildDailyClose(propertyId, { date } = {}) {
         rows: collectRows.map(r => ({ unit_name: r.unit_name, guest_name: r.guest_name, balance_due: r.balance_due })),
       },
     },
-    link: appUrl('/reports'),
   };
 }
 
@@ -195,10 +190,6 @@ function dailyCloseTelegram(b) {
   L.push(`☀️ ${e(fmtDay(n.date, { weekday: 'long' }))}: ${n.arrivals.rooms} arriving · ${n.departures.rooms} departing`);
   if (n.to_collect.amount > 0) L.push(`💰 To collect from guests leaving: <b>${e(fmtIDR(n.to_collect.amount))}</b> (${n.to_collect.rows.length} room${n.to_collect.rows.length === 1 ? '' : 's'})`);
   if (n.overdue.length) L.push(`⏰ Still checked in past check-out: <b>${n.overdue.length}</b> — ${e(n.overdue.map(o => o.unit_name).join(', '))}`);
-  if (b.link) {
-    L.push('');
-    L.push(`<a href="${e(b.link)}">Open Reports →</a>`);
-  }
   return L.join('\n');
 }
 
@@ -257,8 +248,7 @@ function dailyCloseEmail(b) {
     ${section(`${esc(fmtDay(n.date, { weekday: 'long' }))} — to collect from guests leaving`, table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
       n.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]),
       'All settled — nothing to collect.'))}
-    ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Reports</a></div>` : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Figures match the Reports page. Manage recipients in Settings → Reports &amp; Alerts.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;
   const pct = b.change.total;
   return {

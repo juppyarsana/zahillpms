@@ -26,10 +26,6 @@ function shiftMonth(y, m, delta) {
   return [d.getUTCFullYear(), d.getUTCMonth() + 1];
 }
 const monthName = (y, m) => new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-function appUrl(path) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}${path}` : null;
-}
 
 async function monthFigures(propertyId, y, m, sellable) {
   const { getReport } = require('../routes/reports');
@@ -161,7 +157,6 @@ async function buildMonthlyReport(propertyId, { date } = {}) {
     collected: money,
     agents: { total: open.reduce((s, r) => s + r.total, 0), overdue: open.reduce((s, r) => s + r.overdue, 0), agents: open },
     has_expenses: month.expenses > 0 || prev.expenses > 0,
-    link: appUrl('/reports'),
   };
   const tag = `${y}-${String(m).padStart(2, '0')}`;
   data.attachments = [
@@ -195,7 +190,6 @@ function monthlyTelegram(b) {
   if (b.agents.total > 0) L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
   L.push('');
   L.push('📎 Full report (PDF) and CSV files for the accountant are in the email version.');
-  if (b.link) L.push(`<a href="${e(b.link)}">Open Reports →</a>`);
   return L.join('\n');
 }
 
@@ -245,8 +239,7 @@ function monthlyEmail(b) {
     ${b.agents.total > 0 ? section('What agents owe (today)', table([{ label: 'Agent' }, { label: 'Owed', right: true }, { label: 'Overdue', right: true }],
       b.agents.agents.map(a => [esc(a.agent), esc(fmtIDR(a.total)), a.overdue > 0 ? `<span style="color:#b91c1c;">${esc(fmtIDR(a.overdue))}</span>` : '—']), '')) : ''}
     ${section('Attached for your accountant', `<div style="font-size:13px;line-height:1.7;">${(b.attachments || []).map(a => `📎 ${esc(a.filename)}`).join('<br>')}</div>`)}
-    ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Reports</a></div>` : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Revenue figures match the Reports page; agent figures match Agent Billing.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;
   return {
     subject: `🗓 ${b.property_name} — ${c.label}: ${fmtIDR(c.total)} revenue, ${c.occupancy}% occupancy`,

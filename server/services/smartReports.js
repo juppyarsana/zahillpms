@@ -134,10 +134,6 @@ function fmtDateShort(ymd) {
   const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
-function appUrl(path) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}${path}` : null;
-}
 
 async function propertySettings(propertyId) {
   const { rows: [ps] } = await db.query(
@@ -207,7 +203,6 @@ async function buildMorningBrief(propertyId) {
       unit_name: a.unit_name, guest_name: a.guest_name, num_guests: a.num_guests,
       source_label: a.source_label, special_requests: a.special_requests,
     })),
-    link: appUrl('/guest-lists'),
   };
 }
 
@@ -258,10 +253,6 @@ function morningBriefTelegram(b) {
       L.push(`• ${e(r.unit_name)} ${e(r.guest_name)}: ${e(text)}`);
     }
     if (requests.length > 6) L.push(`• …and ${requests.length - 6} more`);
-  }
-  if (b.link) {
-    L.push('');
-    L.push(`<a href="${e(b.link)}">Open Guest Lists →</a>`);
   }
   return L.join('\n');
 }
@@ -319,8 +310,7 @@ function morningBriefEmail(b) {
       b.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]),
       'Nothing to collect from departing guests.'
     ))}
-    ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Guest Lists</a></div>` : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Manage recipients in Settings → Reports &amp; Alerts.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;
   const flag = attentionCount(b) > 0 ? ` · ⚠️ ${attentionCount(b)} to check` : '';
   return {

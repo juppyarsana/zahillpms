@@ -21,10 +21,6 @@ function fmtDay(ymd, opts = { weekday: 'short', day: 'numeric', month: 'short' }
   const [y, m, d] = ymd.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', opts);
 }
-function appUrl(path) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}${path}` : null;
-}
 
 // date: the day to preview (default tomorrow, WITA).
 async function buildTomorrowPreview(propertyId, { date } = {}) {
@@ -78,7 +74,6 @@ async function buildTomorrowPreview(propertyId, { date } = {}) {
       amount: collectRows.reduce((s, r) => s + r.balance_due, 0),
       rows: collectRows.map(r => ({ unit_name: r.unit_name, guest_name: r.guest_name, balance_due: r.balance_due })),
     },
-    link: appUrl('/guest-lists'),
   };
 }
 
@@ -110,10 +105,6 @@ function tomorrowPreviewTelegram(b) {
       L.push(`• ${e(r.unit_name)} ${e(r.guest_name)}: ${e(text)}`);
     }
     if (requests.length > 6) L.push(`• …and ${requests.length - 6} more`);
-  }
-  if (b.link) {
-    L.push('');
-    L.push(`<a href="${e(b.link)}">Open Guest Lists →</a>`);
   }
   return L.join('\n');
 }
@@ -164,8 +155,7 @@ function tomorrowPreviewEmail(b) {
       b.departure_rows.map(d => [esc(d.unit_name), esc(d.guest_name)]), 'No departures.'))}
     ${section('To collect from guests leaving', table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
       b.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]), 'All settled — nothing to collect.'))}
-    ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Guest Lists</a></div>` : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Manage recipients in Settings → Reports &amp; Alerts.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;
   return {
     subject: `🌆 ${b.property_name} — Tomorrow: ${rooms(b.arrivals.rooms)} arriving, ${b.breakfast_pax} breakfast${b.prepare.length ? ` · 🧹 ${b.prepare.length} to get ready` : ''}`,

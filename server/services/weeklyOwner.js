@@ -25,10 +25,6 @@ function fmtDay(ymd, opts = { day: 'numeric', month: 'short' }) {
   const [y, m, d] = ymd.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', opts);
 }
-function appUrl(path) {
-  const base = (process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
-  return base ? `${base}${path}` : null;
-}
 const pctChange = (now, before) => (before ? Math.round(((now - before) / before) * 100) : null);
 
 async function weekFigures(propertyId, from, to, sellable) {
@@ -146,7 +142,6 @@ async function buildWeeklyOwner(propertyId, { date } = {}) {
     pace: paceNow, pace_prev: pacePrev,
     agents,
     has_expenses: week.expenses > 0 || prev.expenses > 0,
-    link: appUrl('/reports'),
   };
 }
 
@@ -181,10 +176,6 @@ function weeklyOwnerTelegram(b) {
   if (top.length && stayRevenue > 0) L.push(`🔗 Top sources: ${e(top.map(s => `${s.source} ${Math.round((s.revenue / stayRevenue) * 100)}%`).join(' · '))}`);
   if (b.agents.total > 0) {
     L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
-  }
-  if (b.link) {
-    L.push('');
-    L.push(`<a href="${e(b.link)}">Open Reports →</a>`);
   }
   return L.join('\n');
 }
@@ -243,8 +234,7 @@ function weeklyOwnerEmail(b) {
       w.by_source.filter(s => s.revenue > 0).map(s => [esc(s.source), s.count, esc(fmtIDR(s.revenue)), `${stayRevenue ? Math.round((s.revenue / stayRevenue) * 100) : 0}%`]), 'No stays last week.'))}
     ${b.agents.total > 0 ? section('What agents owe', table([{ label: 'Agent' }, { label: 'Owed', right: true }, { label: 'Overdue', right: true }],
       b.agents.agents.map(a => [esc(a.agent), esc(fmtIDR(a.total)), a.overdue > 0 ? `<span style="color:#b91c1c;">${esc(fmtIDR(a.overdue))}</span>` : '—']), '')) : ''}
-    ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Reports</a></div>` : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Revenue figures match the Reports page; agent figures match Agent Billing.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;
   const pct = b.change.total;
   return {
