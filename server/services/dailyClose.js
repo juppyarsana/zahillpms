@@ -80,17 +80,20 @@ async function collected(propertyId, from, to = from) {
   return { total: byMethod.reduce((s, r) => s + r.amount, 0), by_method: byMethod };
 }
 
+// Booking values are NET (room + meals after discount, before service and
+// tax — bookings.room_revenue/fnb_revenue), the same basis as the revenue
+// figures, so the report's numbers line up.
 async function bookingActivity(propertyId, date) {
   const [{ rows: made }, { rows: cancelled }, { rows: noShows }] = await Promise.all([
     db.query(`
-      SELECT b.id, b.check_in_date, b.nights, b.total_amount - COALESCE(b.discount_amount, 0) AS value,
+      SELECT b.id, b.check_in_date, b.nights, COALESCE(b.room_revenue + b.fnb_revenue, b.total_amount - COALESCE(b.discount_amount, 0)) AS value,
              g.name AS guest_name, u.name AS unit_name, COALESCE(bs.label, b.source) AS source_label
       FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
       LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
       WHERE b.property_id = $1 AND (b.created_at AT TIME ZONE 'Asia/Makassar')::date = $2::date
       ORDER BY b.check_in_date, u.name`, [propertyId, date]),
     db.query(`
-      SELECT b.id, b.check_in_date, b.nights, b.total_amount - COALESCE(b.discount_amount, 0) AS value,
+      SELECT b.id, b.check_in_date, b.nights, COALESCE(b.room_revenue + b.fnb_revenue, b.total_amount - COALESCE(b.discount_amount, 0)) AS value,
              g.name AS guest_name, u.name AS unit_name
       FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
       WHERE b.property_id = $1 AND b.status = 'cancelled'
@@ -248,7 +251,7 @@ function dailyCloseEmail(b) {
     ${section(`${esc(fmtDay(n.date, { weekday: 'long' }))} — to collect from guests leaving`, table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
       n.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]),
       'All settled — nothing to collect.'))}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">All amounts are net — after discounts, before service charge and tax. Sent by Smart Reports.</div>
   </div>`;
   const pct = b.change.total;
   return {

@@ -85,9 +85,9 @@ async function pace(propertyId, from, to) {
   const { rows: [r] } = await db.query(`
     SELECT COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date) AS made,
            COALESCE(SUM(nights) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS made_nights,
-           COALESCE(SUM(total_amount - COALESCE(discount_amount, 0)) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS made_value,
+           COALESCE(SUM(COALESCE(room_revenue + fnb_revenue, total_amount - COALESCE(discount_amount, 0))) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS made_value,
            COUNT(*) FILTER (WHERE status = 'cancelled' AND (updated_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date) AS cancelled,
-           COALESCE(SUM(total_amount - COALESCE(discount_amount, 0)) FILTER (WHERE status = 'cancelled' AND (updated_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS cancelled_value
+           COALESCE(SUM(COALESCE(room_revenue + fnb_revenue, total_amount - COALESCE(discount_amount, 0))) FILTER (WHERE status = 'cancelled' AND (updated_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS cancelled_value
     FROM bookings WHERE property_id = $1`, [propertyId, from, to]);
   return {
     made: parseInt(r.made, 10), made_nights: parseInt(r.made_nights, 10), made_value: parseFloat(r.made_value),
@@ -234,7 +234,7 @@ function weeklyOwnerEmail(b) {
       w.by_source.filter(s => s.revenue > 0).map(s => [esc(s.source), s.count, esc(fmtIDR(s.revenue)), `${stayRevenue ? Math.round((s.revenue / stayRevenue) * 100) : 0}%`]), 'No stays last week.'))}
     ${b.agents.total > 0 ? section('What agents owe', table([{ label: 'Agent' }, { label: 'Owed', right: true }, { label: 'Overdue', right: true }],
       b.agents.agents.map(a => [esc(a.agent), esc(fmtIDR(a.total)), a.overdue > 0 ? `<span style="color:#b91c1c;">${esc(fmtIDR(a.overdue))}</span>` : '—']), '')) : ''}
-    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
+    <div style="margin-top:28px;font-size:11px;color:#9ca3af;">All amounts are net — after discounts, before service charge and tax. Sent by Smart Reports.</div>
   </div>`;
   const pct = b.change.total;
   return {
