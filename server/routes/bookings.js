@@ -16,6 +16,7 @@ const { renderGuestReport } = require('../services/guestReportPdf');
 const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { renderBalanceDue } = require('../services/balanceDuePdf');
+const { renderKitchen } = require('../services/kitchenPdf');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
@@ -372,6 +373,81 @@ router.get('/guest-lists/pdf', auth, async (req, res) => {
     doc.pipe(res);
     drawDocumentHeader(doc, property || {}, { title: 'Guest Lists', refLine: fmtLongDate(data.date) });
     renderGuestLists(doc, data);
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Kitchen list for one date — meals to prepare, room by room, from each
+// booking's rate plan (includes_breakfast / includes_dinner):
+//   breakfast — the morning of the date: guests who slept here the night
+//               before (staying over + checking out that day)
+//   dinner    — the night of the date: guests sleeping here that night
+//               (arriving that day + staying over)
+// Counted in guests (num_guests), not rooms. Also reports how many guests are
+// in house without the meal (room only), since the kitchen may still sell it.
+async function loadKitchen(propertyId, requestedDate) {
+  const date = requestedDate || roomCharge.todayWITA();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
+  const { rows } = await db.query(`
+    SELECT b.id, b.check_in_date, b.check_out_date, b.num_guests, b.status, b.special_requests,
+           g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
+           rp.code AS rate_plan_code,
+           COALESCE(rp.includes_breakfast, false) AS includes_breakfast,
+           COALESCE(rp.includes_dinner, false) AS includes_dinner,
+           (b.check_in_date < $2::date AND b.check_out_date >= $2::date) AS here_last_night,
+           (b.check_in_date <= $2::date AND b.check_out_date > $2::date) AS here_tonight
+    FROM bookings b
+    JOIN guests g ON g.id = b.guest_id
+    JOIN units u ON u.id = b.unit_id
+    LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+    WHERE b.property_id = $1
+      AND b.status NOT IN ('cancelled', 'no_show')
+      AND b.check_in_date <= $2::date AND b.check_out_date >= $2::date
+    ORDER BY u.name, g.name
+  `, [propertyId, date]);
+
+  const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+  const breakfastIn = rows.filter(r => r.here_last_night);
+  const dinnerIn = rows.filter(r => r.here_tonight);
+  const breakfast = breakfastIn.filter(r => r.includes_breakfast);
+  const dinner = dinnerIn.filter(r => r.includes_dinner);
+  const without = (all, withMeal) => ({ rooms: all.length - withMeal.length, pax: pax(all) - pax(withMeal) });
+  return {
+    date,
+    breakfast: { rows: breakfast, rooms: breakfast.length, pax: pax(breakfast), without: without(breakfastIn, breakfast) },
+    dinner: { rows: dinner, rooms: dinner.length, pax: pax(dinner), without: without(dinnerIn, dinner) },
+  };
+}
+
+// GET /api/bookings/kitchen?date=
+router.get('/kitchen', auth, async (req, res) => {
+  try {
+    const data = await loadKitchen(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/kitchen/pdf?date= — the kitchen printout.
+router.get('/kitchen/pdf', auth, async (req, res) => {
+  try {
+    const data = await loadKitchen(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const { rows: [property] } = await db.query(
+      `SELECT property_name, property_address, property_phone, property_email, logo_url
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="kitchen-${data.date}.pdf"`);
+    doc.pipe(res);
+    drawDocumentHeader(doc, property || {}, { title: 'Kitchen List', refLine: fmtLongDate(data.date) });
+    renderKitchen(doc, data);
     doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });

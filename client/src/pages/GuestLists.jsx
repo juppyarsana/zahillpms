@@ -66,6 +66,49 @@ function RoomCell({ r }) {
   );
 }
 
+// Kitchen tab: one meal (breakfast / dinner), room by room.
+function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
+  return (
+    <div className="card mb-3">
+      <div className="flex-between" style={{ marginBottom: 4 }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{meal.pax} pax</div>
+      </div>
+      <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {plural(meal.rooms, 'room')}
+        {meal.without.pax > 0 && ` · ${withoutLabel}: ${meal.without.pax} pax in ${plural(meal.without.rooms, 'room')}`}
+      </div>
+      {meal.rows.length === 0 ? (
+        <div className="text-muted" style={{ fontSize: 13, padding: '8px 0' }}>{empty}</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Room</th><th>Guest</th><th style={{ textAlign: 'right' }}>Pax</th><th>Plan</th><th>Special requests</th></tr>
+            </thead>
+            <tbody>
+              {meal.rows.map(r => (
+                <tr key={r.id} onClick={onOpen ? () => onOpen(r.id) : undefined} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
+                  <td><RoomCell r={r} /></td>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{r.guest_name}</div>
+                    {r.status !== 'checked_in' && r.status !== 'checked_out' && (
+                      <div className="text-muted" style={{ fontSize: 11 }}>Not checked in yet</div>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 15 }}>{r.num_guests}</td>
+                  <td>{r.rate_plan_code || '—'}</td>
+                  <td style={{ fontSize: 12, maxWidth: 280 }}>{r.special_requests || <span className="text-muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Balance Due tab: one section of unpaid guests (departing / overdue / staying).
 function BalanceSection({ title, icon, rows, total, empty, onOpen }) {
   return (
@@ -181,6 +224,7 @@ export default function GuestLists() {
   const canSeeBalances = can('checkin_full');
   const [tab, setTab] = useState('lists');
   const [balance, setBalance] = useState(null);
+  const [kitchen, setKitchen] = useState(null);
 
   useEffect(() => {
     if (!date) return;
@@ -188,7 +232,9 @@ export default function GuestLists() {
     setError('');
     const req = tab === 'balance'
       ? api.get('/api/bookings/balance-due', { params: { date } }).then(r => setBalance(r.data))
-      : api.get('/api/bookings/guest-lists', { params: { date } }).then(r => setData(r.data));
+      : tab === 'kitchen'
+        ? api.get('/api/bookings/kitchen', { params: { date } }).then(r => setKitchen(r.data))
+        : api.get('/api/bookings/guest-lists', { params: { date } }).then(r => setData(r.data));
     req
       .catch(err => setError(err.response?.data?.error || 'Could not load the list'))
       .finally(() => setLoading(false));
@@ -197,7 +243,7 @@ export default function GuestLists() {
   // Same blob download as Reservations' Guest Report PDF — for whichever tab is open.
   async function downloadPdf() {
     setDownloading(true);
-    const kind = tab === 'balance' ? 'balance-due' : 'guest-lists';
+    const kind = tab === 'balance' ? 'balance-due' : tab === 'kitchen' ? 'kitchen' : 'guest-lists';
     try {
       const r = await api.get(`/api/bookings/${kind}/pdf`, { params: { date }, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
@@ -217,7 +263,7 @@ export default function GuestLists() {
 
   // Opening a booking needs Reservations access — without it rows are read-only.
   const openBooking = can('reservations') ? id => nav(`/reservations/${id}`) : null;
-  const current = tab === 'balance' ? balance : data;
+  const current = tab === 'balance' ? balance : tab === 'kitchen' ? kitchen : data;
   const isToday = date === ymd(new Date());
 
   return (
@@ -238,18 +284,31 @@ export default function GuestLists() {
         </div>
       </div>
 
-      {canSeeBalances && (
-        <div className="tab-bar">
-          <button className={`tab-bar-item${tab === 'lists' ? ' active' : ''}`} onClick={() => setTab('lists')}>🗂 Guest Lists</button>
+      <div className="tab-bar">
+        <button className={`tab-bar-item${tab === 'lists' ? ' active' : ''}`} onClick={() => setTab('lists')}>🗂 Guest Lists</button>
+        {canSeeBalances && (
           <button className={`tab-bar-item${tab === 'balance' ? ' active' : ''}`} onClick={() => setTab('balance')}>💰 Balance Due</button>
-        </div>
-      )}
+        )}
+        <button className={`tab-bar-item${tab === 'kitchen' ? ' active' : ''}`} onClick={() => setTab('kitchen')}>🍳 Kitchen</button>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
-      ) : tab === 'balance' ? (balance && (
+      ) : tab === 'kitchen' ? (kitchen && (
+        <>
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            From each booking's meal plan (BB = breakfast, HB = breakfast + dinner, FB = all meals), counted in guests.
+            Breakfast = guests who slept here the night before (incl. those checking out); dinner = guests sleeping here that night.
+            Use → to see tomorrow.
+          </div>
+          <MealSection title={`Breakfast — ${fmtLong(date)} morning`} icon="🍳" meal={kitchen.breakfast} onOpen={openBooking}
+            empty="No guests with breakfast included." withoutLabel="In house without breakfast" />
+          <MealSection title={`Dinner — ${fmtLong(date)} night`} icon="🍽" meal={kitchen.dinner} onOpen={openBooking}
+            empty="No guests with dinner included." withoutLabel="In house without dinner" />
+        </>
+      )) : tab === 'balance' ? (balance && (
         <>
           <div className="card mb-3" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
             <div style={{ flex: '1 1 220px', padding: '14px 18px' }}>
