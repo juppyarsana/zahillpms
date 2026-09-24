@@ -47,7 +47,7 @@ const REPORTS = {
     type: 'scheduled',
     label: 'Daily Close',
     when: 'Every night at 00:30, for the day that just ended',
-    description: "Yesterday's revenue (room, meals, extras), occupancy, ADR and RevPAR — each compared with the same day last week — money received by payment method, new bookings, cancellations, no-shows, and what's coming today.",
+    description: "Yesterday's revenue (room, meals, extras), occupancy, ADR and RevPAR — each compared with the same day last week — money received by payment method, new bookings, cancellations, no-shows; plus today's arrivals, guests overdue to check out, and balances to collect. Replaces the night audit email once anyone gets it.",
     defaultRoles: ['owner', 'manager'],
     channels: ['telegram', 'email'],
     paid: true,

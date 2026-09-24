@@ -6,6 +6,10 @@ const { todayWITA } = require('./roomChargeService');
 // ended, sent at 00:30 WITA (after the 00:05 night audit). Revenue comes from
 // the Reports page's own getReport(), so the figures always match /reports.
 // Each figure is compared with the same weekday a week earlier.
+// It also carries what the night-audit owner email had (overdue guests, the
+// new day's arrivals, balances to collect from guests leaving) — that email
+// is skipped when a property has the Daily Close going out (see
+// dailyCloseReplacesAuditEmail, used by jobs/nightAudit.js).
 
 function addDays(ymd, n) {
   const d = new Date(`${ymd}T00:00:00Z`);
@@ -115,19 +119,22 @@ async function bookingActivity(propertyId, date) {
 // audit just closed).
 async function buildDailyClose(propertyId, { date } = {}) {
   const day = date || addDays(todayWITA(), -1);
-  const { loadGuestLists } = require('../routes/bookings');
+  const { loadGuestLists, loadBalanceDue } = require('../routes/bookings');
   const [{ rows: [ps] }, { rows: [u] }] = await Promise.all([
     db.query('SELECT property_name FROM property_settings WHERE property_id = $1', [propertyId]),
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
   ]);
   const sellable = parseInt(u.sellable, 10) || 0;
-  const [today, lastWeek, money, activity, next] = await Promise.all([
+  const [today, lastWeek, money, activity, next, due] = await Promise.all([
     dayFigures(propertyId, day, sellable),
     dayFigures(propertyId, addDays(day, -7), sellable),
     collected(propertyId, day),
     bookingActivity(propertyId, day),
     loadGuestLists(propertyId, addDays(day, 1)),
+    loadBalanceDue(propertyId, addDays(day, 1)),
   ]);
+  // Same whole-stay figure as the Balance Due page; agent-billed stays aren't collected at the desk.
+  const collectRows = [...due.departing, ...due.overdue].filter(r => !r.agent_billed);
   return {
     date: day,
     property_name: ps?.property_name || 'Your property',
@@ -146,6 +153,13 @@ async function buildDailyClose(propertyId, { date } = {}) {
       arrivals: next.summary.arrivals,
       departures: next.summary.departures,
       in_house: next.summary.in_house,
+      arrival_rows: next.arrivals.map(a => ({ unit_name: a.unit_name, guest_name: a.guest_name, num_guests: a.num_guests, special_requests: a.special_requests })),
+      // Still checked in on/after their check-out date (rooms stay blocked).
+      overdue: next.departures.filter(d => d.overdue).map(d => ({ unit_name: d.unit_name, guest_name: d.guest_name, check_out_date: String(d.check_out_date).slice(0, 10) })),
+      to_collect: {
+        amount: collectRows.reduce((s, r) => s + r.balance_due, 0),
+        rows: collectRows.map(r => ({ unit_name: r.unit_name, guest_name: r.guest_name, balance_due: r.balance_due })),
+      },
     },
     link: appUrl('/reports'),
   };
@@ -177,6 +191,8 @@ function dailyCloseTelegram(b) {
   L.push('');
   const n = b.next_day;
   L.push(`☀️ ${e(fmtDay(n.date, { weekday: 'long' }))}: ${n.arrivals.rooms} arriving · ${n.departures.rooms} departing`);
+  if (n.to_collect.amount > 0) L.push(`💰 To collect from guests leaving: <b>${e(fmtIDR(n.to_collect.amount))}</b> (${n.to_collect.rows.length} room${n.to_collect.rows.length === 1 ? '' : 's'})`);
+  if (n.overdue.length) L.push(`⏰ Still checked in past check-out: <b>${n.overdue.length}</b> — ${e(n.overdue.map(o => o.unit_name).join(', '))}`);
   if (b.link) {
     L.push('');
     L.push(`<a href="${e(b.link)}">Open Reports →</a>`);
@@ -239,7 +255,13 @@ function dailyCloseEmail(b) {
     ${b.cancelled.length ? section('Cancelled', table([{ label: 'Guest' }, { label: 'Room' }, { label: 'Was due' }, { label: 'Value', right: true }],
       b.cancelled.map(x => [esc(x.guest_name), esc(x.unit_name), esc(fmtDay(String(x.check_in_date).slice(0, 10))), esc(fmtIDR(x.value))]), '')) : ''}
     ${b.no_shows.length ? section('No-shows', `<div style="font-size:13px;">${b.no_shows.map(x => `${esc(x.unit_name)} ${esc(x.guest_name)}`).join('<br>')}</div>`) : ''}
-    ${section(`${esc(fmtDay(n.date, { weekday: 'long' }))}`, `<div style="font-size:13px;">${n.arrivals.rooms} arriving (${n.arrivals.pax} pax) · ${n.departures.rooms} departing · ${n.in_house.rooms} staying</div>`)}
+    ${n.overdue.length ? section('⚠️ Still checked in past check-out', `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#991b1b;">${n.overdue.map(o => `<b>${esc(o.unit_name)}</b> ${esc(o.guest_name)} — was due out ${esc(fmtDay(o.check_out_date))}`).join('<br>')}<div style="font-size:12px;margin-top:6px;">Their rooms stay blocked for new bookings until they're checked out or their dates are amended.</div></div>`) : ''}
+    ${section(`${esc(fmtDay(n.date, { weekday: 'long' }))} — arriving`, table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Pax' }, { label: 'Notes' }],
+      n.arrival_rows.map(a => [esc(a.unit_name), esc(a.guest_name), a.num_guests, esc(a.special_requests || '')]),
+      'No arrivals.') + `<div style="font-size:12px;color:#6b7280;margin-top:6px;">${n.departures.rooms} departing · ${n.in_house.rooms} staying over</div>`)}
+    ${section(`${esc(fmtDay(n.date, { weekday: 'long' }))} — to collect from guests leaving`, table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
+      n.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]),
+      'All settled — nothing to collect.'))}
     ${b.link ? `<div style="margin-top:24px;"><a href="${esc(b.link)}" style="display:inline-block;background:#111827;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;">Open Reports</a></div>` : ''}
     <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports. Figures match the Reports page. Manage recipients in Settings → Reports &amp; Alerts.</div>
   </div>`;
@@ -250,4 +272,17 @@ function dailyCloseEmail(b) {
   };
 }
 
-module.exports = { buildDailyClose, dailyCloseTelegram, dailyCloseEmail };
+// True when the property has the Daily Close going out (add-on on + at least
+// one active recipient with it ticked) — then the night-audit owner email,
+// whose content the Daily Close now carries, is skipped.
+async function dailyCloseReplacesAuditEmail(propertyId) {
+  const { rows: [r] } = await db.query(`
+    SELECT EXISTS (
+      SELECT 1 FROM notification_recipients nr
+      JOIN property_modules pm ON pm.property_id = nr.property_id AND pm.module = 'smart_reports' AND pm.is_enabled
+      WHERE nr.property_id = $1 AND nr.is_active AND nr.address IS NOT NULL AND 'daily_close' = ANY(nr.reports)
+    ) AS yes`, [propertyId]);
+  return r.yes;
+}
+
+module.exports = { buildDailyClose, dailyCloseTelegram, dailyCloseEmail, dailyCloseReplacesAuditEmail };
