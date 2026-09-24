@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
+import GuestPicker from '../components/GuestPicker';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -69,6 +70,38 @@ export default function GroupDetail() {
     }
   }
 
+  // Assign the guest actually staying in each room (the group is usually
+  // booked under one name; the guest list arrives later). Room / TV Display,
+  // Registration Card and the police Guest Report all follow the room's guest.
+  const [assigning, setAssigning] = useState(false);
+  const [assignments, setAssignments] = useState({}); // booking_id -> GuestPicker value
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignError, setAssignError] = useState('');
+
+  function openAssign() {
+    setAssignments({});
+    setAssignError('');
+    setAssigning(true);
+  }
+
+  async function saveAssignments() {
+    const list = Object.entries(assignments)
+      .filter(([, v]) => v)
+      .map(([booking_id, v]) => v.guest_id ? { booking_id, guest_id: v.guest_id } : { booking_id, new_guest: v.new_guest });
+    if (!list.length) { setAssigning(false); return; }
+    setAssignSaving(true);
+    setAssignError('');
+    try {
+      await api.put(`/api/bookings/group/${groupId}/guests`, { assignments: list });
+      setAssigning(false);
+      load();
+    } catch (err) {
+      setAssignError(err.response?.data?.error || 'Could not save the guests');
+    } finally {
+      setAssignSaving(false);
+    }
+  }
+
   async function cancelGroup() {
     if (!confirm('Cancel this entire group booking? All rooms not already checked out will be cancelled.')) return;
     try {
@@ -84,6 +117,8 @@ export default function GroupDetail() {
 
   const { group, bookings, rollup } = data;
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
+  const assignableRooms = bookings.filter(b => !['cancelled', 'no_show', 'checked_out'].includes(b.status));
+  const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
@@ -104,6 +139,9 @@ export default function GroupDetail() {
             ariaLabel="Download documents"
             items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
           />
+          {assignableRooms.length > 0 && (
+            <button className="btn btn-secondary" onClick={openAssign}>👥 Assign Guests</button>
+          )}
           {group.status === 'active' && (
             <button className="btn btn-danger" onClick={cancelGroup}>Cancel Group</button>
           )}
@@ -141,7 +179,7 @@ export default function GroupDetail() {
       {tab === 'details' && (
         <>
           <div className="card mb-3">
-            <div className="card-title">Guest</div>
+            <div className="card-title">Booked by</div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>{group.guest_name}</div>
             {group.guest_whatsapp && <div style={{ fontSize: 13 }}>📱 {group.guest_whatsapp}</div>}
             {group.guest_email && <div style={{ fontSize: 13 }}>✉️ {group.guest_email}</div>}
@@ -155,10 +193,19 @@ export default function GroupDetail() {
 
           <div className="card mb-3">
             <div className="card-title">Rooms ({rollup.room_count})</div>
+            {roomsWithBooker > 0 && (
+              <div className="alert alert-success" style={{ fontSize: 13, marginBottom: 8 }}>
+                {roomsWithBooker} room{roomsWithBooker === 1 ? ' is' : 's are'} still under the booker's name. Use <b>Assign Guests</b> once the guest list arrives — Room Display, TV and the police guest report show each room's guest.
+              </div>
+            )}
             {bookings.map(b => (
               <div key={b.id} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <Link to={`/reservations/${b.id}`} style={{ fontWeight: 600 }}>{b.unit_name}</Link>
+                  <span style={{ marginLeft: 8, fontSize: 13 }}>
+                    {b.guest_name}
+                    {b.guest_id === group.primary_guest_id && <span className="text-muted" style={{ fontSize: 11 }}> (booker)</span>}
+                  </span>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{b.num_guests} guest{b.num_guests !== 1 ? 's' : ''} · {fmtIDR(b.total_amount)}</div>
                 </div>
                 <span className={`badge badge-${STATUS_BADGE[b.status] || 'gray'}`}>{STATUS_LABEL[b.status] || b.status}</span>
@@ -190,6 +237,41 @@ export default function GroupDetail() {
             </div>
           </div>
         </>
+      )}
+
+      {assigning && (
+        <div className="modal-backdrop">
+          <div className="modal" style={{ maxWidth: 640, width: '100%' }}>
+            <div className="modal-header">
+              <div className="modal-title">Assign Guests — {group.guest_name}'s group</div>
+              <button className="btn btn-icon" onClick={() => setAssigning(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                Pick the guest staying in each room, or add them as a new guest. Rooms you leave alone keep their current guest. {group.guest_name} stays the group's contact and billing is unchanged.
+              </div>
+              {assignableRooms.map(b => (
+                <div key={b.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div className="flex-between" style={{ marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700 }}>{b.unit_name}</span>
+                    <span className="text-muted" style={{ fontSize: 12 }}>
+                      Now: {b.guest_name}{b.guest_id === group.primary_guest_id ? ' (booker)' : ''} · {b.num_guests} pax
+                    </span>
+                  </div>
+                  <GuestPicker value={assignments[b.id] || null} onChange={v => setAssignments(a => ({ ...a, [b.id]: v }))} />
+                </div>
+              ))}
+              {assignError && <div className="alert alert-error" style={{ marginTop: 10 }}>{assignError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setAssigning(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveAssignments}
+                disabled={assignSaving || !Object.values(assignments).some(Boolean)}>
+                {assignSaving ? 'Saving…' : `Save ${Object.values(assignments).filter(Boolean).length || ''} room${Object.values(assignments).filter(Boolean).length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {tab === 'folio' && (

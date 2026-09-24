@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
 import RegistrationCardModal from '../components/RegistrationCardModal';
+import GuestPicker from '../components/GuestPicker';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -49,6 +50,9 @@ export default function BookingDetail() {
   const [editingDetails, setEditingDetails] = useState(false);
   const [editDetailsForm, setEditDetailsForm] = useState({});
   const [editDetailsLoading, setEditDetailsLoading] = useState(false);
+  const [changingGuest, setChangingGuest] = useState(null); // null = closed, else GuestPicker value
+  const [guestSaving, setGuestSaving] = useState(false);
+  const [guestError, setGuestError] = useState('');
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceForm, setPriceForm] = useState({ total_amount: '', reason: '', received_was_typo: null });
   const [priceLoading, setPriceLoading] = useState(false);
@@ -359,6 +363,31 @@ export default function BookingDetail() {
     }
   }
 
+  // Point this booking at the guest actually staying (booked by an agent,
+  // company or group contact under another name). Room / TV Display,
+  // Registration Card and the police Guest Report follow the booking's guest.
+  function openChangeGuest() {
+    setGuestError('');
+    setChangingGuest(false); // open, nothing picked yet
+  }
+
+  async function doChangeGuest() {
+    if (!changingGuest) return;
+    setGuestSaving(true);
+    setGuestError('');
+    try {
+      await api.put(`/api/bookings/${id}/guest`, changingGuest.guest_id
+        ? { guest_id: changingGuest.guest_id }
+        : { new_guest: changingGuest.new_guest });
+      setChangingGuest(null);
+      load();
+    } catch (err) {
+      setGuestError(err.response?.data?.error || 'Could not change the guest');
+    } finally {
+      setGuestSaving(false);
+    }
+  }
+
   async function markNoShow() {
     if (!confirm('Mark this booking as a no-show? The guest never checked in.')) return;
     try {
@@ -432,6 +461,8 @@ export default function BookingDetail() {
       { label: 'Transfer Room', icon: '🔀', onClick: openTransfer },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Change Guest', icon: '👤', onClick: openChangeGuest },
     isOwner && !['cancelled', 'no_show'].includes(booking.status) && !booking.group &&
       !['invoiced', 'paid'].includes(booking.folio_status) &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
@@ -1122,6 +1153,31 @@ export default function BookingDetail() {
           </div>
         );
       })()}
+
+      {changingGuest !== null && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Change Guest — {booking.unit_name}</div>
+              <button className="btn btn-icon" onClick={() => setChangingGuest(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>
+                Currently: <b>{booking.guest_name}</b>. Pick the guest actually staying in this room, or add them as a new guest.
+                Room Display, TV, the Registration Card and the police guest report will show this guest. Charges and payments stay on this booking.
+              </div>
+              <GuestPicker value={changingGuest || null} onChange={v => setChangingGuest(v || false)} />
+              {guestError && <div className="alert alert-error" style={{ marginTop: 10 }}>{guestError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setChangingGuest(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={doChangeGuest} disabled={guestSaving || !changingGuest}>
+                {guestSaving ? 'Saving…' : 'Save Guest'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {messaging && (
         <div className="modal-backdrop">

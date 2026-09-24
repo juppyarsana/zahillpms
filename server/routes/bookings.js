@@ -11,6 +11,7 @@ const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
 const telegramService = require('../services/telegramService');
+const sse = require('../sse');
 const { renderGuestReport } = require('../services/guestReportPdf');
 const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
 const { drawDocumentHeader } = require('../services/pdfHeader');
@@ -576,9 +577,10 @@ router.get('/group/:groupId', auth, async (req, res) => {
 
     const { rows: bookings } = await db.query(`
       SELECT b.*, u.name as unit_name,
+             g.name AS guest_name, g.nationality AS guest_nationality, g.id_number AS guest_id_number,
              (SELECT checkin_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkin_time,
              (SELECT checkout_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkout_time
-      FROM bookings b JOIN units u ON u.id = b.unit_id
+      FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
       WHERE b.reservation_group_id = $1 AND b.property_id = $2
       ORDER BY u.name`, [req.params.groupId, req.propertyId]);
 
@@ -1212,6 +1214,117 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
     }
 
     res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Assign the guest actually staying in a room ─────────────────────────────
+// A group (or an agent/company) is often booked under one person's name and
+// the real guest list arrives later. Re-pointing a room's booking at the real
+// guest makes everything that reads bookings.guest_id correct at once: Room /
+// TV Display, Registration Card, the police Guest Report, Guest Lists, guest
+// history. The booker stays on reservation_groups.primary_guest_id as the
+// group's contact; charges stay on the room's own folio (unchanged).
+// Takes either an existing guest_id or new_guest { name, nationality,
+// id_number, whatsapp, email } (only name required — details can follow on
+// the guest profile). Runs inside the caller's transaction; returns
+// { error, status } on a bad request.
+async function assignGuest(client, { propertyId, bookingId, guestId, newGuest, userId }) {
+  const { rows: [b] } = await client.query(
+    `SELECT b.id, b.guest_id, b.status, u.controller_id, g.name AS guest_name
+     FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+     WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`,
+    [bookingId, propertyId]
+  );
+  if (!b) return { status: 404, error: 'Booking not found' };
+  if (['cancelled', 'no_show', 'checked_out'].includes(b.status)) {
+    return { status: 409, error: `Cannot change the guest — booking is ${b.status.replace('_', ' ')}` };
+  }
+
+  let guest;
+  if (newGuest) {
+    const name = String(newGuest.name || '').trim();
+    if (!name) return { status: 400, error: 'Guest name is required' };
+    const clean = v => (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim();
+    ({ rows: [guest] } = await client.query(
+      `INSERT INTO guests (name, nationality, id_number, whatsapp, email, property_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name`,
+      [name, clean(newGuest.nationality), clean(newGuest.id_number), clean(newGuest.whatsapp), clean(newGuest.email), propertyId]
+    ));
+  } else if (guestId) {
+    ({ rows: [guest] } = await client.query('SELECT id, name FROM guests WHERE id = $1 AND property_id = $2', [guestId, propertyId]));
+    if (!guest) return { status: 404, error: 'Guest not found' };
+  } else {
+    return { status: 400, error: 'guest_id or new_guest is required' };
+  }
+
+  if (guest.id === b.guest_id) return { guest, changed: false };
+  await client.query('UPDATE bookings SET guest_id = $1, updated_at = NOW() WHERE id = $2', [guest.id, b.id]);
+  await client.query(
+    'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+    [b.id, `Guest: ${b.guest_name} → ${guest.name}`, userId]
+  );
+  return { guest, changed: true, controllerId: b.controller_id };
+}
+
+// PUT /api/bookings/:id/guest — { guest_id } or { new_guest: {...} }
+router.put('/:id/guest', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await assignGuest(client, {
+      propertyId: req.propertyId, bookingId: req.params.id,
+      guestId: req.body.guest_id, newGuest: req.body.new_guest, userId: req.user.id,
+    });
+    if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json({ error: result.error }); }
+    await client.query('COMMIT');
+    // Room Display refetches its state on any push — shows the new name now.
+    if (result.controllerId) sse.notify(result.controllerId, { type: 'guest_changed' });
+    res.json({ guest: result.guest, changed: result.changed });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/bookings/group/:groupId/guests — assign several rooms at once:
+// { assignments: [{ booking_id, guest_id } | { booking_id, new_guest }] }.
+// All-or-nothing: one bad row rolls back the whole save.
+router.put('/group/:groupId/guests', auth, async (req, res) => {
+  const assignments = Array.isArray(req.body.assignments) ? req.body.assignments : [];
+  if (!assignments.length) return res.status(400).json({ error: 'assignments required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: members } = await client.query(
+      'SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2',
+      [req.params.groupId, req.propertyId]
+    );
+    if (!members.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Group not found' }); }
+    const memberIds = new Set(members.map(m => m.id));
+    const notify = [];
+    let changed = 0;
+    for (const a of assignments) {
+      if (!memberIds.has(a.booking_id)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A room in the list is not part of this group' });
+      }
+      const result = await assignGuest(client, {
+        propertyId: req.propertyId, bookingId: a.booking_id,
+        guestId: a.guest_id, newGuest: a.new_guest, userId: req.user.id,
+      });
+      if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json({ error: result.error, booking_id: a.booking_id }); }
+      if (result.changed) { changed++; if (result.controllerId) notify.push(result.controllerId); }
+    }
+    await client.query('COMMIT');
+    for (const c of notify) sse.notify(c, { type: 'guest_changed' });
+    res.json({ changed });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
