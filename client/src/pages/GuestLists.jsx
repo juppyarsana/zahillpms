@@ -66,6 +66,65 @@ function RoomCell({ r }) {
   );
 }
 
+// Balance Due tab: one section of unpaid guests (departing / overdue / staying).
+function BalanceSection({ title, icon, rows, total, empty, onOpen }) {
+  return (
+    <div className="card mb-3">
+      <div className="flex-between" style={{ marginBottom: 8 }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
+        <div className="text-muted" style={{ fontSize: 13 }}>{plural(rows.length, 'guest')} owing</div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-muted" style={{ fontSize: 13, padding: '12px 0' }}>{empty}</div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Room</th><th>Guest</th><th>Check-out</th>
+                <th style={{ textAlign: 'right' }}>Room &amp; meals</th><th style={{ textAlign: 'right' }}>Extras</th>
+                <th style={{ textAlign: 'right' }}>Service/tax</th><th style={{ textAlign: 'right' }}>Paid</th>
+                <th style={{ textAlign: 'right' }}>Balance due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const note = r.agent_billed ? 'Billed to agent — not collected at desk'
+                  : r.status === 'checked_out' ? 'Already checked out — left unpaid'
+                  : r.status !== 'checked_in' && r.section === 'staying' ? 'Not checked in yet'
+                  : r.is_ota ? 'OTA booking — check if prepaid to OTA' : '';
+                return (
+                  <tr key={r.id} onClick={onOpen ? () => onOpen(r.id) : undefined} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
+                    <td><RoomCell r={r} /></td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{r.guest_name}</div>
+                      <div className="text-muted" style={{ fontSize: 11 }}>{[r.source_label, note].filter(Boolean).join(' · ')}</div>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.check_out_date)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.room_and_meals)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.extras)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.service_and_tax)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.paid)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: r.agent_billed ? 'var(--text-muted)' : 'var(--danger-text)' }}>
+                      {fmtIDR(r.balance_due)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 700 }}>
+                <td colSpan={7} style={{ textAlign: 'right' }}>To collect</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // One list section. `extra` = additional columns [{ label, render }].
 function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen }) {
   return (
@@ -117,32 +176,40 @@ export default function GuestLists() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  // Balance Due holds money details — only for staff who take payments
+  // (owner or Check-in/out), enforced server-side too.
+  const canSeeBalances = can('checkin_full');
+  const [tab, setTab] = useState('lists');
+  const [balance, setBalance] = useState(null);
 
   useEffect(() => {
     if (!date) return;
     setLoading(true);
     setError('');
-    api.get('/api/bookings/guest-lists', { params: { date } })
-      .then(r => setData(r.data))
-      .catch(err => setError(err.response?.data?.error || 'Could not load guest lists'))
+    const req = tab === 'balance'
+      ? api.get('/api/bookings/balance-due', { params: { date } }).then(r => setBalance(r.data))
+      : api.get('/api/bookings/guest-lists', { params: { date } }).then(r => setData(r.data));
+    req
+      .catch(err => setError(err.response?.data?.error || 'Could not load the list'))
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [date, tab]);
 
-  // Same blob download as Reservations' Guest Report PDF.
+  // Same blob download as Reservations' Guest Report PDF — for whichever tab is open.
   async function downloadPdf() {
     setDownloading(true);
+    const kind = tab === 'balance' ? 'balance-due' : 'guest-lists';
     try {
-      const r = await api.get('/api/bookings/guest-lists/pdf', { params: { date }, responseType: 'blob' });
+      const r = await api.get(`/api/bookings/${kind}/pdf`, { params: { date }, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `guest-lists-${date}.pdf`;
+      a.download = `${kind}-${date}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert('Failed to generate the guest lists PDF');
+      alert('Failed to generate the PDF');
     } finally {
       setDownloading(false);
     }
@@ -150,7 +217,8 @@ export default function GuestLists() {
 
   // Opening a booking needs Reservations access — without it rows are read-only.
   const openBooking = can('reservations') ? id => nav(`/reservations/${id}`) : null;
-  const isToday = data?.is_today;
+  const current = tab === 'balance' ? balance : data;
+  const isToday = date === ymd(new Date());
 
   return (
     <div className="guest-lists-page">
@@ -164,17 +232,50 @@ export default function GuestLists() {
           <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 170 }} aria-label="Date" />
           <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day">→</button>
           {!isToday && <button className="btn btn-secondary" onClick={() => setDate(ymd(new Date()))}>Today</button>}
-          <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !data || downloading}>
+          <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !current || downloading}>
             {downloading ? 'Generating…' : '⬇ Download PDF'}
           </button>
         </div>
       </div>
 
+      {canSeeBalances && (
+        <div className="tab-bar">
+          <button className={`tab-bar-item${tab === 'lists' ? ' active' : ''}`} onClick={() => setTab('lists')}>🗂 Guest Lists</button>
+          <button className={`tab-bar-item${tab === 'balance' ? ' active' : ''}`} onClick={() => setTab('balance')}>💰 Balance Due</button>
+        </div>
+      )}
+
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
-      ) : data && (
+      ) : tab === 'balance' ? (balance && (
+        <>
+          <div className="card mb-3" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
+            <div style={{ flex: '1 1 220px', padding: '14px 18px' }}>
+              <div className="stat-label">To collect from departing guests</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--danger-text)' }}>{fmtIDR(balance.totals.departing + balance.totals.overdue)}</div>
+              <div className="stat-sub">{plural(balance.departing.length + balance.overdue.length, 'guest')}</div>
+            </div>
+            <div style={{ flex: '1 1 220px', padding: '14px 18px', borderLeft: '1px solid var(--border)' }}>
+              <div className="stat-label">Total outstanding</div>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{fmtIDR(balance.totals.all)}</div>
+              <div className="stat-sub">incl. guests staying on</div>
+            </div>
+          </div>
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+            Balance = the whole stay (all nights + extras charged to the room + service/tax) minus payments received — the same as the Pro Forma on the booking's Folio tab. Guests with nothing to pay aren't listed.
+          </div>
+          <BalanceSection title="Departing" icon="🧳" rows={balance.departing} total={balance.totals.departing} onOpen={openBooking}
+            empty="No departing guests owe anything." />
+          {balance.is_today && (
+            <BalanceSection title="Overdue departures (still checked in)" icon="⏰" rows={balance.overdue} total={balance.totals.overdue} onOpen={openBooking}
+              empty="No overdue guests owe anything." />
+          )}
+          <BalanceSection title="Staying" icon="🛏" rows={balance.staying} total={balance.totals.staying} onOpen={openBooking}
+            empty="No staying guests owe anything." />
+        </>
+      )) : data && (
         <>
           <div className="card mb-3" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
             {[

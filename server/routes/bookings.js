@@ -6,7 +6,7 @@ const requireRole = require('../middleware/role');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const agentBilling = require('../services/agentBillingService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
-const { computeFolioTotals, round2 } = require('../services/folioService');
+const { computeFolioTotals, computeProforma, round2 } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
@@ -14,6 +14,8 @@ const telegramService = require('../services/telegramService');
 const { renderGuestReport } = require('../services/guestReportPdf');
 const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
 const { drawDocumentHeader } = require('../services/pdfHeader');
+const { renderBalanceDue } = require('../services/balanceDuePdf');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
 async function grossFactor(client, propertyId) {
@@ -296,9 +298,6 @@ async function loadGuestLists(propertyId, requestedDate) {
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
              COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
-             COALESCE((SELECT SUM(p.amount) FROM payments p
-                        WHERE p.booking_id = b.id AND p.type IN ('deposit', 'balance')
-                          AND p.status = 'pending' AND p.amount > 0), 0) AS balance_due,
              CASE WHEN b.check_in_date = $2::date THEN 'arrival'
                   WHEN b.check_out_date <= $2::date THEN 'departure'
                   ELSE 'in_house' END AS list,
@@ -319,6 +318,11 @@ async function loadGuestLists(propertyId, requestedDate) {
 
     const lists = { arrivals: [], in_house: [], departures: [] };
     for (const r of rows) {
+      // Same whole-stay figure as the Balance Due tab / the Folio Pro Forma
+      // (nights + extras charged to the room + tax − payments), so the two
+      // lists can never disagree. A credit shows as nothing owed.
+      const pf = await computeProforma(r.id, propertyId);
+      r.balance_due = pf ? Math.max(0, pf.balance_due) : 0;
       if (r.list === 'arrival') lists.arrivals.push(r);
       else if (r.list === 'departure') lists.departures.push(r);
       else lists.in_house.push(r);
@@ -367,6 +371,113 @@ router.get('/guest-lists/pdf', auth, async (req, res) => {
     doc.pipe(res);
     drawDocumentHeader(doc, property || {}, { title: 'Guest Lists', refLine: fmtLongDate(data.date) });
     renderGuestLists(doc, data);
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Balance Due for one date — the money twin of Guest Lists, for front desk to
+// print in the morning instead of opening each booking. Every row's balance
+// is the whole-stay figure the Folio tab's Pro Forma shows
+// (folioService.computeProforma: all nights + extras charged to the room +
+// service/tax − payments received). Sections:
+//   departing — check-out on the date (incl. already checked out but unpaid)
+//   overdue   — today only: still checked in past their check-out date
+//   staying   — in the hotel that night (incl. the date's arrivals)
+// Only bookings that still owe something are listed. Stays billed to an
+// agent (city ledger) are listed but marked and left out of "to collect".
+async function loadBalanceDue(propertyId, requestedDate) {
+  const today = roomCharge.todayWITA();
+  const date = requestedDate || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
+
+  const { rows: candidates } = await db.query(`
+    SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status,
+           g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
+           COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
+           bs.payment_status AS source_payment_status,
+           CASE WHEN b.check_out_date = $2::date THEN 'departing'
+                WHEN b.check_out_date < $2::date THEN 'overdue'
+                ELSE 'staying' END AS section
+    FROM bookings b
+    JOIN guests g ON g.id = b.guest_id
+    JOIN units u ON u.id = b.unit_id
+    LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+    WHERE b.property_id = $1
+      AND b.status NOT IN ('cancelled', 'no_show')
+      AND (
+        b.check_out_date = $2::date
+        OR (b.check_in_date <= $2::date AND b.check_out_date > $2::date)
+        OR ($2::date = $3::date AND b.status = 'checked_in' AND b.check_out_date < $2::date)
+      )
+    ORDER BY u.name, g.name
+  `, [propertyId, date, today]);
+
+  const sections = { departing: [], overdue: [], staying: [] };
+  for (const c of candidates) {
+    const pf = await computeProforma(c.id, propertyId);
+    if (!pf || pf.balance_due < 1) continue;
+    const roomAndMeals = round2(pf.charges.filter(x => x.type === 'room' || x.type === 'fnb').reduce((s, x) => s + parseFloat(x.amount), 0));
+    const extras = round2(pf.charges.filter(x => x.type !== 'room' && x.type !== 'fnb').reduce((s, x) => s + parseFloat(x.amount), 0));
+    const paid = round2(pf.payments.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0));
+    const agentBilled = agentBilling.CITY_LEDGER.includes(c.source_payment_status)
+      || ['pending_agent_invoice', 'invoiced', 'paid'].includes(c.folio_status);
+    sections[c.section].push({
+      ...c,
+      room_and_meals: roomAndMeals,
+      extras,
+      service_and_tax: round2(pf.service_charge_amount + pf.tax_amount),
+      total: pf.total,
+      paid,
+      balance_due: pf.balance_due,
+      agent_billed: agentBilled,
+    });
+  }
+  const toCollect = list => round2(list.filter(r => !r.agent_billed).reduce((s, r) => s + r.balance_due, 0));
+  return {
+    date,
+    is_today: date === today,
+    ...sections,
+    totals: {
+      departing: toCollect(sections.departing),
+      overdue: toCollect(sections.overdue),
+      staying: toCollect(sections.staying),
+      all: toCollect([...sections.departing, ...sections.overdue, ...sections.staying]),
+    },
+  };
+}
+
+// Money details — only for staff who take payments (owner or Check-in/out).
+const canSeeBalances = requireOwnerOrMenu('checkin_full');
+
+// GET /api/bookings/balance-due?date=
+router.get('/balance-due', auth, canSeeBalances, async (req, res) => {
+  try {
+    const data = await loadBalanceDue(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/balance-due/pdf?date= — same list as a branded PDF download.
+router.get('/balance-due/pdf', auth, canSeeBalances, async (req, res) => {
+  try {
+    const data = await loadBalanceDue(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const { rows: [property] } = await db.query(
+      `SELECT property_name, property_address, property_phone, property_email, logo_url
+       FROM property_settings WHERE property_id = $1`,
+      [req.propertyId]
+    );
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="balance-due-${data.date}.pdf"`);
+    doc.pipe(res);
+    drawDocumentHeader(doc, property || {}, { title: 'Balance Due', refLine: fmtLongDate(data.date) });
+    renderBalanceDue(doc, data);
     doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });
