@@ -936,7 +936,7 @@ router.post('/', auth, async (req, res) => {
     // Fire and forget — don't await, don't fail the booking if email fails
     sendBookingEmail(req.propertyId, booking.id, 'booking_confirmed')
       .catch(err => console.error('Email trigger failed:', err));
-    telegramService.sendAlert(req.propertyId,
+    telegramService.sendAlert(req.propertyId, 'alert_new_booking',
       `📅 New booking: ${guestRows[0].name} — ${unitRows[0].name}, ${check_in_date} to ${check_out_date}`
     ).catch(() => {});
 
@@ -1859,3 +1859,7 @@ router.post('/:id/note', auth, async (req, res) => {
 });
 
 module.exports = router;
+// Shared with services/reports (Smart Reports' Morning Brief), so the brief
+// shows exactly the figures of the Guest Lists and Balance Due pages.
+module.exports.loadGuestLists = loadGuestLists;
+module.exports.loadBalanceDue = loadBalanceDue;

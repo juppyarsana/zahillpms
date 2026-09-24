@@ -320,47 +320,8 @@ router.put('/payment-methods/:id', auth, async (req, res) => {
 // deliberately simpler v1. ownerOnly since this controls where business
 // alerts go, same sensitivity level as Roles & Permissions below.
 
-router.get('/telegram-chats', ownerOnly, async (req, res) => {
-  try {
-    const { rows } = await db.query(
-      'SELECT * FROM telegram_chats WHERE property_id = $1 ORDER BY created_at',
-      [req.propertyId]
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/telegram-chats', ownerOnly, async (req, res) => {
-  const { chat_id, label } = req.body;
-  if (!chat_id) return res.status(400).json({ error: 'chat_id is required' });
-  try {
-    const { rows } = await db.query(
-      `INSERT INTO telegram_chats (property_id, chat_id, label, created_by)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.propertyId, String(chat_id).trim(), label || null, req.user.id]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    res.status(err.code === '23505' ? 409 : 500).json({
-      error: err.code === '23505' ? 'This chat is already linked to this property' : err.message,
-    });
-  }
-});
-
-router.delete('/telegram-chats/:id', ownerOnly, async (req, res) => {
-  try {
-    const { rows } = await db.query(
-      'DELETE FROM telegram_chats WHERE id = $1 AND property_id = $2 RETURNING id',
-      [req.params.id, req.propertyId]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Chat not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Telegram alert chats moved to Settings → Reports & Alerts
+// (/api/smart-reports, notification_recipients — migration 068).
 
 // ── Roles & Permissions ──────────────────────────────────────────────────────
 

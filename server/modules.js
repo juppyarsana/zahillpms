@@ -30,6 +30,11 @@ module.exports = {
   // the Pricing page's extra tabs show only when this is on. Writes source='auto'
   // rows into pricing_periods, so the pricing route itself stays under 'reservations'.
   yield_management: { label: 'Yield Management', routes: ['yield'] },
+  // Default OFF — paid add-on tier (migration 068). Scheduled reports (Morning
+  // Brief, …) to the property's recipient list by Telegram or email. Not a
+  // route gate: /api/smart-reports also serves the FREE instant alerts, so
+  // routes/smartReports.js checks the module per report instead.
+  smart_reports:   { label: 'Smart Reports',   routes: [] },
 };
 
 // Core routes — always on, no module guard:

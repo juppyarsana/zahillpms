@@ -8,6 +8,7 @@ const {
 } = require('./marketInsights');
 const { runYieldAllProperties } = require('./yieldPricing');
 const { sendPreArrivalEmails, sendPostCheckoutEmails } = require('./communications');
+const smartReports = require('../services/smartReports');
 
 function registerJobs() {
   // Night audit — runs at 00:05 every night (after midnight, audits the just-completed day)
@@ -90,6 +91,21 @@ function registerJobs() {
   }, { timezone: 'Asia/Makassar' });
 
   console.log('[Jobs] Yield pricing scheduled daily 02:00 WITA');
+
+  // Smart Reports — Morning Brief daily at 07:00 WITA (only properties with
+  // the smart_reports module on, only recipients subscribed to it).
+  cron.schedule('0 7 * * *', async () => {
+    try {
+      await smartReports.runReportAllProperties('morning_brief');
+    } catch (err) {
+      console.error('[Jobs] Morning Brief cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
+  console.log('[Jobs] Smart Reports scheduled — Morning Brief daily 07:00 WITA');
+
+  // Telegram Connect links still waiting for a Start press survive a restart.
+  require('../services/telegramLink').ensurePolling();
 
   console.log('[Jobs] Guest communication scheduled — pre-arrival daily 10:00, post-checkout daily 11:00 (WITA)');
 }

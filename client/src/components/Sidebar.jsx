@@ -89,6 +89,7 @@ export default function Sidebar() {
     can('units') && { to: '/units',              icon: '🏕', label: 'Units' },
     isOwner && { to: '/settings', end: true,     icon: '💳', label: 'Sources & Methods' },
     isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
+    isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
     can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
   ].filter(Boolean);
 

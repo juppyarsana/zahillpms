@@ -96,7 +96,7 @@ router.post('/', authDisplay, gate, async (req, res) => {
     ringTimeouts.set(callId, handle);
 
     sse.notify(staffChannel(unit.property_id), { type: 'incoming_call', callId, unitName: unit.name, roomId, guestName });
-    telegramService.sendAlert(unit.property_id, `📞 Incoming call from ${unit.name}${guestName ? ` (${guestName})` : ''}`).catch(() => {});
+    telegramService.sendAlert(unit.property_id, 'alert_guest_requests', `📞 Incoming call from ${unit.name}${guestName ? ` (${guestName})` : ''}`).catch(() => {});
     res.status(201).json({ callId });
   } catch (err) {
     res.status(500).json({ error: err.message });

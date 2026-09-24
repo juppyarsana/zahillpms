@@ -16,6 +16,7 @@ const MODULE_LABELS = {
   calling:         'Calling',
   resto_ordering:  'Resto Ordering',
   back_office:     'Back Office',
+  smart_reports:   'Smart Reports',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };
