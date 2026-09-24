@@ -1,51 +1,28 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-17
+Last updated: 2026-09-24
 
 ---
 
-## 🔖 Session handoff — 2026-09-17 (PC → laptop)
+## 🔖 Session handoff — 2026-09-24 (on site at Zahill)
 
-Everything below is **committed to `dev` (commit `4a9eaca`) but NOT yet pushed to
-`origin/dev`** — check `git log origin/dev..dev` on whichever machine you're on next; if it's
-still unpushed, `git push` before switching machines, or pull won't see it. Local DB is at
-**migration 060**. Run `git pull` + `npm run migrate` on the laptop.
+Everything is **committed and pushed to both `dev` and `main`** (last commit `f781bbc`).
+**No new migration today** — still at 067 (067 itself shipped 2026-09-24 01:40, see
+"Sales → hotel extras till"). Production: `git pull`, `pm2 restart`, rebuild `client/` (and
+`resto-display/` for the mouse-wheel fix). **Also run `node maintenance/trimLogos.js` from
+`server/` on each server** (logo padding trim — `server/uploads/` is gitignored).
 
-**Shipped this session:** Channex channel-manager integration — **research + a validated
-staging spike, not production automation.** Full step-by-step breakdown, what's done vs. not,
-lives in the new **"Channel Manager Integration + Dynamic Pricing"** section below — read that
-before continuing this work, don't rely on this summary alone.
+**Shipped today** — a batch of front-desk requests from the client, one commit each. Full
+write-ups live in `CLAUDE.md` (Frontend section); summary in **"Front-desk batch
+(2026-09-24)"** below. Almost all verified with HTTP round-trips against the dev DB, **not yet
+clicked through in a browser**.
 
-- Researched three channel-manager vendors (Channex, STAAH, Beds24) and confirmed the
-  in-house-vs-buy call for dynamic/yield pricing — decided to build yield pricing ourselves
-  rather than pay for STAAH Max, reasoning: this is a resold multi-tenant platform, so an
-  in-house feature sells to every client while a per-property vendor fee recurs forever.
-- Built and **live-tested** a Channex staging-sandbox spike (migration 060): new
-  `channel_manager` module (default off), vendor-agnostic `channel_manager_mappings` table,
-  `server/services/channexAdapter.js`, `server/routes/channelManager.js` (owner-only `/test/*`
-  endpoints). Ran the full round trip against Channex's real API — property/room-type/rate-plan
-  setup, ARI push, a manually-created test booking pulled back and acknowledged. All verified
-  by reading the result back from Channex directly, not just trusting our own request succeeded.
-- **Found and fixed two real Channex API gotchas** while testing (undocumented in what we'd
-  researched beforehand): room-type creation needs `occ_children`/`occ_infants`, and — the
-  important one — **rates must be sent as a decimal string, not a raw integer**, or Channex
-  reads them as minor units and stores 100x too low (500,000 IDR landed as 5,000.00 until
-  fixed). Would have silently undersold every room if it had shipped un-caught.
-
-**Real secret handling note:** a real Channex staging API key was briefly pasted into
-`server/.env.example` (the *committed* template) instead of `server/.env` (gitignored) —
-caught and moved before anything was committed or pushed, so no rotation was needed. Worth
-double-checking `server/.env.example` has no real values before any future commit involving it.
-
-**Not done / next** — see the new section below for the full breakdown, but in short: no
-production automation (no cron job, no writing pulled bookings into our real `bookings`
-table), only one unit mapped (not all of Zahill's 35), no client UI, and the dynamic pricing
-engine itself hasn't been started — only architecture, not code.
-
-**Demo data on the PC's local DB** (not on the laptop until re-seeded — the scripts are
-gitignored under `server/scripts/`): 35 rooms (Deluxe 101–125 / Suite 201–204 / Glamping
-301–303 / Villa 801–803), 16 sample Sept bookings, and BB rate plan set to Rp 100k/pax/night.
-Re-create with `seedRooms.js` / `seedBookings.js` / `agentDemo.js` if needed.
+**Open follow-ups from today:** a separate permission so trusted FO staff can Edit Price
+(owner-only today); the group Payment Summary ignores extras charged to group rooms (use
+Master Folio / Balance Due); no refund flow — credits are returned by hand; voiding a Pay-now
+sale's folio charge doesn't reverse its incidental payment; Change Room's charge is spread
+evenly across all nights in the folio; deferred ideas — Dashboard "Breakfast tomorrow: N pax"
+line and an evening Telegram kitchen message (needs per-chat alert selection).
 
 ---
 
@@ -1395,6 +1372,42 @@ yield engine v1 exists (migration 061) but is only enabled on dev and has never 
   group extras under Other instead of Food & Beverage.
 - Status: ✅ Implemented (HTTP round-trips verified against a running server;
   not yet clicked through in a browser).
+
+---
+
+## ✅ Front-desk batch (2026-09-24, no migration)
+
+Client requests made on site, one commit each, all on `dev` + `main`. Detail per item in
+`CLAUDE.md` → Frontend — Current State.
+
+- **Fixes after migration 067** — Pay-now extras never agent-billable, group rollup counts
+  only room payments, till always prices items server-side.
+- **Mouse wheel** no longer changes a focused number field (PMS client + resto-display).
+- **Edit Price** (owner) — correct a booking's price; everything derived follows (revenue
+  split, folio nights, payment lines, status, commission); asks whether the received amount
+  was a typo too; logged to Edit History.
+- **Reports period filter** — Today / Yesterday / week / month / custom range; CSV gains a
+  daily breakdown.
+- **Guest Lists** page (`/guest-lists`, `guest_lists` menu key) — Arriving / In-House /
+  Departing + meal counts + PDF; today sorts by status (same rule as Check-in/out).
+  Tabs: **Balance Due** (unpaid guests, departing first, PDF, `checkin_full`) and
+  **Kitchen** (breakfast/dinner per room, PDF).
+- **Assign guests** to group rooms / Change Guest on a single booking (Room/TV Display follow).
+- **Default deposit 50%** (was 30%) in New Booking + the server fallback.
+- **Group bookings** — 👥 tag, Groups view on Reservations, Record Group Payment.
+- **New Booking** — Nights field, booked rooms greyed out in the dropdown.
+- **Change Room** — upgrade/downgrade with the price difference (replaces Transfer Room in the UI).
+- **Overdue check-outs** — room stays blocked, red Dashboard banner, night-audit email, calendar.
+- **Amend Dates pricing** — extensions charged, shortenings credited.
+- **Record Payment on the folio** — settle extras charged to the room.
+- **Registration card** — compact layout, logo padding trimmed, print ahead (incl. all of a
+  day's arrivals), real "Checked In By"; **guest ID documents** viewable + uploadable
+  (static `/uploads` mount removed, property-checked route instead).
+- **Check in now, pay later** (FO override with reason) + "1 night" quick payment.
+- **Folio** explains room nights not yet posted.
+- **Early departure at checkout** — charge nights used / full / custom, room freed that
+  evening, live "still owes / refund" line. `applyBookingPrice` moved to
+  `services/bookingPriceService.js`.
 
 
 ---
