@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
+import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import { useSettings } from '../context/SettingsContext';
 
@@ -98,6 +99,7 @@ export default function QuickCheckIn() {
   const [inHouse, setInHouse]         = useState([]);
   const [coSelected, setCoSelected]   = useState(null);
   const [conditionNotes, setConditionNotes] = useState('');
+  const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [coLoading, setCoLoading]     = useState(false);
   const [coMsg, setCoMsg]             = useState('');
 
@@ -175,6 +177,7 @@ export default function QuickCheckIn() {
     setCoSelected(b);
     setConditionNotes('');
     setCoMsg('');
+    setEarlyCo({ early: false, valid: true, early_departure: null });
   }
 
   function closeCoModal() { setCoSelected(null); setCoMsg(''); }
@@ -182,7 +185,10 @@ export default function QuickCheckIn() {
   async function doCheckout() {
     setCoLoading(true);
     try {
-      await api.put(`/api/checkin/checkout/${coSelected.id}/complete`, { condition_notes: conditionNotes });
+      await api.put(`/api/checkin/checkout/${coSelected.id}/complete`, {
+        condition_notes: conditionNotes,
+        ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+      });
       setCoMsg('success');
       load();
       setTimeout(closeCoModal, 2500);
@@ -495,6 +501,8 @@ export default function QuickCheckIn() {
                     );
                   })()}
 
+                  <EarlyDepartureOption booking={coSelected} onChange={setEarlyCo} lang="id" />
+
                   {/* Condition notes */}
                   <div className="form-group">
                     <label className="form-label">Catatan kondisi unit (opsional)</label>
@@ -517,7 +525,7 @@ export default function QuickCheckIn() {
             {!coMsg && (
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={closeCoModal}>Batal</button>
-                <button className="btn btn-primary" onClick={doCheckout} disabled={coLoading}
+                <button className="btn btn-primary" onClick={doCheckout} disabled={coLoading || !earlyCo.valid}
                   style={{ flex: 1, justifyContent: 'center', fontSize: 15, padding: '12px 20px', background: '#D97706', borderColor: '#D97706' }}>
                   {coLoading ? 'Memproses…' : '🏁 Check Out'}
                 </button>

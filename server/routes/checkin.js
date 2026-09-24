@@ -3,6 +3,8 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const agentBilling = require('../services/agentBillingService');
 const roomCharge = require('../services/roomChargeService');
+const { applyBookingPrice } = require('../services/bookingPriceService');
+const { round2 } = require('../services/folioService');
 const multer = require('multer');
 
 // Today's calendar date in WITA (UTC+8) as YYYY-MM-DD.
@@ -267,6 +269,91 @@ router.get('/registration-cards', auth, async (req, res) => {
 router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   const { condition_notes, bill_to_agent } = req.body;
 
+  // ── Early departure ─────────────────────────────────────────────────
+  // Leaving before the booked check-out date (e.g. checked in today, has to
+  // leave tonight). Front desk must choose what to charge — before this,
+  // checkout voided every night from today on, so a same-day departure was
+  // charged Rp 0 while the booking still said the full stay and the room
+  // stayed blocked. The booking becomes the stay actually charged:
+  //   stayed  — the nights used (a same-day departure counts as 1 night),
+  //             at the booking's own rate
+  //   full    — the whole booking (no refund); the dates still shorten
+  //   custom  — `amount` = the total to charge for the stay
+  // Check-out date, price, room/F&B split, folio nights and pending payment
+  // lines all follow (applyBookingPrice); anything already paid beyond the
+  // new price shows as a credit to refund. The room is released from the
+  // real departure day (bookings.js occupiedUntilSql). Reason required.
+  {
+    const { rows: [b] } = await db.query(
+      "SELECT * FROM bookings WHERE id = $1 AND property_id = $2 AND status = 'checked_in'", [req.params.bookingId, req.propertyId]
+    );
+    const today = todayWITA();
+    if (b && today < String(b.check_out_date).slice(0, 10)) {
+      const ci = String(b.check_in_date).slice(0, 10);
+      const co = String(b.check_out_date).slice(0, 10);
+      const dayMs = d => Date.parse(d + 'T00:00:00Z');
+      const bookedNights = Math.round((dayMs(co) - dayMs(ci)) / 86400000);
+      const stayedNights = Math.max(1, Math.round((dayMs(today) - dayMs(ci)) / 86400000));
+      const ed = req.body.early_departure || {};
+      const reason = String(ed.reason || '').trim();
+      if (!['stayed', 'full', 'custom'].includes(ed.charge) || !reason) {
+        return res.status(409).json({
+          error: 'Guest is leaving before the booked check-out date — choose what to charge and give a reason',
+          code: 'EARLY_DEPARTURE', booked_nights: bookedNights, stayed_nights: stayedNights, check_out_date: co,
+        });
+      }
+      const custom = parseFloat(ed.amount);
+      if (ed.charge === 'custom' && !(Number.isFinite(custom) && custom >= 0)) {
+        return res.status(400).json({ error: 'amount required for a custom charge' });
+      }
+      const newCo = new Date(dayMs(ci) + stayedNights * 86400000).toISOString().slice(0, 10);
+      const c = await db.pool.connect();
+      try {
+        await c.query('BEGIN');
+        const oldTotal = parseFloat(b.total_amount);
+        const oldDiscount = parseFloat(b.discount_amount || 0);
+        const oldNet = round2(oldTotal - oldDiscount);
+        const ratio = stayedNights / bookedNights;
+        // Discount scales with the nights kept (e.g. a fixed group discount
+        // shouldn't cancel a single remaining night).
+        const newDiscount = ed.charge === 'stayed' ? round2(oldDiscount * ratio) : oldDiscount;
+        await c.query('UPDATE bookings SET check_out_date = $1, discount_amount = $2, updated_at = NOW() WHERE id = $3',
+          [newCo, newDiscount, b.id]);
+        const { rows: [moved] } = await c.query('SELECT * FROM bookings WHERE id = $1', [b.id]);
+        let charged = oldNet;
+        let credit = 0;
+        if (ed.charge === 'full') {
+          // Same price over fewer nights.
+          await roomCharge.repostStay(c, moved, req.user.id);
+        } else {
+          const newTotal = ed.charge === 'stayed'
+            ? round2(oldTotal * ratio)
+            : round2(custom + newDiscount);
+          const priced = await applyBookingPrice(c, {
+            propertyId: req.propertyId, before: moved, newTotal, userId: req.user.id,
+            keepDiscount: true, receivedWasTypo: false,
+            balanceNote: 'Early departure — amount due',
+          });
+          if (priced.error) { await c.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
+          charged = priced.payable;
+          credit = priced.credit;
+        }
+        const fmt = n => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+        const how = ed.charge === 'full' ? 'full booking kept (no refund)' : ed.charge === 'custom' ? 'custom amount' : 'nights used';
+        await c.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id,
+          (`Early departure: booked ${bookedNights} night${bookedNights === 1 ? '' : 's'} (to ${co}), charged ${stayedNights} night${stayedNights === 1 ? '' : 's'} — ${how}, price ${fmt(oldNet)} → ${fmt(charged)}.`
+           + (credit > 0 ? ` Guest overpaid ${fmt(credit)} — to be refunded.` : '')
+           + ` Reason: ${reason}`).slice(0, 1000), req.user.id]);
+        await c.query('COMMIT');
+      } catch (err) {
+        await c.query('ROLLBACK');
+        return res.status(500).json({ error: err.message });
+      } finally {
+        c.release();
+      }
+    }
+  }
+
   // Folio catch-up must be committed BEFORE the checkout transaction opens,
   // because agentBilling.settleCheckout reads the folio via the pool (not the
   // txn client) to compute the commission base.
@@ -276,9 +363,11 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       await c.query('BEGIN');
       const { rows: [b] } = await c.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
       if (b) {
-        const checkoutDay = todayWITA();
-        await roomCharge.postStay(c, b, { upToDate: checkoutDay, actorUserId: req.user.id });
-        await roomCharge.voidFrom(c, b.id, checkoutDay, req.user.id); // early departure
+        // Post every night of the stay as it now stands (an early departure
+        // was already shortened above) and void anything beyond it.
+        const lastDay = String(b.check_out_date).slice(0, 10);
+        await roomCharge.postStay(c, b, { upToDate: lastDay, actorUserId: req.user.id });
+        await roomCharge.voidFrom(c, b.id, lastDay, req.user.id);
       }
       await c.query('COMMIT');
     } catch (err) {

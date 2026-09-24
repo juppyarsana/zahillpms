@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
+import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { useSettings } from '../context/SettingsContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 
@@ -69,6 +70,7 @@ export default function CheckIn() {
   const [checklist, setChecklist]   = useState({});
   const [idFile, setIdFile]         = useState(null);
   const [conditionNotes, setConditionNotes] = useState('');
+  const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [step, setStep]             = useState(1);
   const [loading, setLoading]       = useState(false);
   const [msg, setMsg]               = useState('');
@@ -145,6 +147,7 @@ export default function CheckIn() {
     setSelected(b);
     setMode('checkout');
     setConditionNotes('');
+    setEarlyCo({ early: false, valid: true, early_departure: null });
     setMsg('');
   }
 
@@ -181,7 +184,10 @@ export default function CheckIn() {
   async function doCheckout() {
     setLoading(true);
     try {
-      await api.put(`/api/checkin/checkout/${selected.id}/complete`, { condition_notes: conditionNotes });
+      await api.put(`/api/checkin/checkout/${selected.id}/complete`, {
+        condition_notes: conditionNotes,
+        ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+      });
       setMsg('success');
       load();
       setTimeout(() => { setSelected(null); setMode(null); setMsg(''); }, 2000);
@@ -658,6 +664,7 @@ export default function CheckIn() {
                     </div>
                   )}
 
+                  <EarlyDepartureOption booking={selected} onChange={setEarlyCo} />
                   <div className="form-group">
                     <label className="form-label">Unit Condition Notes</label>
                     <textarea
@@ -676,7 +683,7 @@ export default function CheckIn() {
             {!msg && (
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setSelected(null)}>Cancel</button>
-                <button className="btn btn-primary" onClick={doCheckout} disabled={loading}>
+                <button className="btn btn-primary" onClick={doCheckout} disabled={loading || !earlyCo.valid}>
                   {loading ? 'Processing…' : 'Complete Check-out ✓'}
                 </button>
               </div>

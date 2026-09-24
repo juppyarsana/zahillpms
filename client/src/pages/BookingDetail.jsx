@@ -8,6 +8,7 @@ import ActionMenu from '../components/ActionMenu';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
+import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -46,6 +47,7 @@ export default function BookingDetail() {
   const [newAmount, setNewAmount] = useState('');
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
+  const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [billToAgent, setBillToAgent] = useState(false);
   const [checkoutCredit, setCheckoutCredit] = useState(null);
@@ -262,6 +264,7 @@ export default function BookingDetail() {
   function openCheckout() {
     setCheckingOut(true);
     setCheckoutNotes('');
+    setEarlyCo({ early: false, valid: true, early_departure: null });
     setCheckoutCredit(null);
     const src = sources.find(s => s.id === booking.source);
     const cityLedger = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(src?.payment_status);
@@ -276,7 +279,10 @@ export default function BookingDetail() {
   async function doCheckout() {
     setCheckoutLoading(true);
     try {
-      await api.put(`/api/checkin/checkout/${id}/complete`, { condition_notes: checkoutNotes, bill_to_agent: billToAgent });
+      await api.put(`/api/checkin/checkout/${id}/complete`, {
+        condition_notes: checkoutNotes, bill_to_agent: billToAgent,
+        ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+      });
       setCheckingOut(false);
       load();
     } catch (err) {
@@ -1654,6 +1660,7 @@ export default function BookingDetail() {
                   ⚠ {checkoutCredit.label} is over its credit limit — {fmtIDR(checkoutCredit.current_outstanding)} outstanding vs {fmtIDR(checkoutCredit.credit_limit)} limit.
                 </div>
               )}
+              <EarlyDepartureOption booking={booking} onChange={setEarlyCo} />
               <div className="form-group">
                 <label className="form-label">Unit Condition Notes</label>
                 <textarea
@@ -1669,7 +1676,7 @@ export default function BookingDetail() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setCheckingOut(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={doCheckout} disabled={checkoutLoading}>
+              <button className="btn btn-primary" onClick={doCheckout} disabled={checkoutLoading || !earlyCo.valid}>
                 {checkoutLoading ? 'Processing…' : 'Complete Check-out ✓'}
               </button>
             </div>
