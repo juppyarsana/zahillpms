@@ -91,7 +91,7 @@ export default function Guests() {
 
   function waInvite(g) {
     const hotelName = branding?.name || 'our hotel';
-    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at ${hotelName}${branding?.area ? `, ${branding.area}` : ''}.\n\nWe'd love to welcome you back soon! 🎁\n\nWith warmth, the ${hotelName} team`);
+    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at ${hotelName}${branding?.area ? `, ${branding.area}` : ''}.\n\n${branding?.birthday_offer ? `${branding.birthday_offer} 🎁` : "We'd love to welcome you back soon! 🎁"}\n\nWith warmth, the ${hotelName} team`);
     const rawWa = (g.whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {

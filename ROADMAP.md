@@ -1539,7 +1539,7 @@ the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
 
 ---
 
-## Next migration number: 071
+## Next migration number: 072
 
 ---
 

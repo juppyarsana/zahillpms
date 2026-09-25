@@ -72,7 +72,7 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
 const PROPERTY_FIELDS = `tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
-        smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice`;
+        smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice, birthday_offer`;
 
 router.get('/property', ownerOnly, async (req, res) => {
   try {
@@ -90,7 +90,7 @@ router.get('/property', ownerOnly, async (req, res) => {
 router.patch('/property', ownerOnly, async (req, res) => {
   const {
     tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
-    smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice,
+    smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice, birthday_offer,
   } = req.body;
   // A From header needs an actual email address (bare, or "Display Name" <addr>) — a
   // plain display name with no address is invalid RFC 5322 and every mail server
@@ -112,13 +112,15 @@ router.patch('/property', ownerOnly, async (req, res) => {
         smtp_user           = COALESCE($9, smtp_user),
         smtp_password       = COALESCE($10, smtp_password),
         smtp_from           = COALESCE($11, smtp_from),
-        registration_notice = COALESCE($13, registration_notice)
+        registration_notice = COALESCE($13, registration_notice),
+        birthday_offer      = COALESCE($14, birthday_offer)
        WHERE property_id = $12
        RETURNING ${PROPERTY_FIELDS}`,
       [
         tax_rate ?? null, service_charge_rate ?? null, property_name ?? null, property_address ?? null, property_phone ?? null, property_email ?? null,
         smtp_host ?? null, smtp_port ?? null, smtp_user ?? null, smtp_password ?? null, smtp_from ?? null,
         req.propertyId, registration_notice ?? null,
+        birthday_offer === undefined ? null : String(birthday_offer).trim().slice(0, 500),
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
@@ -136,6 +138,7 @@ router.get('/branding', auth, async (req, res) => {
       `SELECT COALESCE(property_name, (SELECT name FROM properties WHERE id = $1)) AS name,
               logo_url, brand_color,
               market_area AS area, -- e.g. "Kintamani, Bali" (Dashboard subtitle, guest WhatsApp messages)
+              birthday_offer, -- optional line in the birthday WhatsApp (Guests page)
               tax_rate, service_charge_rate -- the Sales till shows tax on directly-paid extras
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
