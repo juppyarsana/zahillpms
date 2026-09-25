@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { Link } from 'react-router-dom';
+import { useSettings } from '../context/SettingsContext';
 
 const EMAIL_TRIGGERS = [
   { id: 'booking_confirmed', label: 'Booking Confirmed' },
@@ -11,6 +12,7 @@ const EMAIL_TRIGGERS = [
 
 export default function SettingsCommunications() {
   const [propertyForm, setPropertyForm] = useState(null);
+  const { reload: reloadSettings } = useSettings();
   const [propertySaving, setPropertySaving] = useState(false);
   const [propertySaved, setPropertySaved] = useState(false);
   const [propertyError, setPropertyError] = useState('');
@@ -79,6 +81,23 @@ export default function SettingsCommunications() {
       setPropertyError(err.response?.data?.error || 'Failed to save');
     } finally {
       setPropertySaving(false);
+    }
+  }
+
+  // Birthday offer saves on its own (only that field), so an unsaved SMTP
+  // edit above isn't sent with it.
+  const [offerSaving, setOfferSaving] = useState(false);
+  const [offerSaved, setOfferSaved] = useState(false);
+  async function saveOffer() {
+    setOfferSaving(true);
+    try {
+      await api.patch('/api/settings/property', { birthday_offer: propertyForm.birthday_offer || '' });
+      setOfferSaved(true);
+      reloadSettings?.();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to save');
+    } finally {
+      setOfferSaving(false);
     }
   }
 
@@ -170,6 +189,25 @@ export default function SettingsCommunications() {
           </>
         )}
       </div>
+
+      {propertyForm && (
+        <div className="card mb-3">
+          <div className="card-title">WhatsApp Messages</div>
+          <div className="form-group">
+            <label className="form-label">Birthday offer (optional)</label>
+            <input className="form-input" maxLength={500} value={propertyForm.birthday_offer || ''}
+              placeholder="e.g. As a birthday gift, enjoy a complimentary upgrade on your next stay!"
+              onChange={e => { setPropertyForm(f => ({ ...f, birthday_offer: e.target.value })); setOfferSaved(false); }} />
+            <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Added to the birthday WhatsApp sent from Guests. Leave empty for a plain "We'd love to welcome you back soon!".
+            </div>
+          </div>
+          <div className="flex gap-2 items-center">
+            <button className="btn btn-primary btn-sm" onClick={saveOffer} disabled={offerSaving}>{offerSaving ? 'Saving…' : 'Save'}</button>
+            {offerSaved && <span style={{ fontSize: 12, color: 'var(--color-success, #16a34a)' }}>Saved</span>}
+          </div>
+        </div>
+      )}
 
       <div className="card mb-3" style={{ fontSize: 13 }}>
         <div className="card-title">Telegram Notifications</div>

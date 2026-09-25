@@ -1484,7 +1484,7 @@ Agreed plan (English only; times WITA):
 
 ---
 
-## Next migration number: 070
+## Next migration number: 072 (070 is taken by the POS integration, still only on `dev`)
 
 ---
 
