@@ -67,7 +67,7 @@ async function acquireMic() {
     throw e;
   }
   try {
-    await acquireMic();
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (err) {
     err.micError = true;
     throw err;
@@ -88,8 +88,14 @@ async function createOffer({ onIceCandidate, onConnectionStateChange }) {
 }
 
 async function createAnswer(offerSdp, { onIceCandidate, onConnectionStateChange }) {
+  // Do NOT clear pendingCandidates here: the caller's ICE candidates arrive
+  // while this side is still ringing and are queued by addIceCandidate. They
+  // are flushed below once the offer is set. Clearing them lost every one of
+  // the caller's candidates, which only mattered through the TURN relay
+  // (a relay drops packets from addresses it wasn't told about) — so same-
+  // WiFi calls worked and phone-on-mobile-data calls never connected.
+  // close() resets the queue between calls.
   remoteDescSet = false;
-  pendingCandidates = [];
   await acquireMic();
   const { iceServers, iceTransportPolicy } = await getIceServers();
   setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });

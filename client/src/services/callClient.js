@@ -56,10 +56,28 @@ function setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServe
   };
 }
 
+// Get the microphone BEFORE a call is placed or answered, so a blocked mic
+// fails fast with a clear message. createOffer / createAnswer reuse the
+// stream. Throws an Error with .micError = true.
+async function acquireMic() {
+  if (localStream) return;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const e = new Error('Microphone not supported here (the page must be opened over https)');
+    e.micError = true;
+    throw e;
+  }
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    err.micError = true;
+    throw err;
+  }
+}
+
 async function createOffer({ onIceCandidate, onConnectionStateChange }) {
   remoteDescSet = false;
   pendingCandidates = [];
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  await acquireMic();
   const { iceServers, iceTransportPolicy } = await getIceServers();
   setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -70,9 +88,15 @@ async function createOffer({ onIceCandidate, onConnectionStateChange }) {
 }
 
 async function createAnswer(offerSdp, { onIceCandidate, onConnectionStateChange }) {
+  // Do NOT clear pendingCandidates here: the caller's ICE candidates arrive
+  // while this side is still ringing and are queued by addIceCandidate. They
+  // are flushed below once the offer is set. Clearing them lost every one of
+  // the caller's candidates, which only mattered through the TURN relay
+  // (a relay drops packets from addresses it wasn't told about) — so same-
+  // WiFi calls worked and phone-on-mobile-data calls never connected.
+  // close() resets the queue between calls.
   remoteDescSet = false;
-  pendingCandidates = [];
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  await acquireMic();
   const { iceServers, iceTransportPolicy } = await getIceServers();
   setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -127,4 +151,4 @@ function close() {
   }
 }
 
-export default { configure, createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
+export default { configure, acquireMic, createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
