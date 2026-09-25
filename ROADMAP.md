@@ -1484,7 +1484,7 @@ Agreed plan (English only; times WITA):
 
 ---
 
-## 🟡 External POS integration (migration 070) — PMS side ✅, POS side next
+## 🟡 External POS integration (migration 070) — PMS side ✅, POS side ✅ (branch), not deployed
 
 Property's own POS (Separuh, `zahillpos` repo, branch `pms-integration` — never `main`) takes over F&B;
 the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
@@ -1493,10 +1493,14 @@ the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
   (Settings → Property Details → POS Integration: create / copy / regenerate), `/api/pos/rooms`,
   `/api/pos/rooms/:room`, `POST /api/pos/transactions` (NET amount, retry-safe `external_ref`),
   folio shows it under Food & Beverage. Full write-up in `CLAUDE.md`.
-- 🔵 **POS side:** PMS link settings stored in the POS database (URL, key, on/off — not `.env`, so a
-  future multi-business POS just adds a business column), Charge to Room payment method + room
-  picker, send `subtotal − discount` as the amount and the POS transaction id as `external_ref`,
-  all PMS calls in one server file. Test on a separate VM, then merge and move Zahill's F&B over.
+- ✅ **POS side (2026-09-25, `zahillpos` branch `pms-integration`, not pushed/merged):** Settings →
+  Hotel PMS (Owner: address, write-only key, on/off, Test connection; stored in the POS `settings`
+  table, key `pms`), Charge to Room on the payment screen → room picker → bill saved net and posted
+  to the folio inside the POS DB transaction (PMS failure = nothing saved), receipt shows room +
+  signature line, room-charged bills locked against edit/delete. All PMS calls in
+  `server/src/pms.js`. Tested end-to-end against a local PMS (not clicked through in a browser).
+- 🔵 **Next:** stand up the separate test VM (POS branch + PMS), click through on a tablet, then
+  merge `pms-integration` into the POS `main` and move Zahill's F&B over.
 - ⚪ Later: void/refund of a room-charged POS bill; multi-business POS (own project).
 
 ---
