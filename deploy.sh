@@ -101,7 +101,27 @@ fi
 # ── Restart server ────────────────────────────────────────────────────────────
 echo ""
 echo "▸ Restarting server via PM2..."
-pm2 restart zahill-pms --update-env
+# The PM2 name differs per server (zahill-pms on production, something else
+# on dev), so find the process that runs from this folder. Override with
+# PM2_NAME=<name> bash deploy.sh.
+if [ -z "${PM2_NAME:-}" ]; then
+  PM2_NAME="$(pm2 jlist 2>/dev/null | node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      const root = process.argv[1].replace(/\\/g, "/").replace(/\/+$/, "");
+      let list = []; try { list = JSON.parse(s.slice(s.indexOf("["))); } catch (_) {}
+      const inRoot = v => { v = String(v || "").replace(/\\/g, "/"); return v === root || v.startsWith(root + "/"); };
+      const p = list.find(x => inRoot(x.pm2_env && x.pm2_env.pm_exec_path) || inRoot(x.pm2_env && x.pm2_env.pm_cwd));
+      process.stdout.write(p ? p.name : "");
+    });' "$(pwd)")"
+fi
+if [ -z "$PM2_NAME" ]; then
+  echo "✗ No PM2 process runs from $(pwd) — the code is built but the server was NOT restarted."
+  echo "  Run again with the right name:  PM2_NAME=<name> bash deploy.sh"
+  pm2 list
+  exit 1
+fi
+echo "  PM2 process: $PM2_NAME"
+pm2 restart "$PM2_NAME" --update-env
 
 echo ""
 echo "══════════════════════════════════════"
