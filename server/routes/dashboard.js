@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { computeProforma } = require('../services/folioService');
+const { occupiedUntilSql, TODAY_WITA_SQL } = require('./bookings');
 
 // GET /api/dashboard/summary
 router.get('/summary', auth, async (req, res) => {
@@ -14,6 +15,7 @@ router.get('/summary', auth, async (req, res) => {
       openTasksQ,
       birthdaysQ,
       revenueQ,
+      tonightQ,
     ] = await Promise.all([
       db.query(`
         SELECT u.id, u.name, u.status, u.type, u.controller_id, u.housekeeping_status,
@@ -92,10 +94,31 @@ router.get('/summary', auth, async (req, res) => {
            WHERE property_id = $1 AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
              AND confirmation_status IS DISTINCT FROM 'rejected') as ancillary_revenue_mtd
       `, [req.propertyId]),
+      // Rooms that will have a guest TONIGHT, from bookings (not units.status,
+      // which is "right now" — on a turnover day it still counts guests who
+      // leave today and misses those arriving). Same rule as every
+      // availability check: staying over + arriving today (checked in or not
+      // yet, incl. late arrivals not yet no-showed) + overdue guests.
+      db.query(`
+        SELECT COUNT(DISTINCT b.unit_id) AS count,
+          COUNT(*) FILTER (WHERE b.status = 'checked_in' AND b.check_in_date < ${TODAY_WITA_SQL}
+                             AND b.check_out_date > ${TODAY_WITA_SQL}) AS staying,
+          COUNT(*) FILTER (WHERE b.status = 'checked_in' AND b.check_out_date <= ${TODAY_WITA_SQL}) AS overdue,
+          COUNT(*) FILTER (WHERE b.status <> 'checked_in' OR b.check_in_date = ${TODAY_WITA_SQL}) AS arriving
+        FROM bookings b
+        WHERE b.property_id = $1
+          AND b.status IN ('pending','deposit_paid','confirmed','checked_in')
+          AND b.check_in_date <= ${TODAY_WITA_SQL}
+          AND ${occupiedUntilSql('b')} > ${TODAY_WITA_SQL}
+      `, [req.propertyId]),
     ]);
 
     const units = occupancyQ.rows;
     const occupied = units.filter(u => u.status === 'occupied').length;
+    const t = tonightQ.rows[0];
+    const tonight = parseInt(t.count);
+    const tonightBreakdown = { staying: parseInt(t.staying), arriving: parseInt(t.arriving), overdue: parseInt(t.overdue) };
+    const outOfOrder = units.filter(u => u.status === 'out_of_order').length;
 
     // Guests still checked in AFTER their check-out date (staff forgot to
     // check them out, or the stay was extended without amending the dates).
@@ -115,7 +138,7 @@ router.get('/summary', auth, async (req, res) => {
     }
 
     res.json({
-      occupancy: { occupied, total: units.length, units },
+      occupancy: { occupied, tonight, tonight_breakdown: tonightBreakdown, out_of_order: outOfOrder, total: units.length, units },
       arrivals_today: arrivalsQ.rows,
       departures_today: departuresQ.rows,
       overdue_checkouts: overdue,

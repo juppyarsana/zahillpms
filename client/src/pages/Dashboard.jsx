@@ -1344,7 +1344,12 @@ export default function Dashboard() {
   if (!data)   return <div className="alert alert-error">Failed to load dashboard</div>;
 
   const { occupancy, arrivals_today, departures_today, pending_payments_count, revenue } = data;
-  const occupiedPct = occupancy.total > 0 ? Math.round((occupancy.occupied / occupancy.total) * 100) : 0;
+  // Tonight = from bookings (staying over + arriving today + overdue), not the
+  // rooms occupied right now — on a turnover day those differ a lot.
+  const tonightCount = occupancy.tonight ?? occupancy.occupied;
+  const tb = occupancy.tonight_breakdown;
+  const sellable = occupancy.total - (occupancy.out_of_order || 0);
+  const occupiedPct = sellable > 0 ? Math.round((tonightCount / sellable) * 100) : 0;
 
   // Today's date string for greeting subtitle
   const todayStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -1442,13 +1447,20 @@ export default function Dashboard() {
         <div className="stat-card">
           <div className="stat-label">Tonight's Occupancy</div>
           <div className="stat-value">
-            {occupancy.occupied}
-            <span style={{ fontSize: 16, color: '#6B7280' }}>/{occupancy.total}</span>
+            {tonightCount}
+            <span style={{ fontSize: 16, color: '#6B7280' }}>/{sellable}</span>
           </div>
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span className="badge badge-green">{occupiedPct}%</span>
-            <span style={{ fontSize: 11, color: '#6B7280' }}>{occupancy.total - occupancy.occupied} units free</span>
+            <span style={{ fontSize: 11, color: '#6B7280' }}>{Math.max(0, sellable - tonightCount)} units free</span>
           </div>
+          {tb && (
+            <div style={{ marginTop: 8, fontSize: 11, color: '#6B7280', lineHeight: 1.5 }}
+              title="Rooms with a guest tonight: guests staying over from last night, plus today's arrivals (checked in or not yet), plus guests still checked in past their check-out date. Guests leaving today are not counted.">
+              {tb.staying} staying over + {tb.arriving} arriving{tb.overdue > 0 && <> + <span style={{ color: '#DC2626' }}>{tb.overdue} overdue</span></>}
+              {occupancy.out_of_order > 0 && <div>{occupancy.total} rooms · {occupancy.out_of_order} out of order</div>}
+            </div>
+          )}
         </div>
 
         <div className="stat-card">
