@@ -1,6 +1,43 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-25
+Last updated: 2026-09-26
+
+---
+
+## 🔖 Session handoff — 2026-09-25 evening → 2026-09-26 — calls, POS rework, PMS release
+
+**Calls (room tablet ↔ front desk)**
+- Phone on mobile data ↔ tablet on hotel WiFi never connected. Cause was in our code, not coturn: `createAnswer()`
+  in both `callClient.js` wiped the caller's queued ICE candidates, so the TURN relay dropped them. Fixed
+  (dev `621ddca`, main `d2048e3`) together with: tablet `acquireMic()` calling itself, both sides now end the call
+  on failure (no endless "Connecting…"), mic checked before answering/placing. **Confirmed working live.**
+- coturn on the VM is fine: port **34780**, relay 49152–49452 on 103.253.212.23. Debug with
+  `journalctl -u coturn | grep "peer usage"`.
+- FO answering on a phone: works in the browser/PWA while the page is open (not when locked). Ideas left for later:
+  "Ring on this device" toggle, native FO-phone APK for ringing when locked.
+
+**PMS released to production code (`main`, 2026-09-26, not yet deployed by the user when written)**
+- POS integration cherry-picked to main (`ab62a75`…`6d4e487`; main code == dev): migration **070**, `/api/pos/*`:
+  rooms, transactions (charge to room), **branding** (new — name/contact/colour/logo base64) and **breakfast**
+  (new — the Guest Lists → Kitchen breakfast rows, `loadKitchen` now exported). Module `pos_integration` stays off
+  until switched on in superadmin. Deploy: back up the DB, `bash deploy.sh`, check 070 runs.
+- `deploy.sh` now restarts the PM2 process that runs from its own folder (dev server's is `pms-dev`, production
+  `zahill-pms`; `PM2_NAME=` overrides). Before this, deploys on the dev server never restarted the server.
+
+**PMS mobile layout** — only partly responsive. Plan saved for later (3 phases, ~5–6 sessions, front-desk pages first).
+
+**POS (`zahillpos`, branch `pms-integration` = the separate hotel POS; `main` = Separuh Coffee, never merge)**
+- Built: tables + floor-plan editor, waiter screen (role Waiter or `/waiter`), order rounds with live updates,
+  kitchen tickets (Chrome `--kiosk-printing`), locked sent items + void log, bill versioning, branding
+  (Setup → Branding, copy from PMS), breakfast list on the waiter tablet, tablet layouts (Tab A9 / Redmi Pad 2),
+  `deploy.sh` for staging (`cd /var/www/pos-test && bash deploy.sh`). Full status: `HOTEL_POS_PLAN.md` there.
+- Fixed a real bug found on staging: paying a resumed bill after switching pages created a second sale.
+- Staging: `/var/www/pos-test`, PM2 `pos-test`, at `aee9264`+. Logo on staging POS: the dev PMS has no logo file
+  (uploads aren't in git) — upload it in POS Setup → Branding, or copy from production once linked.
+
+**Next:** deploy PMS main to production → switch on POS Integration → link the POS to production (test charges
+land on real folios — use a test booking). Then POS phase 4 (split / move / merge) or breakfast à la carte.
+Deferred by the user: cashier screen on tablets, PMS mobile revamp.
 
 ---
 
