@@ -152,6 +152,62 @@ export default function GroupDetail() {
     }
   }
 
+  // ── Add Room (the group asked for one more room) ──
+  const { ratePlans = [] } = useSettings();
+  const [adding, setAdding] = useState(false);
+  const [addForm, setAddForm] = useState(null);
+  const [addUnits, setAddUnits] = useState([]);
+  const [addSuggest, setAddSuggest] = useState(null);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState('');
+
+  function addDates() {
+    if (!data) return null;
+    const ci = data.group.check_in_date?.slice(0, 10);
+    const co = data.group.check_out_date?.slice(0, 10);
+    return { check_in: ci < todayStr ? todayStr : ci, check_out: co };
+  }
+
+  function openAddRoom() {
+    const d = addDates();
+    setAddForm({
+      unit_id: '', num_guests: 2, bed_preference: '', total_amount: '', deposit_pct: '50', reason: '',
+      rate_plan_id: (ratePlans.find(p => p.is_default) || ratePlans[0])?.id || '',
+    });
+    setAddSuggest(null); setAddError(''); setAdding(true);
+    api.get('/api/bookings/transfer-availability', { params: d })
+      .then(r => setAddUnits(r.data)).catch(() => setAddUnits([]));
+  }
+
+  useEffect(() => {
+    if (!adding || !addForm?.unit_id) { setAddSuggest(null); return; }
+    const d = addDates();
+    api.get('/api/pricing/suggest', { params: { unit_id: addForm.unit_id, ...d, rate_plan_id: addForm.rate_plan_id || '', num_guests: addForm.num_guests || 1 } })
+      .then(r => setAddSuggest(r.data)).catch(() => setAddSuggest(null));
+  }, [adding, addForm?.unit_id, addForm?.rate_plan_id, addForm?.num_guests]);
+
+  async function saveAddRoom() {
+    setAddSaving(true); setAddError('');
+    try {
+      const price = addForm.total_amount !== '' ? parseFloat(addForm.total_amount) : (addSuggest?.grand_total || 0);
+      await api.post(`/api/bookings/group/${groupId}/rooms`, {
+        unit_id: addForm.unit_id,
+        num_guests: addForm.num_guests,
+        rate_plan_id: addForm.rate_plan_id || null,
+        bed_preference: addForm.bed_preference || null,
+        total_amount: addForm.total_amount !== '' ? addForm.total_amount : undefined,
+        deposit_amount: Math.round(price * (parseFloat(addForm.deposit_pct) || 0) / 100),
+        reason: addForm.reason,
+      });
+      setAdding(false);
+      await load();
+      if (folio) loadFolio();
+    } catch (e) {
+      setAddError(e.response?.data?.error || 'Could not add the room');
+    }
+    setAddSaving(false);
+  }
+
   async function cancelGroup() {
     if (!confirm('Cancel this entire group booking? All rooms not already checked out will be cancelled.')) return;
     try {
@@ -169,6 +225,7 @@ export default function GroupDetail() {
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
   const assignableRooms = bookings.filter(b => !['cancelled', 'no_show', 'checked_out'].includes(b.status));
   const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
+  const canAddRoom = group.status !== 'cancelled' && group.check_out_date?.slice(0, 10) > todayStr;
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
@@ -242,7 +299,12 @@ export default function GroupDetail() {
           </div>
 
           <div className="card mb-3">
-            <div className="card-title">Rooms ({rollup.room_count})</div>
+            <div className="flex-between" style={{ alignItems: 'center', marginBottom: 8 }}>
+              <div className="card-title" style={{ marginBottom: 0 }}>
+                Rooms ({rollup.room_count}){rollup.cancelled_count > 0 && <span className="text-muted" style={{ fontSize: 12, fontWeight: 400 }}> · {rollup.cancelled_count} cancelled</span>}
+              </div>
+              {canAddRoom && <button className="btn btn-sm btn-secondary" onClick={openAddRoom}>+ Add Room</button>}
+            </div>
             {roomsWithBooker > 0 && (
               <div className="alert alert-success" style={{ fontSize: 13, marginBottom: 8 }}>
                 {roomsWithBooker} room{roomsWithBooker === 1 ? ' is' : 's are'} still under the booker's name. Use <b>Assign Guests</b> once the guest list arrives — Room Display, TV and the police guest report show each room's guest.
@@ -301,6 +363,11 @@ export default function GroupDetail() {
                 {fmtIDR(rollup.balance_due)}
               </span>
             </div>
+            {rollup.paid_on_cancelled > 0 && (
+              <div className="alert alert-error" style={{ fontSize: 12, marginTop: 8 }}>
+                {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
+              </div>
+            )}
             {pendingLines().length > 0 && (
               <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={openGroupPayment}>💳 Record Group Payment</button>
@@ -372,6 +439,98 @@ export default function GroupDetail() {
                 <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method}>
                   {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {adding && addForm && (() => {
+        const d = addDates();
+        const nights = Math.max(1, Math.round((new Date(d.check_out) - new Date(d.check_in)) / 86400000));
+        const suggested = addSuggest?.grand_total || 0;
+        const price = addForm.total_amount !== '' ? parseFloat(addForm.total_amount) || 0 : suggested;
+        const deposit = Math.round(price * (parseFloat(addForm.deposit_pct) || 0) / 100);
+        const set = (k, v) => setAddForm(f => ({ ...f, [k]: v }));
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 520, width: '100%' }}>
+              <div className="modal-header">
+                <div className="modal-title">Add Room — {group.guest_name}'s group</div>
+                <button className="btn btn-icon" onClick={() => setAdding(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                  {d.check_in} → {d.check_out} · {nights} night{nights === 1 ? '' : 's'} (the group's dates). The room is booked under {group.guest_name} — use Assign Guests for the real guest. The group discount isn't applied to an added room.
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Room</label>
+                  <select className="form-select" value={addForm.unit_id} onChange={e => set('unit_id', e.target.value)}>
+                    <option value="">Select a room…</option>
+                    {addUnits.map(u => (
+                      <option key={u.id} value={u.id} disabled={!u.available}>
+                        {u.name}{u.type ? ` · ${u.type}` : ''}{!u.available ? (u.conflict?.overdue ? ' — still checked in (overdue)' : ` — booked${u.conflict?.guest_name ? ` (${u.conflict.guest_name})` : ''}`) : u.status === 'out_of_order' ? ' — out of order now' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Guests</label>
+                    <input className="form-input" type="number" min="1" value={addForm.num_guests} onChange={e => set('num_guests', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Rate plan</label>
+                    <select className="form-select" value={addForm.rate_plan_id} onChange={e => set('rate_plan_id', e.target.value)}>
+                      {ratePlans.length === 0 && <option value="">Room Only</option>}
+                      {ratePlans.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Bed preference</label>
+                    <select className="form-select" value={addForm.bed_preference} onChange={e => set('bed_preference', e.target.value)}>
+                      <option value="">No preference</option>
+                      <option value="double">Double bed</option>
+                      <option value="twin">Twin beds</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Deposit</label>
+                    <select className="form-select" value={addForm.deposit_pct} onChange={e => set('deposit_pct', e.target.value)}>
+                      {['0', '30', '50', '100'].map(v => <option key={v} value={v}>{v}%{price > 0 ? ` — ${fmtIDR(Math.round(price * v / 100))}` : ''}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Price for the stay (tax included)</label>
+                  <input className="form-input" type="number" min="0" value={addForm.total_amount}
+                    placeholder={suggested ? `Normal rate: ${suggested}` : 'Pick a room first'}
+                    onChange={e => set('total_amount', e.target.value)} />
+                  <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    {addForm.total_amount === ''
+                      ? (suggested ? `Leave empty to charge the normal rate: ${fmtIDR(suggested)}.` : 'Leave empty to charge the room\'s normal rate.')
+                      : suggested ? `Normal rate would be ${fmtIDR(suggested)}.` : ''}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Note (optional)</label>
+                  <input className="form-input" value={addForm.reason} placeholder="e.g. Group asked for one more room"
+                    onChange={e => set('reason', e.target.value)} />
+                </div>
+                {price > 0 && (
+                  <div style={{ fontSize: 13, background: 'var(--surface-2, #F9FAFB)', borderRadius: 8, padding: '8px 12px' }}>
+                    <div className="flex-between"><span>Room price</span><b>{fmtIDR(price)}</b></div>
+                    <div className="flex-between text-muted"><span>Deposit to collect</span><span>{fmtIDR(deposit)}</span></div>
+                  </div>
+                )}
+                {addError && <div className="alert alert-error" style={{ marginTop: 10 }}>{addError}</div>}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setAdding(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={saveAddRoom}
+                  disabled={addSaving || !addForm.unit_id || !(parseInt(addForm.num_guests, 10) >= 1)}>
+                  {addSaving ? 'Adding…' : 'Add Room'}
                 </button>
               </div>
             </div>

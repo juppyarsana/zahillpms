@@ -405,7 +405,9 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Group not found' });
 
     const { rows: bookingRows } = await db.query(
-      'SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2',
+      // A cancelled / no-show room isn't billed on the group's estimate.
+      `SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2
+         AND status NOT IN ('cancelled', 'no_show')`,
       [req.params.groupId, req.propertyId]
     );
     const folios = await Promise.all(bookingRows.map(b => computeProforma(b.id, req.propertyId)));
