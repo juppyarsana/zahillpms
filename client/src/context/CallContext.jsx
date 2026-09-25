@@ -16,6 +16,7 @@ const CONNECTING_TIMEOUT_MS = 45_000;
 const OFFER_WAIT_MS = 5_000;
 const END_TOAST_MS = 2500;
 const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
+const MIC_BLOCKED_MESSAGE = 'Microphone blocked — allow the microphone for this site and try again';
 const PENDING_POLL_MS = 10_000;
 
 export function CallProvider({ children }) {
@@ -56,6 +57,9 @@ export function CallProvider({ children }) {
   // connection reports failed/disconnected, is treated as a lost cause and
   // surfaced as a brief 'failed' banner instead of hanging forever.
   const endCallLocally = useCallback((callId, finalStatus, errorMessage) => {
+    // A call that failed here (no audio path, timeout) must also end on the
+    // server, or the room tablet stays on "Connecting…".
+    if (finalStatus === 'failed') api.post(`/api/calls/${callId}/end`).catch(() => {});
     clearConnectingTimeout();
     callClient.close();
     setMuted(false);
@@ -154,53 +158,73 @@ export function CallProvider({ children }) {
     // above already guards against — shouldn't be reachable, but answering
     // here would silently drop whatever call is currently active.
     if (activeCallRef.current) return;
+    // Microphone first, before taking the call: if it's blocked on this
+    // device (common the first time on a phone), say so and leave the call
+    // ringing for other staff instead of hanging on "Connecting…".
+    try {
+      await callClient.acquireMic();
+    } catch (err) {
+      console.error('[Call] microphone unavailable:', err);
+      callClient.close();
+      setIncomingCall(prev => (prev?.callId === callId ? null : prev));
+      setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'failed', error: MIC_BLOCKED_MESSAGE });
+      setTimeout(() => setActiveCall(prev => (prev?.callId === callId ? null : prev)), 6000);
+      return;
+    }
     try {
       await api.post(`/api/calls/${callId}/answer`);
     } catch {
+      callClient.close();
       setIncomingCall(prev => (prev?.callId === callId ? null : prev));
       return;
     }
 
     setIncomingCall(null);
     setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'connecting' });
-
-    // Offer is sent async right after the ring notification — poll briefly
-    // rather than silently no-op, so a slow signal doesn't leave the call
-    // stuck (mirrors room-display App.jsx's handleAnswerIncoming).
-    let offerSdp = pendingOffers.current.get(callId);
-    const pollStart = Date.now();
-    while (!offerSdp && Date.now() - pollStart < OFFER_WAIT_MS) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      if (activeCallRef.current?.callId !== callId) return; // call ended/cancelled while waiting
-      offerSdp = pendingOffers.current.get(callId);
-    }
-    if (!offerSdp) {
-      endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
-      return;
-    }
-    pendingOffers.current.delete(callId);
-
-    const answerSdp = await callClient.createAnswer(offerSdp, {
-      onIceCandidate: (candidate) => {
-        api.post(`/api/calls/${callId}/signal`, { roomId: call.roomId, payload: { kind: 'ice', candidate } }).catch(() => {});
-      },
-      onConnectionStateChange: (connState) => {
-        if (connState === 'connected') {
-          clearConnectingTimeout();
-          setActiveCall(prev => (prev?.callId === callId ? { ...prev, status: 'connected' } : prev));
-        } else if (['failed', 'disconnected', 'closed'].includes(connState)) {
-          endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
-        }
-      },
-    });
+    // Bound the whole connect phase, not just ICE — covers a hang anywhere below.
     startConnectingTimeout(callId);
 
-    for (const candidate of pendingIce.current.get(callId) || []) {
-      callClient.addIceCandidate(candidate);
-    }
-    pendingIce.current.delete(callId);
+    try {
+      // Offer is sent async right after the ring notification — poll briefly
+      // rather than silently no-op, so a slow signal doesn't leave the call
+      // stuck (mirrors room-display App.jsx's handleAnswerIncoming).
+      let offerSdp = pendingOffers.current.get(callId);
+      const pollStart = Date.now();
+      while (!offerSdp && Date.now() - pollStart < OFFER_WAIT_MS) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (activeCallRef.current?.callId !== callId) return; // call ended/cancelled while waiting
+        offerSdp = pendingOffers.current.get(callId);
+      }
+      if (!offerSdp) {
+        endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
+        return;
+      }
+      pendingOffers.current.delete(callId);
 
-    await api.post(`/api/calls/${callId}/signal`, { roomId: call.roomId, payload: { kind: 'answer', sdp: answerSdp } });
+      const answerSdp = await callClient.createAnswer(offerSdp, {
+        onIceCandidate: (candidate) => {
+          api.post(`/api/calls/${callId}/signal`, { roomId: call.roomId, payload: { kind: 'ice', candidate } }).catch(() => {});
+        },
+        onConnectionStateChange: (connState) => {
+          if (connState === 'connected') {
+            clearConnectingTimeout();
+            setActiveCall(prev => (prev?.callId === callId ? { ...prev, status: 'connected' } : prev));
+          } else if (['failed', 'disconnected', 'closed'].includes(connState)) {
+            endCallLocally(callId, 'failed', CONNECT_FAILED_MESSAGE);
+          }
+        },
+      });
+
+      for (const candidate of pendingIce.current.get(callId) || []) {
+        callClient.addIceCandidate(candidate);
+      }
+      pendingIce.current.delete(callId);
+
+      await api.post(`/api/calls/${callId}/signal`, { roomId: call.roomId, payload: { kind: 'answer', sdp: answerSdp } });
+    } catch (err) {
+      console.error('[Call] answer failed:', err);
+      endCallLocally(callId, 'failed', err.micError ? MIC_BLOCKED_MESSAGE : CONNECT_FAILED_MESSAGE);
+    }
   }, [incomingCall, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 
   const dismissIncoming = useCallback(() => setIncomingCall(null), []);
@@ -210,6 +234,13 @@ export function CallProvider({ children }) {
   // requested up front, connectionstatechange drives 'calling' -> 'connected'.
   const callRoom = useCallback(async (unit) => {
     if (activeCallRef.current || incomingCall) throw new Error('Already on a call');
+    // Microphone first, so a blocked mic never rings the room.
+    try {
+      await callClient.acquireMic();
+    } catch {
+      callClient.close();
+      throw new Error(MIC_BLOCKED_MESSAGE);
+    }
     const { data } = await api.post('/api/calls/to-room', { unitId: unit.id });
     setActiveCall({ callId: data.callId, roomId: data.roomId, unitName: data.unitName, status: 'calling' });
 

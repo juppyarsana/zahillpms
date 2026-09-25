@@ -215,6 +215,11 @@ export default function App() {
   }, []);
 
   const endCallLocally = useCallback((finalStatus, errorMessage) => {
+    // A call that failed here (no audio path, timeout) must also end on the
+    // server, or the front desk stays on "Connecting…" until its own timer.
+    if (finalStatus === 'failed' && callIdRef.current) {
+      api.post(`/calls/${callIdRef.current}/end-from-room`).catch(() => {});
+    }
     clearConnectingTimeout();
     callClient.close();
     callIdRef.current = null;
@@ -345,6 +350,8 @@ export default function App() {
     try {
       await api.post(`/calls/${id}/answer-from-room`);
       setCallState(prev => (prev.callId === id ? { ...prev, status: 'connecting' } : prev));
+      // Bound the whole connect phase, not just ICE — covers a hang anywhere below.
+      startConnectingTimeout(id);
 
       let offerSdp = pendingOfferRef.current;
       const pollStart = Date.now();
@@ -371,7 +378,6 @@ export default function App() {
           }
         },
       });
-      startConnectingTimeout(id);
       await api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'answer', sdp: answer } });
     } catch (err) {
       console.error('[Call] answer failed:', err);
