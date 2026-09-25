@@ -4,6 +4,7 @@ import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
@@ -48,7 +49,7 @@ function Row({ label, value, bold }) {
 const CHECKLIST = [
   { key: 'unit_clean',        label: 'Unit clean & ready',              sub: 'Housekeeping confirmed' },
   { key: 'amenities',         label: 'Welcome amenities in place',      sub: 'Water, local snacks, welcome card, fresh flowers' },
-  { key: 'wifi',              label: 'WiFi details provided',           sub: 'Network: ZahillGuest · Pass: volcano2026' },
+  { key: 'wifi',              label: 'WiFi details provided',           sub: 'Network name and password given to the guest' },
   { key: 'checkout_time',     label: 'Guest briefed on check-out time', sub: 'Remind: 11:00 AM on check-out date' },
   { key: 'house_rules',       label: 'House rules explained',           sub: 'No campfire outside zone · Quiet hours 22:00 · No outside guests' },
   { key: 'id_captured',       label: 'ID / Passport captured',          sub: 'Required by Indonesian immigration regulation' },
@@ -57,7 +58,8 @@ const CHECKLIST = [
 
 export default function CheckIn() {
   const navigate = useNavigate();
-  const { sources } = useSettings();
+  const { can } = useAuth();
+  const { sources, branding } = useSettings();
   const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
   function srcLabel(id) { return sources.find(s => s.id === id)?.label || id; }
   const [searchParams] = useSearchParams();
@@ -209,7 +211,7 @@ export default function CheckIn() {
   }
 
   function waWelcome(b) {
-    const text = encodeURIComponent(`Welcome to Zahill Glamping, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.\n\n🌄 Kintamani, Bali`);
+    const text = encodeURIComponent(`Welcome to ${branding?.name || 'our hotel'}, ${b.guest_name}! 🌿\n\nWe hope you enjoy your stay in ${b.unit_name}. Please don't hesitate to reach out if you need anything.${branding?.area ? `\n\n🌄 ${branding.area}` : ''}`);
     const rawWa = (b.guest_whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {
@@ -228,9 +230,11 @@ export default function CheckIn() {
           <div className="page-title">Check-in / Check-out</div>
           <div className="page-subtitle">{today}</div>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => navigate('/quick-checkin')}>
-          ⚡ Quick Mode
-        </button>
+        {can('quick_checkin') && (
+          <button className="btn btn-primary btn-sm" onClick={() => navigate('/quick-checkin')}>
+            ⚡ Quick Mode
+          </button>
+        )}
       </div>
 
       <div className="grid-2 mb-3">

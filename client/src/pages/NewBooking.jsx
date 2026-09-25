@@ -110,13 +110,22 @@ export default function NewBooking() {
   const [units, setUnits] = useState([]);
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
+  // Pre-fill: from a calendar cell (?unit=&date=, 1 night) or from Check
+  // Availability (?check_in=&check_out=&units=a,b&guests=2,2 — 2+ units open
+  // as a group booking).
+  const preIn = sp.get('check_in') || sp.get('date') || '';
+  const preOut = sp.get('check_out') || (sp.get('date') ? addDaysYmd(sp.get('date'), 1) : '');
+  const preUnits = (sp.get('units') || sp.get('unit') || '').split(',').filter(Boolean);
+  const preGuests = (sp.get('guests') || '').split(',').map(g => parseInt(g, 10) || 1);
   const [form, setForm] = useState({
     guest_id: '',
-    check_in_date: sp.get('date') || '', check_out_date: sp.get('date') ? addDaysYmd(sp.get('date'), 1) : '',
+    check_in_date: preIn, check_out_date: preOut,
     source: 'direct', deposit_pct: 50, special_requests: '', status: 'pending',
     discount_type: '', discount_value: '',
   });
-  const [rooms, setRooms] = useState([{ ...EMPTY_ROOM, unit_id: sp.get('unit') || '' }]);
+  const [rooms, setRooms] = useState(preUnits.length
+    ? preUnits.map((id, i) => ({ ...EMPTY_ROOM, unit_id: id, num_guests: preGuests[i] || 1 }))
+    : [{ ...EMPTY_ROOM }]);
   const [newGuest, setNewGuest] = useState({ name: '', whatsapp: '', nationality: '', email: '' });
   const [mode, setMode] = useState('search');
   const [error, setError] = useState('');
@@ -127,7 +136,7 @@ export default function NewBooking() {
   const [creditCheck, setCreditCheck] = useState(null);
   // Nights ↔ check-out stay in sync: type nights and check-out follows, pick
   // check-out and nights follows; moving check-in keeps the number of nights.
-  const [nights, setNights] = useState(sp.get('date') ? '1' : '');
+  const [nights, setNights] = useState(preIn && preOut && preOut > preIn ? String(nightsBetween(preIn, preOut)) : '');
   // Every unit's availability for the chosen dates (booked / free), so the
   // Unit dropdown can grey out rooms that are taken.
   const [unitAvail, setUnitAvail] = useState({});

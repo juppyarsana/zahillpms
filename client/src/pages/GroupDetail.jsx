@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
+import PageHeader from '../components/PageHeader';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
 
@@ -9,6 +10,12 @@ const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'ambe
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+// '2026-10-01' → '1 Oct' (withYear → '1 Oct 2026')
+function fmtDate(s, withYear = false) {
+  if (!s) return '';
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) });
+}
 
 export default function GroupDetail() {
   const { groupId } = useParams();
@@ -298,37 +305,74 @@ export default function GroupDetail() {
   const canAddRoom = group.status !== 'cancelled' && group.check_out_date?.slice(0, 10) > todayStr;
   const amendableRooms = bookings.filter(b => ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status));
   const activeRoomCount = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status)).length;
+  const activeRooms = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status));
+  const groupNights = Math.max(0, Math.round((new Date(group.check_out_date?.slice(0, 10)) - new Date(group.check_in_date?.slice(0, 10))) / 86400000));
+  const groupPax = activeRooms.reduce((sum, b) => sum + (parseInt(b.num_guests, 10) || 0), 0);
+  const inHouse = activeRooms.filter(b => b.status === 'checked_in').length;
+  const groupState = group.status === 'cancelled' || activeRooms.length === 0 ? { label: 'Cancelled', color: 'red' }
+    : activeRooms.every(b => b.status === 'checked_out') ? { label: 'Checked out', color: 'gray' }
+    : inHouse > 0 ? { label: `In house · ${inHouse}/${activeRooms.length}`, color: 'blue' }
+    : { label: 'Upcoming', color: 'green' };
+  // Modify (moderate) above a divider, Cancel Group (destructive) below it —
+  // same layout as the booking page's ⋮ menu.
+  const groupModify = [
+    group.status !== 'cancelled' && amendableRooms.length > 0 && { label: 'Amend Dates', icon: '📅', onClick: openAmendGroup },
+    canAddRoom && { label: 'Add Room', icon: '➕', onClick: openAddRoom },
+    roomsWithBooker === 0 && assignableRooms.length > 0 && { label: 'Assign Guests', icon: '👥', onClick: openAssign },
+  ].filter(Boolean);
+  const groupDanger = [
+    group.status === 'active' && { label: 'Cancel Group', icon: '✕', onClick: cancelGroup, danger: true },
+  ].filter(Boolean);
+  const groupMenu = [...groupModify, groupModify.length && groupDanger.length ? { divider: true } : null, ...groupDanger].filter(Boolean);
+  function whatsappBooker() {
+    const raw = (group.guest_whatsapp || '').trim();
+    let num = raw.replace(/\D/g, '');
+    if (!raw.startsWith('+')) {
+      if (num.startsWith('0')) num = '62' + num.slice(1);
+      else if (!num.startsWith('62')) num = '62' + num;
+    }
+    window.open(`https://wa.me/${num}`, '_blank');
+  }
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Group Booking · {group.guest_name}</div>
-          <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
-        </div>
-        <div className="flex gap-2 items-center">
+      <PageHeader
+        back={{ to: '/reservations', label: 'Reservations' }}
+        kind="Group booking"
+        title={group.guest_name}
+        meta={[
+          `${fmtDate(group.check_in_date)} → ${fmtDate(group.check_out_date, true)}`,
+          `${groupNights} night${groupNights === 1 ? '' : 's'}`,
+          `${rollup.room_count} room${rollup.room_count === 1 ? '' : 's'}`,
+          `${groupPax} guest${groupPax === 1 ? '' : 's'}`,
+        ]}
+        badge={<span className={`badge badge-${groupState.color}`}>{groupState.label}</span>}
+        actions={<>
           {anyEligibleForCheckin && (
             <button className="btn btn-primary" onClick={checkInGroup} disabled={checkingIn}>
-              {checkingIn ? 'Checking in…' : 'Check In Whole Group'}
+              {checkingIn ? 'Checking in…' : 'Check In Group'}
             </button>
           )}
-          <ActionMenu
-            icon="⬇"
-            label="Download"
-            ariaLabel="Download documents"
-            items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
-          />
-          {group.status !== 'cancelled' && amendableRooms.length > 0 && (
-            <button className="btn btn-secondary" onClick={openAmendGroup}>📅 Amend Dates</button>
+          {roomsWithBooker > 0 && (
+            <button className="btn btn-secondary" onClick={openAssign} title="Rooms still under the booker's name">
+              👥 Assign Guests <span className="badge badge-amber" style={{ marginLeft: 4 }}>{roomsWithBooker}</span>
+            </button>
           )}
-          {assignableRooms.length > 0 && (
-            <button className="btn btn-secondary" onClick={openAssign}>👥 Assign Guests</button>
-          )}
-          {group.status === 'active' && (
-            <button className="btn btn-danger" onClick={cancelGroup}>Cancel Group</button>
-          )}
-        </div>
-      </div>
+          <div className="icon-group">
+            {group.guest_whatsapp && (
+              <button title={`WhatsApp ${group.guest_name}`} onClick={whatsappBooker}>💬</button>
+            )}
+            <ActionMenu
+              bare
+              icon="⬇"
+              ariaLabel="Download documents"
+              items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
+            />
+          </div>
+          {groupMenu.length > 0 && <div className="header-divider" />}
+          {groupMenu.length > 0 && <ActionMenu items={groupMenu} />}
+        </>}
+      />
 
       {checkinResults && (
         <div className="card mb-3">
@@ -365,12 +409,6 @@ export default function GroupDetail() {
             <div style={{ fontWeight: 700, fontSize: 16 }}>{group.guest_name}</div>
             {group.guest_whatsapp && <div style={{ fontSize: 13 }}>📱 {group.guest_whatsapp}</div>}
             {group.guest_email && <div style={{ fontSize: 13 }}>✉️ {group.guest_email}</div>}
-            <div className="flex-between mt-2" style={{ fontSize: 13 }}>
-              <span className="text-muted">Check-in</span><span>{group.check_in_date?.slice(0, 10)}</span>
-            </div>
-            <div className="flex-between" style={{ fontSize: 13 }}>
-              <span className="text-muted">Check-out</span><span>{group.check_out_date?.slice(0, 10)}</span>
-            </div>
           </div>
 
           <div className="card mb-3">
@@ -382,12 +420,12 @@ export default function GroupDetail() {
             </div>
             {roomsWithBooker > 0 && (
               <div className="alert alert-success" style={{ fontSize: 13, marginBottom: 8 }}>
-                {roomsWithBooker} room{roomsWithBooker === 1 ? ' is' : 's are'} still under the booker's name. Use <b>Assign Guests</b> once the guest list arrives — Room Display, TV and the police guest report show each room's guest.
+                <div>{roomsWithBooker} room{roomsWithBooker === 1 ? ' is' : 's are'} still under the booker's name. Use <b>Assign Guests</b> once the guest list arrives — Room Display, TV and the police guest report show each room's guest.</div>
               </div>
             )}
             {bookings.map(b => (
-              <div key={b.id} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>
+              <div key={b.id} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ minWidth: 0, flex: '1 1 200px' }}>
                   <Link to={`/reservations/${b.id}`} style={{ fontWeight: 600 }}>{b.unit_name}</Link>
                   <span style={{ marginLeft: 8, fontSize: 13 }}>
                     {b.guest_name}
@@ -395,7 +433,7 @@ export default function GroupDetail() {
                   </span>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{b.num_guests} guest{b.num_guests !== 1 ? 's' : ''} · {fmtIDR(b.total_amount)}</div>
                 </div>
-                <div className="flex gap-2" style={{ alignItems: 'center' }}>
+                <div className="flex gap-2" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {(() => {
                     // Unpaid room payment lines → shortcut to that room's
                     // Payment Tracking to mark them received.

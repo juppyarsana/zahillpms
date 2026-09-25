@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import CountrySelect from '../components/CountrySelect';
+import { useSettings } from '../context/SettingsContext';
 
 const EMPTY_FORM = {
   name: '', nationality: '', whatsapp: '', email: '',
@@ -9,6 +10,7 @@ const EMPTY_FORM = {
 };
 
 export default function Guests() {
+  const { branding } = useSettings();
   const [guests, setGuests] = useState([]);
   const [search, setSearch] = useState('');
   const [birthdays, setBirthdays] = useState([]);
@@ -88,7 +90,8 @@ export default function Guests() {
   }
 
   function waInvite(g) {
-    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at Zahill Glamping, Kintamani.\n\nAs a special birthday gift, we'd love to invite you back for a complimentary upgrade on your next stay! 🎁\n\nWith warmth, Zahill Team 🪺`);
+    const hotelName = branding?.name || 'our hotel';
+    const msg = encodeURIComponent(`Happy Birthday, ${g.name}! 🎂🌿\n\nWishing you a wonderful day from all of us at ${hotelName}${branding?.area ? `, ${branding.area}` : ''}.\n\nWe'd love to welcome you back soon! 🎁\n\nWith warmth, the ${hotelName} team`);
     const rawWa = (g.whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {

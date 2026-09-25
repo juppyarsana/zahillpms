@@ -141,11 +141,13 @@ function VacantScreen({ unitName, cards = [], property }) {
           alt={property?.name || 'ZHP PMS'}
           style={{ width: 'clamp(160px, 20vw, 300px)', marginBottom: 'clamp(0.5rem, 1.2vh, 1rem)' }}
         />
-        <p className="font-bold uppercase tracking-[0.45em]"
-          style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', color: '#c9a227',
-            marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }}>
-          Kintamani &middot; Bali
-        </p>
+        {property?.location && (
+          <p className="font-bold uppercase tracking-[0.45em]"
+            style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', color: '#c9a227',
+              marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }}>
+            {property.location}
+          </p>
+        )}
         <div className="w-12 h-px" style={{ background: 'rgba(201,162,39,0.35)',
           marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }} />
         {unitName && (
@@ -196,10 +198,12 @@ function GuestScreen({ unit, booking, cards = [], weather, property }) {
           alt={property?.name || 'ZHP PMS'}
           style={{ width: 'clamp(90px, 10vw, 160px)' }}
         />
-        <p className="font-bold uppercase tracking-[0.4em]"
-          style={{ fontSize: 'clamp(0.5rem, 0.85vw, 0.65rem)', color: '#c9a227' }}>
-          Kintamani &middot; Bali
-        </p>
+        {property?.location && (
+          <p className="font-bold uppercase tracking-[0.4em]"
+            style={{ fontSize: 'clamp(0.5rem, 0.85vw, 0.65rem)', color: '#c9a227' }}>
+            {property.location}
+          </p>
+        )}
         {unit?.name && (
           <p className="font-light uppercase tracking-widest text-white"
             style={{ fontSize: 'clamp(0.6rem, 1.1vw, 0.85rem)' }}>{unit.name}</p>

@@ -10,6 +10,7 @@ const { computeFolioTotals, computeProforma, round2 } = require('../services/fol
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice } = require('../services/bookingPriceService');
 const { nightlyRoomRates } = require('../services/pricingService');
+const { searchAvailability } = require('../services/availabilityService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
 const telegramService = require('../services/telegramService');
@@ -25,33 +26,7 @@ const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
-// When a booking stops occupying its room, for availability checks. Normally
-// its check-out date — but a guest still checked in AFTER their check-out
-// date (overdue: staff haven't checked them out yet) is physically still in
-// the room, so it stays occupied through tonight until someone checks them
-// out or extends the stay. A guest due out today isn't affected (they leave
-// before the next arrival). `a` = the bookings table alias ('' for none).
-const TODAY_WITA_SQL = "(NOW() AT TIME ZONE 'Asia/Makassar')::date";
-// The day a checked-out guest actually left (WITA), from checkin_records.
-function checkoutDaySql(a = 'b') {
-  const c = a ? `${a}.` : 'bookings.';
-  return `(SELECT (cr.checkout_time AT TIME ZONE 'Asia/Makassar')::date FROM checkin_records cr WHERE cr.booking_id = ${c}id)`;
-}
-// A checked-out booking frees the room from the day the guest actually left
-// — a same-day departure keeps its 1 charged night on the books but the
-// room can be sold again that evening.
-function occupiedUntilSql(a = 'b') {
-  const c = a ? `${a}.` : 'bookings.';
-  return `(CASE WHEN ${c}status = 'checked_in' AND ${c}check_out_date < ${TODAY_WITA_SQL}
-               THEN ${TODAY_WITA_SQL} + 1
-               WHEN ${c}status = 'checked_out'
-               THEN LEAST(${c}check_out_date, COALESCE(${checkoutDaySql(a)}, ${c}check_out_date))
-               ELSE ${c}check_out_date END)`;
-}
-function overdueSql(a = 'b') {
-  const c = a ? `${a}.` : 'bookings.';
-  return `(${c}status = 'checked_in' AND ${c}check_out_date < ${TODAY_WITA_SQL})`;
-}
+const { TODAY_WITA_SQL, checkoutDaySql, occupiedUntilSql, overdueSql } = require('../services/occupancySql');
 
 // A booking can carry more than one 'balance' payment line: a price
 // correction (PUT /:id/price) that raises an already fully-paid booking adds a
@@ -691,6 +666,30 @@ router.get('/transfer-availability', auth, async (req, res) => {
       available: !conflictMap[u.id],
       conflict: conflictMap[u.id] || null,
     })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/availability-search?check_in=&check_out=&guests=&rooms=
+// Check Availability page: free rooms per room type + the normal price for
+// the stay. `guests` is the whole party, `rooms` how many rooms they want —
+// room types too small for guests ÷ rooms are flagged. Logic in
+// services/availabilityService.js (also meant for a booking-engine widget).
+router.get('/availability-search', auth, async (req, res) => {
+  const { check_in, check_out } = req.query;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(check_in || '') || !/^\d{4}-\d{2}-\d{2}$/.test(check_out || '') || check_out <= check_in) {
+    return res.status(400).json({ error: 'check_in and a later check_out are required (YYYY-MM-DD)' });
+  }
+  const nights = Math.round((new Date(check_out) - new Date(check_in)) / 86400000);
+  if (nights > 90) return res.status(400).json({ error: 'Search up to 90 nights at a time' });
+  const guests = Math.max(1, parseInt(req.query.guests, 10) || 1);
+  const rooms = Math.max(1, parseInt(req.query.rooms, 10) || 1);
+  try {
+    const result = await searchAvailability(req.propertyId, {
+      checkIn: check_in, checkOut: check_out, guestsPerRoom: Math.ceil(guests / rooms), includeGuests: true,
+    });
+    res.json({ ...result, guests, rooms });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

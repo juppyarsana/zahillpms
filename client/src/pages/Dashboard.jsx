@@ -1274,6 +1274,7 @@ function AiSummaryCard({ summary }) {
 
 /* ─── main component ───────────────────────────────────── */
 export default function Dashboard() {
+  const { branding } = useSettings();
   const { user } = useAuth();
   const [data,           setData]          = useState(null);
   const [tasks,          setTasks]         = useState([]);
@@ -1360,7 +1361,7 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">{greeting()}, {user?.name?.split(' ')[0]} 👋</div>
-          <div className="page-subtitle">{todayStr} · Kintamani, Bali</div>
+          <div className="page-subtitle">{todayStr}{branding?.area ? ` · ${branding.area}` : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="badge badge-green" style={{ padding: '6px 14px', fontSize: 12 }}>

@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
+import Availability from './pages/Availability';
 import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
@@ -53,7 +54,10 @@ function BottomNav() {
   const mainItems = [
     can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
     can('reservations') && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Reservations' },
-    can('quick_checkin') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
+    // Check-in tab; Quick Check-in (⚡ Quick Mode inside it) only for staff
+    // who can't open Check-in / out.
+    can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in' },
+    can('quick_checkin') && !can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick CI' },
     can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
   ].filter(Boolean);
 
@@ -62,7 +66,7 @@ function BottomNav() {
   // be the case for Night Audit / Agent Billing / Room Controllers / Guest Board).
   const moreGroups = [
     { label: 'Front Desk', items: [
-      can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
+      can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
       can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
       can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
@@ -262,6 +266,7 @@ export default function App() {
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
+                  <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Availability /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/new" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
