@@ -4,7 +4,9 @@ This plan has two halves: **Part 1** is the PMS-side API (`zahillpms`, this repo
 
 ---
 
-# Part 1 — PMS side (`zahillpms`)
+# Part 1 — PMS side (`zahillpms`) — ✅ built 2026-09-25
+
+> Built as designed, with three changes: the migration is **070** (068/069 were taken); `sales.description` was added (POS sales have no `sale_items`, so the Sales list and folio need the POS's own text); `POST /transactions` accepts a typed `room` (name or Room ID) **or** a `booking_id`, and `balance_due` is the whole-stay estimate (`computeProforma`) rather than the posted ledger. `amount` is NET (before service/tax — the folio adds them). See `CLAUDE.md`'s POS Integration write-up.
 
 ## Context
 
@@ -21,7 +23,7 @@ This is a new, narrow integration surface — not an extension of `resto_orderin
 
 **New module: `pos_integration`** (default off, like `resto_ordering`/`back_office`) — added to `server/modules.js` (`{ label: 'POS Integration', routes: ['posIntegration'] }`), `server/db/seedPropertyDefaults.js`'s `DEFAULT_OFF` list, and backfilled for existing properties via the new migration (same `INSERT ... ON CONFLICT DO NOTHING` pattern as migration 061). Also add it to `client/src/pages/admin/PropertyDetail.jsx`'s `MODULE_LABELS`.
 
-**New migration `068_pos_integration.sql`:**
+**New migration `070_pos_integration.sql`:**
 - `properties.pos_api_key VARCHAR(64) UNIQUE` (nullable — unset until the owner generates one). Structurally mirrors `properties.display_token` (single credential per property), but unlike `display_token` this one gets a **regenerate** endpoint (new ground — `display_token` has none today), because this credential sits in third-party software the PMS doesn't control the deployment of and must be rotatable if it leaks.
 - Widen the `sales.order_source` CHECK constraint (currently `IN ('pos','room_display','guest_qr','resto_staff')`, migration 048) to add `'external_pos'` — keeps it distinguishable from `'pos'` (the PMS's own internal staff POS).
 - `sales.external_ref VARCHAR(100)` nullable + partial unique index `(property_id, external_ref) WHERE external_ref IS NOT NULL` — lets the POS pass its own transaction id so a network retry is safe (replay returns the original sale instead of double-charging the folio).
@@ -48,7 +50,7 @@ This is a new, narrow integration surface — not an extension of `resto_orderin
 - `GET /api/settings/pos-api-key` (owner-only, mirrors `GET /api/settings/display-token` in `server/routes/settings.js`)
 - `POST /api/settings/pos-api-key/regenerate` (owner-only) — `crypto.randomBytes(32).toString('hex')`, same generation approach `routes/resto.js`'s `POST /tables/:id/qr/reset` already uses for table QR tokens.
 
-**Docs:** update `CLAUDE.md`'s migrations table (068), module table, and "Next migration number" line; add a short new subsection alongside the other display/kiosk write-ups describing this integration and the deliberate "no menu/inventory sync" boundary; update `ROADMAP.md` per the repo's own "Working Across Multiple Machines" convention, same commit as the code.
+**Docs:** update `CLAUDE.md`'s migrations table (070), module table, and "Next migration number" line; add a short new subsection alongside the other display/kiosk write-ups describing this integration and the deliberate "no menu/inventory sync" boundary; update `ROADMAP.md` per the repo's own "Working Across Multiple Machines" convention, same commit as the code.
 
 ## Explicitly out of scope (flagged, not built)
 
@@ -58,7 +60,7 @@ This is a new, narrow integration surface — not an extension of `resto_orderin
 
 ## Files touched
 
-- `server/db/migrations/068_pos_integration.sql` (new)
+- `server/db/migrations/070_pos_integration.sql` (new)
 - `server/modules.js`, `server/db/seedPropertyDefaults.js`
 - `server/middleware/authPos.js` (new)
 - `server/services/posIntegrationService.js` (new)

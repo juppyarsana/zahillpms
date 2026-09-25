@@ -1484,7 +1484,24 @@ Agreed plan (English only; times WITA):
 
 ---
 
-## Next migration number: 070
+## 🟡 External POS integration (migration 070) — PMS side ✅, POS side next
+
+Property's own POS (Separuh, `zahillpos` repo, branch `pms-integration` — never `main`) takes over F&B;
+the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
+
+- ✅ **PMS side (2026-09-25):** `pos_integration` module (default off), per-property `pos_api_key`
+  (Settings → Property Details → POS Integration: create / copy / regenerate), `/api/pos/rooms`,
+  `/api/pos/rooms/:room`, `POST /api/pos/transactions` (NET amount, retry-safe `external_ref`),
+  folio shows it under Food & Beverage. Full write-up in `CLAUDE.md`.
+- 🔵 **POS side:** PMS link settings stored in the POS database (URL, key, on/off — not `.env`, so a
+  future multi-business POS just adds a business column), Charge to Room payment method + room
+  picker, send `subtotal − discount` as the amount and the POS transaction id as `external_ref`,
+  all PMS calls in one server file. Test on a separate VM, then merge and move Zahill's F&B over.
+- ⚪ Later: void/refund of a room-charged POS bill; multi-business POS (own project).
+
+---
+
+## Next migration number: 071
 
 ---
 
