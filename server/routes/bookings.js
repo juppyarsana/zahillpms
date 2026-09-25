@@ -728,9 +728,11 @@ router.get('/groups', auth, async (req, res) => {
              COUNT(b.id) FILTER (WHERE b.guest_id = rg.primary_guest_id
                                   AND b.status NOT IN ('cancelled', 'no_show', 'checked_out'))::int AS rooms_with_booker,
              string_agg(u.name, ', ' ORDER BY u.name) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')) AS room_names,
-             COALESCE(SUM(b.total_amount), 0) - COALESCE(rg.group_discount_amount, 0) AS net_amount,
+             COALESCE(SUM(b.total_amount - COALESCE(b.discount_amount, 0))
+                        FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')), 0) AS net_amount,
              COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b2 ON b2.id = p.booking_id
                         WHERE b2.reservation_group_id = rg.id AND p.status = 'received'
+                          AND b2.status NOT IN ('cancelled', 'no_show')
                           AND p.type IN ('deposit', 'balance')), 0) AS paid_amount
       FROM reservation_groups rg
       JOIN guests g ON g.id = rg.primary_guest_id
@@ -780,25 +782,40 @@ router.get('/group/:groupId', auth, async (req, res) => {
 
     const statusBreakdown = {};
     bookings.forEach(b => { statusBreakdown[b.status] = (statusBreakdown[b.status] || 0) + 1; });
+    // Money is summed over ACTIVE rooms only — a room cancelled (or no-show)
+    // out of the group no longer owes anything. Each room carries its own
+    // prorated share of the group discount, so summing the active rooms'
+    // discount_amount drops the cancelled room's share with it.
+    const inactive = new Set(bookings.filter(b => ['cancelled', 'no_show'].includes(b.status)).map(b => b.id));
+    const active = bookings.filter(b => !inactive.has(b.id));
     // Room payments only — an 'incidental' payment (an extra paid at the desk,
     // migration 067) settles its own sale, not the group's room balance.
+    const roomPaid = p => p.status === 'received' && (p.type === 'deposit' || p.type === 'balance');
     const paidAmount = paymentsByBooking.rows
-      .filter(p => p.status === 'received' && (p.type === 'deposit' || p.type === 'balance'))
+      .filter(p => roomPaid(p) && !inactive.has(p.booking_id))
       .reduce((s, p) => s + parseFloat(p.amount), 0);
-    const totalAmount = bookings.reduce((s, b) => s + parseFloat(b.total_amount), 0);
-    const netAmount = totalAmount - parseFloat(group.group_discount_amount || 0);
+    // Money already received on a room that was later cancelled — not counted
+    // toward the group; FO refunds it or moves it by hand.
+    const paidOnCancelled = paymentsByBooking.rows
+      .filter(p => roomPaid(p) && inactive.has(p.booking_id))
+      .reduce((s, p) => s + parseFloat(p.amount), 0);
+    const totalAmount = active.reduce((s, b) => s + parseFloat(b.total_amount), 0);
+    const discountAmount = active.reduce((s, b) => s + parseFloat(b.discount_amount || 0), 0);
+    const netAmount = totalAmount - discountAmount;
 
     res.json({
       group,
       bookings: bookingsWithPayments,
       rollup: {
-        room_count: bookings.length,
-        total_amount: totalAmount,
-        discount_amount: parseFloat(group.group_discount_amount || 0),
-        net_amount: netAmount,
+        room_count: active.length,
+        cancelled_count: inactive.size,
+        total_amount: round2(totalAmount),
+        discount_amount: round2(discountAmount),
+        net_amount: round2(netAmount),
         deposit_amount: parseFloat(group.group_deposit_amount || 0),
-        paid_amount: paidAmount,
-        balance_due: netAmount - paidAmount,
+        paid_amount: round2(paidAmount),
+        paid_on_cancelled: round2(paidOnCancelled),
+        balance_due: round2(netAmount - paidAmount),
         status_breakdown: statusBreakdown,
       },
     });
@@ -1425,6 +1442,97 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
     }
 
     res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/bookings/group/:groupId/rooms — add a room to an existing group
+// (the group asked for one more room). Same dates as the group — from today
+// if the group is already in house — under the booker's name (Assign Guests
+// later). total_amount is the whole stay, tax included, like New Booking;
+// default = the room's normal rate (+ rate plan meals). The group discount is
+// NOT applied to the added room. Fewer rooms = cancel that room's booking.
+router.post('/group/:groupId/rooms', auth, async (req, res) => {
+  const { unit_id, num_guests, rate_plan_id, bed_preference, total_amount, deposit_amount, reason } = req.body;
+  if (!unit_id) return res.status(400).json({ error: 'unit_id required' });
+  if (bed_preference && !BED_PREFS.includes(bed_preference)) {
+    return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
+  }
+  const given = v => v !== undefined && v !== null && v !== '';
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [group] } = await client.query(
+      `SELECT rg.*, to_char(rg.check_in_date, 'YYYY-MM-DD') AS ci, to_char(rg.check_out_date, 'YYYY-MM-DD') AS co
+       FROM reservation_groups rg WHERE rg.id = $1 AND rg.property_id = $2 FOR UPDATE`,
+      [req.params.groupId, req.propertyId]);
+    if (!group) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Group not found' }); }
+    if (group.status === 'cancelled') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This group is cancelled' }); }
+
+    const today = roomCharge.todayWITA();
+    const checkIn = group.ci < today ? today : group.ci;
+    const checkOut = group.co;
+    if (checkIn >= checkOut) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This group has already checked out' }); }
+
+    const { rows: [unit] } = await client.query('SELECT id, name FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
+    if (!unit) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Room not found' }); }
+    const { rows: conflict } = await client.query(`
+      SELECT id FROM bookings
+      WHERE unit_id = $1 AND property_id = $4
+        AND status NOT IN ('cancelled','no_show')
+        AND check_in_date < $3 AND ${occupiedUntilSql('')} > $2
+    `, [unit_id, checkIn, checkOut, req.propertyId]);
+    if (conflict.length > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Room ${unit.name} is not available for the group's dates` }); }
+
+    // Source / special requests follow the group's existing rooms.
+    const { rows: [sibling] } = await client.query(
+      `SELECT source, special_requests FROM bookings WHERE reservation_group_id = $1 AND property_id = $2
+       ORDER BY (status IN ('cancelled','no_show')), created_at LIMIT 1`,
+      [group.id, req.propertyId]);
+
+    const nights = Math.max(1, Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000));
+    const guests = Math.max(1, parseInt(num_guests, 10) || 1);
+    const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
+    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+
+    let total;
+    if (given(total_amount)) {
+      total = parseFloat(total_amount);
+      if (!Number.isFinite(total) || total < 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'total_amount must be a positive number' }); }
+    } else {
+      const rates = await nightlyRoomRates(req.propertyId, unit_id, checkIn, checkOut, client);
+      const meal = ratePlanService.mealNetPerNight(ratePlan, guests) * nights;
+      total = computeFolioTotals(rates.room_total + meal, tax_rate, service_charge_rate).total;
+    }
+
+    const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F });
+    const payable = round2(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total);
+    const depositAmount = given(deposit_amount)
+      ? Math.max(0, Math.min(parseFloat(deposit_amount) || 0, payable))
+      : Math.round(payable * 0.5); // 50%, same default as New Booking
+    const balanceAmount = round2(payable - depositAmount);
+
+    const { rows: [booking] } = await client.query(
+      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_amount, special_requests, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,'pending',$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [group.primary_guest_id, unit_id, checkIn, checkOut, guests, sibling?.source || 'direct', payable, depositAmount,
+       sibling?.special_requests || null, req.user.id, req.propertyId, group.id, ratePlan?.id || null, bed_preference || null, roomNet, mealNet]);
+    if (depositAmount > 0) await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', depositAmount]);
+    if (balanceAmount > 0) await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', balanceAmount]);
+    const why = String(reason || '').trim();
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [booking.id, `Added to group booking: room ${unit.name}, ${fmtIDR(payable)}${why ? `. Reason: ${why}` : ''}`.slice(0, 1000), req.user.id]);
+    await client.query('UPDATE reservation_groups SET updated_at = NOW() WHERE id = $1', [group.id]);
+    await client.query('COMMIT');
+
+    telegramService.sendAlert(req.propertyId, 'alert_new_booking',
+      `📅 Room added to a group booking: ${unit.name}, ${checkIn} to ${checkOut}`
+    ).catch(() => {});
+    res.status(201).json(booking);
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
