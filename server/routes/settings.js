@@ -40,6 +40,35 @@ router.get('/display-token', ownerOnly, async (req, res) => {
   }
 });
 
+// ── POS API key (external POS integration, migration 070) ───────────────────
+// Unlike display_token this one can be regenerated: it lives in third-party
+// software and must be rotatable if it leaks. Regenerating breaks the POS
+// until the new key is pasted into it.
+
+router.get('/pos-api-key', ownerOnly, async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT pos_api_key FROM properties WHERE id = $1', [req.propertyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Property not found' });
+    res.json({ pos_api_key: rows[0].pos_api_key });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
+  try {
+    const key = require('crypto').randomBytes(32).toString('hex');
+    const { rows } = await db.query(
+      'UPDATE properties SET pos_api_key = $1 WHERE id = $2 RETURNING pos_api_key',
+      [key, req.propertyId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Property not found' });
+    res.json({ pos_api_key: rows[0].pos_api_key });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
 const PROPERTY_FIELDS = `tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,

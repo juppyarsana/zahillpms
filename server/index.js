@@ -123,6 +123,10 @@ app.use('/api/kitchen', require('./routes/kitchen'));
 app.use('/api/resto/guest', require('./routes/restoGuest'));
 app.use('/api/resto', require('./routes/resto'));
 
+// /api/pos — external POS integration (charge-to-room). authPos (per-property
+// pos_api_key) + moduleGuard('pos_integration') applied per-route inside.
+app.use('/api/pos', require('./routes/posIntegration'));
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 const PORT = process.env.PORT || 4000;

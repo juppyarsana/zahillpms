@@ -35,6 +35,10 @@ module.exports = {
   // route gate: /api/smart-reports also serves the FREE instant alerts, so
   // routes/smartReports.js checks the module per report instead.
   smart_reports:   { label: 'Smart Reports',   routes: [] },
+  // Default OFF (migration 070). An external POS (e.g. Separuh) looks up
+  // in-house guests and charges bills to their room. Own API key auth
+  // (authPos), guard applied per-route inside routes/posIntegration.js.
+  pos_integration: { label: 'POS Integration', routes: ['posIntegration'] },
 };
 
 // Core routes — always on, no module guard:

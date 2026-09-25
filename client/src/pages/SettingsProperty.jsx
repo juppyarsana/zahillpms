@@ -117,7 +117,68 @@ export default function SettingsProperty() {
         )}
       </div>
 
+      {hasModule('pos_integration') && <PosIntegrationCard />}
       {hasModule('insights') && <MarketInsightsCard />}
+    </div>
+  );
+}
+
+// External POS (migration 070): the key the POS sends to look up in-house
+// guests and charge bills to their room. Regenerating breaks the POS until
+// the new key is pasted into it.
+function PosIntegrationCard() {
+  const [key, setKey] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get('/api/settings/pos-api-key').then(r => setKey(r.data.pos_api_key || '')).catch(() => setKey(''));
+  }, []);
+
+  async function regenerate() {
+    if (key && !window.confirm('Make a new key? The POS stops charging rooms until you paste the new key into it.')) return;
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api.post('/api/settings/pos-api-key/regenerate');
+      setKey(r.data.pos_api_key);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to make a key');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function copy() {
+    navigator.clipboard.writeText(key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (key === null) return null;
+  return (
+    <div className="card mt-3">
+      <div className="card-title">POS Integration</div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+        Paste this key and the PMS address into your POS settings. The POS can then see who is checked in and
+        charge a bill to their room — it appears on the guest's folio under Food &amp; Beverage, with service
+        charge and tax added by the PMS.
+      </p>
+      {key ? (
+        <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
+          <input className="form-input" readOnly value={key} style={{ maxWidth: 320, fontFamily: 'monospace' }} />
+          <button className="btn btn-secondary btn-sm" onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>
+          <button className="btn btn-secondary btn-sm" onClick={regenerate} disabled={busy}>
+            {busy ? 'Working…' : 'Make a new key'}
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-primary btn-sm" onClick={regenerate} disabled={busy}>
+          {busy ? 'Working…' : 'Create key'}
+        </button>
+      )}
+      {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
     </div>
   );
 }

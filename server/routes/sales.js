@@ -15,9 +15,9 @@ router.get('/', auth, async (req, res) => {
   let query = `
     SELECT s.*, u.name as served_by_name,
            g.name AS guest_name, un.name AS unit_name,
-           (SELECT string_agg(si.quantity || '× ' || p.name, ', ' ORDER BY p.name)
+           COALESCE((SELECT string_agg(si.quantity || '× ' || p.name, ', ' ORDER BY p.name)
               FROM sale_items si JOIN products p ON p.id = si.product_id
-             WHERE si.sale_id = s.id) AS items_summary
+             WHERE si.sale_id = s.id), s.description) AS items_summary
     FROM sales s
     LEFT JOIN users u ON s.served_by = u.id
     LEFT JOIN bookings b ON b.id = s.booking_id

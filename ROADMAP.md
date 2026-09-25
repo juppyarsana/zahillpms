@@ -4,6 +4,40 @@ Last updated: 2026-09-25
 
 ---
 
+## 🔖 Session handoff — 2026-09-25 (midday) — POS integration
+
+**Decision:** connect the POS to the PMS first; make the POS multi-business later as its own project
+(the POS keeps its PMS link in its database, not `.env`, so that stays easy).
+
+**Built — nothing pushed yet:**
+- **PMS** (`dev`, `9f0f49a` + docs `c1d2545`, **migration 070**): `pos_integration` module, POS API
+  key card in Settings → Property Details, `/api/pos/rooms` + `POST /api/pos/transactions`. Full
+  write-up in `CLAUDE.md` ("POS Integration"). Next migration number is **071**.
+- **POS** (`zahillpos`, branch `pms-integration`, never `main`):
+  - `128cb60` Room Charge — Settings → Hotel PMS (Owner), Charge to Room at the till with a room
+    picker, amount sent net (hotel adds service/tax), posted inside the POS DB transaction.
+  - `00f53ab` + `624eb92` **migration runner fixed** — it ran files alphabetically, so a fresh
+    database couldn't start and the live `purchase_batches.purchase_date` most likely became
+    TIMESTAMPTZ. Now: fixed legacy order, new files named `migrate_YYYYMMDD_<what>.sql`, empty DB
+    gets `schema.sql` automatically, one transaction per file, new
+    `migrate_20260925_purchase_date_as_date.sql` puts the column back to DATE. Check the live POS
+    first: `SELECT data_type FROM information_schema.columns WHERE table_name='purchase_batches' AND column_name='purchase_date';`
+  - `68976c1` dev proxy port settable via `POS_API_URL`.
+- Tested end-to-end over HTTP (charge, retries, failures save nothing, edits blocked, fresh +
+  production-shaped DB for the runner). **Not yet clicked through in a browser.**
+
+**Running locally when we stopped:** PMS server :4000 + client :5174; POS server :4100 (local DB
+`separuh_pos_local`, `zahillpos/server/.env` — git-ignored) + client :5173
+(`POS_API_URL=http://localhost:4100 npx vite --port 5173`). POS login: Owner, PIN 1234.
+
+**Next when back:** browser click-through (steps: PMS superadmin → switch POS Integration on for
+Zahill → Settings → Property Details → Create key; POS → Settings → Hotel PMS → address
+`http://localhost:4000` + key → Test → tick → Save; open a shift, add a Custom Item, Payment →
+Charge to Room → 101; check the booking's Folio tab). Then: push both, separate test VM, tablet,
+merge `pms-integration` into POS `main`, move Zahill's F&B over.
+
+---
+
 ## 🔖 Session handoff — 2026-09-25 (evening)
 
 Everything is **committed and pushed to `dev` and fast-forwarded to `main`** (last commit `c52df84`).
@@ -1484,7 +1518,28 @@ Agreed plan (English only; times WITA):
 
 ---
 
-## Next migration number: 072 (070 is taken by the POS integration, still only on `dev`)
+## 🟡 External POS integration (migration 070) — PMS side ✅, POS side ✅ (branch), not deployed
+
+Property's own POS (Separuh, `zahillpos` repo, branch `pms-integration` — never `main`) takes over F&B;
+the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
+
+- ✅ **PMS side (2026-09-25):** `pos_integration` module (default off), per-property `pos_api_key`
+  (Settings → Property Details → POS Integration: create / copy / regenerate), `/api/pos/rooms`,
+  `/api/pos/rooms/:room`, `POST /api/pos/transactions` (NET amount, retry-safe `external_ref`),
+  folio shows it under Food & Beverage. Full write-up in `CLAUDE.md`.
+- ✅ **POS side (2026-09-25, `zahillpos` branch `pms-integration`, not pushed/merged):** Settings →
+  Hotel PMS (Owner: address, write-only key, on/off, Test connection; stored in the POS `settings`
+  table, key `pms`), Charge to Room on the payment screen → room picker → bill saved net and posted
+  to the folio inside the POS DB transaction (PMS failure = nothing saved), receipt shows room +
+  signature line, room-charged bills locked against edit/delete. All PMS calls in
+  `server/src/pms.js`. Tested end-to-end against a local PMS (not clicked through in a browser).
+- 🔵 **Next:** stand up the separate test VM (POS branch + PMS), click through on a tablet, then
+  merge `pms-integration` into the POS `main` and move Zahill's F&B over.
+- ⚪ Later: void/refund of a room-charged POS bill; multi-business POS (own project).
+
+---
+
+## Next migration number: 072
 
 ---
 

@@ -87,8 +87,10 @@ async function loadFolio(bookingId, propertyId) {
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
             -- migration 067) groups under Other. Categories mirror
             -- salesService.FNB_CATEGORIES (not imported: circular require).
+            -- An external POS bill (no sale_items, migration 070) is F&B too.
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
-                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb,
+                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
+            OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
             ${PAID_AT_DESK_SQL} AS paid_at_desk
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
@@ -150,7 +152,8 @@ async function computeProforma(bookingId, propertyId) {
   const extraChargesQ = db.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
-                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food')) AS is_fnb
+                     WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
+            OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb')
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
