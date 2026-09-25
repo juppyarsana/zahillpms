@@ -90,8 +90,8 @@ export default function BookingDetail() {
   const [amendLoading, setAmendLoading] = useState(false);
   // Amend Dates pricing (normal-rate difference) + how to charge it.
   const [amendQuote, setAmendQuote] = useState(null);
-  const [amendCharge, setAmendCharge] = useState('difference'); // difference | complimentary | custom
-  const [amendCustom, setAmendCustom] = useState('');
+  const [amendCharge, setAmendCharge] = useState('difference'); // difference | complimentary
+  const [amendCustom, setAmendCustom] = useState(''); // Amend Dates: the price for the NEW dates (pre-filled at the booked nightly price)
   const [amendReason, setAmendReason] = useState('');
   const [amendError, setAmendError] = useState('');
   const [messaging, setMessaging] = useState(false);
@@ -413,7 +413,7 @@ export default function BookingDetail() {
       .finally(() => { if (!cancelled) setAmendChecking(false); });
     setAmendQuote(null);
     api.get(`/api/bookings/${id}/dates/quote`, { params: { check_in: amendCheckIn, check_out: amendCheckOut } })
-      .then(r => { if (!cancelled) { setAmendQuote(r.data); setAmendCustom(String(Math.round(r.data.difference))); } })
+      .then(r => { if (!cancelled) { setAmendQuote(r.data); setAmendCustom(String(Math.round(r.data.new.total))); setAmendCharge('difference'); } })
       .catch(() => { if (!cancelled) setAmendQuote(null); });
     return () => { cancelled = true; };
   }, [amending, amendCheckIn, amendCheckOut]);
@@ -423,8 +423,11 @@ export default function BookingDetail() {
     try {
       await api.put(`/api/bookings/${id}/dates`, {
         check_in_date: amendCheckIn, check_out_date: amendCheckOut,
-        charge: amendCharge,
-        ...(amendCharge === 'custom' ? { amount: parseFloat(amendCustom) } : {}),
+        // Suggested price kept → 'difference'; a typed price → 'custom' with the
+        // difference to the current price (same as Change Room).
+        ...(amendCharge === 'complimentary' ? { charge: 'complimentary' }
+          : Math.abs(parseFloat(amendCustom) - amendQuote.new.total) < 1 ? { charge: 'difference' }
+          : { charge: 'custom', amount: Math.round((parseFloat(amendCustom) - amendQuote.old.total) * 100) / 100 }),
         reason: amendReason.trim(),
       });
       setAmending(false);
@@ -1172,33 +1175,42 @@ export default function BookingDetail() {
               )}
               {amendQuote && (amendCheckIn !== booking.check_in_date?.slice(0,10) || amendCheckOut !== booking.check_out_date?.slice(0,10)) && (() => {
                 const q = amendQuote;
-                const charge = amendCharge === 'complimentary' ? 0 : amendCharge === 'custom' ? (parseFloat(amendCustom) || 0) : q.difference;
+                const newPrice = parseFloat(amendCustom);
+                const priceOk = Number.isFinite(newPrice) && newPrice >= 0;
+                const diff = priceOk ? Math.round((newPrice - q.old.total) * 100) / 100 : 0;
+                const edited = priceOk && Math.abs(newPrice - q.new.total) >= 1;
+                const charge = amendCharge === 'complimentary' ? 0 : diff;
                 return (
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, margin: '12px 0' }}>
-                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>Normal room rate, incl. service &amp; tax</div>
-                    <div className="flex-between" style={{ fontSize: 13 }}><span>Current dates · {q.old.nights} night{q.old.nights === 1 ? '' : 's'}</span><span>{fmtIDR(q.old.total)}</span></div>
-                    <div className="flex-between" style={{ fontSize: 13 }}><span>New dates · {q.new.nights} night{q.new.nights === 1 ? '' : 's'}</span><span>{fmtIDR(q.new.total)}</span></div>
+                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>Price for the stay, incl. meals, service &amp; tax</div>
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span>Current dates · {q.old.nights} night{q.old.nights === 1 ? '' : 's'} — booked price</span><span>{fmtIDR(q.old.total)}</span>
+                    </div>
+                    <div className="flex-between" style={{ fontSize: 13, alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span>New dates · {q.new.nights} night{q.new.nights === 1 ? '' : 's'} — new price</span>
+                      <input className="form-input" type="number" min="0" value={amendCustom}
+                        onChange={e => setAmendCustom(e.target.value)} disabled={amendCharge === 'complimentary'}
+                        style={{ maxWidth: 160, padding: '4px 8px', textAlign: 'right' }} aria-label="Price for the new dates" />
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>
+                      {edited
+                        ? <>Suggested {fmtIDR(q.new.total)} · <a href="#" onClick={e => { e.preventDefault(); setAmendCustom(String(Math.round(q.new.total))); }}>use suggested</a></>
+                        : <>At the booked {fmtIDR(q.new.per_night)}/night</>}
+                      {' · '}normal rate would be {fmtIDR(q.new.normal_total)}
+                    </div>
                     <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
-                      <span>Difference</span><span>{q.difference >= 0 ? '+' : '−'}{fmtIDR(Math.abs(q.difference))}</span>
+                      <span>Difference</span><span>{diff >= 0 ? '+' : '−'}{fmtIDR(Math.abs(diff))}</span>
                     </div>
                     <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                       <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
                         <input type="radio" name="amendCharge" checked={amendCharge === 'difference'} onChange={() => setAmendCharge('difference')} />
-                        {q.difference > 0 ? `Charge the difference (+${fmtIDR(q.difference)})`
-                          : q.difference < 0 ? `Give the difference back as credit (−${fmtIDR(-q.difference)})`
+                        {diff > 0 ? `Charge the difference (+${fmtIDR(diff)})`
+                          : diff < 0 ? `Give the difference back as credit (−${fmtIDR(-diff)})`
                           : 'No price change'}
                       </label>
                       <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
                         <input type="radio" name="amendCharge" checked={amendCharge === 'complimentary'} onChange={() => setAmendCharge('complimentary')} />
                         Keep the current price (no charge)
-                      </label>
-                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
-                        <input type="radio" name="amendCharge" checked={amendCharge === 'custom'} onChange={() => setAmendCharge('custom')} />
-                        Other amount
-                        {amendCharge === 'custom' && (
-                          <input className="form-input" type="number" value={amendCustom} onChange={e => setAmendCustom(e.target.value)}
-                            style={{ maxWidth: 160, padding: '4px 8px' }} aria-label="Amount to charge" />
-                        )}
                       </label>
                     </div>
                     <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
@@ -1227,7 +1239,7 @@ export default function BookingDetail() {
                   (amendCheckIn === booking.check_in_date?.slice(0,10) && amendCheckOut === booking.check_out_date?.slice(0,10)) ||
                   (amendAvailability && !amendAvailability.available) ||
                   !amendQuote || !amendReason.trim() ||
-                  (amendCharge === 'custom' && !Number.isFinite(parseFloat(amendCustom)))
+                  (amendCharge !== 'complimentary' && !(parseFloat(amendCustom) >= 0))
                 }
               >
                 {amendLoading ? 'Saving…' : 'Save New Dates'}
