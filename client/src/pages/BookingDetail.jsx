@@ -67,8 +67,8 @@ export default function BookingDetail() {
   // how to charge the difference.
   const [changeQuote, setChangeQuote] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
-  const [chargeMode, setChargeMode] = useState('difference'); // difference | complimentary | custom
-  const [customAmount, setCustomAmount] = useState('');
+  const [chargeMode, setChargeMode] = useState('difference'); // difference | complimentary
+  const [customAmount, setCustomAmount] = useState(''); // Change Room: the NEW room's price for the stay (pre-filled with its normal rate)
   const [changeReason, setChangeReason] = useState('');
   const [changeError, setChangeError] = useState('');
   const [amending, setAmending] = useState(false);
@@ -354,7 +354,8 @@ export default function BookingDetail() {
     try {
       const r = await api.get(`/api/bookings/${id}/change-room/quote`, { params: { unit_id: unitId } });
       setChangeQuote(r.data);
-      setCustomAmount(String(Math.round(r.data.difference)));
+      setCustomAmount(String(Math.round(r.data.next.total)));
+      setChargeMode('difference');
     } catch (err) {
       setChangeError(err.response?.data?.error || 'Could not price this room');
     } finally {
@@ -369,8 +370,12 @@ export default function BookingDetail() {
     try {
       await api.put(`/api/bookings/${id}/change-room`, {
         unit_id: transferTarget,
-        charge: chargeMode,
-        ...(chargeMode === 'custom' ? { amount: parseFloat(customAmount) } : {}),
+        // Normal rate kept → 'difference'; a typed price → 'custom' with the
+        // difference to what the guest pays now (Edit History still shows the
+        // normal difference next to it).
+        ...(chargeMode === 'complimentary' ? { charge: 'complimentary' }
+          : Math.abs(parseFloat(customAmount) - changeQuote.next.total) < 1 ? { charge: 'difference' }
+          : { charge: 'custom', amount: Math.round((parseFloat(customAmount) - changeQuote.current.total) * 100) / 100 }),
         reason: changeReason.trim(),
       });
       setTransferring(false);
@@ -1546,9 +1551,12 @@ export default function BookingDetail() {
 
       {transferring && (() => {
         const q = changeQuote;
-        const charge = !q ? 0 : chargeMode === 'complimentary' ? 0 : chargeMode === 'custom' ? (parseFloat(customAmount) || 0) : q.difference;
-        const canSave = !!q && !quoteLoading && changeReason.trim().length > 0
-          && (chargeMode !== 'custom' || Number.isFinite(parseFloat(customAmount)));
+        const newPrice = parseFloat(customAmount);
+        const priceOk = Number.isFinite(newPrice) && newPrice >= 0;
+        const diff = q && priceOk ? Math.round((newPrice - q.current.total) * 100) / 100 : 0;
+        const edited = q && priceOk && Math.abs(newPrice - q.next.total) >= 1;
+        const charge = chargeMode === 'complimentary' ? 0 : diff;
+        const canSave = !!q && !quoteLoading && changeReason.trim().length > 0 && (chargeMode === 'complimentary' || priceOk);
         const fmtStay = (a, b) => `${fmtShortDate(a)} – ${fmtShortDate(b)}`;
         return (
           <div className="modal-backdrop">
@@ -1613,33 +1621,32 @@ export default function BookingDetail() {
                         Normal rate for this room would be {fmtIDR(q.current.normal_total)}
                       </div>
                     )}
-                    <div className="flex-between" style={{ fontSize: 13 }}>
-                      <span>{q.next.name}{q.next.type ? ` · ${q.next.type}` : ''} — normal rate</span>
-                      <span>{fmtIDR(q.next.total)}</span>
+                    <div className="flex-between" style={{ fontSize: 13, alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span>{q.next.name}{q.next.type ? ` · ${q.next.type}` : ''} — new price</span>
+                      <input className="form-input" type="number" min="0" value={customAmount}
+                        onChange={e => setCustomAmount(e.target.value)} disabled={chargeMode === 'complimentary'}
+                        style={{ maxWidth: 160, padding: '4px 8px', textAlign: 'right' }} aria-label="New room price for the stay" />
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>
+                      {edited
+                        ? <>Normal rate {fmtIDR(q.next.total)} · <a href="#" onClick={e => { e.preventDefault(); setCustomAmount(String(Math.round(q.next.total))); }}>use normal rate</a></>
+                        : 'Normal rate — type another price for a special rate'}
                     </div>
                     <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
-                      <span>{q.difference >= 0 ? 'Difference' : 'Difference (cheaper room)'}</span>
-                      <span>{q.difference >= 0 ? '+' : '−'}{fmtIDR(Math.abs(q.difference))}</span>
+                      <span>{diff >= 0 ? 'Difference' : 'Difference (cheaper)'}</span>
+                      <span>{diff >= 0 ? '+' : '−'}{fmtIDR(Math.abs(diff))}</span>
                     </div>
 
                     <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                       <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
                         <input type="radio" name="charge" checked={chargeMode === 'difference'} onChange={() => setChargeMode('difference')} />
-                        {q.difference > 0 ? `Charge the difference (+${fmtIDR(q.difference)})`
-                          : q.difference < 0 ? `Give the difference back as credit (−${fmtIDR(-q.difference)})`
-                          : 'No price change (same rate)'}
+                        {diff > 0 ? `Charge the difference (+${fmtIDR(diff)})`
+                          : diff < 0 ? `Give the difference back as credit (−${fmtIDR(-diff)})`
+                          : 'No price change'}
                       </label>
                       <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
                         <input type="radio" name="charge" checked={chargeMode === 'complimentary'} onChange={() => setChargeMode('complimentary')} />
                         Complimentary — keep the current price
-                      </label>
-                      <label className="flex gap-2" style={{ cursor: 'pointer', alignItems: 'center' }}>
-                        <input type="radio" name="charge" checked={chargeMode === 'custom'} onChange={() => setChargeMode('custom')} />
-                        Other amount
-                        {chargeMode === 'custom' && (
-                          <input className="form-input" type="number" value={customAmount} onChange={e => setCustomAmount(e.target.value)}
-                            style={{ maxWidth: 160, padding: '4px 8px' }} aria-label="Amount to charge" />
-                        )}
                       </label>
                     </div>
                   </div>
@@ -1652,14 +1659,14 @@ export default function BookingDetail() {
                 </div>
 
                 {q && (
-                  <div className="alert alert-success" style={{ fontSize: 13 }}>
+                  <div className="alert alert-success" style={{ fontSize: 13 }}><div>
                     {charge > 0
                       ? <>The booking price goes up by <b>{fmtIDR(charge)}</b> — it's added to the balance still to pay.</>
                       : charge < 0
                         ? <>The booking price goes down by <b>{fmtIDR(-charge)}</b>. If the guest has already paid more, it shows as a credit to refund.</>
                         : <>The booking price stays the same.</>}
                     {booking.status === 'checked_in' && ' The old room is marked for cleaning.'}
-                  </div>
+                  </div></div>
                 )}
                 {changeError && <div className="alert alert-error">{changeError}</div>}
               </div>
