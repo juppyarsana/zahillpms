@@ -1209,25 +1209,41 @@ router.put('/:id/transfer', auth, async (req, res) => {
 });
 
 // PUT /api/bookings/:id/dates  (amend check-in/check-out dates, same unit)
-// Amend Dates pricing: the room's NORMAL rate (base rate + pricing periods,
-// services/pricingService.js — same as New Booking and Change Room) for the
-// new dates minus the old dates, incl. service/tax. Extending charges the
-// added nights, shortening credits the removed ones, shifting the stay only
-// differs when the nights fall in a different pricing period.
+// Amend Dates pricing, same idea as Change Room: the CURRENT dates count at
+// the booking's own price (room + meals, after discount — what FO typed and
+// the guest agreed to), and the NEW dates are suggested at that same booked
+// price per night × the new number of nights. So extending charges the added
+// nights at the guest's own nightly price (meals included), shortening
+// credits exactly what those nights cost them, and a plain shift costs
+// nothing. FO can type another price in the window. The room's NORMAL rate
+// for the new dates (base rate + pricing periods + rate-plan meals, same as
+// New Booking) is returned too, for reference. All incl. service/tax.
 async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
   const oldCi = String(booking.check_in_date).slice(0, 10);
   const oldCo = String(booking.check_out_date).slice(0, 10);
-  const [oldR, newR] = await Promise.all([
-    nightlyRoomRates(propertyId, booking.unit_id, oldCi, oldCo, client),
-    nightlyRoomRates(propertyId, booking.unit_id, checkIn, checkOut, client),
-  ]);
+  const nightsOf = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
+  const oldNights = Math.max(1, nightsOf(oldCi, oldCo));
+  const newNights = nightsOf(checkIn, checkOut);
   const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
   const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
-  const oldTotal = gross(oldR.room_total);
-  const newTotal = gross(newR.room_total);
+
+  // The booking's own price (room + meals, after discount, incl. service/tax)
+  // — straight from what FO entered, so a later tax-rate change can't shift it.
+  const oldTotal = round2(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0));
+  const perNight = oldTotal / oldNights;
+  const newTotal = round2(perNight * newNights);
+
+  // Normal rate for the new dates, for reference.
+  const [newR, plan] = await Promise.all([
+    nightlyRoomRates(propertyId, booking.unit_id, checkIn, checkOut, client),
+    ratePlanService.resolveForBooking(propertyId, booking.rate_plan_id || null),
+  ]);
+  const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
+  const normalNew = round2(gross(newR.room_total + ratePlanService.mealNetPerNight(plan, guests) * newNights));
+
   return {
-    old: { check_in: oldCi, check_out: oldCo, nights: oldR.night_breakdown.length, total: oldTotal },
-    new: { check_in: checkIn, check_out: checkOut, nights: newR.night_breakdown.length, total: newTotal },
+    old: { check_in: oldCi, check_out: oldCo, nights: oldNights, total: oldTotal },
+    new: { check_in: checkIn, check_out: checkOut, nights: newNights, total: newTotal, normal_total: normalNew, per_night: round2(perNight) },
     difference: round2(newTotal - oldTotal),
   };
 }
@@ -1958,15 +1974,15 @@ async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
   const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
   const nights = from < co ? next.night_breakdown.length : 0;
-  // What the booking charges for the room per night (NET, after discount;
-  // meals are separate and don't change with the room).
+  // What the booking charges for the ROOM per night: its price as entered
+  // (total − discount, incl. service/tax) times the room's share of the net
+  // split (meals are separate and don't change with the room). Taken from the
+  // stored total, so a later tax-rate change can't shift it.
   const stayNights = Math.max(1, parseInt(booking.nights, 10) || 1);
-  let bookedRoomNet = booking.room_revenue != null ? parseFloat(booking.room_revenue) : null;
-  if (bookedRoomNet == null) {
-    const { F } = await grossFactor(client, propertyId);
-    bookedRoomNet = (parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0)) / F - parseFloat(booking.fnb_revenue || 0);
-  }
-  const curTotal = nights ? round2(gross(bookedRoomNet / stayNights * nights)) : 0;
+  const bookedGross = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
+  const roomNet = parseFloat(booking.room_revenue ?? 0), mealNet = parseFloat(booking.fnb_revenue ?? 0);
+  const roomShare = booking.room_revenue != null && roomNet + mealNet > 0 ? roomNet / (roomNet + mealNet) : 1;
+  const curTotal = nights ? round2(bookedGross * roomShare / stayNights * nights) : 0;
   const curNormal = nights ? gross(cur.room_total) : 0;
   const nextTotal = nights ? gross(next.room_total) : 0;
   return {

@@ -244,17 +244,30 @@ export default function GroupDetail() {
     if (!amending || !amendForm?.check_in || !amendForm?.check_out || amendForm.check_out <= amendForm.check_in) { setAmendQuote(null); return; }
     let live = true;
     api.get(`/api/bookings/group/${groupId}/dates/quote`, { params: { check_in: amendForm.check_in, check_out: amendForm.check_out } })
-      .then(r => { if (live) { setAmendQuote(r.data); setAmendQuoteError(''); } })
+      .then(r => {
+        if (!live) return;
+        setAmendQuote(r.data); setAmendQuoteError('');
+        const moving = r.data.rooms.filter(x => !x.unchanged);
+        setAmendForm(f => ({ ...f, charge: 'difference', amount: String(Math.round(moving.reduce((sum, x) => sum + x.new.total, 0))) }));
+      })
       .catch(e => { if (live) { setAmendQuote(null); setAmendQuoteError(e.response?.data?.error || 'Could not price the new dates'); } });
     return () => { live = false; };
   }, [amending, amendForm?.check_in, amendForm?.check_out]);
+
+  // Totals over the rooms whose dates change: what they cost now, and the
+  // suggested price for the new dates (each room's booked nightly price).
+  function amendMoving() { return amendQuote ? amendQuote.rooms.filter(r => !r.unchanged) : []; }
+  function amendCurrent() { return amendMoving().reduce((sum, r) => sum + r.old.total, 0); }
+  function amendSuggested() { return amendMoving().reduce((sum, r) => sum + r.new.total, 0); }
 
   async function saveAmendGroup() {
     setAmendSaving(true); setAmendError('');
     try {
       await api.put(`/api/bookings/group/${groupId}/dates`, {
         check_in_date: amendForm.check_in, check_out_date: amendForm.check_out,
-        charge: amendForm.charge, amount: amendForm.charge === 'custom' ? amendForm.amount : undefined,
+        ...(amendForm.charge === 'complimentary' ? { charge: 'complimentary' }
+          : Math.abs(parseFloat(amendForm.amount) - amendSuggested()) < 1 ? { charge: 'difference' }
+          : { charge: 'custom', amount: Math.round((parseFloat(amendForm.amount) - amendCurrent()) * 100) / 100 }),
         reason: amendForm.reason,
       });
       setAmending(false);
@@ -570,9 +583,16 @@ export default function GroupDetail() {
         const setNights = n => { const k = parseInt(n, 10); if (k >= 1 && amendForm.check_in) set('check_out', addDaysYmd(amendForm.check_in, k)); };
         const q = amendQuote;
         const moving = q ? q.rooms.filter(r => !r.unchanged) : [];
-        const chargeTotal = !q ? 0 : amendForm.charge === 'difference' ? q.total_difference : amendForm.charge === 'custom' ? (parseFloat(amendForm.amount) || 0) : 0;
+        const current = moving.reduce((sum, r) => sum + r.old.total, 0);
+        const suggested = moving.reduce((sum, r) => sum + r.new.total, 0);
+        const normal = moving.reduce((sum, r) => sum + (r.new.normal_total || 0), 0);
+        const typed = parseFloat(amendForm.amount);
+        const priceOk = Number.isFinite(typed) && typed >= 0;
+        const diff = priceOk ? Math.round((typed - current) * 100) / 100 : 0;
+        const edited = priceOk && Math.abs(typed - suggested) >= 1;
+        const chargeTotal = amendForm.charge === 'complimentary' ? 0 : diff;
         const canSave = q && q.ok && moving.length > 0 && amendForm.reason.trim()
-          && (amendForm.charge !== 'custom' || amendForm.amount !== '');
+          && (amendForm.charge === 'complimentary' || priceOk);
         return (
           <div className="modal-backdrop">
             <div className="modal" style={{ maxWidth: 600, width: '100%' }}>
@@ -616,7 +636,7 @@ export default function GroupDetail() {
                       </div>
                     ))}
                     <div className="flex-between" style={{ padding: '6px 10px', fontWeight: 700 }}>
-                      <span>Normal price difference</span>
+                      <span>Suggested difference</span>
                       <span>{q.total_difference === 0 ? fmtIDR(0) : `${q.total_difference > 0 ? '+' : '−'}${fmtIDR(Math.abs(q.total_difference))}`}</span>
                     </div>
                   </div>
@@ -624,24 +644,35 @@ export default function GroupDetail() {
 
                 {q && q.ok && moving.length > 0 && (
                   <>
+                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                      Each room's new dates are suggested at its booked nightly price (meals included), incl. service &amp; tax.
+                    </div>
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span>Current price · {moving.length} room{moving.length === 1 ? '' : 's'}</span><span>{fmtIDR(current)}</span>
+                    </div>
+                    <div className="flex-between" style={{ fontSize: 13, alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span>New price for these rooms</span>
+                      <input className="form-input" type="number" min="0" value={amendForm.amount} disabled={amendForm.charge === 'complimentary'}
+                        onChange={e => set('amount', e.target.value)} style={{ maxWidth: 170, padding: '4px 8px', textAlign: 'right' }}
+                        aria-label="New price for the group" />
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 11, textAlign: 'right', marginBottom: 8 }}>
+                      {edited
+                        ? <>Suggested {fmtIDR(suggested)} · <a href="#" onClick={e => { e.preventDefault(); set('amount', String(Math.round(suggested))); }}>use suggested</a></>
+                        : 'Suggested'}
+                      {normal > 0 && <> · normal rate would be {fmtIDR(normal)}</>}
+                      {edited && <><br />Spread over the rooms by each room's share of the new price.</>}
+                    </div>
                     <div className="form-group">
                       <label className="form-label">Price</label>
                       {[
-                        ['difference', q.total_difference > 0 ? `Charge the difference (+${fmtIDR(q.total_difference)})` : q.total_difference < 0 ? `Credit the difference (−${fmtIDR(-q.total_difference)})` : 'Keep the price (no difference)'],
+                        ['difference', diff > 0 ? `Charge the difference (+${fmtIDR(diff)})` : diff < 0 ? `Give the difference back as credit (−${fmtIDR(-diff)})` : 'No price change'],
                         ['complimentary', 'No charge — keep the current price'],
-                        ['custom', 'Custom amount for the whole group'],
                       ].map(([v, l]) => (
                         <label key={v} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '3px 0' }}>
                           <input type="radio" name="group-charge" checked={amendForm.charge === v} onChange={() => set('charge', v)} /> {l}
                         </label>
                       ))}
-                      {amendForm.charge === 'custom' && (
-                        <>
-                          <input className="form-input" type="number" style={{ marginTop: 6 }} value={amendForm.amount}
-                            placeholder="Extra for the group, e.g. 1500000 (negative = credit)" onChange={e => set('amount', e.target.value)} />
-                          <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Split over the rooms by each room's share of the new price.</div>
-                        </>
-                      )}
                     </div>
                     <div className="form-group">
                       <label className="form-label">Reason</label>
