@@ -18,6 +18,7 @@ import useResilientEventSource from './useResilientEventSource';
 
 const POLL_MS = 10_000;
 const END_TOAST_MS = 2500;
+const MIC_TOAST_MS = 6000; // long enough to read the microphone message
 const DEBUG_CLICK_THRESHOLD = 5;
 const DEBUG_CLICK_TIMEOUT = 3000;
 // Relay candidates are always tried last by design (lowest ICE priority —
@@ -28,6 +29,9 @@ const DEBUG_CLICK_TIMEOUT = 3000;
 const CONNECTING_TIMEOUT_MS = 45_000;
 const OFFER_WAIT_MS = 5_000;
 const CONNECT_FAILED_MESSAGE = 'Could not connect — please try again';
+// Shown when the tablet may not use its microphone (blocked in the browser,
+// or a kiosk app without microphone permission).
+const MIC_BLOCKED_MESSAGE = 'This tablet cannot use its microphone, so calls are not possible right now. Please contact reception another way.';
 
 export default function App() {
   const [roomId, setRoomId] = useState(() => localStorage.getItem('roomId'));
@@ -217,7 +221,7 @@ export default function App() {
     pendingOfferRef.current = null;
     setMuted(false);
     setCallState({ status: finalStatus, callId: null, error: errorMessage });
-    setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
+    setTimeout(() => setCallState({ status: 'idle', callId: null }), errorMessage === MIC_BLOCKED_MESSAGE ? MIC_TOAST_MS : END_TOAST_MS);
   }, [clearConnectingTimeout]);
 
   // Bounds how long a call may sit in 'calling'/'connecting' before ICE
@@ -261,6 +265,16 @@ export default function App() {
 
   const handlePlaceCall = useCallback(async () => {
     if (callState.status !== 'idle') return;
+    // Microphone first: if it's blocked, don't ring the front desk at all.
+    try {
+      await callClient.acquireMic();
+    } catch (err) {
+      console.error('[Call] microphone unavailable:', err);
+      callClient.close();
+      setCallState({ status: 'failed', callId: null, error: MIC_BLOCKED_MESSAGE });
+      setTimeout(() => setCallState({ status: 'idle', callId: null }), MIC_TOAST_MS);
+      return;
+    }
     try {
       const { data } = await api.post('/calls', { roomId });
       callIdRef.current = data.callId;
@@ -285,6 +299,8 @@ export default function App() {
       console.error('[Call] place call failed:', err);
       clearConnectingTimeout();
       callClient.close();
+      // Don't leave the front desk ringing for a call that never started.
+      if (callIdRef.current) api.post(`/calls/${callIdRef.current}/end-from-room`).catch(() => {});
       callIdRef.current = null;
       setCallState({ status: 'failed', callId: null, error: err.response?.data?.error || err.message || 'Call failed' });
       setTimeout(() => setCallState({ status: 'idle', callId: null }), END_TOAST_MS);
@@ -315,6 +331,17 @@ export default function App() {
   const handleAnswerIncoming = useCallback(async () => {
     const id = callIdRef.current;
     if (!id || callState.status !== 'incoming') return;
+    // Microphone first: if it's blocked, end the call cleanly so the front
+    // desk isn't left on "Connecting…".
+    try {
+      await callClient.acquireMic();
+    } catch (err) {
+      console.error('[Call] microphone unavailable:', err);
+      callClient.close();
+      api.post(`/calls/${id}/end-from-room`).catch(() => {});
+      endCallLocally('failed', MIC_BLOCKED_MESSAGE);
+      return;
+    }
     try {
       await api.post(`/calls/${id}/answer-from-room`);
       setCallState(prev => (prev.callId === id ? { ...prev, status: 'connecting' } : prev));
@@ -348,7 +375,8 @@ export default function App() {
       await api.post(`/calls/${id}/signal-from-room`, { payload: { kind: 'answer', sdp: answer } });
     } catch (err) {
       console.error('[Call] answer failed:', err);
-      endCallLocally('failed', CONNECT_FAILED_MESSAGE);
+      api.post(`/calls/${id}/end-from-room`).catch(() => {});
+      endCallLocally('failed', err.micError ? MIC_BLOCKED_MESSAGE : CONNECT_FAILED_MESSAGE);
     }
   }, [callState.status, endCallLocally, startConnectingTimeout, clearConnectingTimeout]);
 

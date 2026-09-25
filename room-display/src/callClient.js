@@ -56,10 +56,28 @@ function setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServe
   };
 }
 
+// Get the microphone BEFORE a call is placed or answered, so a blocked mic
+// fails fast (and the other side is never left ringing). createOffer /
+// createAnswer reuse the stream. Throws an Error with .micError = true.
+async function acquireMic() {
+  if (localStream) return;
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const e = new Error('Microphone not supported here (the page must be opened over https)');
+    e.micError = true;
+    throw e;
+  }
+  try {
+    await acquireMic();
+  } catch (err) {
+    err.micError = true;
+    throw err;
+  }
+}
+
 async function createOffer({ onIceCandidate, onConnectionStateChange }) {
   remoteDescSet = false;
   pendingCandidates = [];
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  await acquireMic();
   const { iceServers, iceTransportPolicy } = await getIceServers();
   setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -72,7 +90,7 @@ async function createOffer({ onIceCandidate, onConnectionStateChange }) {
 async function createAnswer(offerSdp, { onIceCandidate, onConnectionStateChange }) {
   remoteDescSet = false;
   pendingCandidates = [];
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  await acquireMic();
   const { iceServers, iceTransportPolicy } = await getIceServers();
   setupPeerConnection({ onIceCandidate, onConnectionStateChange, iceServers, iceTransportPolicy });
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
@@ -127,4 +145,4 @@ function close() {
   }
 }
 
-export default { configure, createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
+export default { configure, acquireMic, createOffer, createAnswer, handleAnswer, addIceCandidate, setMuted, close };
