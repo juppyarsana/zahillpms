@@ -4,6 +4,9 @@ This plan has two halves: **Part 1** is the PMS-side API (`zahillpms`, this repo
 
 ---
 
+> **Status 2026-09-25:** Part 1 built on `zahillpms` `dev`; Part 2 built on `zahillpos` branch
+> `pms-integration` (not pushed). See the POS repo README's "Hotel PMS link" section for how the POS side works.
+
 # Part 1 — PMS side (`zahillpms`) — ✅ built 2026-09-25
 
 > Built as designed, with three changes: the migration is **070** (068/069 were taken); `sales.description` was added (POS sales have no `sale_items`, so the Sales list and folio need the POS's own text); `POST /transactions` accepts a typed `room` (name or Room ID) **or** a `booking_id`, and `balance_due` is the whole-stay estimate (`computeProforma`) rather than the posted ledger. `amount` is NET (before service/tax — the folio adds them). See `CLAUDE.md`'s POS Integration write-up.
