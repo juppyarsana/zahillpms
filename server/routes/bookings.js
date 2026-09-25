@@ -1233,6 +1233,47 @@ async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
   };
 }
 
+function datesSpan(q) {
+  return `${fmtShortYmd(q.check_in)}–${fmtShortYmd(q.check_out)} (${q.nights} night${q.nights === 1 ? '' : 's'})`;
+}
+
+// Moves one booking to new dates and puts `amount` (+ charge / − credit) on
+// its price — or, with amount 0, keeps the price and re-spreads it over the
+// new nights. Logs the change to Edit History. Shared by PUT /:id/dates and
+// the group version (PUT /group/:groupId/dates). Runs in the caller's txn.
+async function applyNewDates(client, { propertyId, booking, userId, checkIn, checkOut, quote, amount, charge, reason, notePrefix = '' }) {
+  await client.query(
+    'UPDATE bookings SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3 AND property_id = $4',
+    [checkIn, checkOut, booking.id, propertyId]
+  );
+  const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [booking.id, propertyId]);
+
+  let priced = null;
+  if (amount !== 0) {
+    // New price → split, folio nights, pending lines, status (also reposts).
+    priced = await applyBookingPrice(client, {
+      propertyId, before: fresh, userId,
+      newTotal: Math.max(0, round2(parseFloat(booking.total_amount) + amount)),
+      keepDiscount: true, receivedWasTypo: false,
+      balanceNote: `Date change ${quote.old.check_in}–${quote.old.check_out} → ${checkIn}–${checkOut} — additional amount due`,
+    });
+    if (priced.error) return priced;
+  } else {
+    // Same price: re-spread the unchanged room/F&B totals over the new
+    // night count and re-post the folio nights.
+    await roomCharge.repostStay(client, fresh, userId);
+  }
+
+  let note = `${notePrefix}Dates changed: ${datesSpan(quote.old)} → ${datesSpan(quote.new)}.`;
+  if (charge === 'complimentary') note += ` Price kept — no charge (normal difference ${fmtIDR(quote.difference)}).`;
+  else if (amount > 0) note += ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+  else if (amount < 0) note += ` Credit ${fmtIDR(-amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+  if (priced?.credit > 0) note += ` Guest overpaid ${fmtIDR(priced.credit)} — to be refunded.`;
+  note += ` Reason: ${reason}`;
+  await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [booking.id, note.slice(0, 1000), userId]);
+  return { priced };
+}
+
 // GET /api/bookings/:id/dates/quote?check_in=&check_out= — price difference
 // shown before saving new dates.
 router.get('/:id/dates/quote', auth, async (req, res) => {
@@ -1274,7 +1315,7 @@ router.put('/:id/dates', auth, async (req, res) => {
 
     if (booking.reservation_group_id) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Date changes are not supported for group bookings yet' });
+      return res.status(409).json({ error: 'This room is part of a group — change the dates for the whole group on the group page (Amend Dates)', code: 'GROUP_BOOKING' });
     }
 
     const amendable = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
@@ -1309,42 +1350,18 @@ router.put('/:id/dates', auth, async (req, res) => {
       return res.status(409).json({ error: 'This stay is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing' });
     }
 
-    await client.query(
-      'UPDATE bookings SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3 AND property_id = $4',
-      [check_in_date, check_out_date, req.params.id, req.propertyId]
-    );
-    const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-
-    let priced = null;
-    if (amount !== 0) {
-      // New price → split, folio nights, pending lines, status (also reposts).
-      priced = await applyBookingPrice(client, {
-        propertyId: req.propertyId, before: fresh, userId: req.user.id,
-        newTotal: Math.max(0, round2(parseFloat(booking.total_amount) + amount)),
-        keepDiscount: true, receivedWasTypo: false,
-        balanceNote: `Date change ${quote.old.check_in}–${quote.old.check_out} → ${check_in_date}–${check_out_date} — additional amount due`,
-      });
-      if (priced.error) { await client.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
-    } else {
-      // Same price: re-spread the unchanged room/F&B totals over the new
-      // night count and re-post the folio nights.
-      await roomCharge.repostStay(client, fresh, req.user.id);
-    }
-
-    const span = q => `${fmtShortYmd(q.check_in)}–${fmtShortYmd(q.check_out)} (${q.nights} night${q.nights === 1 ? '' : 's'})`;
-    let note = `Dates changed: ${span(quote.old)} → ${span(quote.new)}.`;
-    if (charge === 'complimentary') note += ` Price kept — no charge (normal difference ${fmtIDR(quote.difference)}).`;
-    else if (amount > 0) note += ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
-    else if (amount < 0) note += ` Credit ${fmtIDR(-amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
-    if (priced?.credit > 0) note += ` Guest overpaid ${fmtIDR(priced.credit)} — to be refunded.`;
-    note += ` Reason: ${reason}`;
-    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [booking.id, note.slice(0, 1000), req.user.id]);
+    const done = await applyNewDates(client, {
+      propertyId: req.propertyId, booking, userId: req.user.id,
+      checkIn: check_in_date, checkOut: check_out_date, quote, amount, charge, reason,
+    });
+    if (done.error) { await client.query('ROLLBACK'); return res.status(done.status).json(done.error); }
 
     await client.query('COMMIT');
     if (amount !== 0 && booking.folio_status === 'pending_agent_invoice') {
       await agentBilling.recomputeCommission(req.propertyId, booking.id).catch(err => console.error('Commission recompute failed:', err));
     }
     // Owner alert: extra nights (or pricier dates) given free or below the normal price.
+    const span = datesSpan;
     if (quote.difference > 0 && amount < quote.difference) {
       sendControlAlert(req.propertyId, {
         bookingIds: booking.id, userId: req.user.id, reason,
@@ -1533,6 +1550,219 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
       `📅 Room added to a group booking: ${unit.name}, ${checkIn} to ${checkOut}`
     ).catch(() => {});
     res.status(201).json(booking);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Group: Amend Dates for every room at once ─────────────────────────────
+// Rooms that change: every room not cancelled / no-show / checked out. Each
+// room is priced exactly like a single booking's Amend Dates (datesQuote:
+// normal rate for the new dates − old dates, incl. service/tax) and moved by
+// the same applyNewDates(). A room already checked in can only change its
+// check-out date. All-or-nothing: one unavailable room stops the whole change.
+const GROUP_AMENDABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+
+async function groupDatesPlan(client, { propertyId, groupId, checkIn, checkOut, lock = false }) {
+  const { rows: [group] } = await client.query(
+    `SELECT *, to_char(check_in_date, 'YYYY-MM-DD') AS ci, to_char(check_out_date, 'YYYY-MM-DD') AS co
+     FROM reservation_groups WHERE id = $1 AND property_id = $2${lock ? ' FOR UPDATE' : ''}`,
+    [groupId, propertyId]);
+  if (!group) return { status: 404, error: 'Group not found' };
+  if (group.status === 'cancelled') return { status: 409, error: 'This group is cancelled' };
+  const { rows: rooms } = await client.query(
+    `SELECT b.*, u.name AS unit_name FROM bookings b JOIN units u ON u.id = b.unit_id
+     WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND b.status = ANY($3::text[])
+     ORDER BY u.name${lock ? ' FOR UPDATE OF b' : ''}`,
+    [groupId, propertyId, GROUP_AMENDABLE]);
+  if (rooms.length === 0) return { status: 409, error: 'No rooms left to change in this group' };
+
+  const plan = [];
+  for (const b of rooms) {
+    const oldCi = String(b.check_in_date).slice(0, 10);
+    const oldCo = String(b.check_out_date).slice(0, 10);
+    const row = { booking_id: b.id, unit_name: b.unit_name, status: b.status, booking: b, problem: null };
+    if (b.status === 'checked_in' && checkIn !== oldCi) {
+      row.problem = 'Already checked in — only the check-out date can change';
+    } else {
+      const { rows: conflicts } = await client.query(`
+        SELECT g.name AS guest_name, ${overdueSql('b2')} AS overdue FROM bookings b2 JOIN guests g ON g.id = b2.guest_id
+        WHERE b2.unit_id = $1 AND b2.property_id = $5 AND b2.id <> $2
+          AND b2.status NOT IN ('cancelled','no_show')
+          AND b2.check_in_date < $4 AND ${occupiedUntilSql('b2')} > $3
+        LIMIT 1`, [b.unit_id, b.id, checkIn, checkOut, propertyId]);
+      if (conflicts[0]) {
+        row.problem = conflicts[0].overdue
+          ? `${conflicts[0].guest_name} is still checked in there (overdue)`
+          : `Booked by ${conflicts[0].guest_name} for those dates`;
+      }
+    }
+    row.quote = await datesQuote(client, { propertyId, booking: b, checkIn, checkOut });
+    row.unchanged = oldCi === checkIn && oldCo === checkOut;
+    plan.push(row);
+  }
+  const totalDifference = round2(plan.reduce((sum, r) => sum + r.quote.difference, 0));
+  return { group, plan, totalDifference };
+}
+
+function planJson(p) {
+  return {
+    rooms: p.plan.map(r => ({
+      booking_id: r.booking_id, unit_name: r.unit_name, status: r.status, problem: r.problem,
+      unchanged: r.unchanged, old: r.quote.old, new: r.quote.new, difference: r.quote.difference,
+    })),
+    total_difference: p.totalDifference,
+    ok: p.plan.every(r => !r.problem),
+  };
+}
+
+// GET /api/bookings/group/:groupId/dates/quote?check_in=&check_out=
+router.get('/group/:groupId/dates/quote', auth, async (req, res) => {
+  const { check_in, check_out } = req.query;
+  if (!check_in || !check_out || check_out <= check_in) return res.status(400).json({ error: 'check_in and a later check_out are required' });
+  try {
+    const p = await groupDatesPlan(db, { propertyId: req.propertyId, groupId: req.params.groupId, checkIn: check_in, checkOut: check_out });
+    if (p.error) return res.status(p.status).json({ error: p.error });
+    res.json(planJson(p));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/group/:groupId/dates — { check_in_date, check_out_date,
+// charge: 'difference'|'complimentary'|'custom', amount? (custom: the extra
+// for the WHOLE group, + charge / − credit, split over the rooms by their
+// share of the new normal price), reason }.
+router.put('/group/:groupId/dates', auth, async (req, res) => {
+  const { check_in_date, check_out_date, charge = 'difference' } = req.body;
+  const reason = String(req.body.reason || '').trim();
+  if (!check_in_date || !check_out_date || check_out_date <= check_in_date) {
+    return res.status(400).json({ error: 'check_in_date and a later check_out_date are required' });
+  }
+  if (!['difference', 'complimentary', 'custom'].includes(charge)) return res.status(400).json({ error: 'charge must be difference, complimentary or custom' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  const custom = parseFloat(req.body.amount);
+  if (charge === 'custom' && !Number.isFinite(custom)) return res.status(400).json({ error: 'amount required for a custom charge' });
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const p = await groupDatesPlan(client, { propertyId: req.propertyId, groupId: req.params.groupId, checkIn: check_in_date, checkOut: check_out_date, lock: true });
+    if (p.error) { await client.query('ROLLBACK'); return res.status(p.status).json({ error: p.error }); }
+    const blocked = p.plan.filter(r => r.problem);
+    if (blocked.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: `Can't change the dates: ${blocked.map(r => `Room ${r.unit_name} — ${r.problem}`).join('; ')}`,
+        ...planJson(p),
+      });
+    }
+    const moving = p.plan.filter(r => !r.unchanged);
+    if (moving.length === 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'New dates are the same as the current dates' }); }
+
+    // What each room is charged.
+    const amounts = new Map();
+    if (charge === 'difference') moving.forEach(r => amounts.set(r.booking_id, r.quote.difference));
+    else if (charge === 'complimentary') moving.forEach(r => amounts.set(r.booking_id, 0));
+    else {
+      const target = round2(custom);
+      const weight = moving.reduce((sum, r) => sum + r.quote.new.total, 0) || moving.length;
+      let left = target;
+      moving.forEach((r, i) => {
+        const share = i === moving.length - 1 ? round2(left) : round2(target * (r.quote.new.total || 1) / weight);
+        left = round2(left - share);
+        amounts.set(r.booking_id, share);
+      });
+    }
+    const invoiced = moving.filter(r => amounts.get(r.booking_id) !== 0 && ['invoiced', 'paid'].includes(r.booking.folio_status));
+    if (invoiced.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing` });
+    }
+
+    let credit = 0;
+    for (const r of moving) {
+      const done = await applyNewDates(client, {
+        propertyId: req.propertyId, booking: r.booking, userId: req.user.id,
+        checkIn: check_in_date, checkOut: check_out_date, quote: r.quote,
+        amount: amounts.get(r.booking_id), charge, reason, notePrefix: 'Group ',
+      });
+      if (done.error) { await client.query('ROLLBACK'); return res.status(done.status).json(done.error); }
+      credit = round2(credit + (done.priced?.credit || 0));
+    }
+    await client.query(
+      'UPDATE reservation_groups SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3',
+      [check_in_date, check_out_date, p.group.id]);
+    await client.query('COMMIT');
+
+    for (const r of moving) {
+      if (amounts.get(r.booking_id) !== 0 && r.booking.folio_status === 'pending_agent_invoice') {
+        await agentBilling.recomputeCommission(req.propertyId, r.booking_id).catch(err => console.error('Commission recompute failed:', err));
+      }
+    }
+    const charged = round2([...amounts.values()].reduce((sum, a) => sum + a, 0));
+    const normal = round2(moving.reduce((sum, r) => sum + r.quote.difference, 0));
+    const oldSpan = datesSpan(moving[0].quote.old);
+    const newSpan = datesSpan(moving[0].quote.new);
+    if (normal > 0 && charged < normal) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: moving.map(r => r.booking_id), userId: req.user.id, reason,
+        headline: charged <= 0
+          ? `🎁 Free group stay change (${moving.length} rooms): ${oldSpan} → ${newSpan}, no charge`
+          : `🏷 Discounted group stay change (${moving.length} rooms): ${oldSpan} → ${newSpan}, charged ${fmtIDR(charged)}`,
+        details: [`Normal price ${fmtIDR(normal)} — given away ${fmtIDR(normal - Math.max(0, charged))}`],
+      });
+    }
+    res.json({ rooms: moving.length, charged, normal_difference: normal, credit });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/bookings/group/:groupId/rooms/:bookingId/cancel — { reason }
+// The group needs one room fewer. Cancels that room only (same as cancelling
+// its booking) and logs why. Not for a room already checked in or out, nor
+// the group's last room (cancel the whole group instead). Money already
+// received on it shows on the group page as paid on a cancelled room.
+router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) => {
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [b] } = await client.query(
+      `SELECT b.*, u.name AS unit_name FROM bookings b JOIN units u ON u.id = b.unit_id
+       WHERE b.id = $1 AND b.reservation_group_id = $2 AND b.property_id = $3 FOR UPDATE OF b`,
+      [req.params.bookingId, req.params.groupId, req.propertyId]);
+    if (!b) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Room not found in this group' }); }
+    if (!['pending', 'deposit_paid', 'confirmed'].includes(b.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: b.status === 'checked_in' ? 'This room is checked in — check the guest out instead' : `This room is already ${b.status.replace('_', ' ')}` });
+    }
+    const { rows: [{ n }] } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM bookings WHERE reservation_group_id = $1 AND property_id = $2
+         AND id <> $3 AND status NOT IN ('cancelled', 'no_show')`,
+      [req.params.groupId, req.propertyId, b.id]);
+    if (n === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: "This is the group's last room — use Cancel Group instead" }); }
+
+    await client.query("UPDATE bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [b.id]);
+    await roomCharge.voidAll(client, b.id, req.user.id);
+    const { rows: [{ paid }] } = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) AS paid FROM payments
+       WHERE booking_id = $1 AND status = 'received' AND type IN ('deposit', 'balance')`, [b.id]);
+    let note = `Room ${b.unit_name} removed from the group (cancelled).`;
+    if (parseFloat(paid) > 0) note += ` ${fmtIDR(paid)} already received on it — refund or move it by hand.`;
+    note += ` Reason: ${reason}`;
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id, note.slice(0, 1000), req.user.id]);
+    await client.query('UPDATE reservation_groups SET updated_at = NOW() WHERE id = $1', [req.params.groupId]);
+    await client.query('COMMIT');
+    res.json({ ok: true, paid_on_room: parseFloat(paid) });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

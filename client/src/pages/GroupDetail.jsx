@@ -208,6 +208,76 @@ export default function GroupDetail() {
     setAddSaving(false);
   }
 
+  // ── Amend Dates for the whole group ──
+  const [amending, setAmending] = useState(false);
+  const [amendForm, setAmendForm] = useState(null);
+  const [amendQuote, setAmendQuote] = useState(null);
+  const [amendQuoteError, setAmendQuoteError] = useState('');
+  const [amendSaving, setAmendSaving] = useState(false);
+  const [amendError, setAmendError] = useState('');
+
+  function addDaysYmd(ymd, n) {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + n);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  }
+  function nightsBetween(a, b) {
+    const [y1, m1, d1] = a.split('-').map(Number); const [y2, m2, d2] = b.split('-').map(Number);
+    return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
+  }
+
+  function openAmendGroup() {
+    const ci = data.group.check_in_date?.slice(0, 10);
+    const co = data.group.check_out_date?.slice(0, 10);
+    setAmendForm({ check_in: ci, check_out: co, charge: 'difference', amount: '', reason: '' });
+    setAmendQuote(null); setAmendQuoteError(''); setAmendError(''); setAmending(true);
+  }
+
+  useEffect(() => {
+    if (!amending || !amendForm?.check_in || !amendForm?.check_out || amendForm.check_out <= amendForm.check_in) { setAmendQuote(null); return; }
+    let live = true;
+    api.get(`/api/bookings/group/${groupId}/dates/quote`, { params: { check_in: amendForm.check_in, check_out: amendForm.check_out } })
+      .then(r => { if (live) { setAmendQuote(r.data); setAmendQuoteError(''); } })
+      .catch(e => { if (live) { setAmendQuote(null); setAmendQuoteError(e.response?.data?.error || 'Could not price the new dates'); } });
+    return () => { live = false; };
+  }, [amending, amendForm?.check_in, amendForm?.check_out]);
+
+  async function saveAmendGroup() {
+    setAmendSaving(true); setAmendError('');
+    try {
+      await api.put(`/api/bookings/group/${groupId}/dates`, {
+        check_in_date: amendForm.check_in, check_out_date: amendForm.check_out,
+        charge: amendForm.charge, amount: amendForm.charge === 'custom' ? amendForm.amount : undefined,
+        reason: amendForm.reason,
+      });
+      setAmending(false);
+      await load();
+      if (folio) loadFolio();
+    } catch (e) {
+      setAmendError(e.response?.data?.error || 'Could not change the dates');
+    }
+    setAmendSaving(false);
+  }
+
+  // ── Remove one room from the group ──
+  const [removing, setRemoving] = useState(null); // booking row
+  const [removeReason, setRemoveReason] = useState('');
+  const [removeSaving, setRemoveSaving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+
+  async function saveRemoveRoom() {
+    setRemoveSaving(true); setRemoveError('');
+    try {
+      await api.post(`/api/bookings/group/${groupId}/rooms/${removing.id}/cancel`, { reason: removeReason });
+      setRemoving(null);
+      await load();
+      if (folio) loadFolio();
+    } catch (e) {
+      setRemoveError(e.response?.data?.error || 'Could not remove the room');
+    }
+    setRemoveSaving(false);
+  }
+
   async function cancelGroup() {
     if (!confirm('Cancel this entire group booking? All rooms not already checked out will be cancelled.')) return;
     try {
@@ -226,6 +296,8 @@ export default function GroupDetail() {
   const assignableRooms = bookings.filter(b => !['cancelled', 'no_show', 'checked_out'].includes(b.status));
   const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
   const canAddRoom = group.status !== 'cancelled' && group.check_out_date?.slice(0, 10) > todayStr;
+  const amendableRooms = bookings.filter(b => ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status));
+  const activeRoomCount = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status)).length;
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
@@ -246,6 +318,9 @@ export default function GroupDetail() {
             ariaLabel="Download documents"
             items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
           />
+          {group.status !== 'cancelled' && amendableRooms.length > 0 && (
+            <button className="btn btn-secondary" onClick={openAmendGroup}>📅 Amend Dates</button>
+          )}
           {assignableRooms.length > 0 && (
             <button className="btn btn-secondary" onClick={openAssign}>👥 Assign Guests</button>
           )}
@@ -336,6 +411,10 @@ export default function GroupDetail() {
                     );
                   })()}
                   <span className={`badge badge-${STATUS_BADGE[b.status] || 'gray'}`}>{STATUS_LABEL[b.status] || b.status}</span>
+                  {['pending', 'deposit_paid', 'confirmed'].includes(b.status) && activeRoomCount > 1 && (
+                    <button className="btn btn-sm btn-secondary" title="The group needs one room fewer — cancel this room only"
+                      onClick={() => { setRemoving(b); setRemoveReason(''); setRemoveError(''); }}>Remove</button>
+                  )}
                 </div>
               </div>
             ))}
@@ -439,6 +518,147 @@ export default function GroupDetail() {
                 <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method}>
                   {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {amending && amendForm && (() => {
+        const nights = amendForm.check_in && amendForm.check_out ? nightsBetween(amendForm.check_in, amendForm.check_out) : 0;
+        const set = (k, v) => setAmendForm(f => ({ ...f, [k]: v }));
+        const setCheckIn = v => setAmendForm(f => ({ ...f, check_in: v, check_out: v && nights > 0 ? addDaysYmd(v, nights) : f.check_out }));
+        const setNights = n => { const k = parseInt(n, 10); if (k >= 1 && amendForm.check_in) set('check_out', addDaysYmd(amendForm.check_in, k)); };
+        const q = amendQuote;
+        const moving = q ? q.rooms.filter(r => !r.unchanged) : [];
+        const chargeTotal = !q ? 0 : amendForm.charge === 'difference' ? q.total_difference : amendForm.charge === 'custom' ? (parseFloat(amendForm.amount) || 0) : 0;
+        const canSave = q && q.ok && moving.length > 0 && amendForm.reason.trim()
+          && (amendForm.charge !== 'custom' || amendForm.amount !== '');
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 600, width: '100%' }}>
+              <div className="modal-header">
+                <div className="modal-title">Amend Dates — {group.guest_name}'s group</div>
+                <button className="btn btn-icon" onClick={() => setAmending(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                  Changes every room in the group at once. Cancelled and checked-out rooms are left as they are; a checked-in room can only change its check-out date.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Check-in</label>
+                    <input className="form-input" type="date" value={amendForm.check_in} onChange={e => setCheckIn(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Nights</label>
+                    <input className="form-input" type="number" min="1" value={nights > 0 ? nights : ''} onChange={e => setNights(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Check-out</label>
+                    <input className="form-input" type="date" value={amendForm.check_out} min={amendForm.check_in} onChange={e => set('check_out', e.target.value)} />
+                  </div>
+                </div>
+
+                {amendQuoteError && <div className="alert alert-error" style={{ fontSize: 13 }}>{amendQuoteError}</div>}
+                {q && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+                    {q.rooms.map(r => (
+                      <div key={r.booking_id} className="flex-between" style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', gap: 8 }}>
+                        <div>
+                          <b>{r.unit_name}</b>
+                          <span className="text-muted"> · {r.old.nights} → {r.new.nights} night{r.new.nights === 1 ? '' : 's'}</span>
+                          {r.problem && <div style={{ color: 'var(--color-danger, #dc2626)', fontSize: 12 }}>✕ {r.problem}</div>}
+                          {!r.problem && r.unchanged && <div className="text-muted" style={{ fontSize: 12 }}>No change</div>}
+                        </div>
+                        <span style={{ whiteSpace: 'nowrap', color: r.difference < 0 ? 'var(--color-success, #16a34a)' : undefined }}>
+                          {r.difference === 0 ? '—' : `${r.difference > 0 ? '+' : '−'}${fmtIDR(Math.abs(r.difference))}`}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex-between" style={{ padding: '6px 10px', fontWeight: 700 }}>
+                      <span>Normal price difference</span>
+                      <span>{q.total_difference === 0 ? fmtIDR(0) : `${q.total_difference > 0 ? '+' : '−'}${fmtIDR(Math.abs(q.total_difference))}`}</span>
+                    </div>
+                  </div>
+                )}
+
+                {q && q.ok && moving.length > 0 && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Price</label>
+                      {[
+                        ['difference', q.total_difference > 0 ? `Charge the difference (+${fmtIDR(q.total_difference)})` : q.total_difference < 0 ? `Credit the difference (−${fmtIDR(-q.total_difference)})` : 'Keep the price (no difference)'],
+                        ['complimentary', 'No charge — keep the current price'],
+                        ['custom', 'Custom amount for the whole group'],
+                      ].map(([v, l]) => (
+                        <label key={v} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '3px 0' }}>
+                          <input type="radio" name="group-charge" checked={amendForm.charge === v} onChange={() => set('charge', v)} /> {l}
+                        </label>
+                      ))}
+                      {amendForm.charge === 'custom' && (
+                        <>
+                          <input className="form-input" type="number" style={{ marginTop: 6 }} value={amendForm.amount}
+                            placeholder="Extra for the group, e.g. 1500000 (negative = credit)" onChange={e => set('amount', e.target.value)} />
+                          <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Split over the rooms by each room's share of the new price.</div>
+                        </>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Reason</label>
+                      <input className="form-input" value={amendForm.reason} placeholder="e.g. Group extended by one night"
+                        onChange={e => set('reason', e.target.value)} />
+                    </div>
+                    <div className="flex-between" style={{ fontSize: 14, fontWeight: 700 }}>
+                      <span>{moving.length} room{moving.length === 1 ? '' : 's'} change · {chargeTotal < 0 ? 'credit' : 'added to the bill'}</span>
+                      <span>{fmtIDR(Math.abs(chargeTotal))}</span>
+                    </div>
+                  </>
+                )}
+                {amendError && <div className="alert alert-error" style={{ marginTop: 10 }}>{amendError}</div>}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setAmending(false)}>Cancel</button>
+                <button className="btn btn-primary" onClick={saveAmendGroup} disabled={amendSaving || !canSave}>
+                  {amendSaving ? 'Saving…' : 'Change Dates'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {removing && (() => {
+        const paid = (removing.payments || [])
+          .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status === 'received')
+          .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 460, width: '100%' }}>
+              <div className="modal-header">
+                <div className="modal-title">Remove Room {removing.unit_name}</div>
+                <button className="btn btn-icon" onClick={() => setRemoving(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <div style={{ fontSize: 13, marginBottom: 10 }}>
+                  Cancels room <b>{removing.unit_name}</b> ({removing.guest_name}, {fmtIDR(removing.total_amount)}) — the rest of the group stays booked. The room becomes free for other bookings and leaves the group's totals.
+                </div>
+                {paid > 0 && (
+                  <div className="alert alert-error" style={{ fontSize: 12 }}>
+                    {fmtIDR(paid)} was already received on this room. It won't count toward the group any more — refund it or record it on another room by hand.
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Reason</label>
+                  <input className="form-input" value={removeReason} placeholder="e.g. Group needs one room fewer" onChange={e => setRemoveReason(e.target.value)} />
+                </div>
+                {removeError && <div className="alert alert-error">{removeError}</div>}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setRemoving(null)}>Keep Room</button>
+                <button className="btn btn-danger" onClick={saveRemoveRoom} disabled={removeSaving || !removeReason.trim()}>
+                  {removeSaving ? 'Removing…' : 'Remove Room'}
                 </button>
               </div>
             </div>
