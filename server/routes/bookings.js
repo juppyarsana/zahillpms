@@ -2257,5 +2257,6 @@ module.exports = router;
 // shows exactly the figures of the Guest Lists and Balance Due pages.
 module.exports.loadGuestLists = loadGuestLists;
 module.exports.loadBalanceDue = loadBalanceDue;
+module.exports.loadKitchen = loadKitchen;
 module.exports.occupiedUntilSql = occupiedUntilSql;
 module.exports.TODAY_WITA_SQL = TODAY_WITA_SQL;

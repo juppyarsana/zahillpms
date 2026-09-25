@@ -48,6 +48,38 @@ router.post('/transactions', gate, async (req, res) => {
   }
 });
 
+// GET /api/pos/breakfast?date=YYYY-MM-DD (default today, WITA) — the rooms
+// having breakfast that morning, for the POS waiter tablet. Same data and rule
+// as Guest Lists → Kitchen (bookings.loadKitchen): guests who slept here the
+// night before, on a rate plan that includes breakfast.
+router.get('/breakfast', gate, async (req, res) => {
+  try {
+    const { loadKitchen } = require('./bookings');
+    const data = await loadKitchen(req.propertyId, req.query.date);
+    if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const ymd = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
+    res.json({
+      date: data.date,
+      rooms: data.breakfast.rooms,
+      pax: data.breakfast.pax,
+      without: data.breakfast.without, // in the hotel but breakfast not included
+      rows: data.breakfast.rows.map(r => ({
+        booking_id: r.id,
+        room: r.unit_name,
+        room_type: r.unit_type,
+        guest_name: r.guest_name,
+        pax: parseInt(r.num_guests, 10) || 0,
+        rate_plan: r.rate_plan_code,
+        status: r.status,
+        checking_out: ymd(r.check_out_date) === data.date,
+        special_requests: r.special_requests || '',
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/pos/branding — the property's name, contact details, brand colour
 // and logo, so the POS can copy them (Setup → Branding → "Copy from hotel
 // PMS"). The logo is sent inline (base64) rather than as a URL: the POS
