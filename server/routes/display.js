@@ -114,7 +114,8 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
 
     const { rows: propertyRows } = await db.query(
       `SELECT COALESCE(ps.property_name, p.name) AS name, ps.logo_url, ps.brand_color,
-              ps.property_address AS location
+              -- short area ("Kintamani, Bali") reads better on a display than the full street address
+              COALESCE(NULLIF(TRIM(ps.market_area), ''), ps.property_address) AS location
        FROM properties p
        LEFT JOIN property_settings ps ON ps.property_id = p.id
        WHERE p.id = $1`,

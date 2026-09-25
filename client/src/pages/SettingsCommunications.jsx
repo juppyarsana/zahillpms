@@ -157,7 +157,7 @@ export default function SettingsCommunications() {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">From Address</label>
-                <input className="form-input" placeholder="Zahill <hello@zahill.com>" value={propertyForm.smtp_from || ''} onChange={e => setProp('smtp_from', e.target.value)} />
+                <input className="form-input" placeholder="Your Hotel <hello@yourhotel.com>" value={propertyForm.smtp_from || ''} onChange={e => setProp('smtp_from', e.target.value)} />
               </div>
             </div>
             {propertyError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{propertyError}</div>}

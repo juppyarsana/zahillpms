@@ -5,6 +5,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
+import PageHeader from '../components/PageHeader';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
@@ -41,7 +42,7 @@ export default function BookingDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const location = useLocation();
-  const { paymentMethods, sources } = useSettings();
+  const { paymentMethods, sources, branding } = useSettings();
   const { hasModule, user } = useAuth();
   const isOwner = user?.role === 'owner';
   const { callRoom } = useCall();
@@ -558,7 +559,7 @@ export default function BookingDetail() {
   }
 
   function waLink() {
-    const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at Zahill Glamping, Kintamani.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
+    const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at ${branding?.name || 'our hotel'}${branding?.area ? `, ${branding.area}` : ''}.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
     const rawWa = (booking.guest_whatsapp || '').trim();
     let waNum = rawWa.replace(/\D/g, '');
     if (!rawWa.startsWith('+')) {
@@ -615,12 +616,18 @@ export default function BookingDetail() {
 
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Booking #{id.slice(0,8).toUpperCase()}</div>
-          <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
-        </div>
-        <div className="flex gap-2 items-center">
+      <PageHeader
+        back={{ to: '/reservations', label: 'Reservations' }}
+        kind={`Booking #${id.slice(0, 8).toUpperCase()}`}
+        title={booking.guest_name}
+        meta={[
+          `Room ${booking.unit_name}`,
+          `${fmtShortDate(booking.check_in_date)} → ${fmtShortDate(booking.check_out_date)} ${String(booking.check_out_date).slice(0, 4)}`,
+          `${booking.nights} night${booking.nights === 1 ? '' : 's'}`,
+          `${booking.num_guests} guest${booking.num_guests === 1 ? '' : 's'}`,
+        ]}
+        badge={<span className={`badge badge-${STATUS_BADGE[booking.status] || 'gray'}`}>{STATUS_LABEL[booking.status] || booking.status}</span>}
+        actions={<>
           {(() => {
             const isOTA = sources.find(s => s.id === booking.source)?.is_ota;
             const canCheckin = isOTA
@@ -658,10 +665,10 @@ export default function BookingDetail() {
               ]}
             />
           </div>
-          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
-          <ActionMenu items={moreItems} />
-        </div>
-      </div>
+          {moreItems.filter(Boolean).length > 0 && <div className="header-divider" />}
+          {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} />}
+        </>}
+      />
 
       {booking.group && (
         <div className="alert alert-success mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

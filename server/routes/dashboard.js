@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { computeProforma } = require('../services/folioService');
-const { occupiedUntilSql, TODAY_WITA_SQL } = require('./bookings');
+const { occupiedUntilSql, TODAY_WITA_SQL } = require('../services/occupancySql');
 
 // GET /api/dashboard/summary
 router.get('/summary', auth, async (req, res) => {

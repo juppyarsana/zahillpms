@@ -488,7 +488,10 @@ export default function Reservations() {
             {monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}
           </div>
         </div>
-        <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
+        <div className="flex gap-2">
+          <Link to="/availability" className="btn btn-secondary">🔎 Check Availability</Link>
+          <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
