@@ -1935,12 +1935,16 @@ router.put('/group/:groupId/guests', auth, async (req, res) => {
 });
 
 // ── Change Room (upgrade / downgrade / plain move) ──────────────────────────
-// Replaces the old price-less Transfer Room in the UI. The price difference
-// is the two rooms' NORMAL rates (base rate + pricing periods — the same
-// numbers as New Booking's suggestion, services/pricingService.js) for the
-// nights still to come: all nights for a stay that hasn't started, from today
-// for a guest already in house. Grossed up with service/tax, so it's what the
-// guest pays on top. Negative = downgrade (a credit).
+// Replaces the old price-less Transfer Room in the UI. For the nights still
+// to come (all nights for a stay that hasn't started, from today for a guest
+// already in house) the difference is: the NEW room's normal rate (base rate
+// + pricing periods, services/pricingService.js — same as New Booking's
+// suggestion) minus what the guest actually pays for the CURRENT room — the
+// booking's own room price (room_revenue, after discount, the price FO typed)
+// spread per night. Using the current room's normal rate instead gave a wrong
+// difference whenever the booking had a special price. Both grossed up with
+// service/tax, so it's what the guest pays on top. Negative = downgrade (a
+// credit). The current room's normal rate is returned too, for reference.
 async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   const today = roomCharge.todayWITA();
   const ci = String(booking.check_in_date).slice(0, 10);
@@ -1954,11 +1958,20 @@ async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
   const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
   const nights = from < co ? next.night_breakdown.length : 0;
-  const curTotal = nights ? gross(cur.room_total) : 0;
+  // What the booking charges for the room per night (NET, after discount;
+  // meals are separate and don't change with the room).
+  const stayNights = Math.max(1, parseInt(booking.nights, 10) || 1);
+  let bookedRoomNet = booking.room_revenue != null ? parseFloat(booking.room_revenue) : null;
+  if (bookedRoomNet == null) {
+    const { F } = await grossFactor(client, propertyId);
+    bookedRoomNet = (parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0)) / F - parseFloat(booking.fnb_revenue || 0);
+  }
+  const curTotal = nights ? round2(gross(bookedRoomNet / stayNights * nights)) : 0;
+  const curNormal = nights ? gross(cur.room_total) : 0;
   const nextTotal = nights ? gross(next.room_total) : 0;
   return {
     from, to: co, nights,
-    current: { unit_id: cur.unit.id, name: cur.unit.name, type: cur.unit.type, total: curTotal },
+    current: { unit_id: cur.unit.id, name: cur.unit.name, type: cur.unit.type, total: curTotal, normal_total: curNormal },
     next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal },
     difference: round2(nextTotal - curTotal),
   };

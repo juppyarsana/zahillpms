@@ -1601,11 +1601,22 @@ export default function BookingDetail() {
                 {q && (
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
                     <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                      Normal room rate for the {q.nights} {q.nights === 1 ? 'night' : 'nights'} {booking.status === 'checked_in' ? 'still to come' : 'of the stay'}
+                      Room price for the {q.nights} {q.nights === 1 ? 'night' : 'nights'} {booking.status === 'checked_in' ? 'still to come' : 'of the stay'}
                       {q.nights > 0 && ` (${fmtStay(q.from, q.to)})`}, incl. service & tax
                     </div>
-                    <div className="flex-between" style={{ fontSize: 13 }}><span>{q.current.name}{q.current.type ? ` · ${q.current.type}` : ''} (current)</span><span>{fmtIDR(q.current.total)}</span></div>
-                    <div className="flex-between" style={{ fontSize: 13 }}><span>{q.next.name}{q.next.type ? ` · ${q.next.type}` : ''} (new)</span><span>{fmtIDR(q.next.total)}</span></div>
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span>{q.current.name}{q.current.type ? ` · ${q.current.type}` : ''} — booked price</span>
+                      <span>{fmtIDR(q.current.total)}</span>
+                    </div>
+                    {q.current.normal_total != null && Math.abs(q.current.normal_total - q.current.total) >= 1 && (
+                      <div className="text-muted" style={{ fontSize: 11, marginTop: -2, marginBottom: 2 }}>
+                        Normal rate for this room would be {fmtIDR(q.current.normal_total)}
+                      </div>
+                    )}
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span>{q.next.name}{q.next.type ? ` · ${q.next.type}` : ''} — normal rate</span>
+                      <span>{fmtIDR(q.next.total)}</span>
+                    </div>
                     <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
                       <span>{q.difference >= 0 ? 'Difference' : 'Difference (cheaper room)'}</span>
                       <span>{q.difference >= 0 ? '+' : '−'}{fmtIDR(Math.abs(q.difference))}</span>
