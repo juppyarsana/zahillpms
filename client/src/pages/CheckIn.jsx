@@ -243,7 +243,8 @@ export default function CheckIn() {
           <div className="card-title">Arriving Today ({arrivals.length})</div>
           {arrivals.length === 0 && <p className="text-muted">No arrivals today</p>}
           {clusterByGroup(arrivals).map(item => {
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const d0 = new Date();
+            const todayStr = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`; // local date, not UTC
             const rows = (item.type === 'group' ? item.bookings : [item.booking]).map(b => {
               const depositOk = b.deposit_paid || isOTA(b);
               const isOverdue = b.check_in_date < todayStr;
@@ -267,11 +268,10 @@ export default function CheckIn() {
                       {(b.bed_preference || (b.bed_config && b.bed_config !== 'double')) && (
                         <span> · 🛏 {b.bed_preference === 'twin' || (!b.bed_preference && b.bed_config === 'twin') ? 'Twin' : b.bed_preference === 'double' ? 'Double' : b.bed_config === 'twin_or_double' ? 'Twin/Double' : ''}</span>
                       )}
-                      {isOverdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
                     </div>
                     {isOverdue && (
-                      <div style={{ fontSize: 11, color: '#92400E', marginTop: 2 }}>
-                        Was due: {b.check_in_date}
+                      <div style={{ fontSize: 11, color: '#B45309', fontWeight: 700, marginTop: 2 }}>
+                        LATE ARRIVAL · was due {new Date(b.check_in_date.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                       </div>
                     )}
                     {b.housekeeping_status === 'dirty' && (

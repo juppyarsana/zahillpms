@@ -389,7 +389,7 @@ export default function Reports() {
             {bySource.length === 0 ? (
               <div style={{ fontSize: 13, color: '#9CA3AF', padding: 14 }}>No room nights in this period.</div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+              <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                     <th style={TH}>Source</th>
@@ -426,7 +426,7 @@ export default function Reports() {
                     <td style={TD}></td>
                   </tr>
                 </tfoot>
-              </table>
+              </table></div>
             )}
           </div>
 

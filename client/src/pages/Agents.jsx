@@ -65,7 +65,7 @@ function AgentList() {
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                 <th style={TH}>Agent</th>
@@ -107,7 +107,7 @@ function AgentList() {
                 <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(totals.unpaid_commission)}</td>
               </tr>
             </tfoot>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
@@ -216,7 +216,7 @@ function AgentDetail({ sourceId }) {
 
       <Section title={`Open Items (${open_items.length})`}>
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               {['Booking', 'Dates', 'Status', 'Folio', 'Allocated', 'Balance', 'Age'].map(h => <th key={h} style={{ ...TH, textAlign: h === 'Booking' || h === 'Dates' || h === 'Status' ? 'left' : 'right' }}>{h}</th>)}
             </tr></thead>
@@ -238,7 +238,7 @@ function AgentDetail({ sourceId }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </Section>
 
@@ -388,7 +388,7 @@ function RecordPaymentModal({ sourceId, openItems, outstanding, onClose, onDone,
           </div>
 
           <div className="form-label" style={{ marginTop: 8 }}>Allocation (auto oldest-first — adjust as needed)</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <tbody>
               {openItems.map(it => (
                 <tr key={it.booking_id}>
@@ -401,7 +401,7 @@ function RecordPaymentModal({ sourceId, openItems, outstanding, onClose, onDone,
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <div style={{ fontSize: 12, marginTop: 6, color: Math.abs(allocSum - amt) > 0.5 && amt > 0 ? '#D97706' : '#6B7280' }}>
             Allocated {fmtIDR(allocSum)} of {fmtIDR(amt)}{allocSum > amt + 0.5 ? ' — over the payment amount' : ''}
           </div>

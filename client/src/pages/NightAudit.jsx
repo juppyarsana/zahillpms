@@ -148,7 +148,7 @@ export default function NightAudit() {
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                 {['Date', 'Triggered by', 'Occupied', 'Room Rev (net)', 'F&B Rev (net)', 'Other Rev', 'No-shows', 'Pmt Due'].map(h => (
@@ -206,7 +206,7 @@ export default function NightAudit() {
                 ];
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
