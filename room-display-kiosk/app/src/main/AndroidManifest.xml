@@ -3,6 +3,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Room <-> front desk voice calls (WebRTC inside the WebView). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Phase 1 only: a non-device-owner app needs FINE_LOCATION (+ Location
          services on) to read the Wi-Fi SSID/BSSID on Android 9+. A Device
          Owner (Phase 2) is exempt, so this line is removed then. -->

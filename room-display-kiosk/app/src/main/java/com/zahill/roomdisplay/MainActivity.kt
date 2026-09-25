@@ -1,13 +1,17 @@
 package com.zahill.roomdisplay
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowManager
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -37,6 +41,9 @@ class MainActivity : AppCompatActivity() {
     private var tapCount = 0
     private var lastTapAt = 0L
 
+    // A microphone request from the page waiting on Android's permission dialog.
+    private var pendingMicRequest: PermissionRequest? = null
+
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +69,7 @@ class MainActivity : AppCompatActivity() {
             settings.loadWithOverviewMode = true
             addJavascriptInterface(KioskBridge(applicationContext), "AndroidKiosk")
             webViewClient = KioskWebViewClient()
+            webChromeClient = KioskChromeClient()
         }
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
 
@@ -78,6 +86,52 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         loadPwa()
+        // Ask for the microphone once, up front (during setup), so the
+        // Android dialog never pops up in the middle of a guest's call.
+        if (!hasMicPermission()) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+    }
+
+    private fun hasMicPermission() =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    // Voice calls: the Room Display page asks for the microphone through
+    // WebRTC (getUserMedia). A WebView refuses every such request unless the
+    // app answers it here — that was the "Permission denied" on calls.
+    // Only the microphone, and only for the Room Display's own site.
+    private inner class KioskChromeClient : WebChromeClient() {
+        override fun onPermissionRequest(request: PermissionRequest) {
+            runOnUiThread {
+                val base = Uri.parse(Preferences.baseUrl(this@MainActivity))
+                val sameSite = request.origin?.host != null && request.origin.host == base.host
+                val wantsMic = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                when {
+                    !sameSite || !wantsMic -> request.deny()
+                    hasMicPermission() -> request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                    else -> {
+                        pendingMicRequest?.deny()
+                        pendingMicRequest = request
+                        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+                    }
+                }
+            }
+        }
+
+        override fun onPermissionRequestCanceled(request: PermissionRequest) {
+            if (pendingMicRequest == request) pendingMicRequest = null
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_MIC) return
+        val req = pendingMicRequest ?: return
+        pendingMicRequest = null
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            req.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        } else {
+            req.deny()
+        }
     }
 
     private fun loadPwa() {
@@ -202,8 +256,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        pendingMicRequest?.deny()
+        pendingMicRequest = null
         pendingReload?.let { mainHandler.removeCallbacks(it) }
         webView.destroy()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val REQ_MIC = 1001
     }
 }
