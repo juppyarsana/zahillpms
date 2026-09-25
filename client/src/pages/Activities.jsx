@@ -173,22 +173,22 @@ export default function Activities() {
         <h1 className="page-title">Activities</h1>
       </div>
 
-      <div className="flex gap-2" style={{ marginBottom: 16 }}>
-        <button className={`btn btn-sm ${tab === 'bookings' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('bookings')}>Bookings</button>
-        <button className={`btn btn-sm ${tab === 'catalog' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('catalog')}>Catalog</button>
+      <div className="tab-bar">
+        <button className={`tab-bar-item${tab === 'bookings' ? ' active' : ''}`} onClick={() => setTab('bookings')}>Bookings</button>
+        <button className={`tab-bar-item${tab === 'catalog' ? ' active' : ''}`} onClick={() => setTab('catalog')}>Catalog</button>
       </div>
 
       {tab === 'bookings' && (
         <div>
           {isOwner && (
-            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-              <div className="card" style={{ padding: 16 }}>
-                <div className="text-muted" style={{ fontSize: 12 }}>This Month's Revenue</div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtIDR(totalRevenue)}</div>
+            <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+              <div className="stat-card">
+                <div className="stat-label">This month's revenue</div>
+                <div className="stat-value" style={{ fontSize: 24 }}>{fmtIDR(totalRevenue)}</div>
               </div>
-              <div className="card" style={{ padding: 16 }}>
-                <div className="text-muted" style={{ fontSize: 12 }}>Pending Requests</div>
-                <div style={{ fontSize: 22, fontWeight: 700 }}>{requestedCount}</div>
+              <div className="stat-card">
+                <div className="stat-label">Pending requests</div>
+                <div className="stat-value" style={{ fontSize: 24, color: requestedCount > 0 ? '#B45309' : undefined }}>{requestedCount}</div>
               </div>
             </div>
           )}

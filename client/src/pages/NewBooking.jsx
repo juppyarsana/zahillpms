@@ -369,12 +369,12 @@ export default function NewBooking() {
 
         <div className="card mb-3">
           <div className="card-title">Dates</div>
-          <div className="form-row">
+          <div className="form-row form-row-dates">
             <div className="form-group">
               <label className="form-label">Check-in *</label>
               <input className="form-input" type="date" value={form.check_in_date} onChange={e => onCheckIn(e.target.value)} required />
             </div>
-            <div className="form-group" style={{ maxWidth: 110 }}>
+            <div className="form-group">
               <label className="form-label">Nights</label>
               <input className="form-input" type="number" min={1} max={365} inputMode="numeric" value={nights}
                 onChange={e => onNights(e.target.value)} placeholder="1" />

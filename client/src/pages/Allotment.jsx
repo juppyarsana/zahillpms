@@ -131,7 +131,7 @@ export default function Allotment() {
         {/* ── Unit Assignments card ── */}
         <div className="card">
           <div className="card-title">Unit Assignments</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 <th style={{ padding: '8px 0', textAlign: 'left' }}>Unit</th>
@@ -162,7 +162,7 @@ export default function Allotment() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       </div>
 
