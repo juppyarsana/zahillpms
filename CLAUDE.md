@@ -663,6 +663,8 @@ Since development happens on two machines, **this file and `ROADMAP.md` are the 
 3. Commit docs **in the same commit** as the code change, not a separate "docs" commit later — it's too easy to skip that second commit.
 4. `git push` before walking away from either machine.
 
+**Releasing to `main`:** `git checkout main && git merge --ff-only dev && git push`. Don't cherry-pick — `main` and `dev` were rejoined on 2026-09-26 (`bb29936`) after cherry-picked releases had left them with the same code under different commit ids; `main` should always be a fast-forward of `dev`. If `--ff-only` refuses, something was committed straight to `main` — merge `main` into `dev` first.
+
 **Starting a session on either machine:**
 1. `git pull` first, always — don't trust memory of "where things were."
 2. Re-read this file's Multi-Tenancy and Roadmap Status sections if it's been more than a few days.
