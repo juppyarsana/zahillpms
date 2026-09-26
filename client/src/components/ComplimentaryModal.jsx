@@ -30,6 +30,12 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  // Name of the approver who declined on Telegram — its own screen, so it
+  // doesn't read as "fill the form in again".
+  const [declined, setDeclined] = useState(null);
+  // From New Booking the choice was already made there: show "Sending…"
+  // instead of flashing the form while the request goes out.
+  const [autoStarting, setAutoStarting] = useState(!!initial && mode === 'grant');
 
   async function load() {
     try {
@@ -50,6 +56,7 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
         if (data.can_grant) await grant(initial.scope, initial.reason);
         else await sendRequest(initial.scope, initial.reason);
       }
+      setAutoStarting(false);
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -66,7 +73,7 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
           setResult({ approved_by: latest.approved_by_name, new_total: r.data.current_total, via_telegram: latest.approved_via === 'button' });
         } else if (latest.status === 'declined') {
           setRequest(null);
-          setError(`❌ Declined by ${latest.declined_by_name} on Telegram.`);
+          setDeclined(latest.declined_by_name || 'the manager');
         }
       } catch {}
     }, 3000);
@@ -102,7 +109,8 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
     } catch (err) {
       const d = err.response?.data || {};
       setError(d.error || 'Could not check the code');
-      if (['EXPIRED', 'LOCKED', 'CHANGED'].includes(d.code) || d.attempts_left === 0) setRequest(null);
+      if (d.code === 'DECLINED') { setRequest(null); setError(''); setDeclined(d.error.replace(/^Declined by /, '')); }
+      else if (['EXPIRED', 'LOCKED', 'CHANGED'].includes(d.code) || d.attempts_left === 0) setRequest(null);
       else if (d.attempts_left != null) setRequest(q => ({ ...q, attempts_left: d.attempts_left }));
     } finally { setSaving(false); }
   }
@@ -136,9 +144,31 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
   if (loadError) {
     body = <div className="alert alert-error">{loadError}</div>;
     footer = <button className="btn btn-secondary" onClick={close}>Close</button>;
-  } else if (!info) {
-    body = <div className="text-muted">Loading…</div>;
+  } else if (!info || (autoStarting && !result && !request && !error)) {
+    body = (
+      <div className="text-muted" style={{ padding: '12px 0' }}>
+        {!info ? 'Loading…' : info.can_grant ? '🎁 Making the stay complimentary…' : '📨 Sending the approval request to the manager on Telegram…'}
+      </div>
+    );
     footer = null;
+  } else if (declined) {
+    body = (
+      <>
+        <div className="alert alert-error" style={{ marginBottom: 12 }}><div>
+          ❌ <strong>Declined by {declined}</strong> on Telegram.
+        </div></div>
+        <div style={{ fontSize: 13 }}>
+          Nothing was changed — the booking stays at its normal price of <strong>{fmtIDR(info.current_total)}</strong>.
+          If you think it should still be free, talk to them and ask again.
+        </div>
+      </>
+    );
+    footer = (
+      <>
+        <button className="btn btn-secondary" onClick={() => { setDeclined(null); setError(''); }}>Ask again</button>
+        <button className="btn btn-primary" onClick={close}>Close</button>
+      </>
+    );
   } else if (result) {
     body = mode === 'remove' ? (
       <div className="alert alert-success"><div>No longer complimentary. The price is back to <strong>{fmtIDR(result.new_total)}</strong> — check it, and use Edit Price if the dates changed in between.</div></div>
@@ -251,7 +281,7 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
         )}
         {!info.can_grant && !noApprovers && (
           <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
-            Needs approval — a one-time code goes on Telegram to {info.approvers.join(', ')}.
+            Needs a manager's approval — sent on Telegram to {info.approvers.join(', ')}.
           </div>
         )}
         {noApprovers && (
