@@ -1601,8 +1601,8 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 - ✅ **Approve / Decline buttons on Telegram (migration 073):** one tap approves; front desk's screen
   updates by itself; the code in the same message stays as the fallback, and the owner /
   `grant_complimentary` can still apply directly. The bot listens only while a request is open (same
-  getUpdates loop as Connect links — one server per bot). Tested with Telegram stubbed; not yet with
-  the real bot.
+  getUpdates loop as Connect links — one server per bot). Tested with Telegram stubbed and live on the
+  dev bot from a real phone (Approve + Decline).
 - ⚪ Not built: comp for a whole group at once (do it room by room); a refund flow for the credit.
 
 ---
