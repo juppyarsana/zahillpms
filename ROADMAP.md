@@ -1,6 +1,37 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
+
+---
+
+## 🔖 Session handoff — 2026-09-26 → 2026-09-27 — price mistakes, Dashboard room window, Tomorrow Preview, POS bill
+
+**PMS (`dev` = `main` at `6d66750`, pushed; no migration — deploy = pull, build client, restart)**
+- **Edit Price on group rooms** (was blocked): percentage group discount re-applied, fixed one keeps the room's
+  share. Found because FO typed a 3-night group room's *nightly* price (1,100,000) into the whole-stay field — the
+  system was right. **To do on production after deploying:** owner → each room of that group → ⋮ → Edit Price →
+  3,300,000 (if 1.1M/night was incl. tax) + reason.
+- **New Booking price check**: field says "Total for the whole stay (N nights)", live "= Rp X per night", warning
+  when far from the normal price, and a **Review Booking** window before saving. Edit Price shows per-night too.
+- **Dashboard room window**: tile → centred modal with the stay (dates, plan, balance, requests, notes) + Open
+  reservation / Check in / Check out / Record payment; empty room → next booking + New booking; overdue shown.
+- **Tomorrow Preview email**: Staying over added (occupancy = arriving + staying over), breakfast = tonight's
+  guests, dinner, to collect = leaving only; box lines fit a 320 px phone (checked 320–640 px).
+- Details for each in `CLAUDE.md` (search the headings above).
+
+**POS (`zahillpos`, branch `pms-integration`, pushed at `7799bb8` — staging: `cd /var/www/pos-test && bash deploy.sh`)**
+- `134aa90` kitchen tickets sent while the cashier PC was closed: print when it's back (≤ 2 h, marked LATE),
+  older ones via *Print all*; waiter warned if a ticket hasn't printed after 1 min; till chimes for every order.
+- `fc377bc` README: **silent printing** set-up on the cashier PC (Chrome `--kiosk-printing` + its own
+  `--user-data-dir`, receipt printer as Windows default, 76 mm for the TM-U220, start with Windows).
+- `7799bb8` **guest bill**: waiter tablet 🧾 Print bill → prints on the kitchen-printing PC (claim, first wins;
+  migration `migrate_20260927_bill_print_requests.sql`); till 🧾 Bill in Open Bills + on a resumed bill.
+- Tested locally (API + headless browsers); **not yet on a real tablet / printer**. Local tip: the POS server
+  (:4100) only accepts the client from :5173 — `POS_API_URL=http://localhost:4100 npx vite --port 5173`.
+
+**Next:** deploy PMS main to production and fix that group's prices; try the POS bill + silent printing on
+staging with the real printer; then POS Phase 4 (split / move / merge). Still waiting from before: switch on POS
+Integration in production and link the POS to it. Not done: Tomorrow Preview in real Gmail/Outlook (only Chrome).
 
 ---
 
