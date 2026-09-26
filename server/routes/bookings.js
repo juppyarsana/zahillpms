@@ -2240,6 +2240,12 @@ router.delete('/:id', auth, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Booking not found' });
     await roomCharge.voidAll(db, req.params.id, req.user.id);
+    // Optional reason (e.g. after a complimentary request was declined) → Edit History.
+    const reason = String(req.body?.reason || '').trim();
+    if (reason) {
+      await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [req.params.id, `Booking cancelled. Reason: ${reason}`.slice(0, 1000), req.user.id]);
+    }
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

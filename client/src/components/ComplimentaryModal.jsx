@@ -20,7 +20,9 @@ function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ComplimentaryModal({ booking, mode = 'grant', initial = null, onClose, onDone }) {
+// booking: { id, guest_name, status }. onCancelled: the reservation was
+// cancelled from the Declined screen (the page should leave the booking).
+export default function ComplimentaryModal({ booking, mode = 'grant', initial = null, onClose, onDone, onCancelled }) {
   const [info, setInfo] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [scope, setScope] = useState(initial?.scope || '');
@@ -36,6 +38,10 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
   // From New Booking the choice was already made there: show "Sending…"
   // instead of flashing the form while the request goes out.
   const [autoStarting, setAutoStarting] = useState(!!initial && mode === 'grant');
+  // Declined → "keep it at the normal price, or cancel the reservation?"
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const canCancel = ['pending', 'deposit_paid', 'confirmed'].includes(booking.status);
 
   async function load() {
     try {
@@ -122,6 +128,17 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
     setRequest(null); setError('');
   }
 
+  async function cancelReservation() {
+    setSaving(true); setError('');
+    try {
+      await api.delete(`/api/bookings/${booking.id}`, { data: { reason: cancelReason.trim() } });
+      onCancelled?.();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not cancel the reservation');
+      setSaving(false);
+    }
+  }
+
   async function remove() {
     setSaving(true); setError('');
     try {
@@ -157,35 +174,48 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
         <div className="alert alert-error" style={{ marginBottom: 12 }}><div>
           ❌ <strong>Declined by {declined}</strong> on Telegram.
         </div></div>
-        <div style={{ fontSize: 13 }}>
-          Nothing was changed — the booking stays at its normal price of <strong>{fmtIDR(info.current_total)}</strong>.
-          If you think it should still be free, talk to them and ask again.
+        <div style={{ fontSize: 13, marginBottom: 12 }}>
+          Nothing was changed — the booking is still at its normal price of <strong>{fmtIDR(info.current_total)}</strong>.
         </div>
+        {!cancelling ? (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              {canCancel ? 'Is the guest still coming at the normal price, or should this reservation be cancelled?' : 'The guest is already checked in, so the stay stays at the normal price.'}
+            </div>
+            <button type="button" className="btn btn-link" style={{ padding: 0, marginTop: 8, fontSize: 13, background: 'none', border: 'none', color: 'var(--text-muted)', textDecoration: 'underline', cursor: 'pointer' }}
+              onClick={() => { setDeclined(null); setError(''); }}>
+              Talked to them? Ask for approval again
+            </button>
+          </>
+        ) : (
+          <div className="form-group">
+            <label className="form-label">Reason for cancelling</label>
+            <textarea className="form-textarea" value={cancelReason} autoFocus onChange={e => setCancelReason(e.target.value)} />
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              The room is freed and its folio charges voided. Money already received isn't refunded automatically — check Payment Tracking.
+            </div>
+          </div>
+        )}
+        {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
       </>
     );
-    footer = (
+    footer = cancelling ? (
       <>
-        <button className="btn btn-secondary" onClick={() => { setDeclined(null); setError(''); }}>Ask again</button>
-        <button className="btn btn-primary" onClick={close}>Close</button>
+        <button className="btn btn-secondary" disabled={saving} onClick={() => setCancelling(false)}>Back</button>
+        <button className="btn btn-danger" disabled={saving || !cancelReason.trim()} onClick={cancelReservation}>
+          {saving ? 'Cancelling…' : 'Cancel reservation'}
+        </button>
       </>
-    );
-  } else if (result) {
-    body = mode === 'remove' ? (
-      <div className="alert alert-success"><div>No longer complimentary. The price is back to <strong>{fmtIDR(result.new_total)}</strong> — check it, and use Edit Price if the dates changed in between.</div></div>
     ) : (
       <>
-        <div className="alert alert-success" style={{ marginBottom: 12 }}><div>
-          🎁 The stay is now complimentary{result.approved_by ? `, approved by ${result.approved_by}${result.via_telegram ? ' on Telegram' : ''}` : ''}. The guest owes <strong>{fmtIDR(result.new_total)}</strong>
-          {result.value_net != null && <> (value given: {fmtIDR(result.value_net)} before tax)</>}.
-        </div></div>
-        {result.credit > 0 && (
-          <div className="alert alert-error"><div>
-            The guest has already paid <strong>{fmtIDR(result.credit)}</strong> more than they now owe. It shows as a credit on the folio — refund it by hand.
-          </div></div>
+        {canCancel && (
+          <button className="btn btn-danger" onClick={() => { setCancelReason(`Complimentary declined by ${declined}`); setCancelling(true); }}>
+            Cancel reservation…
+          </button>
         )}
+        <button className="btn btn-primary" onClick={close}>{canCancel ? 'Keep — normal price' : 'Close'}</button>
       </>
     );
-    footer = <button className="btn btn-primary" onClick={close}>Done</button>;
   } else if (mode === 'remove') {
     body = (
       <>
