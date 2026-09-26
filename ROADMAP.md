@@ -49,7 +49,7 @@ Deferred by the user: cashier screen on tablets, PMS mobile revamp.
 **Built — nothing pushed yet:**
 - **PMS** (`dev`, `9f0f49a` + docs `c1d2545`, **migration 070**): `pos_integration` module, POS API
   key card in Settings → Property Details, `/api/pos/rooms` + `POST /api/pos/transactions`. Full
-  write-up in `CLAUDE.md` ("POS Integration"). Next migration number is **071**.
+  write-up in `CLAUDE.md` ("POS Integration"). Next migration number: see the line near the end of this file.
 - **POS** (`zahillpos`, branch `pms-integration`, never `main`):
   - `128cb60` Room Charge — Settings → Hotel PMS (Owner), Charge to Room at the till with a room
     picker, amount sent net (hotel adds service/tax), posted inside the POS DB transaction.
@@ -1574,9 +1574,40 @@ the PMS only receives bills charged to a room. Plan: `POS_INTEGRATION_PLAN.md`.
   merge `pms-integration` into the POS `main` and move Zahill's F&B over.
 - ⚪ Later: void/refund of a room-charged POS bill; multi-business POS (own project).
 
+## ✅ Complimentary stays (migration 072, 2026-09-26)
+
+Client request: a proper way to give a stay for free (site inspections, influencers, service recovery,
+owner's guests) instead of typing Rp 0 — with a reason, who approved it, and honest reports.
+- **Scope:** Room only (rate-plan meals + extras still paid) / Room + meals (extras paid) / Everything
+  (extras charged to the room are free too — `folioService` leaves them out of the totals).
+- **Who:** owner, or a role with the new **Grant complimentary stays** permission (Roles & Permissions →
+  Front Desk, key `grant_complimentary`) → applies directly. Anyone else → **Request approval**: every
+  approver (Reports & Alerts recipient with the new free alert **Approve complimentary stays**, personal
+  Telegram chats only — never a group) gets their OWN 6-digit code; front desk types it in; the code
+  used says who approved. Locked to the booking as it was (price/dates/room/plan/guests fingerprint)
+  and to the scope + reason asked; 10 minutes, 5 tries, once. Free for every property.
+- **Money:** price → what's still payable, via `applyBookingPrice` (new `split` option); money already
+  received stays as a credit (refund by hand). The price before is kept for **Remove Complimentary**.
+- **Reports:** comp nights count for occupancy, not ADR (`paid_nights`); `comp_nights` / `comp_value`
+  (net room/meal value per night + comped extras, which leave ancillary revenue) on the Reports page,
+  CSV, Daily Close, Weekly, Monthly.
+- **Paperwork:** invoice / pro forma note "Complimentary stay — …", comped extras "Free";
+  Registration Card rate "Complimentary". Owner control alert (paid) on every comp.
+- **UI:** 🎁 Make Complimentary in the booking ⋮ menu, "Complimentary stay" on New Booking (single room),
+  Stay-card badge + "Waiting for approval code", Folio "Free" badges.
+- Verified: 27 HTTP/service checks against the dev DB (Telegram stubbed) + a headless-Chrome
+  click-through (owner grant, staff code approval on a phone-width screen, New Booking option); caught
+  and fixed a fingerprint bug (price read as text → NaN) during testing. Test rows removed.
+- ✅ **Approve / Decline buttons on Telegram (migration 073):** one tap approves; front desk's screen
+  updates by itself; the code in the same message stays as the fallback, and the owner /
+  `grant_complimentary` can still apply directly. The bot listens only while a request is open (same
+  getUpdates loop as Connect links — one server per bot). Tested with Telegram stubbed; not yet with
+  the real bot.
+- ⚪ Not built: comp for a whole group at once (do it room by room); a refund flow for the credit.
+
 ---
 
-## Next migration number: 072
+## Next migration number: 074
 
 ---
 

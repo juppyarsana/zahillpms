@@ -11,7 +11,9 @@ const telegram = require('./telegramService');
 //
 // <bot> is the property's own bot, or the platform bot (see
 // telegramService.botTokenFor). Receiving is long-polling getUpdates, one loop
-// per bot, and ONLY while that bot has a pending (unexpired) link — no
+// per bot, and ONLY while that bot has a pending (unexpired) link or an open
+// complimentary-stay approval request (its Approve / Decline buttons,
+// services/complimentaryService.handleButton) — no
 // webhook, so no public URL / nginx setup, and an idle server makes no
 // Telegram calls. One bot token can only be polled by one server at a time
 // (Telegram answers 409 to the second), and not at all while a webhook is set.
@@ -38,13 +40,19 @@ async function connectUrls(propertyId, linkToken) {
   };
 }
 
-// Bot tokens that have at least one pending link (own bot, else platform bot).
+// Bot tokens with something to wait for (own bot, else platform bot): a
+// pending Connect link, or an open complimentary approval request.
 async function tokensWithPendingLinks() {
   const { rows } = await db.query(
     `SELECT DISTINCT ps.telegram_bot_token AS token
      FROM notification_recipients r
      LEFT JOIN property_settings ps ON ps.property_id = r.property_id
-     WHERE r.link_token IS NOT NULL AND r.link_expires_at > NOW()`
+     WHERE r.link_token IS NOT NULL AND r.link_expires_at > NOW()
+     UNION
+     SELECT DISTINCT ps.telegram_bot_token AS token
+     FROM complimentary_requests cr
+     LEFT JOIN property_settings ps ON ps.property_id = cr.property_id
+     WHERE cr.status = 'pending' AND cr.expires_at > NOW()`
   );
   return [...new Set(rows.map(r => r.token || process.env.TELEGRAM_BOT_TOKEN).filter(Boolean))];
 }
@@ -89,6 +97,10 @@ async function handleStart(botToken, linkToken, chat) {
 }
 
 async function processUpdate(botToken, u) {
+  if (u.callback_query) {
+    // Lazy: complimentaryService requires this file (ensurePolling).
+    return require('./complimentaryService').handleButton(botToken, u.callback_query);
+  }
   const msg = u.message;
   if (!msg?.text || !msg.chat) return;
   const m = TOKEN_RE.exec(msg.text.trim());
@@ -103,7 +115,7 @@ async function pollLoop(botToken) {
   const state = loops.get(botToken);
   while ((await tokensWithPendingLinks()).includes(botToken)) {
     try {
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?timeout=50&offset=${state.offset}&allowed_updates=${encodeURIComponent('["message"]')}`);
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?timeout=50&offset=${state.offset}&allowed_updates=${encodeURIComponent('["message","callback_query"]')}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) {
         console.error(`[Telegram link] getUpdates failed: ${res.status} ${body.description || ''}`);

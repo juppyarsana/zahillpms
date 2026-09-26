@@ -841,7 +841,10 @@ router.get('/:id', auth, async (req, res) => {
              -- Agent billing (city ledger): shown as a badge on the booking page.
              ai.invoice_number AS agent_invoice_number,
              (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
-               WHERE apa.booking_id = b.id) AS agent_paid_amount
+               WHERE apa.booking_id = b.id) AS agent_paid_amount,
+             (SELECT name FROM users cu WHERE cu.id = b.complimentary_by) AS complimentary_by_name,
+             EXISTS (SELECT 1 FROM complimentary_requests cr WHERE cr.booking_id = b.id
+                       AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id AND ai.property_id = b.property_id
@@ -1442,6 +1445,10 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
     if (['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Agent Billing' });
+    }
+    if (before.complimentary_scope) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is complimentary — remove complimentary first to set a price' });
     }
 
     const result = await applyBookingPrice(client, {
@@ -2054,6 +2061,10 @@ router.put('/:id/change-room', auth, async (req, res) => {
     if (amount !== 0 && ['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This stay is already on an agent invoice — change the room without a charge, or correct it through Agent Billing' });
+    }
+    if (amount !== 0 && before.complimentary_scope) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is complimentary — move it as Complimentary, or remove complimentary first' });
     }
 
     const { rows: [oldUnit] } = await client.query('SELECT id, name, type, controller_id FROM units WHERE id = $1', [before.unit_id]);

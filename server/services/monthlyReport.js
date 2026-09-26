@@ -37,8 +37,9 @@ async function monthFigures(propertyId, y, m, sellable) {
     room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, total: r.total_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights, bookings: r.bookings_count,
+    comp_nights: r.comp_nights, comp_value: r.comp_value,
     occupancy: capacity ? Math.round((r.total_nights / capacity) * 100) : 0,
-    adr: r.total_nights ? r.room_revenue / r.total_nights : 0,
+    adr: r.paid_nights ? r.room_revenue / r.paid_nights : 0,   // complimentary nights left out
     revpar: capacity ? r.room_revenue / capacity : 0,
     by_source: r.by_source.map(s => ({ source: s.source, count: parseInt(s.count, 10), revenue: parseFloat(s.revenue) }))
       .filter(s => s.revenue > 0).sort((a, b) => b.revenue - a.revenue),
@@ -185,6 +186,7 @@ function monthlyTelegram(b) {
   if (b.has_expenses) L.push(`🧾 Expenses ${e(fmtIDR(c.expenses))} · Net income <b>${e(fmtIDR(c.net_income))}</b>`);
   L.push(`🛏 Occupancy: <b>${c.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${c.rooms_sold} room-nights`);
   L.push(`💵 ADR ${e(fmtIDR(c.adr))} · RevPAR ${e(fmtIDR(c.revpar))}`);
+  if (c.comp_nights > 0 || c.comp_value > 0) L.push(`🎁 Complimentary: ${c.comp_nights} night${c.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(c.comp_value))}`);
   L.push(`💳 Money received: <b>${e(fmtIDR(b.collected.total))}</b>`);
   if (c.best_day) L.push(`⭐ Best day: ${e(new Date(c.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${e(fmtIDR(c.best_day.total))}`);
   if (b.agents.total > 0) L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
@@ -235,6 +237,7 @@ function monthlyEmail(b) {
       ${tile('Agents owe', esc(fmtIDR(b.agents.total)), b.agents.overdue > 0 ? `<div style="font-size:12px;line-height:17px;color:#b91c1c;margin-top:2px;">${esc(fmtIDR(b.agents.overdue))} overdue</div>` : '')}
     </tr>
     ${CARD_TABLE_CLOSE}
+    ${c.comp_nights > 0 || c.comp_value > 0 ? `<div style="font-size:13px;color:#047857;margin:10px 0 0;">🎁 Complimentary: ${c.comp_nights} night${c.comp_nights === 1 ? '' : 's'} · value ${esc(fmtIDR(c.comp_value))} before tax (left out of ADR)</div>` : ''}
 
     ${section('Month by month', table(cols, rows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],

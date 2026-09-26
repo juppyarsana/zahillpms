@@ -37,8 +37,9 @@ async function weekFigures(propertyId, from, to, sellable) {
     room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, total: r.total_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights,
+    comp_nights: r.comp_nights, comp_value: r.comp_value,
     occupancy: capacity ? Math.round((r.total_nights / capacity) * 100) : 0,
-    adr: r.total_nights ? r.room_revenue / r.total_nights : 0,
+    adr: r.paid_nights ? r.room_revenue / r.paid_nights : 0,   // complimentary nights left out
     revpar: capacity ? r.room_revenue / capacity : 0,
     by_source: r.by_source
       .map(s => ({ source: s.source, count: parseInt(s.count, 10), revenue: parseFloat(s.revenue) }))
@@ -157,6 +158,7 @@ function weeklyOwnerTelegram(b) {
   L.push(`💰 Revenue: <b>${e(fmtIDR(w.total))}</b>${arrowTxt(b.change.total)}`);
   L.push(`🛏 Occupancy: <b>${w.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${w.rooms_sold} room-nights`);
   L.push(`💵 ADR ${e(fmtIDR(w.adr))}${arrowTxt(b.change.adr)} · RevPAR ${e(fmtIDR(w.revpar))}${arrowTxt(b.change.revpar)}`);
+  if (w.comp_nights > 0 || w.comp_value > 0) L.push(`🎁 Complimentary: ${w.comp_nights} night${w.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(w.comp_value))}`);
   if (b.has_expenses) L.push(`🧾 Expenses ${e(fmtIDR(w.expenses))} · Net income <b>${e(fmtIDR(w.net_income))}</b>`);
   L.push('');
   L.push(`🔮 <b>Already booked</b>`);
@@ -227,6 +229,7 @@ function weeklyOwnerEmail(b) {
       ${tile('Booked · next 30 days', `${b.books.next30.occupancy}%`, sub(esc(fmtIDR(b.books.next30.revenue))))}
     </tr>
     ${CARD_TABLE_CLOSE}
+    ${w.comp_nights > 0 || w.comp_value > 0 ? `<div style="font-size:13px;color:#047857;margin:10px 0 0;">🎁 Complimentary: ${w.comp_nights} night${w.comp_nights === 1 ? '' : 's'} · value ${esc(fmtIDR(w.comp_value))} before tax (left out of ADR)</div>` : ''}
 
     ${section('Revenue', table([{ label: '' }, { label: 'Last week', right: true }, { label: 'Week before', right: true }], revRows, ''))}
     ${b.books.weak_nights.length ? section('⚠️ Weak nights ahead (under 30% booked)', `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#78350f;">${b.books.weak_nights.length > 7 ? `<b>${b.books.weak_nights.length} of the next 14 nights</b> are under 30% booked. The next ones:<br>` : ''}${b.books.weak_nights.slice(0, 7).map(n => `${esc(fmtDay(n.night, { weekday: 'short', day: 'numeric', month: 'short' }))} — ${n.occupancy}% (${n.rooms} of ${b.sellable})`).join('<br>')}<div style="font-size:12px;margin-top:6px;">Worth a promotion, a rate adjustment or a push on your channels.</div></div>`) : ''}

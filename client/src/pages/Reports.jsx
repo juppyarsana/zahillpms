@@ -139,7 +139,9 @@ export default function Reports() {
   const maxDaily = data ? Math.max(1, ...data.daily_revenue.map(d => Number(d.room_revenue))) : 1;
   const bySource = data ? [...data.by_source].sort((a, b) => Number(b.revenue) - Number(a.revenue)) : [];
   const sourceTotal = bySource.reduce((s, r) => s + Number(r.revenue), 0);
-  const adr = data && data.total_nights > 0 ? data.room_revenue / data.total_nights : 0;
+  // Complimentary nights (migration 072) count as occupied but not in ADR.
+  const paidNights = data ? (data.paid_nights ?? data.total_nights) : 0;
+  const adr = data && paidNights > 0 ? data.room_revenue / paidNights : 0;
   const hasDailyRevenue = data && data.daily_revenue.some(d => Number(d.room_revenue) > 0);
   const dayCount = data ? data.daily_revenue.length : 0;
   const xLabelStep = dayCount > 60 ? 14 : dayCount > 20 ? 5 : dayCount > 10 ? 3 : 1;
@@ -223,8 +225,10 @@ export default function Reports() {
             {[
               ['Bookings', data.bookings_count, 'checked-in / confirmed'],
               ['Room Nights', data.total_nights, singleDay ? 'occupied that night' : 'sold in this period'],
-              ['ADR', fmtIDR(adr), 'room revenue ÷ nights'],
-            ].map(([label, value, sub], i) => (
+              ['ADR', fmtIDR(adr), data.comp_nights > 0 ? 'room revenue ÷ paid nights' : 'room revenue ÷ nights'],
+              (data.comp_nights > 0 || data.comp_value > 0) &&
+                ['🎁 Complimentary', `${data.comp_nights} night${data.comp_nights === 1 ? '' : 's'}`, `value ${fmtIDR(data.comp_value)} before tax`],
+            ].filter(Boolean).map(([label, value, sub], i) => (
               <div
                 key={label}
                 style={{ flex: 1, padding: '16px 20px', borderLeft: i > 0 ? '1px solid #E5E7EB' : 'none' }}
@@ -312,7 +316,7 @@ export default function Reports() {
                     {hoverIdx !== null && (() => {
                       const d = data.daily_revenue[hoverIdx];
                       const v = Number(d.room_revenue);
-                      const nightsSold = Number(d.nights_sold) || 0;
+                      const nightsSold = Number(d.paid_nights_sold ?? d.nights_sold) || 0;
                       const count = data.daily_revenue.length;
                       const leftPct = ((hoverIdx + 0.5) / count) * 100;
                       const barTopPx = Math.max(2, (v / maxDaily) * 100) / 100 * 140;

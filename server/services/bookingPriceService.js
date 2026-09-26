@@ -48,23 +48,32 @@ function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomReve
 //   receivedWasTypo — required (true/false) when more has been received than
 //     the new price; undefined then → { error: RECEIVED_EXCEEDS_PRICE }.
 //   balanceNote — note on a new pending balance line, if one is needed.
-async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due' }) {
+//   split — { roomNet, mealNet }: set the NET room/meal amounts exactly
+//     instead of deriving them from newTotal (complimentary stays: room free,
+//     meals still paid). The discount becomes 0; newTotal is ignored.
+async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null }) {
   const reqBody = { received_was_typo: receivedWasTypo };
-  // Same derivation as POST / (booking creation).
-  let discountAmount = 0;
-  const dValue = parseFloat(before.discount_value || 0);
-  if (keepDiscount)                               discountAmount = Math.min(parseFloat(before.discount_amount || 0), newTotal);
-  else if (before.discount_type === 'fixed')      discountAmount = Math.min(dValue, newTotal);
-  else if (before.discount_type === 'percentage') discountAmount = Math.round(newTotal * dValue / 100);
-  const ratePlan = await ratePlanService.resolveForBooking(propertyId, before.rate_plan_id || null);
   const { F, tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
-  const { roomNet, mealNet } = splitRevenue({
-    grossNet: newTotal - discountAmount,
-    nights: Math.max(1, parseInt(before.nights, 10) || 1),
-    ratePlan,
-    numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
-    F,
-  });
+  let discountAmount = 0;
+  let roomNet, mealNet;
+  if (split) {
+    roomNet = round2(Math.max(0, split.roomNet));
+    mealNet = round2(Math.max(0, split.mealNet));
+  } else {
+    // Same derivation as POST / (booking creation).
+    const dValue = parseFloat(before.discount_value || 0);
+    if (keepDiscount)                               discountAmount = Math.min(parseFloat(before.discount_amount || 0), newTotal);
+    else if (before.discount_type === 'fixed')      discountAmount = Math.min(dValue, newTotal);
+    else if (before.discount_type === 'percentage') discountAmount = Math.round(newTotal * dValue / 100);
+    const ratePlan = await ratePlanService.resolveForBooking(propertyId, before.rate_plan_id || null);
+    ({ roomNet, mealNet } = splitRevenue({
+      grossNet: newTotal - discountAmount,
+      nights: Math.max(1, parseInt(before.nights, 10) || 1),
+      ratePlan,
+      numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
+      F,
+    }));
+  }
   const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
   const storedTotal = round2(payable + discountAmount);
 

@@ -47,6 +47,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: true,
   },
+  approve_complimentary: {
+    type: 'alert',
+    label: 'Approve complimentary stays',
+    when: 'When front desk asks',
+    description: 'Front desk asks to make a stay free and this person gets a one-time approval code to pass on if they agree. Personal chats only — codes are never sent to a group.',
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram'],
+    paid: false,
+  },
   daily_close: {
     type: 'scheduled',
     label: 'Daily Close',

@@ -870,14 +870,14 @@ export default function GroupDetail() {
               {folio.rooms.map(room => (
                 <div key={room.booking_id} style={{ marginBottom: 14 }}>
                   <div className="flex-between" style={{ fontWeight: 600, marginBottom: 4 }}>
-                    <Link to={`/reservations/${room.booking_id}`}>{room.unit_name}</Link>
+                    <Link to={`/reservations/${room.booking_id}`}>{room.unit_name}{room.complimentary_scope ? ' 🎁' : ''}</Link>
                     <span>{fmtIDR(room.total)}</span>
                   </div>
                   {room.charges.length === 0 ? (
                     <div className="text-muted" style={{ fontSize: 12 }}>No charges posted</div>
                   ) : room.charges.map(c => (
                     <div key={c.id} className="flex-between" style={{ fontSize: 12, padding: '3px 0', color: 'var(--text-muted)' }}>
-                      <span>{c.description}</span><span>{fmtIDR(c.amount)}</span>
+                      <span>{c.description}</span><span>{c.complimentary ? 'Free' : fmtIDR(c.amount)}</span>
                     </div>
                   ))}
                 </div>

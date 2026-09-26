@@ -197,7 +197,7 @@ async function loadRegCardData(where, params) {
     `SELECT
        b.id AS booking_id,
        g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
-       b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount,
+       b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount, b.complimentary_scope,
        u.name AS unit_name, u.type AS room_type_name,
        bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
        lt.name AS membership,

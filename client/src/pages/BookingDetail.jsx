@@ -10,6 +10,7 @@ import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
+import ComplimentaryModal from '../components/ComplimentaryModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -32,6 +33,7 @@ const EDIT_BED_PREFS = [
 
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+const COMP_LABEL = { room: 'Room free', room_meals: 'Room + meals free', all: 'Everything free' };
 // YYYY-MM-DD date math on local calendar dates (not UTC).
 function addDaysYmd(ymd, n) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 function nightsBetween(a, b) { const [y1, m1, d1] = a.split('-').map(Number); const [y2, m2, d2] = b.split('-').map(Number); return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000); }
@@ -43,7 +45,7 @@ export default function BookingDetail() {
   const nav = useNavigate();
   const location = useLocation();
   const { paymentMethods, sources, branding } = useSettings();
-  const { hasModule, user } = useAuth();
+  const { hasModule, user, can } = useAuth();
   const isOwner = user?.role === 'owner';
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
@@ -98,6 +100,10 @@ export default function BookingDetail() {
   const [messageBody, setMessageBody] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [showRegCard, setShowRegCard] = useState(false);
+  // Complimentary stay: 'grant' | 'remove' | null. compInitial = scope + reason
+  // ticked on New Booking (passed in the navigation state).
+  const [compMode, setCompMode] = useState(null);
+  const [compInitial, setCompInitial] = useState(null);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
@@ -122,6 +128,15 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { load(); }, [id]);
+
+  // Arriving from New Booking with "Complimentary stay" ticked.
+  useEffect(() => {
+    const init = location.state?.complimentary;
+    if (!booking || !init) return;
+    setCompInitial(init);
+    setCompMode('grant');
+    nav(`/reservations/${id}${location.hash}`, { replace: true, state: null });
+  }, [booking?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened via Balance Due's "Record payment →": Folio tab + the form open.
   useEffect(() => {
@@ -607,8 +622,15 @@ export default function BookingDetail() {
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Guest', icon: '👤', onClick: openChangeGuest },
     isOwner && !['cancelled', 'no_show'].includes(booking.status) && !booking.group &&
-      !['invoiced', 'paid'].includes(booking.folio_status) &&
+      !['invoiced', 'paid'].includes(booking.folio_status) && !booking.complimentary_scope &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
+      !booking.complimentary_scope &&
+      { label: booking.complimentary_request_pending ? 'Complimentary — waiting for approval' : 'Make Complimentary', icon: '🎁',
+        onClick: () => { setCompInitial(null); setCompMode('grant'); } },
+    booking.complimentary_scope && can('grant_complimentary') &&
+      ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Remove Complimentary', icon: '🎁', onClick: () => { setCompInitial(null); setCompMode('remove'); } },
   ].filter(Boolean);
   const dangerItems = [
     ['pending', 'deposit_paid', 'confirmed'].includes(booking.status) &&
@@ -748,6 +770,33 @@ export default function BookingDetail() {
             <span className="text-muted">Status</span>
             <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
           </div>
+          {booking.complimentary_scope && (
+            <div className="flex-between" style={{ marginTop: 6, gap: 8, alignItems: 'flex-start' }}>
+              <span className="text-muted">Complimentary</span>
+              <span style={{ textAlign: 'right' }}>
+                <span className="badge badge-green">🎁 {COMP_LABEL[booking.complimentary_scope]}</span>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {booking.complimentary_reason}
+                  {booking.complimentary_approved_by && booking.complimentary_approved_by !== booking.complimentary_by_name
+                    ? ` · approved by ${booking.complimentary_approved_by} (code)`
+                    : booking.complimentary_by_name ? ` · by ${booking.complimentary_by_name}` : ''}
+                </div>
+                {parseFloat(booking.complimentary_night_value) > 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Value {fmtIDR(parseFloat(booking.complimentary_night_value) * booking.nights)} before tax
+                  </div>
+                )}
+              </span>
+            </div>
+          )}
+          {!booking.complimentary_scope && booking.complimentary_request_pending && (
+            <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
+              <span className="text-muted">Complimentary</span>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setCompInitial(null); setCompMode('grant'); }}>
+                ⏳ Waiting for approval
+              </button>
+            </div>
+          )}
           {AGENT_BILLING[booking.folio_status] && (
             <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
               <span className="text-muted">Agent billing</span>
@@ -991,7 +1040,9 @@ export default function BookingDetail() {
                             </div>
                           </div>
                           <div className="flex gap-2 items-center">
-                            <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>
+                            {c.complimentary
+                              ? <span title={`${fmtIDR(c.amount)} — complimentary stay, not charged`}><s className="text-muted">{fmtIDR(c.amount)}</s> <span className="badge badge-green">Free</span></span>
+                              : <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>}
                             <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c.id)}>🗑️</button>
                           </div>
                         </div>
@@ -1781,6 +1832,11 @@ export default function BookingDetail() {
             </div>
           </div>
         </div>
+      )}
+      {compMode && (
+        <ComplimentaryModal booking={{ id: booking.id, guest_name: booking.guest_name }} mode={compMode} initial={compInitial}
+          onClose={() => { setCompMode(null); load(); }}
+          onDone={() => { setCompMode(null); load(); if (tab === 'folio') loadFolio(); }} />
       )}
       {showRegCard && (
         <RegistrationCardModal bookingId={id} onClose={() => setShowRegCard(false)} />
