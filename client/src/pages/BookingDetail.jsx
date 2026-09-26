@@ -621,7 +621,7 @@ export default function BookingDetail() {
       { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Guest', icon: '👤', onClick: openChangeGuest },
-    isOwner && !['cancelled', 'no_show'].includes(booking.status) && !booking.group &&
+    isOwner && !['cancelled', 'no_show'].includes(booking.status) &&
       !['invoiced', 'paid'].includes(booking.folio_status) && !booking.complimentary_scope &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
@@ -1369,7 +1369,10 @@ export default function BookingDetail() {
         const oldNet = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
         const newGross = parseFloat(priceForm.total_amount);
         const dValue = parseFloat(booking.discount_value || 0);
+        // A group room with a fixed group discount keeps its prorated share.
+        const keepShare = !!booking.group && booking.discount_type !== 'percentage';
         const newDiscount = !Number.isFinite(newGross) ? 0
+          : keepShare ? Math.min(parseFloat(booking.discount_amount || 0), newGross)
           : booking.discount_type === 'fixed' ? Math.min(dValue, newGross)
           : booking.discount_type === 'percentage' ? Math.round(newGross * dValue / 100)
           : 0;
@@ -1415,12 +1418,17 @@ export default function BookingDetail() {
                       <strong>{fmtIDR(oldNet)}</strong>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">New total amount (IDR)</label>
+                      <label className="form-label">New total for the whole stay ({booking.nights} night{booking.nights === 1 ? '' : 's'}) — IDR</label>
                       <input className="form-input" type="number" min="0" value={priceForm.total_amount} autoFocus
                         onChange={e => setPriceForm(f => ({ ...f, total_amount: e.target.value }))} />
+                      {newGross > 0 && booking.nights > 0 && (
+                        <div style={{ fontSize: 12, marginTop: 4 }}>
+                          = <strong>{fmtIDR(newGross / booking.nights)} per night</strong> × {booking.nights} night{booking.nights === 1 ? '' : 's'}
+                        </div>
+                      )}
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                         Same field as on New Booking — the whole stay, tax included
-                        {booking.discount_type ? `, before the ${booking.discount_type === 'percentage' ? `${booking.discount_value}%` : 'fixed'} discount (it's applied again)` : ''}.
+                        {booking.discount_type ? `, before the ${booking.discount_type === 'percentage' ? `${booking.discount_value}%` : 'fixed'} discount (${booking.group && booking.discount_type !== 'percentage' ? "this room's share is kept" : "it's applied again"})` : ''}.
                       </div>
                     </div>
                     {newNet !== null && booking.discount_type && (

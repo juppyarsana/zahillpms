@@ -1,5 +1,5 @@
 const db = require('../db');
-const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
+const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card, subLine } = require('./emailCards');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 
@@ -80,15 +80,17 @@ async function buildTomorrowPreview(propertyId, { date } = {}) {
 function tomorrowPreviewTelegram(b) {
   const e = telegram.escapeHtml;
   const L = [];
+  const day = fmtDay(b.date, { weekday: 'short', day: 'numeric', month: 'short' });
   L.push(`🌆 <b>${e(b.property_name)}</b> · ${e(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'short' }))}`);
   L.push('<i>Tomorrow Preview</i>');
   L.push('');
   L.push(`🛬 Arriving: <b>${rooms(b.arrivals.rooms)}</b> · ${b.arrivals.pax} pax${b.group_arrivals ? ` · 👥 ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`);
   L.push(`🛫 Departing: <b>${rooms(b.departures.rooms)}</b> · ${b.departures.pax} pax`);
   L.push(`🛏 Staying over: <b>${rooms(b.in_house.rooms)}</b> · ${b.in_house.pax} pax`);
-  L.push(`📊 Tomorrow night: <b>${b.occupancy.rooms}/${b.occupancy.sellable}</b> rooms (${b.occupancy.pct}%)`);
-  if (b.breakfast_pax || b.dinner_pax) L.push(`🍳 Breakfast: <b>${b.breakfast_pax}</b> pax${b.dinner_pax ? ` · 🍽 Dinner: <b>${b.dinner_pax}</b> pax` : ''}`);
-  if (b.to_collect.amount > 0) L.push(`💰 To collect: <b>${e(fmtIDR(b.to_collect.amount))}</b> from ${rooms(b.to_collect.rows.length)} leaving`);
+  L.push(`📊 ${e(day)} night: <b>${b.occupancy.rooms}/${b.occupancy.sellable}</b> rooms (${b.occupancy.pct}%) = ${b.arrivals.rooms} arriving + ${b.in_house.rooms} staying over`);
+  L.push(`🍳 Breakfast ${e(day)} morning: <b>${b.breakfast_pax}</b> pax <i>(guests sleeping here tonight)</i>`);
+  if (b.dinner_pax) L.push(`🍽 Dinner ${e(day)} night: <b>${b.dinner_pax}</b> pax`);
+  if (b.to_collect.amount > 0) L.push(`💰 To collect: <b>${e(fmtIDR(b.to_collect.amount))}</b> from ${b.to_collect.rows.length} of ${rooms(b.departures.rooms)} checking out ${e(day)} <i>(staying guests not included)</i>`);
 
   if (b.prepare.length) {
     L.push('');
@@ -111,7 +113,13 @@ function tomorrowPreviewTelegram(b) {
 
 function tomorrowPreviewEmail(b) {
   const esc = telegram.escapeHtml;
-  const tile = (label, value, sub) => card(label, value, sub, { height: CARD_HEIGHT.one });
+  // Every box says who it counts — "arriving 14 / occupancy 19" only adds up
+  // once staying-over rooms are shown too. Lines are kept short (≤ ~18
+  // characters) so they fit a box on a 320px-wide phone; the day is in the
+  // header line above the boxes.
+  const day = fmtDay(b.date, { weekday: 'short', day: 'numeric', month: 'short' });
+  const tile = (label, value, lines) => card(label, value,
+    lines.filter(Boolean).map((l, i) => subLine(l, i ? '#9ca3af' : undefined)).join(''), { height: CARD_HEIGHT.three });
   const section = (title, inner) => `
     <div style="margin-top:22px;">
       <div style="font-size:13px;font-weight:700;color:#111827;margin-bottom:8px;">${title}</div>${inner}
@@ -131,20 +139,25 @@ function tomorrowPreviewEmail(b) {
   <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Tomorrow Preview</div>
     <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${esc(b.property_name)}</div>
-    <div style="font-size:14px;color:#6b7280;margin-bottom:16px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
+    <div style="font-size:14px;color:#6b7280;margin-bottom:4px;">${esc(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}</div>
+    <div style="font-size:12px;color:#9ca3af;margin-bottom:16px;">Every box is for ${esc(day)} — breakfast that morning, occupancy and dinner that night.</div>
 
     ${CARD_TABLE_OPEN}
     <tr>
-      ${tile('Arriving', rooms(b.arrivals.rooms), `${b.arrivals.pax} pax${b.group_arrivals ? ` · ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`)}
-      ${tile('Departing', rooms(b.departures.rooms), `${b.departures.pax} pax`)}
+      ${tile('Arriving', rooms(b.arrivals.rooms), [`${b.arrivals.pax} pax`, b.group_arrivals ? `${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : '', 'check-in'])}
+      ${tile('Departing', rooms(b.departures.rooms), [`${b.departures.pax} pax`, 'check-out'])}
     </tr>
     <tr>
-      ${tile('Occupancy', `${b.occupancy.pct}%`, `${b.occupancy.rooms} of ${b.occupancy.sellable} rooms`)}
-      ${tile('Breakfast', `${b.breakfast_pax} pax`, 'that morning')}
+      ${tile('Staying over', rooms(b.in_house.rooms), [`${b.in_house.pax} pax`, 'here, not leaving'])}
+      ${tile('Occupancy', `${b.occupancy.pct}%`, [`${b.occupancy.rooms} of ${b.occupancy.sellable} rooms`, `${b.arrivals.rooms} arriving`, `+ ${b.in_house.rooms} staying over`])}
     </tr>
     <tr>
-      ${tile('Dinner', `${b.dinner_pax} pax`, 'that night')}
-      ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), `from ${rooms(b.to_collect.rows.length)} leaving`)}
+      ${tile('Breakfast', `${b.breakfast_pax} pax`, ['morning', "tonight's guests"])}
+      ${tile('Dinner', `${b.dinner_pax} pax`, ['night', 'arriving + staying'])}
+    </tr>
+    <tr>
+      ${tile('To collect', esc(fmtIDR(b.to_collect.amount)), [`${b.to_collect.rows.length} of ${rooms(b.departures.rooms)}`, 'leaving', 'not staying guests'])}
+      ${tile('Rooms to ready', rooms(b.prepare.length), b.prepare.length ? ['for arrivals', 'see list below'] : ['all clean & free'])}
     </tr>
     ${CARD_TABLE_CLOSE}
 
@@ -158,7 +171,7 @@ function tomorrowPreviewEmail(b) {
       ]), 'No arrivals.'))}
     ${section('Departing', table([{ label: 'Room' }, { label: 'Guest' }],
       b.departure_rows.map(d => [esc(d.unit_name), esc(d.guest_name)]), 'No departures.'))}
-    ${section('To collect from guests leaving', table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
+    ${section(`To collect from guests checking out ${esc(day)}`, table([{ label: 'Room' }, { label: 'Guest' }, { label: 'Balance', right: true }],
       b.to_collect.rows.map(r => [esc(r.unit_name), esc(r.guest_name), esc(fmtIDR(r.balance_due))]), 'All settled — nothing to collect.'))}
     <div style="margin-top:28px;font-size:11px;color:#9ca3af;">Sent by Smart Reports.</div>
   </div>`;

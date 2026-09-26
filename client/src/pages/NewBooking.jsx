@@ -96,6 +96,23 @@ function nightsBetween(a, b) {
   return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
 }
 
+const idr = n => `Rp ${Math.round(Number(n) || 0).toLocaleString('id-ID')}`;
+
+// A typed room total far from the normal price for the stay is usually a
+// nightly price typed into the whole-stay field (or an extra zero).
+function priceWarning(total, normal, nights) {
+  const t = parseFloat(total);
+  if (!t || !normal) return null;
+  const ratio = t / normal;
+  if (ratio < 0.6) {
+    return nights > 1 && Math.abs(t * nights - normal) / normal < 0.4
+      ? `Much lower than the normal price for ${nights} nights (${idr(normal)}). Did you type one night's price? This field is the whole stay.`
+      : `Much lower than the normal price for ${nights} night${nights > 1 ? 's' : ''} (${idr(normal)}).`;
+  }
+  if (ratio > 1.5) return `Much higher than the normal price for ${nights} night${nights > 1 ? 's' : ''} (${idr(normal)}). Check for an extra zero.`;
+  return null;
+}
+
 const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '' };
 
 const BED_PREFS = [
@@ -148,6 +165,10 @@ export default function NewBooking() {
   const [unitAvail, setUnitAvail] = useState({});
 
   const isGroup = rooms.length > 1;
+  // Review step: "Create Booking" first shows a summary to confirm.
+  const [review, setReview] = useState(false);
+  const stayNights = form.check_in_date && form.check_out_date && form.check_out_date > form.check_in_date
+    ? nightsBetween(form.check_in_date, form.check_out_date) : 0;
 
   function onCheckIn(v) {
     const n = parseInt(nights, 10) || 1;
@@ -249,8 +270,19 @@ export default function NewBooking() {
     return () => clearTimeout(t);
   }, [form.source, netAmt, sources]);
 
-  async function handleSubmit(e) {
+  // Form submit only checks the form and opens the review; createBooking()
+  // (the review's Confirm) actually saves.
+  function handleSubmit(e) {
     e.preventDefault();
+    setError('');
+    if (mode === 'new' ? !newGuest.name.trim() : !form.guest_id) { setError('Select or create a guest'); return; }
+    if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); return; }
+    if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); return; }
+    if (comp.on && !isGroup && !comp.reason.trim()) { setError('Give a reason for the complimentary stay'); return; }
+    setReview(true);
+  }
+
+  async function createBooking() {
     setError('');
     setLoading(true);
     try {
@@ -258,13 +290,12 @@ export default function NewBooking() {
       if (mode === 'new') {
         const r = await api.post('/api/guests', newGuest);
         guestId = r.data.id;
+        // If the booking itself fails, a retry reuses this guest (no duplicate).
+        setForm(f => ({ ...f, guest_id: guestId }));
+        setGuestSearch(newGuest.name);
+        setMode('search');
       }
-      if (!guestId) { setError('Select or create a guest'); setLoading(false); return; }
-      if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); setLoading(false); return; }
-      if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); setLoading(false); return; }
-
       const compOn = comp.on && !isGroup;
-      if (compOn && !comp.reason.trim()) { setError('Give a reason for the complimentary stay'); setLoading(false); return; }
       const deposit_amount = compOn ? 0 : Math.round(netAmt * (form.deposit_pct / 100));
 
       if (!isGroup) {
@@ -305,6 +336,7 @@ export default function NewBooking() {
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create booking');
+      setReview(false);
     } finally {
       setLoading(false);
     }
@@ -486,9 +518,20 @@ export default function NewBooking() {
               )}
 
               <div className="form-group">
-                <label className="form-label">Total Amount (IDR) — what the guest pays, incl. tax &amp; service</label>
+                <label className="form-label">
+                  Total for the whole stay{stayNights ? ` (${stayNights} night${stayNights > 1 ? 's' : ''})` : ''} — IDR, incl. tax &amp; service
+                </label>
                 <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
                   onChange={e => setRoom(i, 'total_amount', e.target.value)} />
+                {parseFloat(room.total_amount) > 0 && stayNights > 0 && (
+                  <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)' }}>
+                    = <strong style={{ color: 'var(--text)' }}>{idr(room.total_amount / stayNights)} per night</strong> × {stayNights} night{stayNights > 1 ? 's' : ''}
+                  </div>
+                )}
+                {(() => {
+                  const w = priceWarning(room.total_amount, suggestedTotal, stayNights);
+                  return w && <div className="alert alert-warn" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}><div>⚠️ {w}</div></div>;
+                })()}
                 {priceSuggestion && suggestedTotal > 0 && (
                   <div style={{ marginTop: 8, fontSize: 12, background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
                     <div className="flex-between" style={{ marginBottom: 4 }}>
@@ -670,10 +713,99 @@ export default function NewBooking() {
         <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
           <Link to="/reservations" className="btn btn-secondary">Cancel</Link>
           <button type="submit" className="btn btn-primary" disabled={loading || anyUnavailable}>
-            {loading ? 'Creating…' : isGroup ? 'Create Group Booking' : 'Create Booking'}
+            {isGroup ? 'Review Group Booking' : 'Review Booking'}
           </button>
         </div>
       </form>
+
+      {review && (() => {
+        const guestName = mode === 'new' ? newGuest.name : guestSearch;
+        const sourceLabel = sources.find(s => s.id === form.source)?.label || form.source;
+        const compOn = comp.on && !isGroup;
+        const deposit = compOn ? 0 : Math.round(netAmt * form.deposit_pct / 100);
+        const lines = rooms.map((r, i) => {
+          const normal = priceSuggestions[i]?.grand_total || 0;
+          return {
+            r, normal,
+            unit: units.find(u => u.id === r.unit_id),
+            plan: ratePlans.find(p => p.id === r.rate_plan_id),
+            total: parseFloat(r.total_amount) || 0,
+            warning: priceWarning(r.total_amount, normal, stayNights),
+          };
+        });
+        const warned = lines.filter(l => l.warning).length;
+        const td = { padding: '6px 4px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
+        return (
+          <div className="modal-backdrop">
+            <div className="modal" style={{ maxWidth: 640 }}>
+              <div className="modal-header">
+                <div className="modal-title">Check before creating</div>
+                <button type="button" className="btn btn-icon" onClick={() => setReview(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                {warned > 0 && (
+                  <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                    <div>⚠️ <strong>{warned === 1 ? '1 room price looks' : `${warned} room prices look`} wrong</strong> — see the red line{warned > 1 ? 's' : ''} below. Each price is the total for the whole stay, not per night.</div>
+                  </div>
+                )}
+                <div style={{ fontSize: 14, marginBottom: 12, lineHeight: 1.6 }}>
+                  <div><span className="text-muted">Guest:</span> <strong>{guestName || '—'}</strong>{mode === 'new' && <span className="text-muted"> (new guest)</span>}</div>
+                  <div><span className="text-muted">Stay:</span> <strong>{form.check_in_date} → {form.check_out_date}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}</div>
+                  <div><span className="text-muted">Source:</span> {sourceLabel}</div>
+                </div>
+                <div className="table-wrap">
+                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                        <th style={td}>Room</th>
+                        <th style={{ ...td, textAlign: 'right' }}>Per night</th>
+                        <th style={{ ...td, textAlign: 'right' }}>Total ({stayNights} night{stayNights > 1 ? 's' : ''})</th>
+                        <th style={{ ...td, textAlign: 'right' }}>Normal price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((l, i) => (
+                        <tr key={i} style={l.warning ? { background: 'var(--danger-bg, #FEF2F2)' } : undefined}>
+                          <td style={td}>
+                            <strong>{l.unit?.name || '—'}</strong>{l.unit?.type ? ` · ${l.unit.type}` : ''}
+                            <div className="text-muted" style={{ fontSize: 11 }}>
+                              {l.r.num_guests} guest{l.r.num_guests > 1 ? 's' : ''}{l.plan ? ` · ${l.plan.code}` : ''}
+                            </div>
+                            {l.warning && <div style={{ fontSize: 11, color: 'var(--danger, #B91C1C)', marginTop: 2 }}>⚠️ {l.warning}</div>}
+                          </td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{stayNights ? idr(l.total / stayNights) : '—'}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{idr(l.total)}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">{l.normal ? idr(l.normal) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 14, marginTop: 12, lineHeight: 1.7 }}>
+                  {discountAmt > 0 && (
+                    <div className="flex-between"><span className="text-muted">Discount{form.discount_type === 'percentage' ? ` (${dValue}%)` : ''}</span><span>− {idr(discountAmt)}</span></div>
+                  )}
+                  <div className="flex-between" style={{ fontWeight: 700 }}><span>{isGroup ? `Total for ${rooms.length} rooms` : 'Total'}</span><span>{idr(netAmt)}</span></div>
+                  {compOn ? (
+                    <div className="text-muted" style={{ fontSize: 12 }}>🎁 Will be made complimentary ({comp.scope === 'room' ? 'room only' : comp.scope === 'room_meals' ? 'room + meals' : 'everything'}) — the price above is recorded as the value given.</div>
+                  ) : (
+                    <div className="flex-between text-muted" style={{ fontSize: 13 }}>
+                      <span>Deposit {form.deposit_pct}%</span><span>{idr(deposit)} · balance {idr(netAmt - deposit)}</span>
+                    </div>
+                  )}
+                </div>
+                {error && <div className="alert alert-error" style={{ marginTop: 12 }}>{error}</div>}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setReview(false)} disabled={loading}>← Back to edit</button>
+                <button type="button" className="btn btn-primary" onClick={createBooking} disabled={loading}>
+                  {loading ? 'Creating…' : warned ? 'Create anyway' : isGroup ? 'Confirm & create group' : 'Confirm & create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

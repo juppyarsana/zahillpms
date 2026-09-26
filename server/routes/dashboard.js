@@ -28,14 +28,9 @@ router.get('/summary', auth, async (req, res) => {
           arr.id as arriving_booking_id, arr.source as arriving_source,
           arr.num_guests as arriving_num_guests, arr.check_out_date as arriving_check_out,
           ag.name as arriving_guest_name, ag.nationality as arriving_nationality,
-          (SELECT nb.check_in_date FROM bookings nb
-           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','deposit_paid','pending')
-             AND nb.check_in_date > CURRENT_DATE
-           ORDER BY nb.check_in_date LIMIT 1) as next_booking_date,
-          (SELECT nb.check_in_date - CURRENT_DATE FROM bookings nb
-           WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','deposit_paid','pending')
-             AND nb.check_in_date > CURRENT_DATE
-           ORDER BY nb.check_in_date LIMIT 1) as gap_nights,
+          nb.check_in_date as next_booking_date,
+          nb.check_in_date - CURRENT_DATE as gap_nights,
+          nb.id as next_booking_id, nb.guest_name as next_guest_name,
           rdd.battery_level as tablet_battery_level,
           rdd.battery_charging as tablet_battery_charging,
           rdd.power_source as tablet_power_source,
@@ -51,6 +46,13 @@ router.get('/summary', auth, async (req, res) => {
         LEFT JOIN guests g ON b.guest_id = g.id
         LEFT JOIN bookings arr ON arr.unit_id = u.id AND arr.property_id = u.property_id AND arr.status IN ('confirmed','deposit_paid','pending') AND arr.check_in_date = CURRENT_DATE
         LEFT JOIN guests ag ON arr.guest_id = ag.id
+        LEFT JOIN LATERAL (
+          SELECT nb.id, nb.check_in_date, ng.name AS guest_name FROM bookings nb
+          JOIN guests ng ON ng.id = nb.guest_id
+          WHERE nb.unit_id = u.id AND nb.property_id = u.property_id AND nb.status IN ('confirmed','deposit_paid','pending')
+            AND nb.check_in_date > CURRENT_DATE
+          ORDER BY nb.check_in_date LIMIT 1
+        ) nb ON true
         LEFT JOIN room_display_devices rdd ON rdd.controller_id = u.controller_id AND rdd.property_id = u.property_id
         LEFT JOIN users sub ON sub.id = u.status_updated_by
         WHERE u.property_id = $1

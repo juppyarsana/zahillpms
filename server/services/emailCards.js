@@ -16,8 +16,8 @@ const CARD_TABLE_OPEN = '<table role="presentation" width="100%" cellpadding="0"
   + 'style="width:100%;width:calc(100% + 16px);border-collapse:separate;border-spacing:8px;table-layout:fixed;margin:0 -8px;">';
 const CARD_TABLE_CLOSE = '</table>';
 
-// Card heights: just the number, number + 1 line under it, or + 2 lines.
-const CARD_HEIGHT = { none: 52, one: 68, two: 86 };
+// Card heights: just the number, number + 1, 2 or 3 lines under it.
+const CARD_HEIGHT = { none: 52, one: 68, two: 86, three: 104 };
 
 const subLine = (text, color = '#6b7280') =>
   `<div style="font-size:12px;line-height:17px;color:${color};margin-top:2px;">${text}</div>`;
@@ -41,6 +41,9 @@ const MOBILE_STYLE = `
     .hk-card { padding: 12px 12px !important; }
     .hk-val { font-size: 17px !important; line-height: 22px !important; }
     .hk-wrap { padding: 18px 12px !important; }
+  }
+  @media only screen and (max-width: 340px) {
+    .hk-val { font-size: 15px !important; line-height: 20px !important; }
   }`;
 
 // Wraps an email body in a full HTML document with the mobile styles.

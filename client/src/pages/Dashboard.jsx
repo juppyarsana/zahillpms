@@ -41,8 +41,108 @@ function ChBadge({ source }) {
 }
 
 /* ─── unit status card ─────────────────────────────────── */
+function fmtDay(ymd) {
+  return ymd ? new Date(String(ymd).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+}
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const BED_LABEL = { double: 'Double bed', twin: 'Twin beds', twin_or_double: 'Twin or double', other: 'Other bed setup' };
+
+// The stay behind a room tile (in house, or arriving today): loaded when the
+// room popup opens, so the Dashboard can be FO's main screen — dates, plan,
+// balance, requests, and the next step (open booking, check in/out, payment).
+function RoomStay({ bookingId, kind }) {
+  const { hasModule, can } = useAuth();
+  const [b, setB] = useState(null);
+  const [est, setEst] = useState(null);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setB(null); setEst(null); setErr('');
+    api.get(`/api/bookings/${bookingId}`)
+      .then(r => { if (live) setB(r.data); })
+      .catch(e => { if (live) setErr(e.response?.data?.error || 'Could not load the booking'); });
+    if (hasModule('financial')) {
+      api.get(`/api/folio/${bookingId}/estimate`).then(r => { if (live) setEst(r.data); }).catch(() => {});
+    }
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingId]);
+
+  if (err) return <div style={{ fontSize: 12, color: '#B91C1C', marginTop: 8 }}>{err}</div>;
+  if (!b) return <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>Loading stay…</div>;
+
+  const nights = Math.round((new Date(String(b.check_out_date).slice(0, 10)) - new Date(String(b.check_in_date).slice(0, 10))) / 86400000);
+  const pendingLines = (b.payments || []).filter(p => p.status === 'pending' && ['deposit', 'balance'].includes(p.type))
+    .reduce((s, p) => s + parseFloat(p.amount), 0);
+  const balance = est ? parseFloat(est.balance_due) : pendingLines;
+  const agentBilled = !!b.folio_status;
+  const canOpen = can('reservations');
+  const canCheckin = can('checkin_full') || can('quick_checkin');
+  const row = { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '3px 0' };
+
+  return (
+    <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: 'white', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 14, fontWeight: 700 }}>
+        {b.guest_name}{b.nationality ? <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {b.nationality}</span> : null}
+      </div>
+      {b.group && (
+        <Link to={`/reservations/group/${b.group.id}`} style={{ fontSize: 11, fontWeight: 600 }}>👥 Group booking · {b.group.room_count} rooms →</Link>
+      )}
+      <div style={{ marginTop: 6 }}>
+        <div style={row}><span className="text-muted">Stay</span><span>{fmtDay(b.check_in_date)} → {fmtDay(b.check_out_date)} · {nights} night{nights !== 1 ? 's' : ''}</span></div>
+        <div style={row}><span className="text-muted">Guests</span><span>{b.num_guests} pax{b.bed_preference ? ` · ${BED_LABEL[b.bed_preference] || b.bed_preference}` : ''}</span></div>
+        {b.rate_plan_code && <div style={row}><span className="text-muted">Rate plan</span><span>{b.rate_plan_code} — {b.rate_plan_name}</span></div>}
+        {b.complimentary_scope ? (
+          <div style={row}><span className="text-muted">Price</span><span>🎁 Complimentary</span></div>
+        ) : (
+          <div style={row}>
+            <span className="text-muted">{est ? 'Balance (whole stay)' : 'Unpaid'}</span>
+            {agentBilled
+              ? <span>Billed to agent</span>
+              : balance >= 1
+                ? <strong style={{ color: '#B91C1C' }}>{fmtIDR(balance)}</strong>
+                : <span style={{ color: '#15803D', fontWeight: 600 }}>✓ Paid</span>}
+          </div>
+        )}
+      </div>
+      {b.special_requests && (
+        <div style={{ marginTop: 6, fontSize: 12, padding: '6px 8px', borderRadius: 6, background: '#FEF3C7', color: '#92400E' }}>
+          📝 {b.special_requests}
+        </div>
+      )}
+      {b.internal_notes && (
+        <div style={{ marginTop: 6, fontSize: 12, padding: '6px 8px', borderRadius: 6, background: '#F3F4F6', color: '#374151' }}>
+          🔒 {b.internal_notes}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        {canOpen && (
+          <Link to={`/reservations/${b.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>
+            Open reservation →
+          </Link>
+        )}
+        {canCheckin && kind === 'arriving' && (
+          <Link to="/checkin" className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>✅ Check in</Link>
+        )}
+        {canCheckin && kind === 'in_house' && (
+          <Link to="/checkin" className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>🧳 Check out</Link>
+        )}
+        {canOpen && !agentBilled && balance >= 1 && hasModule('financial') && (
+          <Link to={`/reservations/${b.id}#record-payment`} className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>
+            💳 Record payment
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function UnitCard({ unit, flags, health, onChanged }) {
-  const { hasModule } = useAuth();
+  const { hasModule, can } = useAuth();
   const { callRoom } = useCall();
   const [calling, setCalling] = useState(false);
   const [callError, setCallError] = useState('');
@@ -168,7 +268,7 @@ function UnitCard({ unit, flags, health, onChanged }) {
 
       {/* header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <strong style={{ fontSize: 13 }}>🏕 {unit.name}</strong>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: ".04em" }}>Status</span>
         {isOccupied && <ChBadge source={unit.source} />}
         {!isOccupied && isArriving && <ChBadge source={unit.arriving_source} />}
         {!isOccupied && !isArriving && isDirty && (
@@ -248,35 +348,51 @@ function UnitCard({ unit, flags, health, onChanged }) {
       {isOccupied && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: isDeparting ? '#7E22CE' : '#B91C1C' }}>
-            {isDeparting
+            {unit.nights_left < 0
+              ? `⏰ Overdue — was due out ${fmtDay(unit.check_out_date)}`
+              : isDeparting
               ? '🧳 Departing today'
               : `● Occupied${unit.nights_left > 0 ? ` · ${unit.nights_left} night${unit.nights_left !== 1 ? 's' : ''} left` : ' · last night'}`}
           </div>
-          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
-            {unit.guest_name}{unit.nationality ? ` · ${unit.nationality}` : ''}{unit.num_guests ? ` · ${unit.num_guests} pax` : ''}
-          </div>
+          <RoomStay bookingId={unit.booking_id} kind="in_house" />
+          {isArriving && (
+            <div style={{ fontSize: 11, color: '#1D4ED8', marginTop: 8 }}>
+              🔄 Then arriving today: <strong>{unit.arriving_guest_name}</strong>
+              {can('reservations') && <> · <Link to={`/reservations/${unit.arriving_booking_id}`}>open →</Link></>}
+            </div>
+          )}
         </>
       )}
 
       {!isOccupied && isArriving && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8' }}>🔄 Arriving today</div>
-          <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
-            {unit.arriving_guest_name}{unit.arriving_nationality ? ` · ${unit.arriving_nationality}` : ''}{unit.arriving_num_guests ? ` · ${unit.arriving_num_guests} pax` : ''}
-          </div>
+          <RoomStay bookingId={unit.arriving_booking_id} kind="arriving" />
         </>
       )}
 
       {!isOccupied && !isArriving && !isDirty && unit.status === 'available' && (
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#15803D' }}>
-            ✓ Empty &amp; ready{unit.next_booking_date
+            ✓ Empty &amp; ready{unit.next_booking_date && !unit.next_booking_id
               ? ` · Next booking ${new Date(unit.next_booking_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
               : ''}
           </div>
           <div style={{ fontSize: 11, color: '#6B7280', marginTop: 4 }}>
             {unit.gap_nights ? `${unit.gap_nights}-night gap · Open for last-minute booking` : 'No upcoming bookings'}
           </div>
+          {unit.next_booking_id && (
+            <div style={{ fontSize: 11, marginTop: 4 }}>
+              Next: <strong>{unit.next_guest_name}</strong> · {fmtDay(unit.next_booking_date)}
+              {can('reservations') && <> · <Link to={`/reservations/${unit.next_booking_id}`}>open →</Link></>}
+            </div>
+          )}
+          {can('reservations') && hasModule('reservations') && (
+            <Link to={`/reservations/new?unit=${unit.id}&date=${todayYmd()}`} className="btn btn-primary btn-sm"
+              style={{ marginTop: 8, fontSize: 12, width: '100%', justifyContent: 'center' }}>
+              + New booking from today
+            </Link>
+          )}
           <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
             <button
               onClick={(e) => { e.stopPropagation(); setHousekeeping('dirty'); }}
@@ -672,39 +788,25 @@ function shortRoomName(name, type) {
   return w && name.startsWith(w) ? (name.slice(w.length).trim() || name) : name;
 }
 
-function UnitPopover({ unit, anchor, flags, health, onClose, onChanged }) {
+// Room window: a centred modal at every width (it holds the stay details and
+// actions, too much for a small anchored popover).
+function UnitPopover({ unit, flags, health, onClose, onChanged }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onClose, true);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onClose, true);
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  if (typeof window !== 'undefined' && window.innerWidth <= 768) {
-    return (
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-          <div className="modal-body"><UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} /></div>
-        </div>
-      </div>
-    );
-  }
-
-  const H = (flags ? 240 : 200) + (health ? 60 : 0);
-  const W = 300, pad = 8;
-  const left = Math.min(Math.max(anchor.left, pad), window.innerWidth - W - pad);
-  const top = anchor.bottom + H + pad > window.innerHeight ? anchor.top - H - 6 : anchor.bottom + 6;
   return (
-    <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={onClose} />
-      <div className="card" style={{ position: 'fixed', top, left, width: W, zIndex: 200, boxShadow: 'var(--shadow-md)', padding: 12 }}
-        onClick={e => e.stopPropagation()}>
-        <UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} />
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">Room {unit.name}{unit.type ? <span className="text-muted" style={{ fontWeight: 400 }}> · {unit.type}</span> : null}</div>
+          <button className="btn btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body"><UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} /></div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -763,7 +865,7 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
 }
 
 function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
-  const [selected, setSelected] = useState(null); // { unit, anchor }
+  const [selected, setSelected] = useState(null); // { unit }
   const [filter, setFilter] = useState(null);     // a STATUS_META key, or null
 
   useEffect(() => {
@@ -826,7 +928,7 @@ function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
                   flags={requestFlags.get(u.id)}
                   health={tabletHealth(u)}
                   selected={selected?.unit.id === u.id}
-                  onClick={e => setSelected({ unit: u, anchor: e.currentTarget.getBoundingClientRect() })}
+                  onClick={() => setSelected({ unit: u })}
                 />
               ))}
             </div>
@@ -836,10 +938,9 @@ function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
 
       {selected && (
         <UnitPopover
-          unit={selected.unit}
-          anchor={selected.anchor}
+          unit={units.find(u => u.id === selected.unit.id) || selected.unit}
           flags={requestFlags.get(selected.unit.id)}
-          health={tabletHealth(selected.unit)}
+          health={tabletHealth(units.find(u => u.id === selected.unit.id) || selected.unit)}
           onClose={() => setSelected(null)}
           onChanged={onChanged}
         />

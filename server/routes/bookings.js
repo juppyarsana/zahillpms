@@ -1419,8 +1419,10 @@ router.put('/:id/dates', auth, async (req, res) => {
 // are corrected down to it; or the guest really paid more → the overpayment
 // stays as a credit on the folio (no refund flow yet — returned by hand).
 // An unpaid agent commission is re-derived.
-// Blocked for cancelled/no-show bookings, group rooms (group discount/deposit
-// are prorated across rooms) and stays already invoiced to an agent.
+// Group rooms: a percentage group discount is re-applied to the room's new
+// price; a fixed group discount keeps the room's prorated share as-is (the
+// room stores the group's full fixed value, not its share).
+// Blocked for cancelled/no-show bookings and stays already invoiced to an agent.
 router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
   const newTotal = parseFloat(req.body.total_amount);
   const reason = String(req.body.reason || '').trim();
@@ -1438,10 +1440,6 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: `Cannot change the price — booking is ${before.status.replace('_', '-')}` });
     }
-    if (before.reservation_group_id) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Price changes are not supported for group bookings yet' });
-    }
     if (['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Agent Billing' });
@@ -1453,6 +1451,7 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
 
     const result = await applyBookingPrice(client, {
       propertyId: req.propertyId, before, newTotal, userId: req.user.id,
+      keepDiscount: !!before.reservation_group_id && before.discount_type !== 'percentage',
       receivedWasTypo: req.body.received_was_typo,
     });
     if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json(result.error); }
