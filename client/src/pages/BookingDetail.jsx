@@ -1834,8 +1834,9 @@ export default function BookingDetail() {
         </div>
       )}
       {compMode && (
-        <ComplimentaryModal booking={{ id: booking.id, guest_name: booking.guest_name }} mode={compMode} initial={compInitial}
+        <ComplimentaryModal booking={{ id: booking.id, guest_name: booking.guest_name, status: booking.status }} mode={compMode} initial={compInitial}
           onClose={() => { setCompMode(null); load(); }}
+          onCancelled={() => nav('/reservations')}
           onDone={() => { setCompMode(null); load(); if (tab === 'folio') loadFolio(); }} />
       )}
       {showRegCard && (
