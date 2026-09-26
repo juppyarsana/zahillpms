@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import CountrySelect from '../components/CountrySelect';
+import { useAuth } from '../context/AuthContext';
 
 // Staff-facing heads-up when the chosen source is an agent with a non-standard
 // billing arrangement. Informational only — booking creation is unchanged; the
@@ -117,6 +118,11 @@ export default function NewBooking() {
   const preOut = sp.get('check_out') || (sp.get('date') ? addDaysYmd(sp.get('date'), 1) : '');
   const preUnits = (sp.get('units') || sp.get('unit') || '').split(',').filter(Boolean);
   const preGuests = (sp.get('guests') || '').split(',').map(g => parseInt(g, 10) || 1);
+  const { can } = useAuth();
+  // Complimentary stay (single room): the booking is created at its normal
+  // price, then made free on the booking page (ComplimentaryModal) — directly
+  // with the permission, otherwise via a manager's Telegram approval code.
+  const [comp, setComp] = useState({ on: false, scope: 'room', reason: '' });
   const [form, setForm] = useState({
     guest_id: '',
     check_in_date: preIn, check_out_date: preOut,
@@ -257,7 +263,9 @@ export default function NewBooking() {
       if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); setLoading(false); return; }
       if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); setLoading(false); return; }
 
-      const deposit_amount = Math.round(netAmt * (form.deposit_pct / 100));
+      const compOn = comp.on && !isGroup;
+      if (compOn && !comp.reason.trim()) { setError('Give a reason for the complimentary stay'); setLoading(false); return; }
+      const deposit_amount = compOn ? 0 : Math.round(netAmt * (form.deposit_pct / 100));
 
       if (!isGroup) {
         // Single-room booking — same endpoint and payload shape as before
@@ -279,7 +287,7 @@ export default function NewBooking() {
           rate_plan_id: room.rate_plan_id || null,
           bed_preference: room.bed_preference || null,
         });
-        nav(`/reservations/${res.data.id}`);
+        nav(`/reservations/${res.data.id}`, compOn ? { state: { complimentary: { scope: comp.scope, reason: comp.reason.trim() } } } : undefined);
       } else {
         const res = await api.post('/api/bookings/group', {
           guest_id: guestId,
@@ -632,6 +640,31 @@ export default function NewBooking() {
             <textarea className="form-textarea" value={form.special_requests} onChange={e => set('special_requests', e.target.value)} placeholder="Any notes or requests from the guest…" />
           </div>
         </div>
+
+        {!isGroup && (
+          <div className="card mb-3">
+            <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontWeight: 600 }}>
+              <input type="checkbox" checked={comp.on} onChange={e => setComp(c => ({ ...c, on: e.target.checked }))} />
+              🎁 Complimentary stay (free)
+            </label>
+            {comp.on && (
+              <div style={{ marginTop: 10 }}>
+                <div className="flex gap-2" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
+                  {[['room', 'Room only'], ['room_meals', 'Room + meals'], ['all', 'Everything (incl. extras)']].map(([v, label]) => (
+                    <button key={v} type="button" className={`btn btn-sm ${comp.scope === v ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setComp(c => ({ ...c, scope: v }))}>{label}</button>
+                  ))}
+                </div>
+                <textarea className="form-textarea" placeholder="Reason * — e.g. Travel agent site inspection"
+                  value={comp.reason} onChange={e => setComp(c => ({ ...c, reason: e.target.value }))} />
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Keep the normal price above — it's recorded as the value given away. The booking is created, then made free
+                  {can('grant_complimentary') ? '.' : ' once a manager approves: a one-time code is sent to them on Telegram, and you type it in on the next screen.'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {error && <div className="alert alert-error">{error}</div>}
         <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>

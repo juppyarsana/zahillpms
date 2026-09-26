@@ -61,6 +61,9 @@ function renderRegistrationCard(doc, { property, data }) {
   // rather than a generic placeholder.
   const showRate = data.publish_rate !== false;
   const rateHiddenNote = `Arranged by ${data.source_label || 'Agent'}`;
+  // Complimentary stay (migration 072): the room is free — say so, not "Rp 0".
+  const comp = data.complimentary_scope;
+  const compNote = comp === 'room' ? 'Complimentary (room)' : comp === 'room_meals' ? 'Complimentary (room + meals)' : comp === 'all' ? 'Complimentary' : null;
 
   // ── Guest & stay details ──────────────────────────────────────────
   gridRow(doc, {
@@ -142,14 +145,14 @@ function renderRegistrationCard(doc, { property, data }) {
     cells: [
       { label: 'Room Number', value: data.unit_name },
       { label: 'Source of Booking', value: data.source_label },
-      { label: 'Room Rate (per night)', value: showRate ? (data.room_rate != null ? fmtIDR(data.room_rate) : '') : rateHiddenNote },
+      { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? fmtIDR(data.room_rate) : '') : rateHiddenNote) },
     ],
   });
   gridRow(doc, {
     cells: [
       { label: 'Type', value: data.room_type_name },
       { label: 'Purpose of Stay', value: data.purpose_of_stay },
-      { label: 'Deposit', value: showRate ? (data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '') : rateHiddenNote },
+      { label: 'Deposit', value: compNote && !Number(data.deposit_amount) ? '-' : (showRate ? (data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '') : rateHiddenNote) },
     ],
   });
   gridRow(doc, {

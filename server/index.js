@@ -73,6 +73,7 @@ app.use('/api/display', require('./routes/display'));
 // Module-gated routes — auth runs here so moduleGuard has req.propertyId
 // (each route file also calls auth internally per-handler; running it twice
 // is redundant but harmless — same JWT, same result)
+app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/complimentary'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/bookings'));
 app.use('/api/checkin', auth, moduleGuard('front_desk'), require('./routes/checkin'));
 app.use('/api/allotments', auth, moduleGuard('reservations'), require('./routes/allotments'));

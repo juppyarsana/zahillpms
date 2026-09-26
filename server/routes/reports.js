@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const { round2 } = require('../services/folioService');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 
@@ -21,7 +22,10 @@ const NIGHTS_CTE = `
       b.source,
       d::date AS night,
       COALESCE(b.room_revenue, b.total_amount) / NULLIF(b.nights, 0) AS room_rev_per_night,
-      COALESCE(b.fnb_revenue, 0) / NULLIF(b.nights, 0) AS fnb_rev_per_night
+      COALESCE(b.fnb_revenue, 0) / NULLIF(b.nights, 0) AS fnb_rev_per_night,
+      -- Complimentary stay (migration 072): counts for occupancy, not ADR.
+      (b.complimentary_scope IS NOT NULL) AS comp,
+      COALESCE(b.complimentary_night_value, 0) AS comp_value_per_night
     FROM bookings b, bounds,
       LATERAL generate_series(
         GREATEST(b.check_in_date, bounds.start_date),
@@ -32,6 +36,9 @@ const NIGHTS_CTE = `
       AND b.status IN ('checked_in', 'checked_out', 'confirmed')
   )
 `;
+
+// A sale charged to a room whose stay is complimentary for everything.
+const COMP_SALE_SQL = `(payment_method = 'room_charge' AND booking_id IN (SELECT id FROM bookings WHERE complimentary_scope = 'all'))`;
 
 // Shared by GET /revenue and GET /revenue/export (CSV) so the two never
 // drift — the export must show exactly what the page shows. `from`/`to` are
@@ -49,15 +56,22 @@ async function getReport(propertyId, from, to) {
       COALESCE(SUM(room_rev_per_night), 0) as room_revenue,
       COALESCE(SUM(fnb_rev_per_night), 0) as fnb_revenue,
       COUNT(DISTINCT booking_id) as bookings_count,
-      COUNT(*) as total_nights
+      COUNT(*) as total_nights,
+      COUNT(*) FILTER (WHERE NOT comp) as paid_nights,
+      COUNT(*) FILTER (WHERE comp) as comp_nights,
+      COALESCE(SUM(comp_value_per_night) FILTER (WHERE comp), 0) as comp_room_value
     FROM nights
   `, [from, to, propertyId]);
 
   // Ancillary (POS/sales) revenue is genuinely a different kind of
   // revenue — it's recognized on the date it was sold, not spread across
   // a room stay, so it stays keyed off sales.created_at as before.
+  // Extras charged to a stay that's complimentary for everything are given
+  // away, not revenue — counted in comp_extras_value instead.
   const ancillaryQ = db.query(`
-    SELECT COALESCE(SUM(total_amount), 0) as ancillary_revenue, COUNT(*) as sales_count
+    SELECT COALESCE(SUM(total_amount) FILTER (WHERE NOT ${COMP_SALE_SQL}), 0) as ancillary_revenue,
+           COUNT(*) FILTER (WHERE NOT ${COMP_SALE_SQL}) as sales_count,
+           COALESCE(SUM(total_amount) FILTER (WHERE ${COMP_SALE_SQL}), 0) as comp_extras_value
     FROM sales
     WHERE property_id = $3 AND (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date
       AND confirmation_status IS DISTINCT FROM 'rejected'
@@ -73,7 +87,8 @@ async function getReport(propertyId, from, to) {
     SELECT gs::date as date,
       COALESCE(SUM(n.room_rev_per_night), 0) as room_revenue,
       COALESCE(SUM(n.fnb_rev_per_night), 0) as fnb_revenue,
-      COUNT(n.booking_id) as nights_sold
+      COUNT(n.booking_id) as nights_sold,
+      COUNT(n.booking_id) FILTER (WHERE NOT n.comp) as paid_nights_sold
     FROM generate_series($1::date, $2::date, '1 day') gs
     LEFT JOIN nights n ON n.night = gs::date
     GROUP BY gs ORDER BY gs
@@ -85,7 +100,7 @@ async function getReport(propertyId, from, to) {
     SELECT (created_at AT TIME ZONE 'Asia/Makassar')::date AS date, COALESCE(SUM(total_amount), 0) AS amount
     FROM sales
     WHERE property_id = $3 AND (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date
-      AND confirmation_status IS DISTINCT FROM 'rejected'
+      AND confirmation_status IS DISTINCT FROM 'rejected' AND NOT ${COMP_SALE_SQL}
     GROUP BY 1
   `, [from, to, propertyId]);
   const expensesDailyQ = db.query(`
@@ -148,7 +163,13 @@ async function getReport(propertyId, from, to) {
     expenses_total: expensesTotal,
     net_income: totalRevenue - expensesTotal,
     bookings_count: parseInt(room.bookings_count),
+    // total_nights = every occupied room-night (occupancy); paid_nights
+    // leaves complimentary nights out — ADR = room_revenue / paid_nights.
     total_nights: parseInt(room.total_nights),
+    paid_nights: parseInt(room.paid_nights),
+    comp_nights: parseInt(room.comp_nights),
+    // NET value given away: comp room(+meal) nights + comped extras.
+    comp_value: round2(parseFloat(room.comp_room_value) + parseFloat(ancillary.comp_extras_value)),
     daily_revenue: daily,
     by_source: bySource,
   };
@@ -233,6 +254,9 @@ function revenueCsv(data) {
     `Net Income,${data.net_income}`,
     `Bookings,${data.bookings_count}`,
     `Room Nights,${data.total_nights}`,
+    `Complimentary Nights,${data.comp_nights}`,
+    `Complimentary Value (net),${data.comp_value}`,
+    `ADR (paid nights),${data.paid_nights ? Math.round(data.room_revenue / data.paid_nights) : 0}`,
     '',
     'Source,Bookings,Revenue',
     ...data.by_source.map(r => `${csvEscape(r.source)},${r.count},${Math.round(parseFloat(r.revenue) * 100) / 100}`),

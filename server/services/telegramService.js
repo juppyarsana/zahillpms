@@ -25,23 +25,25 @@ async function callBot(token, method, body) {
   return { status: res.status, ok: res.ok && json.ok, json };
 }
 
-// Sends one message to one chat. Returns { ok, error } rather than throwing.
-// html: Telegram's HTML parse mode (<b>, <i>, <a>) — callers must escape
-// any text they insert (see escapeHtml).
-async function sendToChat(token, chatId, text, { html = false } = {}) {
+// Sends one message to one chat. Returns { ok, message_id, error } rather
+// than throwing. html: Telegram's HTML parse mode (<b>, <i>, <a>) — callers
+// must escape any text they insert (see escapeHtml). replyMarkup: e.g. an
+// inline keyboard (buttons under the message).
+async function sendToChat(token, chatId, text, { html = false, replyMarkup = null } = {}) {
   if (!token) return { ok: false, error: 'No Telegram bot set up (Settings → Reports & Alerts → Telegram bot)' };
   try {
     const r = await callBot(token, 'sendMessage', {
       chat_id: chatId,
       text,
       ...(html ? { parse_mode: 'HTML', disable_web_page_preview: true } : {}),
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     });
     if (!r.ok) {
       const desc = r.json.description || `HTTP ${r.status}`;
       console.error(`Telegram send failed for chat ${chatId}: ${desc}`);
       return { ok: false, error: `Telegram: ${desc}` };
     }
-    return { ok: true };
+    return { ok: true, message_id: r.json.result?.message_id };
   } catch (err) {
     console.error(`Telegram send failed for chat ${chatId}:`, err.message);
     return { ok: false, error: err.message };

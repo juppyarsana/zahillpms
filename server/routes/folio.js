@@ -41,6 +41,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
       group_id: group.id,
       rooms: folios.map(f => ({
         booking_id: f.booking.id, unit_name: f.booking.unit_name,
+        complimentary_scope: f.booking.complimentary_scope || null,
         charges: f.charges, payments: f.payments,
         subtotal: f.subtotal, total: f.total, balance_due: f.balance_due,
       })),
@@ -64,7 +65,7 @@ router.get('/:bookingId', auth, async (req, res) => {
     const folio = await loadFolio(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
     const { booking, property, ...rest } = folio;
-    res.json({ booking_id: booking.id, ...rest });
+    res.json({ booking_id: booking.id, complimentary_scope: booking.complimentary_scope || null, ...rest });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -250,10 +251,12 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
   const renderLine = c => {
     if (y > 720) { doc.addPage(); y = 50; }
     doc.font('Helvetica').fontSize(10).fillColor('#000');
-    doc.text(c.description, colX.desc, y, { width: 240 });
+    doc.text(c.complimentary ? `${c.description} (complimentary)` : c.description, colX.desc, y, { width: 240 });
     doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
     doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
-    doc.text(fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
+    // A comped extra (stay complimentary for everything, migration 072) is
+    // listed at its price but not counted in the totals.
+    doc.text(c.complimentary ? 'Free' : fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
     y += 16;
   };
 
@@ -325,6 +328,14 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
   doc.y = y;
 }
 
+// Complimentary stay (migration 072) — printed under the stay line.
+function complimentaryNote(scope) {
+  if (scope === 'room') return 'Complimentary stay — room free of charge';
+  if (scope === 'room_meals') return 'Complimentary stay — room and meals free of charge';
+  if (scope === 'all') return 'Complimentary stay — room, meals and extras free of charge';
+  return null;
+}
+
 // Renders the single-booking invoice/pro-forma PDF straight to the response.
 function renderBookingInvoicePdf(res, folio, { title, filenamePrefix, note }) {
   const { booking, property } = folio;
@@ -351,6 +362,12 @@ function renderBookingInvoicePdf(res, folio, { title, filenamePrefix, note }) {
   if (note) {
     doc.moveDown(0.5);
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e').text(note, { width: 500 });
+    doc.fillColor('#000');
+  }
+  const compNote = complimentaryNote(booking.complimentary_scope);
+  if (compNote) {
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#047857').text(compNote, { width: 500 });
     doc.fillColor('#000');
   }
 
@@ -447,6 +464,8 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
         `${folio.booking.unit_name}  ·  ${String(folio.booking.check_in_date).slice(0, 10)} – ${String(folio.booking.check_out_date).slice(0, 10)}`,
         50, doc.y
       );
+      const compNote = complimentaryNote(folio.booking.complimentary_scope);
+      if (compNote) doc.fontSize(9).font('Helvetica-Bold').fillColor('#047857').text(compNote, 50, doc.y).fillColor('#000');
       doc.moveDown(0.3);
       drawChargeTable(doc, { ...folio, showBalance: false });
       doc.y += 14;

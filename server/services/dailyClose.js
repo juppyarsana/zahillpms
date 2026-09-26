@@ -34,6 +34,7 @@ async function dayFigures(propertyId, date, sellable) {
   const r = await getReport(propertyId, date, date);
   const roomsSold = r.total_nights;
   return {
+    comp_nights: r.comp_nights, comp_value: r.comp_value,
     date,
     room: r.room_revenue,
     fnb: r.fnb_revenue,
@@ -41,7 +42,7 @@ async function dayFigures(propertyId, date, sellable) {
     total: r.total_revenue,
     rooms_sold: roomsSold,
     occupancy: sellable > 0 ? Math.round((roomsSold / sellable) * 100) : 0,
-    adr: roomsSold > 0 ? r.room_revenue / roomsSold : 0,
+    adr: r.paid_nights > 0 ? r.room_revenue / r.paid_nights : 0,   // complimentary nights left out
     revpar: sellable > 0 ? r.room_revenue / sellable : 0,
   };
 }
@@ -182,6 +183,7 @@ function dailyCloseTelegram(b) {
   L.push(`     Room ${e(fmtIDR(t.room))}${t.fnb ? ` · Meals ${e(fmtIDR(t.fnb))}` : ''}${t.extras ? ` · Extras ${e(fmtIDR(t.extras))}` : ''}`);
   L.push(`🛏 Occupancy: <b>${t.occupancy}%</b> (${t.rooms_sold}/${b.sellable})${b.change.occupancy_pts ? ` ${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts` : ''}`);
   if (t.rooms_sold > 0) L.push(`     ADR ${e(fmtIDR(t.adr))} · RevPAR ${e(fmtIDR(t.revpar))}`);
+  if (t.comp_nights > 0 || t.comp_value > 0) L.push(`🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(t.comp_value))}`);
   L.push(`💳 Collected: <b>${e(fmtIDR(b.collected.total))}</b>`);
   if (b.collected.by_method.length) L.push(`     ${e(b.collected.by_method.map(m => `${m.method} ${fmtIDR(m.amount)}`).join(' · '))}`);
   L.push('');
@@ -239,6 +241,7 @@ function dailyCloseEmail(b) {
       ${tile('New bookings', `${b.new_bookings.length}`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${b.new_nights} nights · ${esc(fmtIDR(b.new_value))}</div>`)}
     </tr>
     ${CARD_TABLE_CLOSE}
+    ${t.comp_nights > 0 || t.comp_value > 0 ? `<div style="font-size:13px;color:#047857;margin:10px 0 0;">🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${esc(fmtIDR(t.comp_value))} before tax (left out of ADR)</div>` : ''}
 
     ${section('Revenue', table([{ label: '' }, { label: 'This day', right: true }, { label: 'Last week', right: true }], revRows, ''))}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],
