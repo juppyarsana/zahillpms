@@ -8,9 +8,9 @@ function fmtIDR(n) {
 // Same blob-then-click download pattern as BackOffice.jsx's downloadCsv —
 // duplicated rather than shared, matching this codebase's house style for
 // small per-file helpers.
-async function downloadCsv(url, filename) {
+async function downloadCsv(url, filename, type = 'text/csv') {
   const r = await api.get(url, { responseType: 'blob' });
-  const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'text/csv' }));
+  const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type }));
   const a = document.createElement('a');
   a.href = blobUrl; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
@@ -332,8 +332,11 @@ export default function Reports() {
                 onChange={e => setCustomTo(e.target.value)} aria-label="To" />
             </>
           )}
-          <button className="btn btn-secondary" disabled={!rangeValid}
-            onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}>⬇ Export CSV</button>
+          <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus a daily breakdown"
+            onClick={() => downloadCsv(`/api/reports/full/xlsx?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.xlsx`,
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').catch(() => alert('Could not download the Excel file'))}>⬇ Excel</button>
+          <button className="btn btn-secondary" disabled={!rangeValid} title="Revenue summary as a simple CSV file"
+            onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}>⬇ CSV</button>
         </div>
       </div>
 
