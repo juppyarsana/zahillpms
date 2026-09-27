@@ -68,6 +68,11 @@ function computeFolioTotals(subtotal, taxRate, serviceChargeRate) {
 // agent (statement, consolidated invoice, commission base). A room_charge
 // sale (incl. a resto tab settled to the room) is still agent-billable.
 const PAID_AT_DESK_SQL = `EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))`;
+// How a paid-at-desk line was paid ("Cash", "QRIS"…), NULL when charged to
+// the room — shown on the Folio tab and the invoice so it doesn't read as owed.
+const PAID_METHOD_SQL = `(SELECT COALESCE(pm.label, s.payment_method) FROM sales s
+    LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
+   WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))`;
 
 // A stay complimentary for "everything" (migration 072): extras charged to
 // the room are free too — flagged `complimentary` and left out of the totals.
@@ -109,7 +114,7 @@ async function loadFolio(bookingId, propertyId) {
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
-            ${PAID_AT_DESK_SQL} AS paid_at_desk
+            ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
@@ -178,7 +183,7 @@ async function computeProforma(bookingId, propertyId) {
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
-            ${PAID_AT_DESK_SQL} AS paid_at_desk
+            ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon')
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
@@ -187,10 +192,12 @@ async function computeProforma(bookingId, propertyId) {
   // Per-night extras (extra bed, migration 074): every active night inside
   // the stay, posted or not — projected like the room nights.
   const addonsQ = db.query(
-    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts, s.payment_method
+    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts, s.payment_method,
+            COALESCE(pm.label, s.payment_method) AS payment_method_label
      FROM booking_addons a
      JOIN bookings b ON b.id = a.booking_id
      LEFT JOIN sales s ON s.id = a.sale_id
+     LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
      WHERE a.booking_id = $1 AND a.status = 'active'
        AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
      ORDER BY a.service_date`,
@@ -215,6 +222,7 @@ async function computeProforma(bookingId, propertyId) {
       type: 'addon', description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
       unit_price: a.unit_price, amount, service_date: ymd(a.service_date),
       paid_at_desk: !!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method),
+      paid_method: a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method) ? a.payment_method_label : null,
       addon_meal: a.breakfasts > 0,
     };
   });

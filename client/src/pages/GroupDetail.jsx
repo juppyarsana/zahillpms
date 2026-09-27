@@ -877,7 +877,8 @@ export default function GroupDetail() {
                     <div className="text-muted" style={{ fontSize: 12 }}>No charges posted</div>
                   ) : room.charges.map(c => (
                     <div key={c.id} className="flex-between" style={{ fontSize: 12, padding: '3px 0', color: 'var(--text-muted)' }}>
-                      <span>{c.description}</span><span>{c.complimentary ? 'Free' : fmtIDR(c.amount)}</span>
+                      <span>{c.description}{c.paid_method && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>Paid · {c.paid_method}</span>}</span>
+                      <span>{c.complimentary ? 'Free' : fmtIDR(c.amount)}</span>
                     </div>
                   ))}
                 </div>

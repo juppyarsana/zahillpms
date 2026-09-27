@@ -225,19 +225,21 @@ function mergeAddonLines(charges) {
       unit: parseFloat(c.unit_price),
       amount: parseFloat(c.amount),
       withMeal: !!c.addon_meal,
+      paid: c.paid_method || null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date));
   for (const l of lines) {
     const last = runs[runs.length - 1];
-    if (last && last.name === l.name && last.qty === l.qty && last.withMeal === l.withMeal && Math.abs(last.unit - l.unit) < 1 && nextDay(last.to) === l.date) {
+    if (last && last.name === l.name && last.qty === l.qty && last.withMeal === l.withMeal && last.paid === l.paid && Math.abs(last.unit - l.unit) < 1 && nextDay(last.to) === l.date) {
       last.to = l.date; last.nights++; last.sum += l.amount;
-    } else runs.push({ name: l.name, from: l.date, to: l.date, nights: 1, qty: l.qty, unit: l.unit, sum: l.amount, withMeal: l.withMeal });
+    } else runs.push({ name: l.name, from: l.date, to: l.date, nights: 1, qty: l.qty, unit: l.unit, sum: l.amount, withMeal: l.withMeal, paid: l.paid });
   }
   return runs.map(r => ({
     type: 'stay',
     description: `${r.name}${r.withMeal ? ' with Breakfast' : ''}${r.qty > 1 ? ` × ${r.qty}` : ''} · ${shortDay(r.from)} – ${shortDay(nextDay(r.to))}`,
     quantity: r.nights * r.qty, unit_price: Math.round((r.sum / (r.nights * r.qty)) * 100) / 100,
     amount: Math.round(r.sum * 100) / 100,
+    paid_method: r.paid,
   }));
 }
 
@@ -309,13 +311,18 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
   const renderLine = c => {
     if (y > 720) { doc.addPage(); y = 50; }
     doc.font('Helvetica').fontSize(10).fillColor('#000');
-    doc.text(c.complimentary ? `${c.description} (complimentary)` : c.description, colX.desc, y, { width: 240 });
+    // Paid at the front desk (Pay now) — listed for a complete record, its
+    // payment is under Payments Received, so it isn't owed again.
+    const desc = c.complimentary ? `${c.description} (complimentary)`
+      : c.paid_method ? `${c.description} (paid · ${c.paid_method})` : c.description;
+    const rowH = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
+    doc.text(desc, colX.desc, y, { width: 240 });
     doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
     doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
     // A comped extra (stay complimentary for everything, migration 072) is
     // listed at its price but not counted in the totals.
     doc.text(c.complimentary ? 'Free' : fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
-    y += 16;
+    y += rowH;
   };
 
   const anyGrouped = charges.some(c => c.type === 'stay' || c.type === 'room' || c.type === 'fnb' || c.type === 'sale');

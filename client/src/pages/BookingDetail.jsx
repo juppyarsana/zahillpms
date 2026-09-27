@@ -220,8 +220,15 @@ export default function BookingDetail() {
 
   useEffect(() => { if (tab === 'activities' && !activityBookings) loadActivityBookings(); }, [tab]);
 
-  async function voidCharge(chargeId) {
-    if (!confirm('Void this charge?')) return;
+  async function voidCharge(charge) {
+    const chargeId = charge.id;
+    // A Pay-now line's payment stays on the folio (no refund flow yet).
+    const msg = charge.paid_method
+      ? `Void this charge?
+
+It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.`
+      : 'Void this charge?';
+    if (!confirm(msg)) return;
     try {
       await api.delete(`/api/folio/charge/${chargeId}`);
       loadFolio();
@@ -1042,7 +1049,12 @@ export default function BookingDetail() {
                             {c.complimentary
                               ? <span title={`${fmtIDR(c.amount)} — complimentary stay, not charged`}><s className="text-muted">{fmtIDR(c.amount)}</s> <span className="badge badge-green">Free</span></span>
                               : <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>}
-                            <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c.id)}>🗑️</button>
+                            {c.paid_method && (
+                              <span className="badge badge-green" title="Paid at the front desk — its payment is under Payments, so it isn't owed again">
+                                Paid · {c.paid_method}
+                              </span>
+                            )}
+                            <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c)}>🗑️</button>
                           </div>
                         </div>
                       ))}
