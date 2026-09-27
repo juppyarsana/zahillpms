@@ -67,15 +67,41 @@ function renderActivityReceipt(doc, { property, data }) {
   doc.moveTo(50, y).lineTo(550, y).strokeColor('#ccc').stroke();
   y += 10;
 
+  // By the activity's tax setting (migration 078): 'added' — service + tax
+  // were added on top at booking (lines below); 'included' — the price is
+  // all-in, the parts inside it are noted; 'none' — nothing. 0% rates = no lines.
+  const sc = parseFloat(data.service_charge_amount) || 0;
+  const tax = parseFloat(data.tax_amount) || 0;
+  const added = (data.tax_mode || 'added') === 'added';
+  const paid = parseFloat(data.total_amount) + (added ? sc + tax : 0);
+  if (added && (sc > 0 || tax > 0)) {
+    doc.font('Helvetica').fontSize(10);
+    const row = (label, amount) => {
+      doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
+      doc.text(fmtIDR(amount), colX.amount, y, { width: 90, align: 'right' });
+      y += 16;
+    };
+    row('Subtotal', data.total_amount);
+    if (sc > 0) row('Service Charge', sc);
+    if (tax > 0) row('Tax', tax);
+    y += 4;
+  }
+
   doc.font('Helvetica-Bold').fontSize(11);
   doc.text('Total Paid', colX.price - 150, y, { width: 150, align: 'right' });
-  doc.text(fmtIDR(data.total_amount), colX.amount, y, { width: 90, align: 'right' });
-  y += 26;
+  doc.text(fmtIDR(paid), colX.amount, y, { width: 90, align: 'right' });
+  y += 18;
+  if (data.tax_mode === 'included' && (sc > 0 || tax > 0)) {
+    const parts = [sc > 0 && `service charge ${fmtIDR(sc)}`, tax > 0 && `tax ${fmtIDR(tax)}`].filter(Boolean).join(' and ');
+    doc.font('Helvetica').fontSize(9).fillColor('#777').text(`Includes ${parts}`, colX.desc, y, { width: 500, align: 'right' }).fillColor('#000');
+    y += 14;
+  }
+  y += 8;
 
   doc.font('Helvetica-Bold').fontSize(10).text('Payment Received', colX.desc, y);
   y += 16;
-  doc.font('Helvetica').text(`${data.payment_method_label}  ·  ${fmtDate(new Date())}`, colX.desc, y, { width: 240 });
-  doc.text(fmtIDR(data.total_amount), colX.amount, y, { width: 90, align: 'right' });
+  doc.font('Helvetica').text(`${data.payment_method_label}  ·  ${fmtDate(data.created_at || new Date())}`, colX.desc, y, { width: 240 });
+  doc.text(fmtIDR(paid), colX.amount, y, { width: 90, align: 'right' });
   y += 20;
 
   doc.x = 50;

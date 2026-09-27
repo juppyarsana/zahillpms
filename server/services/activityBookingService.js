@@ -1,4 +1,32 @@
 const db = require('../db');
+const { computeFolioTotals, round2 } = require('./folioService');
+
+// Paid directly = a real payment method (not room_charge, not "not specified").
+const paidDirectly = m => !!m && m !== 'room_charge';
+
+// Service charge + tax for an activity booking, by the activity's tax_mode
+// (migration 078):
+//   added     — before tax: paid directly, added on top now; charged to the
+//               room / not paid yet, left NULL (the folio adds them)
+//   included  — all-in: the parts inside the price (for the reports)
+//   none      — nothing
+function activityTaxes(mode, total, ps, paid) {
+  if (mode === 'none') return { sc: 0, tax: 0 };
+  if (mode === 'included') {
+    const f = computeFolioTotals(1000000, ps?.tax_rate, ps?.service_charge_rate).total / 1000000;
+    const net = Math.round(total / f);   // whole rupiah, so the parts print cleanly
+    const sc = computeFolioTotals(net, ps?.tax_rate, ps?.service_charge_rate).service_charge_amount;
+    return { sc, tax: round2(total - net - sc) };
+  }
+  if (!paid) return { sc: null, tax: null };
+  const t = computeFolioTotals(total, ps?.tax_rate, ps?.service_charge_rate);
+  return { sc: t.service_charge_amount, tax: t.tax_amount };
+}
+// What the guest pays: the price, plus service + tax only when they're added on top.
+function amountPaid(ab) {
+  const extra = ab.tax_mode === 'added' ? (parseFloat(ab.service_charge_amount) || 0) + (parseFloat(ab.tax_amount) || 0) : 0;
+  return round2(parseFloat(ab.total_amount) + extra);
+}
 
 // Creates an activity booking. Prices are always resolved from the locked
 // `activities` row server-side — callers (especially routes/display.js's
@@ -18,7 +46,7 @@ async function createBooking(propertyId, {
   try {
     await client.query('BEGIN');
     const { rows: [activity] } = await client.query(
-      'SELECT id, price, capacity_per_slot, is_available FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE',
+      'SELECT id, price, capacity_per_slot, is_available, tax_mode FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE',
       [activityId, propertyId]
     );
     if (!activity || !activity.is_available) {
@@ -65,20 +93,26 @@ async function createBooking(propertyId, {
     const unitPrice = parseFloat(activity.price);
     const totalAmount = unitPrice * participants;
     const status = autoConfirm ? 'confirmed' : 'requested';
+    // Service charge + tax by the activity's tax_mode (migration 078, see
+    // activityTaxes). total_amount is always price × participants.
+    const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]);
+    const taxMode = activity.tax_mode || 'added';
+    const taxes = activityTaxes(taxMode, totalAmount, ps, paidDirectly(paymentMethod));
 
     const { rows: [booking] } = await client.query(
       `INSERT INTO activity_bookings
         (property_id, activity_id, booking_id, guest_name, guest_phone, scheduled_date, scheduled_time,
-         num_participants, unit_price, total_amount, payment_method, status, pickup_location, notes, booked_via, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         num_participants, unit_price, total_amount, payment_method, status, pickup_location, notes, booked_via, created_by,
+         service_charge_amount, tax_amount, tax_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [propertyId, activityId, bookingId || null, guestName || null, guestPhone || null, scheduledDate, scheduledTime || null,
         participants, unitPrice, totalAmount, paymentMethod || null, status, pickupLocation || null, notes || null,
-        bookedVia || 'staff', createdBy || null]
+        bookedVia || 'staff', createdBy || null, taxes.sc, taxes.tax, taxMode]
     );
 
     let result = booking;
-    if (status === 'confirmed' && booking.payment_method === 'room_charge' && booking.booking_id) {
+    if (status === 'confirmed' && booking.payment_method && booking.booking_id) {
       result = await postFolioCharge(client, booking, createdBy);
     }
 
@@ -92,14 +126,37 @@ async function createBooking(propertyId, {
   }
 }
 
+// Puts a confirmed activity linked to a reservation on the guest's folio. The
+// line carries the activity's tax_mode, so the folio adds service + tax only
+// to an 'added' one (at checkout, like the room):
+//   room_charge     — the charge.
+//   paid directly   — the charge plus a received 'incidental' payment of what
+//                     the guest paid, like a Pay-now extra: the folio shows it,
+//                     its balance is unchanged.
 async function postFolioCharge(client, activityBooking, actorUserId) {
   const { rows: [activity] } = await client.query('SELECT name FROM activities WHERE id = $1', [activityBooking.activity_id]);
   const description = `${activity?.name || 'Activity'} — ${String(activityBooking.scheduled_date).slice(0, 10)}`;
   const { rows: [charge] } = await client.query(
-    `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by)
-     VALUES ($1,'activity',$2,$3,$4,$5,$6) RETURNING id`,
-    [activityBooking.booking_id, description, activityBooking.num_participants, activityBooking.unit_price, activityBooking.total_amount, actorUserId || null]
+    `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, tax_mode)
+     VALUES ($1,'activity',$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [activityBooking.booking_id, description, activityBooking.num_participants, activityBooking.unit_price, activityBooking.total_amount, actorUserId || null,
+     activityBooking.tax_mode || 'added']
   );
+  if (paidDirectly(activityBooking.payment_method)) {
+    if (activityBooking.service_charge_amount == null || activityBooking.tax_amount == null) {   // booked before migration 078
+      const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [activityBooking.property_id]);
+      const t = activityTaxes(activityBooking.tax_mode || 'added', parseFloat(activityBooking.total_amount), ps, true);
+      activityBooking = { ...activityBooking, service_charge_amount: t.sc, tax_amount: t.tax };
+      await client.query('UPDATE activity_bookings SET service_charge_amount = $1, tax_amount = $2 WHERE id = $3', [t.sc, t.tax, activityBooking.id]);
+    }
+    const gross = amountPaid(activityBooking);
+    await client.query(
+      `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, activity_booking_id)
+       VALUES ($1,'incidental',$2,'received',$3,NOW(),$4,$5,$6)`,
+      [activityBooking.booking_id, gross, activityBooking.payment_method, actorUserId || null,
+       `Paid at front desk: ${description}`.slice(0, 250), activityBooking.id]
+    );
+  }
   const { rows: [updated] } = await client.query(
     'UPDATE activity_bookings SET folio_charge_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
     [charge.id, activityBooking.id]
@@ -117,9 +174,11 @@ async function voidFolioCharge(client, activityBooking, actorUserId) {
 
 const STATUSES = ['requested', 'confirmed', 'completed', 'cancelled', 'no_show'];
 
-// Transitions an activity booking's status. Posts a folio charge on the
-// transition into 'confirmed' (room-charge bookings only), and voids it on
-// the transition into 'cancelled'/'no_show' if one was posted.
+// Transitions an activity booking's status. Posts it to the folio on the
+// transition into 'confirmed' / 'completed' (linked to a reservation, with a
+// payment method — see postFolioCharge), and voids the folio charge on the
+// transition into 'cancelled'/'no_show'. A paid-directly activity's payment
+// stays on the folio as a credit (no refund flow — returned by hand).
 async function setStatus(propertyId, id, newStatus, actorUserId) {
   if (!STATUSES.includes(newStatus)) return { error: `status must be one of ${STATUSES.join(', ')}` };
   const client = await db.pool.connect();
@@ -132,7 +191,8 @@ async function setStatus(propertyId, id, newStatus, actorUserId) {
     if (!current) { await client.query('ROLLBACK'); return { error: 'Booking not found' }; }
 
     let updated = current;
-    if (newStatus === 'confirmed' && current.status !== 'confirmed' && current.payment_method === 'room_charge' && current.booking_id && !current.folio_charge_id) {
+    if (['confirmed', 'completed'].includes(newStatus) && !['cancelled', 'no_show'].includes(current.status)
+        && current.payment_method && current.booking_id && !current.folio_charge_id) {
       updated = await postFolioCharge(client, current, actorUserId);
     } else if (['cancelled', 'no_show'].includes(newStatus) && current.folio_charge_id) {
       await voidFolioCharge(client, current, actorUserId);
@@ -152,4 +212,4 @@ async function setStatus(propertyId, id, newStatus, actorUserId) {
   }
 }
 
-module.exports = { createBooking, setStatus };
+module.exports = { createBooking, setStatus, activityTaxes, amountPaid };

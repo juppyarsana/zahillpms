@@ -25,11 +25,16 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/activities
+// tax_mode (migration 078): 'added' (price before tax, default) / 'included'
+// (all-in price) / 'none' (no service charge or tax).
+const TAX_MODES = ['added', 'included', 'none'];
+
 router.post('/', auth, requireRole('owner'), async (req, res) => {
-  const { name, category, price, description, duration_minutes, capacity_per_slot } = req.body;
+  const { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
+  if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
   try {
-    const activity = await activitiesService.createActivity(req.propertyId, { name, category, price, description, duration_minutes, capacity_per_slot });
+    const activity = await activitiesService.createActivity(req.propertyId, { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode });
     res.status(201).json(activity);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -38,16 +43,17 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 
 // PUT /api/activities/:id
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
-  const { name, category, price, description, duration_minutes, capacity_per_slot, is_available } = req.body;
+  const { name, category, price, description, duration_minutes, capacity_per_slot, is_available, tax_mode } = req.body;
+  if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
   try {
     const { rows } = await db.query(
       `UPDATE activities SET
         name = COALESCE($1, name), category = COALESCE($2, category),
         price = COALESCE($3, price), description = COALESCE($4, description),
         duration_minutes = COALESCE($5, duration_minutes), capacity_per_slot = COALESCE($6, capacity_per_slot),
-        is_available = COALESCE($7, is_available)
+        is_available = COALESCE($7, is_available), tax_mode = COALESCE($10, tax_mode)
        WHERE id = $8 AND property_id = $9 RETURNING *`,
-      [name, category, price, description, duration_minutes, capacity_per_slot, is_available, req.params.id, req.propertyId]
+      [name, category, price, description, duration_minutes, capacity_per_slot, is_available, req.params.id, req.propertyId, tax_mode ?? null]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Activity not found' });
     res.json(rows[0]);
@@ -136,7 +142,7 @@ router.get('/bookings/:id/receipt', auth, async (req, res) => {
     const { rows: [data] } = await db.query(
       `SELECT ab.id, ab.scheduled_date, ab.scheduled_time, ab.num_participants, ab.unit_price, ab.total_amount,
               ab.payment_method, ab.guest_name AS walkup_guest_name, ab.guest_phone AS walkup_guest_phone,
-              ab.pickup_location, ab.notes, ab.created_at,
+              ab.pickup_location, ab.notes, ab.created_at, ab.service_charge_amount, ab.tax_amount, ab.tax_mode,
               a.name AS activity_name,
               g.name AS room_guest_name, u.name AS unit_name,
               creator.name AS issued_by,

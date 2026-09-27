@@ -5,11 +5,11 @@ const db = require('../db');
 // (Guest Board "Paid" toggle entry point), so a card and a catalog row never
 // diverge on how they were inserted. `activities` stays the sole owner of
 // commerce fields — see CLAUDE.md.
-async function createActivity(propertyId, { name, category, price, description, duration_minutes, capacity_per_slot }) {
+async function createActivity(propertyId, { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode }) {
   const { rows: [activity] } = await db.query(
-    `INSERT INTO activities (name, category, price, description, duration_minutes, capacity_per_slot, property_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [name, category || 'tour', price, description || null, duration_minutes || null, capacity_per_slot || null, propertyId]
+    `INSERT INTO activities (name, category, price, description, duration_minutes, capacity_per_slot, property_id, tax_mode)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [name, category || 'tour', price, description || null, duration_minutes || null, capacity_per_slot || null, propertyId, tax_mode || 'added']
   );
   return activity;
 }

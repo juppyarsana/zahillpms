@@ -12,6 +12,9 @@ Last updated: 2026-09-27
 is replaced by "+ Add item" (Sales items), plus an "Other charge" item with the price typed at sale. See CLAUDE.md
 "Folio + Add item". Deploys the same way (`npm run migrate` picks up 077). Next agreed steps: "+ Book activity" on
 the reservation (+ paid-directly activities onto the folio), then activity revenue in the reports.
+**2026-09-28: migration 078** — "+ Book activity" on the reservation; a tax setting per activity (added on top /
+included / none — Zahill's vendor tours are "included" or "none", ask the accountant); the folio adds service + tax only
+to "added" lines; paid-directly activities on the folio with their payment. Next: activity revenue in the reports.
 
 ### ⏸ Where we stopped
 The owner was **deploying to their DEV server** (build finished fine, 1m12s — slow VM, not an error). Not yet on
@@ -1701,7 +1704,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 078
+## Next migration number: 079
 
 ---
 

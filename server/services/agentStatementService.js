@@ -41,7 +41,10 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
             -- extras the guest paid at the desk are never billed to the agent
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+            -- activity lines priced with tax included / no tax (migration 078): no service/tax added
+            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations
                       WHERE booking_id = b.id), 0) AS allocated
      FROM bookings b
@@ -58,9 +61,9 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
   );
 
   return items.map(r => {
-    const { total: folio_total } = computeFolioTotals(
+    const folio_total = round2(computeFolioTotals(
       parseFloat(r.charge_subtotal), settings?.tax_rate, settings?.service_charge_rate
-    );
+    ).total + parseFloat(r.untaxed_subtotal));
     const allocated = round2(parseFloat(r.allocated));
     const balance = round2(folio_total - allocated);
     const due_date = String((r.invoice_issued_on || r.check_out_date)).slice(0, 10);
@@ -203,8 +206,10 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
       [id, propertyId]
     );
     if (!b || !['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status)) continue;
-    const { rows: [{ subtotal }] } = await client.query(
-      `SELECT COALESCE(SUM(fc.amount), 0) AS subtotal FROM folio_charges fc
+    const { rows: [{ subtotal, untaxed }] } = await client.query(
+      `SELECT COALESCE(SUM(fc.amount) FILTER (WHERE fc.tax_mode = 'added'), 0) AS subtotal,
+              COALESCE(SUM(fc.amount) FILTER (WHERE fc.tax_mode <> 'added'), 0) AS untaxed
+       FROM folio_charges fc
        WHERE fc.booking_id = $1 AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}`,
       [id]
     );
@@ -212,7 +217,7 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
       'SELECT COALESCE(SUM(amount), 0) AS allocated FROM agent_payment_allocations WHERE booking_id = $1',
       [id]
     );
-    const { total } = computeFolioTotals(parseFloat(subtotal), settings?.tax_rate, settings?.service_charge_rate);
+    const total = round2(computeFolioTotals(parseFloat(subtotal), settings?.tax_rate, settings?.service_charge_rate).total + parseFloat(untaxed));
     const covered = parseFloat(allocated) + 0.005 >= total && total > 0;
     const next = covered ? 'paid' : (b.agent_invoice_id ? 'invoiced' : 'pending_agent_invoice');
     if (next !== b.folio_status) {
@@ -461,7 +466,10 @@ async function invoicePayload(propertyId, invoiceId) {
   const { rows: bookings } = await db.query(
     `SELECT b.id AS booking_id, b.check_in_date, b.check_out_date, g.name AS guest_name, u.name AS unit_name,
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+            -- activity lines priced with tax included / no tax (migration 078): no service/tax added
+            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations WHERE booking_id = b.id), 0) AS allocated
      FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
      WHERE b.agent_invoice_id = $1 AND b.property_id = $2
@@ -470,7 +478,7 @@ async function invoicePayload(propertyId, invoiceId) {
   );
 
   const lines = bookings.map(b => {
-    const { total } = computeFolioTotals(parseFloat(b.charge_subtotal), property?.tax_rate, property?.service_charge_rate);
+    const total = round2(computeFolioTotals(parseFloat(b.charge_subtotal), property?.tax_rate, property?.service_charge_rate).total + parseFloat(b.untaxed_subtotal));
     return {
       booking_id: b.booking_id,
       guest_name: b.guest_name, unit_name: b.unit_name,

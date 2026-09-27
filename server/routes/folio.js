@@ -275,7 +275,7 @@ function mergeStayLines(charges, booking) {
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
-function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
+function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
   // Nightly room + meal lines → one "Room with Breakfast" line per run of
   // nights at the same rate; everything else is listed as posted.
   const isStayLine = c => (c.type === 'room' || c.type === 'fnb' || c.type === 'addon') && c.service_date;
@@ -313,8 +313,11 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
     doc.font('Helvetica').fontSize(10).fillColor('#000');
     // Paid at the front desk (Pay now) — listed for a complete record, its
     // payment is under Payments Received, so it isn't owed again.
+    // An activity priced tax-included / without tax (migration 078) gets no
+    // service/tax added below — say so on its line.
+    const taxNote = c.tax_mode === 'included' ? ' (tax incl.)' : c.tax_mode === 'none' ? ' (no tax)' : '';
     const desc = c.complimentary ? `${c.description} (complimentary)`
-      : c.paid_method ? `${c.description} (paid · ${c.paid_method})` : c.description;
+      : c.paid_method ? `${c.description}${taxNote} (paid · ${c.paid_method})` : `${c.description}${taxNote}`;
     const rowH = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
     doc.text(desc, colX.desc, y, { width: 240 });
     doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
@@ -364,6 +367,14 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
   const hasSc = parseFloat(service_charge_rate) > 0;
   const hasTax = parseFloat(tax_rate) > 0;
   if (hasSc || hasTax) totalsLine('Subtotal', fmtIDR(subtotal));
+  // Lines marked "tax incl." / "no tax" (migration 078) get nothing added —
+  // say what service + tax were worked out on, so the % doesn't look wrong.
+  if ((hasSc || hasTax) && parseFloat(untaxed_subtotal) > 0) {
+    doc.font('Helvetica').fontSize(8).fillColor('#777')
+      .text(`Service & tax on ${fmtIDR(parseFloat(subtotal) - parseFloat(untaxed_subtotal))} — lines marked tax incl. / no tax excluded`, 50, y, { width: 490, align: 'right' });
+    doc.fillColor('#000');
+    y += 12;
+  }
   if (hasSc) totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
   if (hasTax) totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
   totalsLine('Total', fmtIDR(total), { bold: true });

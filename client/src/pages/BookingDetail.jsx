@@ -12,6 +12,7 @@ import GuestIdDocument from '../components/GuestIdDocument';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
 import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
+import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -111,6 +112,7 @@ export default function BookingDetail() {
   // Folio "+ Add item" — the same window as "Extras for this stay" (Sales items
   // charged to the room; no free-text folio charges since migration 077).
   const [addingItem, setAddingItem] = useState(false);
+  const [bookingActivity, setBookingActivity] = useState(false);   // "+ Book activity"
   const [activityBookings, setActivityBookings] = useState(null);
   // Record Payment on the folio — settles what's owed on the stay incl.
   // extras charged to the room (room lines first, the rest as extras).
@@ -219,6 +221,13 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { if (tab === 'activities' && !activityBookings) loadActivityBookings(); }, [tab]);
+  // Tours / transport / spa are Activities, not Sales items: the Add item
+  // windows link here, and the Activities tab books one for this stay.
+  function startBookActivity() {
+    setAddingItem(false);
+    setTab('activities');
+    setBookingActivity(true);
+  }
 
   async function voidCharge(charge) {
     const chargeId = charge.id;
@@ -905,6 +914,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
       </div>
 
       <StayExtrasCard booking={booking} openAdd={openAddItem}
+        onBookActivity={hasModule('activities') ? startBookActivity : null}
         onChanged={() => { load(); if (folio) loadFolio(); }} />
 
       {booking.special_requests && (
@@ -1042,6 +1052,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                             <div style={{ fontWeight: 600 }}>{c.description}</div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                               {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(c.unit_price)}
+                              {c.tax_mode === 'included' && ' · tax & service included'}
+                              {c.tax_mode === 'none' && ' · no tax or service'}
                               {c.posted_by_name && ` · ${c.posted_by_name}`}
                             </div>
                           </div>
@@ -1070,6 +1082,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               )}
               {addingItem && (
                 <AddStayItemModal booking={booking} onClose={() => setAddingItem(false)}
+                  onBookActivity={hasModule('activities') ? startBookActivity : null}
                   onDone={() => { setAddingItem(false); load(); loadFolio(); }} />
               )}
 
@@ -1077,6 +1090,11 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               {(parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
                 <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                   <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
+                </div>
+              )}
+              {(parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && parseFloat(folio.untaxed_subtotal) > 0 && (
+                <div className="text-muted" style={{ fontSize: 11, marginBottom: 4, textAlign: 'right' }}>
+                  Service &amp; tax on {fmtIDR(folio.subtotal - folio.untaxed_subtotal)} — activities priced tax-included / without tax excluded
                 </div>
               )}
               {parseFloat(folio.service_charge_rate) > 0 && (
@@ -1147,9 +1165,14 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
 
       {tab === 'activities' && (
         <div className="card mt-3">
-          <div className="card-title">Activity Bookings</div>
+          <div className="flex-between" style={{ marginBottom: 8 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Activity Bookings</div>
+            {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && (
+              <button className="btn btn-sm btn-secondary" onClick={() => setBookingActivity(true)}>+ Book activity</button>
+            )}
+          </div>
           {!activityBookings ? <div className="text-muted">Loading…</div> : activityBookings.length === 0 ? (
-            <div className="text-muted" style={{ padding: '10px 0' }}>No activity bookings for this stay yet — guests can request one from the Room Display, or add one from the Activities page.</div>
+            <div className="text-muted" style={{ padding: '10px 0' }}>No activity bookings for this stay yet. Book one here, or the guest can request one from the Room Display.</div>
           ) : (
             activityBookings.map(ab => (
               <div key={ab.id} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -1157,16 +1180,22 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   <div style={{ fontWeight: 600 }}>{ab.activity_name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {String(ab.scheduled_date).slice(0, 10)}{ab.scheduled_time ? ` ${ab.scheduled_time.slice(0, 5)}` : ''} · {ab.num_participants} pax
+                    {' · '}{ab.payment_method === 'room_charge' ? 'charged to room' : ab.payment_method ? `paid · ${paymentMethods.find(m => m.id === ab.payment_method)?.label || ab.payment_method}` : 'not paid yet'}
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
-                  <span style={{ fontWeight: 600 }}>{fmtIDR(ab.total_amount)}</span>
+                  <span style={{ fontWeight: 600 }}>{fmtIDR(activityPaidTotal(ab))}</span>
                   <span className={`badge badge-${ACTIVITY_STATUS_BADGE[ab.status]}`}>{ab.status}</span>
                 </div>
               </div>
             ))
           )}
         </div>
+      )}
+
+      {bookingActivity && (
+        <ActivityBookingModal reservation={booking} onClose={() => setBookingActivity(false)}
+          onDone={() => { setBookingActivity(false); loadActivityBookings(); if (folio) loadFolio(); load(); }} />
       )}
 
       {amending && (

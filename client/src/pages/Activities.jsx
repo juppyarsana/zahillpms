@@ -1,27 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
+import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 
 const CATEGORIES = ['tour', 'transport', 'wellness', 'other'];
 const CAT_ICONS = { tour: '🥾', transport: '🚐', wellness: '🧘', other: '📦' };
 const STATUSES = ['requested', 'confirmed', 'completed', 'cancelled', 'no_show'];
 const STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
-const EMPTY_ACTIVITY_FORM = { name: '', category: 'tour', price: '', duration_minutes: '', capacity_per_slot: '', description: '', is_available: true };
-const EMPTY_BOOKING_FORM = { activity_id: '', scheduled_date: '', scheduled_time: '', num_participants: 1, guest_name: '', guest_phone: '', payment_method: '', pickup_location: '', notes: '', booking_id: '' };
-// Reservation statuses a staff desk activity booking can reasonably link
-// to — excludes cancelled/no_show (never had or lost the stay) and
-// checked_out (stay already over); pending/deposit_paid are included so
-// staff can book ahead of a guest's arrival, not just once checked in.
-const LINKABLE_STATUSES = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
-
+const EMPTY_ACTIVITY_FORM = { name: '', category: 'tour', price: '', duration_minutes: '', capacity_per_slot: '', description: '', is_available: true, tax_mode: 'added' };
+// How service charge + tax work for an activity (migration 078).
+const TAX_MODES = [
+  { key: 'added',    label: 'Added on top (price is before tax)', short: '++', hint: 'Like rooms: service charge and tax are added to the price. Usual for things the hotel runs itself.' },
+  { key: 'included', label: 'Included in the price (all-in)',     short: 'nett', hint: 'The guest pays the price, nothing more. The service and tax inside it are worked out for the reports. Usual for vendor tours resold under the hotel name.' },
+  { key: 'none',     label: 'No service charge or tax',           short: 'no tax', hint: 'The guest pays the price and none of it is counted as service or tax. Ask your accountant which fits.' },
+];
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
 export default function Activities() {
   const { user } = useAuth();
-  const { paymentMethods } = useSettings();
-  const activePaymentMethods = paymentMethods.filter(m => m.is_active);
-  function defaultPaymentMethod() { return activePaymentMethods[0]?.id || ''; }
   const isOwner = user?.role === 'owner';
 
   const [tab, setTab] = useState('bookings');
@@ -34,44 +30,6 @@ export default function Activities() {
   const [activityModal, setActivityModal] = useState(null); // { mode: 'add'|'edit', id? }
   const [activityForm, setActivityForm] = useState(EMPTY_ACTIVITY_FORM);
   const [bookingModal, setBookingModal] = useState(false);
-  const [bookingForm, setBookingForm] = useState(EMPTY_BOOKING_FORM);
-  const [error, setError] = useState('');
-
-  // Reservation picker (optional) for the New Activity Booking modal — lets
-  // staff link the activity to an existing guest's stay instead of typing a
-  // walk-up name, so it shows the real guest and can be charged to the room.
-  const [guestQueryInput, setGuestQueryInput] = useState('');
-  const [guestQuery, setGuestQuery] = useState(''); // debounced
-  const [guestResults, setGuestResults] = useState([]);
-  const [searchingGuest, setSearchingGuest] = useState(false);
-  const [pickedReservation, setPickedReservation] = useState(null);
-
-  useEffect(() => {
-    const t = setTimeout(() => setGuestQuery(guestQueryInput.trim()), 300);
-    return () => clearTimeout(t);
-  }, [guestQueryInput]);
-  useEffect(() => {
-    if (!bookingModal || !guestQuery) { setGuestResults([]); return; }
-    let cancelled = false;
-    setSearchingGuest(true);
-    api.get('/api/bookings', { params: { q: guestQuery } }).then(r => {
-      if (cancelled) return;
-      setGuestResults(r.data.filter(b => LINKABLE_STATUSES.includes(b.status)));
-    }).finally(() => { if (!cancelled) setSearchingGuest(false); });
-    return () => { cancelled = true; };
-  }, [guestQuery, bookingModal]);
-
-  function pickReservation(b) {
-    setPickedReservation(b);
-    setBookingForm(f => ({ ...f, booking_id: b.id, guest_name: '', guest_phone: '' }));
-    setGuestQueryInput('');
-    setGuestQuery('');
-    setGuestResults([]);
-  }
-  function clearReservation() {
-    setPickedReservation(null);
-    setBookingForm(f => ({ ...f, booking_id: '', payment_method: f.payment_method === 'room_charge' ? defaultPaymentMethod() : f.payment_method }));
-  }
 
   async function loadActivities() { const r = await api.get('/api/activities'); setActivities(r.data); }
   async function loadBookings() {
@@ -96,6 +54,7 @@ export default function Activities() {
     setActivityForm({
       name: a.name, category: a.category, price: a.price, duration_minutes: a.duration_minutes ?? '',
       capacity_per_slot: a.capacity_per_slot ?? '', description: a.description || '', is_available: a.is_available,
+      tax_mode: a.tax_mode || 'added',
     });
     setActivityModal({ mode: 'edit', id: a.id });
   }
@@ -106,6 +65,7 @@ export default function Activities() {
       description: activityForm.description,
       duration_minutes: activityForm.duration_minutes === '' ? null : parseInt(activityForm.duration_minutes),
       capacity_per_slot: activityForm.capacity_per_slot === '' ? null : parseInt(activityForm.capacity_per_slot),
+      tax_mode: activityForm.tax_mode,
     };
     if (activityModal.mode === 'add') {
       await api.post('/api/activities', payload);
@@ -116,27 +76,7 @@ export default function Activities() {
     loadActivities();
   }
 
-  function openNewBooking() {
-    setBookingForm({ ...EMPTY_BOOKING_FORM, payment_method: defaultPaymentMethod() });
-    setError('');
-    setPickedReservation(null);
-    setGuestQueryInput('');
-    setGuestQuery('');
-    setGuestResults([]);
-    setBookingModal(true);
-  }
-  async function saveBooking() {
-    if (!bookingForm.activity_id || !bookingForm.scheduled_date) { setError('Activity and date are required'); return; }
-    setError('');
-    try {
-      await api.post('/api/activities/bookings', bookingForm);
-      setBookingModal(false);
-      loadBookings();
-      loadSummary();
-    } catch (err) {
-      setError(err?.response?.data?.error || 'Could not create booking');
-    }
-  }
+  function openNewBooking() { setBookingModal(true); }
 
   async function downloadReceipt(b) {
     try {
@@ -215,7 +155,10 @@ export default function Activities() {
                       <td style={{ fontWeight: 600 }}>{CAT_ICONS[b.activity_category]} {b.activity_name}</td>
                       <td>{b.room_guest_name || b.guest_name || '—'}{b.unit_name ? ` (${b.unit_name})` : ''}</td>
                       <td>{b.num_participants}</td>
-                      <td>{fmtIDR(b.total_amount)}</td>
+                      <td>
+                        {fmtIDR(activityPaidTotal(b))}
+                        {(parseFloat(b.service_charge_amount) > 0 || parseFloat(b.tax_amount) > 0) && <div className="text-muted" style={{ fontSize: 11 }}>incl. tax</div>}
+                      </td>
                       <td><span className={`badge badge-${STATUS_BADGE[b.status]}`}>{b.status}</span></td>
                       <td>
                         <div className="flex gap-2">
@@ -254,7 +197,7 @@ export default function Activities() {
                     <tr key={a.id}>
                       <td style={{ fontWeight: 600 }}>{a.name}</td>
                       <td>{CAT_ICONS[a.category]} {a.category}</td>
-                      <td>{fmtIDR(a.price)}</td>
+                      <td>{fmtIDR(a.price)} <span className="badge badge-gray" style={{ fontSize: 10 }} title={TAX_MODES.find(m => m.key === (a.tax_mode || 'added'))?.label}>{TAX_MODES.find(m => m.key === (a.tax_mode || 'added'))?.short}</span></td>
                       <td>{a.duration_minutes ? `${a.duration_minutes} min` : '—'}</td>
                       <td>{a.capacity_per_slot ?? 'Unlimited'}</td>
                       <td><span className={`badge badge-${a.is_available ? 'green' : 'gray'}`}>{a.is_available ? 'Yes' : 'No'}</span></td>
@@ -290,6 +233,15 @@ export default function Activities() {
                 <div className="form-group"><label className="form-label">Duration (minutes)</label><input className="form-input" type="number" value={activityForm.duration_minutes} onChange={e => setActivityForm(f => ({ ...f, duration_minutes: e.target.value }))} /></div>
                 <div className="form-group"><label className="form-label">Capacity per Slot</label><input className="form-input" type="number" value={activityForm.capacity_per_slot} onChange={e => setActivityForm(f => ({ ...f, capacity_per_slot: e.target.value }))} placeholder="Leave blank for unlimited" /></div>
               </div>
+              <div className="form-group">
+                <label className="form-label">Service charge &amp; tax</label>
+                <select className="form-select" value={activityForm.tax_mode} onChange={e => setActivityForm(f => ({ ...f, tax_mode: e.target.value }))}>
+                  {TAX_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {TAX_MODES.find(m => m.key === activityForm.tax_mode)?.hint} Applies to new bookings.
+                </div>
+              </div>
               <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={activityForm.description} onChange={e => setActivityForm(f => ({ ...f, description: e.target.value }))} /></div>
               {activityModal.mode === 'edit' && (
                 <div className="form-group">
@@ -309,94 +261,8 @@ export default function Activities() {
       )}
 
       {bookingModal && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-title">New Activity Booking</div>
-              <button className="btn btn-icon" onClick={() => setBookingModal(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              {error && <div className="text-red" style={{ marginBottom: 8, fontSize: 13 }}>{error}</div>}
-              <div className="form-group"><label className="form-label">Activity *</label>
-                <select className="form-select" value={bookingForm.activity_id} onChange={e => setBookingForm(f => ({ ...f, activity_id: e.target.value }))}>
-                  <option value="">Select an activity</option>
-                  {activities.filter(a => a.is_available).map(a => <option key={a.id} value={a.id}>{a.name} — {fmtIDR(a.price)}</option>)}
-                </select>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Date *</label><input className="form-input" type="date" value={bookingForm.scheduled_date} onChange={e => setBookingForm(f => ({ ...f, scheduled_date: e.target.value }))} /></div>
-                <div className="form-group"><label className="form-label">Time</label><input className="form-input" type="time" value={bookingForm.scheduled_time} onChange={e => setBookingForm(f => ({ ...f, scheduled_time: e.target.value }))} /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Participants</label><input className="form-input" type="number" min="1" value={bookingForm.num_participants} onChange={e => setBookingForm(f => ({ ...f, num_participants: e.target.value }))} /></div>
-
-              <div className="form-group">
-                <label className="form-label">Guest</label>
-                {pickedReservation ? (
-                  <div className="flex items-center gap-2" style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600 }}>{pickedReservation.guest_name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {pickedReservation.unit_name} · {String(pickedReservation.check_in_date).slice(0, 10)} → {String(pickedReservation.check_out_date).slice(0, 10)}
-                      </div>
-                    </div>
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={clearReservation}>✕ Change</button>
-                  </div>
-                ) : (
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      className="form-input"
-                      value={guestQueryInput}
-                      onChange={e => setGuestQueryInput(e.target.value)}
-                      placeholder="Search a reservation by guest name (optional)…"
-                    />
-                    {guestQueryInput && (
-                      <div className="card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, maxHeight: 220, overflowY: 'auto', padding: 4, marginTop: 2 }}>
-                        {searchingGuest ? (
-                          <div style={{ padding: 8, fontSize: 13, color: 'var(--text-muted)' }}>Searching…</div>
-                        ) : guestResults.length === 0 ? (
-                          <div style={{ padding: 8, fontSize: 13, color: 'var(--text-muted)' }}>No matching reservation — will book as a walk-up guest.</div>
-                        ) : guestResults.map(b => (
-                          <div
-                            key={b.id}
-                            onClick={() => pickReservation(b)}
-                            style={{ padding: 8, cursor: 'pointer', borderRadius: 4 }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover, #f3f4f6)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{b.guest_name}</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              {b.unit_name} · {String(b.check_in_date).slice(0, 10)} → {String(b.check_out_date).slice(0, 10)} · {b.status}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {!pickedReservation && (
-                <div className="form-row">
-                  <div className="form-group"><label className="form-label">Guest Name</label><input className="form-input" value={bookingForm.guest_name} onChange={e => setBookingForm(f => ({ ...f, guest_name: e.target.value }))} placeholder="Walk-up guest (no room booking)" /></div>
-                  <div className="form-group"><label className="form-label">Guest Phone</label><input className="form-input" value={bookingForm.guest_phone} onChange={e => setBookingForm(f => ({ ...f, guest_phone: e.target.value }))} /></div>
-                </div>
-              )}
-              <div className="form-group"><label className="form-label">Pickup Location</label><input className="form-input" value={bookingForm.pickup_location} onChange={e => setBookingForm(f => ({ ...f, pickup_location: e.target.value }))} placeholder="For transport / pickup activities" /></div>
-              <div className="form-group"><label className="form-label">Payment Method</label>
-                <select className="form-select" value={bookingForm.payment_method} onChange={e => setBookingForm(f => ({ ...f, payment_method: e.target.value }))}>
-                  <option value="">Not specified</option>
-                  {activePaymentMethods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                  {pickedReservation && <option value="room_charge">Room Charge</option>}
-                </select>
-              </div>
-              <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={bookingForm.notes} onChange={e => setBookingForm(f => ({ ...f, notes: e.target.value }))} /></div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setBookingModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveBooking}>Create Booking</button>
-            </div>
-          </div>
-        </div>
+        <ActivityBookingModal onClose={() => setBookingModal(false)}
+          onDone={() => { setBookingModal(false); loadBookings(); loadSummary(); }} />
       )}
     </div>
   );

@@ -91,9 +91,11 @@ async function getSourceOutstanding(propertyId, sourceId) {
   const { rows: [row] } = await db.query(
     `SELECT COALESCE(SUM(GREATEST(0,
        ROUND(
-         (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false)
+         (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false AND tax_mode = 'added')
          * (1 + COALESCE(ps.service_charge_rate, 0) / 100.0)
          * (1 + COALESCE(ps.tax_rate, 0) / 100.0)
+         -- activity lines priced tax-included / no tax (migration 078) aren't grossed up
+         + (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false AND tax_mode <> 'added')
        , 2)
        - (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE booking_id = b.id AND status = 'received')
      )), 0) AS outstanding

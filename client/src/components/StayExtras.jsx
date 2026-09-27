@@ -14,7 +14,7 @@ const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const FNB = ['food', 'drinks'];   // the restaurant's, not sold from the front desk
 
-export function AddStayItemModal({ booking, onClose, onDone }) {
+export function AddStayItemModal({ booking, onClose, onDone, onBookActivity }) {
   const [products, setProducts] = useState([]);
   const [pick, setPick] = useState(null);          // product
   const [qty, setQty] = useState(1);
@@ -88,6 +88,12 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
                 ))}
                 {products.length === 0 && <div className="text-muted">No items — add them in Sales → Items.</div>}
               </div>
+              {onBookActivity && (
+                <div className="text-muted" style={{ fontSize: 12, marginTop: 12 }}>
+                  Booking a tour or activity?{' '}
+                  <button className="btn btn-sm btn-ghost" style={{ padding: '2px 6px' }} onClick={onBookActivity}>Book activity →</button>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -146,7 +152,7 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
 }
 
 // "Extras for this stay" card on the booking's Details tab.
-export default function StayExtrasCard({ booking, openAdd, onChanged }) {
+export default function StayExtrasCard({ booking, openAdd, onChanged, onBookActivity }) {
   const [addons, setAddons] = useState([]);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState(null);   // addon row
@@ -218,7 +224,7 @@ export default function StayExtrasCard({ booking, openAdd, onChanged }) {
       {removedCount > 0 && <div className="text-muted" style={{ fontSize: 11, marginTop: 6 }}>{plural(removedCount, 'night')} removed earlier — see Edit History.</div>}
 
       {adding && (
-        <AddStayItemModal booking={booking} onClose={() => setAdding(false)}
+        <AddStayItemModal booking={booking} onClose={() => setAdding(false)} onBookActivity={onBookActivity}
           onDone={() => { setAdding(false); load(); onChanged?.(); }} />
       )}
       {removing && (

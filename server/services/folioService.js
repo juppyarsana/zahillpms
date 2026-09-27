@@ -52,6 +52,20 @@ function computeFolioTotals(subtotal, taxRate, serviceChargeRate) {
   return { subtotal: sub, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total };
 }
 
+// Folio totals over charge lines (migration 078): service charge + tax are
+// added only to lines whose tax_mode is 'added' (rooms, meals, extras and
+// most activities); an 'included'/'none' activity line is charged exactly its
+// amount. `subtotal` is every line; service/tax are on the taxable part.
+function chargeTotals(charges, taxRate, serviceChargeRate) {
+  let taxable = 0, untaxed = 0;
+  for (const c of charges) {
+    if (c.tax_mode && c.tax_mode !== 'added') untaxed += parseFloat(c.amount);
+    else taxable += parseFloat(c.amount);
+  }
+  const t = computeFolioTotals(taxable, taxRate, serviceChargeRate);
+  return { ...t, subtotal: round2(taxable + untaxed), untaxed_subtotal: round2(untaxed), total: round2(t.total + untaxed) };
+}
+
 // Loads a booking's folio: charges, payments, and the derived money totals
 // (subtotal → service charge → tax → total → balance_due). Shared by
 // routes/folio.js (GET /:bookingId, GET /:bookingId/invoice, the group
@@ -67,12 +81,19 @@ function computeFolioTotals(subtotal, taxRate, serviceChargeRate) {
 // payment — but it was never on credit, so it must never be billed to an
 // agent (statement, consolidated invoice, commission base). A room_charge
 // sale (incl. a resto tab settled to the room) is still agent-billable.
-const PAID_AT_DESK_SQL = `EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))`;
+// An activity paid directly (migration 078) is the same: its folio line is
+// offset by its own 'incidental' payment.
+const PAID_AT_DESK_SQL = `(EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))
+    OR EXISTS (SELECT 1 FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id AND ab.payment_method <> 'room_charge'))`;
 // How a paid-at-desk line was paid ("Cash", "QRIS"…), NULL when charged to
 // the room — shown on the Folio tab and the invoice so it doesn't read as owed.
-const PAID_METHOD_SQL = `(SELECT COALESCE(pm.label, s.payment_method) FROM sales s
-    LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
-   WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))`;
+const PAID_METHOD_SQL = `COALESCE(
+  (SELECT COALESCE(pm.label, s.payment_method) FROM sales s
+     LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
+    WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid')),
+  (SELECT COALESCE(pm.label, ab.payment_method) FROM activity_bookings ab
+     LEFT JOIN payment_methods pm ON pm.id = ab.payment_method AND pm.property_id = ab.property_id
+    WHERE ab.folio_charge_id = fc.id AND ab.payment_method <> 'room_charge'))`;
 
 // A stay complimentary for "everything" (migration 072): extras charged to
 // the room are free too — flagged `complimentary` and left out of the totals.
@@ -104,7 +125,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
@@ -134,21 +155,19 @@ async function loadFolio(bookingId, propertyId) {
 
   const complimentary_extras = markComplimentary(booking, charges);
   const billable = charges.filter(c => !c.complimentary);
-  const rawSubtotal = billable.reduce((sum, c) => sum + parseFloat(c.amount), 0);
-  const { subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
-    computeFolioTotals(rawSubtotal, settings?.tax_rate, settings?.service_charge_rate);
+  const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
+    chargeTotals(billable, settings?.tax_rate, settings?.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
-  const agent_billable_total = computeFolioTotals(
-    billable.filter(c => !c.paid_at_desk).reduce((sum, c) => sum + parseFloat(c.amount), 0),
-    settings?.tax_rate, settings?.service_charge_rate
+  const agent_billable_total = chargeTotals(
+    billable.filter(c => !c.paid_at_desk), settings?.tax_rate, settings?.service_charge_rate
   ).total;
 
   return {
     booking, charges, payments,
-    subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, agent_billable_total,
+    subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, agent_billable_total,
     complimentary_extras,
     property: settings || {},
   };
@@ -178,7 +197,7 @@ async function computeProforma(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const extraChargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
@@ -238,19 +257,18 @@ async function computeProforma(bookingId, propertyId) {
   const charges = [...projectedCharges, ...addonCharges, ...extraCharges];
   const complimentary_extras = markComplimentary(booking, charges);
 
-  const rawSubtotal = charges.filter(c => !c.complimentary).reduce((sum, c) => sum + parseFloat(c.amount), 0);
-  const { subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
-    computeFolioTotals(rawSubtotal, settings?.tax_rate, settings?.service_charge_rate);
+  const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
+    chargeTotals(charges.filter(c => !c.complimentary), settings?.tax_rate, settings?.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
 
   return {
     booking, charges, payments,
-    subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
+    subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
     complimentary_extras,
     property: settings || {},
     is_estimate: true,
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
