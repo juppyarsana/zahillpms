@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { propertyToday, addDaysYmd, fmtYmd, PROPERTY_TZ } from '../lib/propertyTime';
 import api from '../services/api';
 import { SourceBadge, useSettings } from '../context/SettingsContext';
 
@@ -171,6 +172,165 @@ function GroupsView({ nav }) {
   );
 }
 
+// "Booked on" view: reservations by the day they were MADE (any stay date) —
+// "how many reservations did we take today?". A group is one row. Same
+// numbers as the Dashboard's "New reservations" and the Daily Close
+// (GET /api/bookings/booked → services/bookingPickup).
+const fmtIDRr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+function bookedRange(pick, custom) {
+  const t = propertyToday();
+  if (pick === 'today') return [t, t];
+  if (pick === 'yesterday') { const y = addDaysYmd(t, -1); return [y, y]; }
+  if (pick === 'week') {   // Monday → today
+    const dow = new Date(t + 'T00:00:00Z').getUTCDay();
+    return [addDaysYmd(t, -((dow + 6) % 7)), t];
+  }
+  if (pick === 'month') return [t.slice(0, 8) + '01', t];
+  return [custom.from || t, custom.to || custom.from || t];
+}
+function bookedStatus(r) {
+  if (r.cancelled_rooms === r.rooms) return ['Cancelled', 'badge-red'];
+  const live = r.statuses.filter(s => s !== 'cancelled');
+  const one = live.every(s => s === live[0]) ? live[0] : null;
+  const label = one ? STATUS_LABELS[one] : 'Mixed';
+  return [r.cancelled_rooms ? `${label} · ${r.cancelled_rooms} cancelled` : label, one ? STATUS_BADGE[one] : 'badge-gray'];
+}
+function BookedView({ nav }) {
+  const [pick, setPick] = useState('today');
+  const [custom, setCustom] = useState({ from: '', to: '' });
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [from, to] = bookedRange(pick, custom);
+
+  useEffect(() => {
+    setLoading(true); setError('');
+    api.get('/api/bookings/booked', { params: { from, to } })
+      .then(r => setData(r.data))
+      .catch(err => { setData(null); setError(err.response?.data?.error || 'Could not load'); })
+      .finally(() => setLoading(false));
+  }, [from, to]);
+
+  const open = r => nav(r.group_id ? `/reservations/group/${r.group_id}` : `/reservations/${r.id}`);
+  const madeAt = iso => {
+    const d = new Date(iso);
+    const day = d.toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ });
+    const time = d.toLocaleTimeString('en-GB', { timeZone: PROPERTY_TZ, hour: '2-digit', minute: '2-digit' });
+    return from === to ? time : `${fmtYmd(day)} · ${time}`;
+  };
+  const rangeLabel = from === to ? fmtYmd(from, { weekday: 'long', day: 'numeric', month: 'long' }) : `${fmtYmd(from)} – ${fmtYmd(to)}`;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+  const rowsTable = (rows, empty, cancelled) => (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Booked</th><th>Guest</th><th>Rooms</th><th>Stay</th><th>Guests</th><th>Source</th>
+            <th style={{ textAlign: 'right' }} title="Net — room + meals after discount, before service and tax">Value (net)</th>
+            {!cancelled && <th>Status</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const [label, cls] = bookedStatus(r);
+            return (
+              <tr key={r.group_id || r.id} style={{ cursor: 'pointer', opacity: !cancelled && label === 'Cancelled' ? 0.55 : 1 }} onClick={() => open(r)}>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {cancelled ? fmtYmd(new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ })) : madeAt(r.created_at)}
+                  {r.created_by_name && <div className="text-muted" style={{ fontSize: 11 }}>by {r.created_by_name}</div>}
+                </td>
+                <td style={{ fontWeight: 600 }}>
+                  {r.guest_name}
+                  {r.group_id && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>👥 Group</span>}
+                </td>
+                <td>
+                  {plural(r.rooms, 'room')}
+                  <div className="text-muted" style={{ fontSize: 11 }}>{r.unit_names.join(', ')}</div>
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {fmtYmd(r.check_in_date)} → {fmtYmd(r.check_out_date)}
+                  <div className="text-muted" style={{ fontSize: 11 }}>{plural(r.nights, r.rooms > 1 ? 'room-night' : 'night')}</div>
+                </td>
+                <td>{r.guests}</td>
+                <td>{r.source_label}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtIDRr(r.value)}</td>
+                {!cancelled && <td><span className={`badge ${cls}`}>{label}</span></td>}
+              </tr>
+            );
+          })}
+          {rows.length === 0 && (
+            <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 28 }}>{empty}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <>
+      <div className="card mb-3">
+        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Booked on</label>
+            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+              {[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'This week'], ['month', 'This month'], ['custom', 'Pick dates']].map(([k, l]) => (
+                <button key={k} className={`btn btn-sm ${pick === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPick(k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {pick === 'custom' && (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">From</label>
+                <input type="date" className="form-input" value={custom.from} max={propertyToday()} onChange={e => setCustom(c => ({ ...c, from: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">To</label>
+                <input type="date" className="form-input" value={custom.to} min={custom.from || undefined} onChange={e => setCustom(c => ({ ...c, to: e.target.value }))} />
+              </div>
+            </>
+          )}
+        </div>
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
+          Reservations by the day they were <b>made</b>, for any stay date. A group booking is one row.
+          Times are property time (WITA).
+        </div>
+      </div>
+
+      {error && <div className="alert alert-error">{error}</div>}
+      {loading ? <div className="text-muted" style={{ padding: 30, textAlign: 'center' }}>Loading…</div> : data && (
+        <>
+          <div className="card mb-3" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
+            {[
+              ['Reservations made', plural(data.made.bookings, 'booking'), rangeLabel],
+              ['Rooms', plural(data.made.rooms, 'room'), plural(data.made.nights, 'room-night')],
+              ['Guests', String(data.made.guests), 'in these bookings'],
+              ['Value', fmtIDRr(data.made.value), 'net · before service & tax'],
+              ['Cancelled', plural(data.cancelled.bookings, 'booking'), data.cancelled.rooms ? `${plural(data.cancelled.rooms, 'room')} · ${fmtIDRr(data.cancelled.value)}` : 'none'],
+            ].map(([label, value, sub], i) => (
+              <div key={label} style={{ flex: '1 1 150px', padding: '14px 18px', borderLeft: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                <div className="stat-label">{label}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: label === 'Cancelled' && data.cancelled.bookings ? 'var(--danger-text)' : undefined }}>{value}</div>
+                <div className="stat-sub">{sub}</div>
+              </div>
+            ))}
+          </div>
+          <div className="card mb-3">
+            {rowsTable(data.rows, pick === 'today' ? 'No reservations made yet today.' : 'No reservations made in this period.')}
+          </div>
+          {data.cancelled_rows.length > 0 && (
+            <div className="card">
+              <div className="card-title">Cancelled in this period</div>
+              {rowsTable(data.cancelled_rows, '', true)}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export default function Reservations() {
   const nav = useNavigate();
   const { sources } = useSettings();
@@ -182,7 +342,9 @@ export default function Reservations() {
   const [bookings, setBookings] = useState([]);
   const [units, setUnits]   = useState([]);
   const [rates, setRates]   = useState({});
-  const [view, setView]     = useState('calendar');
+  // ?view=booked (e.g. from the Dashboard's "New reservations" box).
+  const [params] = useSearchParams();
+  const [view, setView]     = useState(['list', 'groups', 'booked'].includes(params.get('view')) ? params.get('view') : 'calendar');
   const calScrollRef        = useRef(null);
 
   // List view filters — kept separate from the calendar's month/year-driven
@@ -485,7 +647,7 @@ export default function Reservations() {
         <div>
           <div className="page-title">Reservations</div>
           <div className="page-subtitle">
-            {monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}
+            {view === 'booked' ? `${units.length} units · By the day they were booked` : <>{monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}</>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -495,7 +657,7 @@ export default function Reservations() {
       </div>
 
       <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        {view !== 'groups' && (
+        {view !== 'groups' && view !== 'booked' && (
           <>
             <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
             <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
@@ -527,6 +689,8 @@ export default function Reservations() {
           <button className={`btn btn-sm ${view === 'calendar' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('calendar')}>Calendar</button>
           <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('list')}>List</button>
           <button className={`btn btn-sm ${view === 'groups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('groups')}>👥 Groups</button>
+          <button className={`btn btn-sm ${view === 'booked' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('booked')}
+            title="Reservations by the day they were made — e.g. how many we took today">🆕 Booked on</button>
         </div>
       </div>
 
@@ -628,6 +792,8 @@ export default function Reservations() {
         </>
       ) : view === 'groups' ? (
         <GroupsView nav={nav} />
+      ) : view === 'booked' ? (
+        <BookedView nav={nav} />
       ) : (
         /* List view */
         <>

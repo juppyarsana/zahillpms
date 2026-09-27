@@ -209,6 +209,7 @@ async function buildMorningBrief(propertyId) {
       dirty_other: dirty.filter(u => !arrivalUnits.has(u.name)).map(u => u.name),
       overdue: gl.departures.filter(d => d.overdue).map(d => ({ unit_name: d.unit_name, guest_name: d.guest_name, check_out_date: d.check_out_date })),
       late_arrivals: gl.arrivals.filter(a => a.late_arrival).map(a => ({ unit_name: a.unit_name, guest_name: a.guest_name, check_in_date: a.check_in_date })),
+      never_arrived: (gl.never_arrived || []).map(a => ({ unit_name: a.unit_name, guest_name: a.guest_name, check_in_date: a.check_in_date })),
       out_of_order: outOfOrder.map(u => ({ unit_name: u.name, reason: u.status_reason, expected_back: u.status_expected_back })),
     },
     arrival_rows: gl.arrivals.map(a => ({
@@ -220,7 +221,7 @@ async function buildMorningBrief(propertyId) {
 
 function attentionCount(b) {
   const a = b.attention;
-  return a.dirty_for_arrival.length + a.overdue.length + a.late_arrivals.length + a.out_of_order.length;
+  return a.dirty_for_arrival.length + a.overdue.length + a.late_arrivals.length + a.never_arrived.length + a.out_of_order.length;
 }
 
 function morningBriefTelegram(b) {
@@ -245,6 +246,7 @@ function morningBriefTelegram(b) {
   else for (const o of a.overdue) items.push(`⏰ ${e(o.unit_name)} ${e(o.guest_name)} — overdue, was due out ${e(fmtDateShort(o.check_out_date))}`);
   if (a.late_arrivals.length > 3) items.push(`🕓 ${a.late_arrivals.length} late arrivals (due before today): ${e(a.late_arrivals.map(l => l.unit_name).join(', '))}`);
   else for (const l of a.late_arrivals) items.push(`🕓 ${e(l.unit_name)} ${e(l.guest_name)} — late arrival, was due ${e(fmtDateShort(l.check_in_date))}`);
+  if (a.never_arrived.length) items.push(`🗑 ${a.never_arrived.length} old booking${a.never_arrived.length !== 1 ? 's' : ''} never checked in (stay already over) — mark no-show or cancel`);
   if (a.out_of_order.length > 3) items.push(`🔧 ${a.out_of_order.length} rooms out of order: ${e(a.out_of_order.map(o => o.unit_name).join(', '))}`);
   else for (const o of a.out_of_order) items.push(`🔧 ${e(o.unit_name)} out of order${o.reason ? ` (${e(o.reason)})` : ''}`);
   if (a.dirty_other.length) items.push(`🧹 Other rooms to clean: ${e(a.dirty_other.join(', '))}`);
@@ -288,6 +290,7 @@ function morningBriefEmail(b) {
   if (a.dirty_for_arrival.length) items.push(`🧹 <b>Not clean, guest arriving today:</b> ${esc(a.dirty_for_arrival.join(', '))}`);
   for (const o of a.overdue) items.push(`⏰ <b>${esc(o.unit_name)}</b> ${esc(o.guest_name)} — still checked in, was due out ${esc(fmtDateShort(o.check_out_date))}`);
   for (const l of a.late_arrivals) items.push(`🕓 <b>${esc(l.unit_name)}</b> ${esc(l.guest_name)} — not arrived yet, was due ${esc(fmtDateShort(l.check_in_date))}`);
+  if (a.never_arrived.length) items.push(`🗑 <b>${a.never_arrived.length} old booking${a.never_arrived.length !== 1 ? 's' : ''}</b> never checked in and the stay is already over (${esc(a.never_arrived.slice(0, 6).map(l => `${l.unit_name} ${l.guest_name}`).join(', '))}${a.never_arrived.length > 6 ? ', …' : ''}) — mark no-show or cancel, or they count as sold in the reports`);
   for (const o of a.out_of_order) items.push(`🔧 <b>${esc(o.unit_name)}</b> out of order${o.reason ? ` — ${esc(o.reason)}` : ''}${o.expected_back ? ` (back ${esc(fmtDateShort(o.expected_back))})` : ''}`);
   if (a.dirty_other.length) items.push(`🧹 Other rooms to clean: ${esc(a.dirty_other.join(', '))}`);
 

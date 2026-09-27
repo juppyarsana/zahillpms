@@ -6,6 +6,8 @@ import { useCall } from '../context/CallContext';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import api from '../services/api';
+import { TodaySection, MonthSection, SectionHeading } from '../components/DashboardSections';
+import { propertyClock, propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 
 /* ─── helpers ─────────────────────────────────────────── */
 
@@ -23,7 +25,6 @@ function greeting() {
   return 'Good evening';
 }
 
-const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 /* ─── channel badge ────────────────────────────────────── */
 function ChBadge({ source }) {
@@ -44,10 +45,8 @@ function ChBadge({ source }) {
 function fmtDay(ymd) {
   return ymd ? new Date(String(ymd).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
 }
-function todayYmd() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+// The property's today (Bali), not the viewer's.
+function todayYmd() { return propertyToday(); }
 const BED_LABEL = { double: 'Double bed', twin: 'Twin beds', twin_or_double: 'Twin or double', other: 'Other bed setup' };
 
 // The stay behind a room tile (in house, or arriving today): loaded when the
@@ -962,98 +961,6 @@ function taskIcon(type) {
   return TASK_ICONS[type] || TASK_ICONS.other;
 }
 
-/* ─── revenue bar chart ────────────────────────────────── */
-function RevenueChart({ bookings, pendingCount, pendingTotal }) {
-  const { sources } = useSettings();
-  function chLabel(id) { return sources.find(s => s.id === id)?.label || id; }
-  function chColor(id) { return sources.find(s => s.id === id)?.color || '#6B7280'; }
-
-  const today = new Date();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(today.getDate() - (6 - i));
-    return d;
-  });
-
-  const dailyRevenue = days.map(d => {
-    const ds = d.toISOString().slice(0, 10);
-    return bookings
-      .filter(b => b.check_in_date?.slice(0, 10) === ds || b.check_out_date?.slice(0, 10) === ds)
-      .reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0);
-  });
-
-  const maxRev = Math.max(...dailyRevenue, 1);
-
-  // Channel mix from recent bookings
-  const recent = bookings.filter(b => {
-    const ci = new Date(b.check_in_date);
-    const cutoff = new Date(today); cutoff.setDate(today.getDate() - 30);
-    return ci >= cutoff;
-  });
-  const totalRecent = recent.length || 1;
-  const channelCounts = {};
-  recent.forEach(b => { channelCounts[b.source] = (channelCounts[b.source] || 0) + 1; });
-  const topChannels = Object.entries(channelCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2)
-    .map(([ch, cnt]) => ({ ch, pct: Math.round((cnt / totalRecent) * 100) }));
-
-  return (
-    <>
-      {/* bars */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 80 }}>
-        {dailyRevenue.map((rev, i) => {
-          const isToday = i === 6;
-          const h = Math.max(8, Math.round((rev / maxRev) * 100));
-          return (
-            <div key={i} style={{ flex: 1, height: `${h}%`, borderRadius: '4px 4px 0 0',
-              background: isToday ? '#5C1A2E' : '#F3E3E6', transition: 'height 0.3s' }}
-              title={fmtIDR(rev)} />
-          );
-        })}
-      </div>
-
-      {/* day labels */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-        {days.map((d, i) => {
-          const isToday = i === 6;
-          return (
-            <span key={i} style={{ fontSize: 11, color: isToday ? '#5C1A2E' : '#6B7280',
-              fontWeight: isToday ? 800 : 400, flex: 1, textAlign: 'center' }}>
-              {isToday ? 'Today' : DAY_LABELS[d.getDay()]}
-            </span>
-          );
-        })}
-      </div>
-
-      <hr style={{ border: 'none', borderTop: '1px solid #E5E7EB', margin: '14px 0' }} />
-
-      {/* footer */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontSize: 11, color: '#6B7280' }}>Channel Mix</div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            {topChannels.length > 0
-              ? topChannels.map(({ ch, pct }) => (
-                  <span key={ch} style={{ background: chColor(ch), color: 'white', padding: '2px 9px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
-                    {pct}% {chLabel(ch)}
-                  </span>
-                ))
-              : <span style={{ fontSize: 11, color: '#6B7280' }}>No data</span>
-            }
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: '#6B7280' }}>Pending Payments</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#D97706', marginTop: 4 }}>
-            {pendingTotal > 0 ? `${fmtIDR(pendingTotal)} · ` : ''}{pendingCount} booking{pendingCount !== 1 ? 's' : ''}
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
 /* ─── night audit widget ───────────────────────────────── */
 function NightAuditWidget() {
   const nav = useNavigate();
@@ -1376,11 +1283,9 @@ function AiSummaryCard({ summary }) {
 /* ─── main component ───────────────────────────────────── */
 export default function Dashboard() {
   const { branding } = useSettings();
-  const { user } = useAuth();
+  const { user, can, hasModule } = useAuth();
   const [data,           setData]          = useState(null);
   const [tasks,          setTasks]         = useState([]);
-  const [monthBookings,  setMonthBookings] = useState([]);
-  const [pendingTotal,   setPendingTotal]  = useState(0);
   const [loading,        setLoading]       = useState(true);
   const [competitors,    setCompetitors]   = useState([]);
   const [trends,         setTrends]        = useState({});
@@ -1390,11 +1295,9 @@ export default function Dashboard() {
 
   async function load() {
     try {
-      const now = new Date();
-      const [summaryRes, tasksRes, bookingsRes, competitorsRes, trendsRes, holidaysRes, aiSummaryRes] = await Promise.all([
+      const [summaryRes, tasksRes, competitorsRes, trendsRes, holidaysRes, aiSummaryRes] = await Promise.all([
         api.get('/api/dashboard/summary'),
         api.get('/api/tasks'),
-        api.get(`/api/bookings?month=${now.getMonth() + 1}&year=${now.getFullYear()}`),
         api.get('/api/insights/competitors'),
         api.get('/api/insights/trends'),
         api.get('/api/insights/holidays?days=45'),
@@ -1405,18 +1308,13 @@ export default function Dashboard() {
       setTrends(trendsRes.data);
       setHolidays(holidaysRes.data);
       setAiSummary(aiSummaryRes.data);
-      const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+      const todayStr = propertyToday();
       const todayTasks = tasksRes.data.filter(t => {
         if (!t.due_time) return false;
-        return new Date(t.due_time).toLocaleDateString('en-CA') === todayStr;
+        return new Date(t.due_time).toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ }) === todayStr;
       });
       setTasks(todayTasks.slice(0, 5));
       setGuestRequests(tasksRes.data.filter(t => t.type === 'guest_request' && t.status !== 'done'));
-      setMonthBookings(bookingsRes.data);
-
-      // estimate pending total from confirmed bookings with no received deposit
-      const pending = bookingsRes.data.filter(b => b.status === 'pending');
-      setPendingTotal(pending.reduce((s, b) => s + parseFloat(b.total_amount || 0), 0));
     } catch {}
     setLoading(false);
   }
@@ -1445,16 +1343,10 @@ export default function Dashboard() {
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading dashboard…</div>;
   if (!data)   return <div className="alert alert-error">Failed to load dashboard</div>;
 
-  const { occupancy, arrivals_today, departures_today, pending_payments_count, revenue } = data;
-  // Tonight = from bookings (staying over + arriving today + overdue), not the
-  // rooms occupied right now — on a turnover day those differ a lot.
-  const tonightCount = occupancy.tonight ?? occupancy.occupied;
-  const tb = occupancy.tonight_breakdown;
-  const sellable = occupancy.total - (occupancy.out_of_order || 0);
-  const occupiedPct = sellable > 0 ? Math.round((tonightCount / sellable) * 100) : 0;
-
-  // Today's date string for greeting subtitle
-  const todayStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const { occupancy, arrivals_today, departures_today } = data;
+  const isOwner = user?.role === 'owner';
+  // "This Month" (money): owners, or staff given Month summary in Roles & Permissions.
+  const showMonth = can('month_summary') && hasModule('financial');
 
   return (
     <div>
@@ -1462,7 +1354,10 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">{greeting()}, {user?.name?.split(' ')[0]} 👋</div>
-          <div className="page-subtitle">{todayStr}{branding?.area ? ` · ${branding.area}` : ''}</div>
+          {/* Property time — the hotel's day, wherever the viewer is. */}
+          <div className="page-subtitle" title="The property's local time — every 'today' on this page is the property's day">
+            {propertyClock()}{branding?.area ? ` · ${branding.area}` : ''}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="badge badge-green" style={{ padding: '6px 14px', fontSize: 12 }}>
@@ -1533,71 +1428,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Alert banner if arrivals today ── */}
-      {arrivals_today.length > 0 && (
-        <div className="alert alert-info">
-          📌 <span>
-            <strong>{arrivals_today.length} arrival{arrivals_today.length > 1 ? 's' : ''} today</strong>
-            {' — '}{arrivals_today.map(b => `${b.guest_name} (${b.unit_name})`).join(' · ')}. Please prepare units.
-          </span>
-        </div>
-      )}
-
-      {/* ── 4 Stat Cards ── */}
-      <div className="dashboard-stats">
-
-        <div className="stat-card">
-          <div className="stat-label">Tonight's Occupancy</div>
-          <div className="stat-value">
-            {tonightCount}
-            <span style={{ fontSize: 16, color: '#6B7280' }}>/{sellable}</span>
-          </div>
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span className="badge badge-green">{occupiedPct}%</span>
-            <span style={{ fontSize: 11, color: '#6B7280' }}>{Math.max(0, sellable - tonightCount)} units free</span>
-          </div>
-          {tb && (
-            <div style={{ marginTop: 8, fontSize: 11, color: '#6B7280', lineHeight: 1.5 }}
-              title="Rooms with a guest tonight: guests staying over from last night, plus today's arrivals (checked in or not yet), plus guests still checked in past their check-out date. Guests leaving today are not counted.">
-              {tb.staying} staying over + {tb.arriving} arriving{tb.overdue > 0 && <> + <span style={{ color: '#DC2626' }}>{tb.overdue} overdue</span></>}
-              {occupancy.out_of_order > 0 && <div>{occupancy.total} rooms · {occupancy.out_of_order} out of order</div>}
-            </div>
-          )}
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">Arrivals Today</div>
-          <div className="stat-value">{arrivals_today.length}</div>
-          <div className="stat-sub">
-            {arrivals_today.length > 0
-              ? `↑ ${arrivals_today.map(b => b.unit_name).join(', ')}`
-              : 'No arrivals today'}
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">Departures Today</div>
-          <div className="stat-value">{departures_today.length}</div>
-          <div className="stat-sub">
-            {departures_today.length > 0
-              ? departures_today.map(b => b.unit_name).join(', ')
-              : 'No departures today'}
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">Revenue This Month</div>
-          <div className="stat-value" style={{ fontSize: 22 }}>
-            {fmtIDR(revenue?.room_revenue_mtd)}
-          </div>
-          <div style={{ marginTop: 4 }}>
-            <span style={{ fontSize: 11, color: '#6B7280' }}>
-              net room revenue MTD
-              {parseFloat(revenue?.fnb_revenue_mtd || 0) > 0 && ` · + ${fmtIDR(revenue.fnb_revenue_mtd)} F&B`}
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* ── Today — for everyone ── */}
+      <SectionHeading title="Today" />
+      <TodaySection today={data.today} occupancy={occupancy}
+        canLists={can('guest_lists')} canReservations={can('reservations') && hasModule('reservations')} />
 
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>
@@ -1605,8 +1439,8 @@ export default function Dashboard() {
         <UnitStatusBoard units={occupancy.units} guestRequests={guestRequests} onChanged={load} />
       </div>
 
-      {/* ── Two-column section ── */}
-      <div className="grid-2" style={{ gap: 16 }}>
+      {/* ── Today's activity (+ night audit for owners) ── */}
+      <div className={isOwner ? 'grid-2' : undefined} style={{ gap: 16 }}>
 
         {/* ── LEFT: Today's Activity ── */}
         <div className="card">
@@ -1676,27 +1510,16 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* ── RIGHT: Revenue + Night Audit ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* Revenue — Last 7 Days */}
-          <div className="card">
-            <div className="card-title">Revenue — Last 7 Days</div>
-            <RevenueChart
-              bookings={monthBookings}
-              pendingCount={pending_payments_count}
-              pendingTotal={pendingTotal}
-            />
-          </div>
-
-          {/* Night Audit — owner only */}
-          {user?.role === 'owner' && <NightAuditWidget />}
-
-        </div>
+        {/* ── RIGHT: Night Audit — owner only ── */}
+        {isOwner && <NightAuditWidget />}
       </div>
 
-      {/* ── Market Insights ── */}
-      <div className="grid-2" style={{ gap: 16, marginTop: 16 }}>
+      {/* ── This Month — owner or month_summary permission ── */}
+      {showMonth && <MonthSection isOwner={isOwner} />}
+
+      {/* ── Market ── */}
+      <div style={{ marginTop: 24 }}><SectionHeading title="Market" /></div>
+      <div className="grid-2" style={{ gap: 16 }}>
         <CompetitorRatingsCard competitors={competitors} isOwner={user?.role === 'owner'} onChanged={load} />
         <SearchTrendsCard trends={trends} isOwner={user?.role === 'owner'} />
       </div>

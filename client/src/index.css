@@ -690,6 +690,24 @@ tr:hover td { background: #FAFAF8; }
 
 /* ── Dashboard ── */
 .dashboard-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.dash-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 10px; }
+.dash-section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text); }
+.dash-section-sub { font-size: 12px; color: var(--text-muted); margin-left: 10px; }
+.today-strip, .month-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.today-box { display: block; min-width: 0; }
+.today-box .stat-value { font-size: 26px; line-height: 1.15; }
+.today-box-of { font-size: 16px; color: var(--text-muted); font-weight: 600; }
+.today-box-lines { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }
+.today-box-link { color: inherit; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+.today-box-link:hover { border-color: #C9A0AB; box-shadow: var(--shadow-md, 0 2px 8px rgba(0,0,0,.08)); }
+.tomorrow-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 10px 0 20px; padding: 10px 14px;
+  background: var(--white); border: 1px dashed var(--border); border-radius: var(--radius-lg); font-size: 13px; color: var(--text-muted); }
+.tomorrow-line b { color: var(--text); }
+.tomorrow-label { font-weight: 700; color: var(--text); }
+.tomorrow-link { font-size: 12px; font-weight: 700; color: #5C1A2E; text-decoration: none; margin-left: auto; }
+@media (max-width: 1200px) {
+  .today-strip, .month-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 /* ── Bottom Nav & Drawer (hidden on desktop, shown on mobile) ── */
 .bottom-nav { display: none; }
@@ -717,6 +735,11 @@ tr:hover td { background: #FAFAF8; }
   .form-row.form-row-dates { grid-template-columns: 1fr 90px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-stats { grid-template-columns: repeat(2, 1fr); }
+  .today-strip, .month-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .today-strip > :last-child, .month-strip > :last-child { grid-column: 1 / -1; }
+  .today-box .stat-value { font-size: 22px; }
+  .dash-section-sub { display: block; margin: 2px 0 0; }
+  .tomorrow-link { margin-left: 0; }
   .kanban    { grid-template-columns: 1fr; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
 

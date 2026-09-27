@@ -107,7 +107,12 @@ async function bookingActivity(propertyId, date) {
       ORDER BY u.name`, [propertyId, date]),
   ]);
   const num = v => parseFloat(v || 0);
+  // Counts (a group = one booking) from the shared definition — same as the
+  // Dashboard and the Reservations page's "Booked on" view.
+  const pickup = await require('./bookingPickup').bookingsMade(propertyId, date);
   return {
+    made: pickup.made,
+    cancelled_summary: pickup.cancelled,
     new_bookings: made.map(b => ({ ...b, value: num(b.value) })),
     new_value: made.reduce((s, b) => s + num(b.value), 0),
     new_nights: made.reduce((s, b) => s + (parseInt(b.nights, 10) || 0), 0),
@@ -187,8 +192,8 @@ function dailyCloseTelegram(b) {
   L.push(`💳 Collected: <b>${e(fmtIDR(b.collected.total))}</b>`);
   if (b.collected.by_method.length) L.push(`     ${e(b.collected.by_method.map(m => `${m.method} ${fmtIDR(m.amount)}`).join(' · '))}`);
   L.push('');
-  L.push(`📅 New bookings: <b>${b.new_bookings.length}</b>${b.new_bookings.length ? ` · ${b.new_nights} nights · ${e(fmtIDR(b.new_value))}` : ''}`);
-  if (b.cancelled.length) L.push(`❌ Cancelled: <b>${b.cancelled.length}</b> · ${e(fmtIDR(b.cancelled_value))}`);
+  L.push(`📅 New bookings: <b>${b.made.bookings}</b>${b.made.rooms ? ` · ${b.made.rooms} room${b.made.rooms !== 1 ? 's' : ''} · ${b.made.nights} nights · ${e(fmtIDR(b.made.value))}` : ''}`);
+  if (b.cancelled.length) L.push(`❌ Cancelled: <b>${b.cancelled_summary.bookings}</b> · ${b.cancelled.length} room${b.cancelled.length !== 1 ? 's' : ''} · ${e(fmtIDR(b.cancelled_value))}`);
   if (b.no_shows.length) L.push(`🚫 No-shows: <b>${b.no_shows.length}</b> — ${e(b.no_shows.map(n => n.unit_name).join(', '))}`);
   L.push('');
   const n = b.next_day;
@@ -238,7 +243,7 @@ function dailyCloseEmail(b) {
     </tr>
     <tr>
       ${tile('RevPAR', esc(fmtIDR(t.revpar)), '')}
-      ${tile('New bookings', `${b.new_bookings.length}`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${b.new_nights} nights · ${esc(fmtIDR(b.new_value))}</div>`)}
+      ${tile('New bookings', `${b.made.bookings}`, `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${b.made.rooms} rooms · ${b.made.nights} nights</div><div style="font-size:12px;line-height:17px;color:#6b7280;">${esc(fmtIDR(b.made.value))}</div>`)}
     </tr>
     ${CARD_TABLE_CLOSE}
     ${t.comp_nights > 0 || t.comp_value > 0 ? `<div style="font-size:13px;color:#047857;margin:10px 0 0;">🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${esc(fmtIDR(t.comp_value))} before tax (left out of ADR)</div>` : ''}

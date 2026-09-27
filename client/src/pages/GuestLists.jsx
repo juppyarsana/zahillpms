@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { propertyToday } from '../lib/propertyTime';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
@@ -224,7 +225,10 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
 export default function GuestLists() {
   const nav = useNavigate();
   const { can } = useAuth();
-  const [date, setDate] = useState(ymd(new Date()));
+  // ?date=YYYY-MM-DD (e.g. from the Dashboard's Tomorrow line); default today
+  // at the property (Bali), not the viewer's own date.
+  const [params] = useSearchParams();
+  const [date, setDate] = useState(/^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : propertyToday());
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -297,7 +301,7 @@ export default function GuestLists() {
   // Opening a booking needs Reservations access — without it rows are read-only.
   const openBooking = can('reservations') ? id => nav(`/reservations/${id}`) : null;
   const current = tab === 'balance' ? balance : tab === 'kitchen' ? kitchen : data;
-  const isToday = date === ymd(new Date());
+  const isToday = date === propertyToday();
 
   return (
     <div className="guest-lists-page">
@@ -310,7 +314,7 @@ export default function GuestLists() {
           <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, -1))} aria-label="Previous day">←</button>
           <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 170 }} aria-label="Date" />
           <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day">→</button>
-          {!isToday && <button className="btn btn-secondary" onClick={() => setDate(ymd(new Date()))}>Today</button>}
+          {!isToday && <button className="btn btn-secondary" onClick={() => setDate(propertyToday())}>Today</button>}
           <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !current || downloading}>
             {downloading ? 'Generating…' : '⬇ Download PDF'}
           </button>
@@ -384,6 +388,21 @@ export default function GuestLists() {
               </div>
             ))}
           </div>
+
+          {data.never_arrived?.length > 0 && (
+            <div className="alert alert-warn" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+              <div>
+                <b>🗑 {plural(data.never_arrived.length, 'old booking')} never checked in</b> — the stay is already over, so they're not counted above.
+                Mark each one no-show or cancel it; until then it still counts as sold in the reports.
+              </div>
+              {data.never_arrived.map(r => (
+                <div key={r.id} style={{ fontSize: 13 }}>
+                  <b>{r.unit_name}</b> · {r.guest_name} — {stayText(r)}
+                  {openBooking && <> · <Link to={`/reservations/${r.id}`}>open →</Link></>}
+                </div>
+              ))}
+            </div>
+          )}
 
           <ListSection
             title="Arriving" icon="🛬" rows={data.arrivals} summary={data.summary.arrivals} onOpen={openBooking}

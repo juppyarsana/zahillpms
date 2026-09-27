@@ -4,6 +4,32 @@ Last updated: 2026-09-27
 
 ---
 
+## 🔖 Session handoff — 2026-09-27 — one status rule for every report, Dashboard Today / This Month, "Booked on"
+
+**PMS (`dev`; no migration — deploy = pull, build client, restart)**
+- **Report numbers fixed** (`3d01e2d`, on `main`): Reports / Daily Close / Weekly / Monthly counted only
+  confirmed/checked-in/checked-out bookings, so pending & deposit-paid rooms were missing (Daily Close 23/33 vs
+  Guest Lists 33). Now everything except cancelled / no-show counts. Police Guest Report PDF drops cancelled /
+  no-show. Night audit (email + page) now uses the same figures as the Daily Close.
+- **Dashboard sections**: **Today** (Arriving · Staying over · Departing · Tonight · New reservations — totals
+  fixed all day, progress inside, Arriving + Staying (+ overdue) = Tonight) + a **Tomorrow** line; **This Month**
+  (revenue / occupancy / ADR so far vs the same days last month, on the books for the whole month, reservations
+  made, night-by-night chart, sources, unpaid deposits) — owners or the new **`month_summary`** permission
+  (Roles & Permissions → Revenue); **Market**. The old client-side "Revenue — Last 7 Days" chart and the
+  "Revenue This Month" card (shown to all staff) are gone.
+- **Reservations → 🆕 Booked on**: reservations by the day they were MADE (Today / Yesterday / This week /
+  This month / dates), a group = one row. Same counter (`services/bookingPickup.js`) as the Dashboard, Daily
+  Close and Weekly report (they now say "N bookings · M rooms").
+- **Property time**: "today" everywhere on the Dashboard / Guest Lists / Booked on is Bali (WITA), whatever the
+  viewer's timezone (`client/src/lib/propertyTime.js`; Dashboard queries no longer use the server clock).
+- **Old bookings that never checked in** (stay over, still pending/deposit-paid — the night audit only no-shows
+  `confirmed`) are now listed apart ("mark no-show or cancel") on Guest Lists, Dashboard, Morning Brief — they
+  count as sold in the reports until cleaned up. **On production after deploying: clean these up.**
+- Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
+- Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
+
+---
+
 ## 🔖 Session handoff — 2026-09-26 → 2026-09-27 — price mistakes, Dashboard room window, Tomorrow Preview, POS bill
 
 **PMS (`dev` = `main` at `6d66750`, pushed; no migration — deploy = pull, build client, restart)**

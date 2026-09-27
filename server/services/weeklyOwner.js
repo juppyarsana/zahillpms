@@ -82,17 +82,13 @@ async function onTheBooks(propertyId, from, days, sellable) {
   };
 }
 
+// Reservations made in the week (a group = one booking) — the shared
+// definition, same as the Dashboard, Reservations "Booked on" and Daily Close.
 async function pace(propertyId, from, to) {
-  const { rows: [r] } = await db.query(`
-    SELECT COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date) AS made,
-           COALESCE(SUM(nights) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS made_nights,
-           COALESCE(SUM(COALESCE(room_revenue + fnb_revenue, total_amount - COALESCE(discount_amount, 0))) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS made_value,
-           COUNT(*) FILTER (WHERE status = 'cancelled' AND (updated_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date) AS cancelled,
-           COALESCE(SUM(COALESCE(room_revenue + fnb_revenue, total_amount - COALESCE(discount_amount, 0))) FILTER (WHERE status = 'cancelled' AND (updated_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS cancelled_value
-    FROM bookings WHERE property_id = $1`, [propertyId, from, to]);
+  const { made, cancelled } = await require('./bookingPickup').bookingsMade(propertyId, from, to);
   return {
-    made: parseInt(r.made, 10), made_nights: parseInt(r.made_nights, 10), made_value: parseFloat(r.made_value),
-    cancelled: parseInt(r.cancelled, 10), cancelled_value: parseFloat(r.cancelled_value),
+    made: made.bookings, made_rooms: made.rooms, made_nights: made.nights, made_value: made.value,
+    cancelled: cancelled.bookings, cancelled_rooms: cancelled.rooms, cancelled_value: cancelled.value,
   };
 }
 
@@ -171,7 +167,7 @@ function weeklyOwnerTelegram(b) {
       : `     ⚠️ Weak nights (under 30%): ${e(list)}`);
   }
   L.push('');
-  L.push(`📅 New bookings: <b>${b.pace.made}</b> · ${b.pace.made_nights} nights · ${e(fmtIDR(b.pace.made_value))}${arrowTxt(b.change.made)}`);
+  L.push(`📅 New bookings: <b>${b.pace.made}</b> · ${b.pace.made_rooms} rooms · ${b.pace.made_nights} nights · ${e(fmtIDR(b.pace.made_value))}${arrowTxt(b.change.made)}`);
   if (b.pace.cancelled) L.push(`❌ Cancelled: ${b.pace.cancelled} · ${e(fmtIDR(b.pace.cancelled_value))}`);
   const top = w.by_source.filter(s => s.revenue > 0).slice(0, 3);
   const stayRevenue = w.room + w.fnb;   // by_source covers stays only (not extras)
@@ -234,7 +230,7 @@ function weeklyOwnerEmail(b) {
     ${section('Revenue', table([{ label: '' }, { label: 'Last week', right: true }, { label: 'Week before', right: true }], revRows, ''))}
     ${b.books.weak_nights.length ? section('⚠️ Weak nights ahead (under 30% booked)', `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.7;color:#78350f;">${b.books.weak_nights.length > 7 ? `<b>${b.books.weak_nights.length} of the next 14 nights</b> are under 30% booked. The next ones:<br>` : ''}${b.books.weak_nights.slice(0, 7).map(n => `${esc(fmtDay(n.night, { weekday: 'short', day: 'numeric', month: 'short' }))} — ${n.occupancy}% (${n.rooms} of ${b.sellable})`).join('<br>')}<div style="font-size:12px;margin-top:6px;">Worth a promotion, a rate adjustment or a push on your channels.</div></div>`) : ''}
     ${section('Booking pace', table([{ label: '' }, { label: 'Last week', right: true }, { label: 'Week before', right: true }], [
-      ['New bookings', `${b.pace.made} · ${b.pace.made_nights} nights`, `${b.pace_prev.made} · ${b.pace_prev.made_nights} nights`],
+      ['New bookings', `${b.pace.made} · ${b.pace.made_rooms} rooms · ${b.pace.made_nights} nights`, `${b.pace_prev.made} · ${b.pace_prev.made_rooms} rooms · ${b.pace_prev.made_nights} nights`],
       ['Value booked', esc(fmtIDR(b.pace.made_value)), esc(fmtIDR(b.pace_prev.made_value))],
       ['Cancelled', `${b.pace.cancelled} · ${esc(fmtIDR(b.pace.cancelled_value))}`, `${b.pace_prev.cancelled} · ${esc(fmtIDR(b.pace_prev.cancelled_value))}`],
     ], ''))}

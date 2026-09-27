@@ -272,12 +272,14 @@ router.get('/in-house', auth, async (req, res) => {
 
 // Who is where on a date — ONE definition shared by Guest Lists and the
 // Kitchen tab, matching the Check-in/out page and the Dashboard.
-//   Today: by STATUS (what has actually happened) —
-//     arriving   = not checked in yet (pending / deposit_paid / confirmed),
-//                  arrival date today or earlier (late arrivals flagged)
-//     in house   = checked in, leaving after today
-//     departing  = checked in and due out today (or overdue), or already
-//                  checked out today
+//   Today: the booked dates, fixed for the whole day (a guest who checks in
+//   stays under Arriving marked "Arrived"), plus what has actually happened —
+//     arriving   = arrival date today (arrived or not), plus late arrivals
+//                  (not checked in, arrival date earlier — flagged)
+//     in house   = checked in before today, leaving after today
+//     departing  = due out today (still here or already left), overdue
+//                  guests (still checked in past check-out), and anyone who
+//                  actually checked out today
 //   Any other date: by the booked DATES (nothing has happened yet / history).
 // Meals: breakfast on the date's morning = guests who slept here the night
 // before; dinner that night = guests sleeping here that night. For today
@@ -307,7 +309,9 @@ const MEAL_FLAGS_SQL = `
 // plan that includes dinner.
 // Shared by the JSON endpoint and the PDF download so both always show the
 // same lists. Returns null for a malformed date.
-async function loadGuestLists(propertyId, requestedDate) {
+// opts.balances = false skips the per-row balance (one Pro Forma per booking)
+// for callers that only need the lists and counts (the Dashboard polls it).
+async function loadGuestLists(propertyId, requestedDate, { balances = true } = {}) {
   const today = roomCharge.todayWITA();
   const date = requestedDate || today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
@@ -322,6 +326,7 @@ async function loadGuestLists(propertyId, requestedDate) {
              CASE WHEN $2::date = $3::date THEN
                     CASE WHEN b.status IN ${PRE_ARRIVAL} THEN 'arrival'
                          WHEN b.status = 'checked_out' OR b.check_out_date <= $2::date THEN 'departure'
+                         WHEN b.check_in_date = $2::date THEN 'arrival'
                          ELSE 'in_house' END
                   ELSE
                     CASE WHEN b.check_in_date = $2::date THEN 'arrival'
@@ -349,13 +354,22 @@ async function loadGuestLists(propertyId, requestedDate) {
     `, [propertyId, date, today]);
 
     const lists = { arrivals: [], in_house: [], departures: [] };
+    // Today only: bookings that never checked in and whose stay is already
+    // over — not arriving any more, just never marked no-show / cancelled
+    // (the night audit only no-shows 'confirmed'). Kept out of the three
+    // lists and the counts, listed separately so someone cleans them up.
+    const neverArrived = [];
     for (const r of rows) {
       // Same whole-stay figure as the Balance Due tab / the Folio Pro Forma
       // (nights + extras charged to the room + tax − payments), so the two
       // lists can never disagree. A credit shows as nothing owed.
-      const pf = await computeProforma(r.id, propertyId);
-      r.balance_due = pf ? Math.max(0, pf.balance_due) : 0;
-      if (r.list === 'arrival') lists.arrivals.push(r);
+      if (balances) {
+        const pf = await computeProforma(r.id, propertyId);
+        r.balance_due = pf ? Math.max(0, pf.balance_due) : 0;
+      }
+      if (r.list === 'arrival' && date === today && ['pending', 'deposit_paid', 'confirmed'].includes(r.status)
+          && r.check_out_date <= date) neverArrived.push(r);
+      else if (r.list === 'arrival') lists.arrivals.push(r);
       else if (r.list === 'departure') lists.departures.push(r);
       else lists.in_house.push(r);
     }
@@ -365,6 +379,7 @@ async function loadGuestLists(propertyId, requestedDate) {
       date,
       is_today: date === today,
       ...lists,
+      never_arrived: neverArrived,
       summary: {
         arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals) },
         in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house) },
@@ -381,6 +396,26 @@ router.get('/guest-lists', auth, async (req, res) => {
     const data = await loadGuestLists(req.propertyId, req.query.date);
     if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/bookings/booked?from=&to= — reservations MADE in a period (by the
+// day they were created, WITA), not by stay dates: the Reservations page's
+// "Booked on" view. A group counts as one reservation. Same numbers as the
+// Dashboard's "New reservations" and the Daily Close (services/bookingPickup).
+router.get('/booked', auth, async (req, res) => {
+  try {
+    const today = roomCharge.todayWITA();
+    const from = String(req.query.from || today);
+    const to = String(req.query.to || from);
+    const ok = v => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
+    if (!ok(from) || !ok(to)) return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
+    if (to < from) return res.status(400).json({ error: 'to must be on or after from' });
+    if ((Date.parse(to) - Date.parse(from)) / 86400000 > 92) return res.status(400).json({ error: 'Pick at most 3 months' });
+    const { bookingsMade } = require('../services/bookingPickup');
+    res.json(await bookingsMade(req.propertyId, from, to, { withRows: true }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
