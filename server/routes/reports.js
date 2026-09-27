@@ -358,6 +358,29 @@ router.get('/full/xlsx', auth, requireRole('owner'), async (req, res) => {
   }
 });
 
+// GET /api/reports/full/pdf?from=&to= — the same report as a printable PDF
+// (services/reportPdf.js), with the property's document header.
+router.get('/full/pdf', auth, requireRole('owner'), async (req, res) => {
+  const period = resolvePeriod(req.query);
+  if (period.error) return res.status(400).json({ error: period.error });
+  try {
+    const { buildFullReport } = require('../services/fullReport');
+    const { buildReportPdf } = require('../services/reportPdf');
+    const [report, { rows: [property] }] = await Promise.all([
+      buildFullReport(req.propertyId, period.from, period.to),
+      db.query(`SELECT COALESCE(NULLIF(ps.property_name, ''), pr.name) AS property_name, ps.property_address, ps.property_phone, ps.property_email, ps.logo_url
+                FROM properties pr LEFT JOIN property_settings ps ON ps.property_id = pr.id WHERE pr.id = $1`, [req.propertyId]),
+    ]);
+    const pdf = await buildReportPdf(report, property);
+    const label = period.from === period.to ? period.from : `${period.from}_to_${period.to}`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="report-${label}.pdf"`);
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function csvEscape(v) {
   if (v == null) return '';
   const s = String(v);

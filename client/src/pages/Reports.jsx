@@ -335,6 +335,9 @@ export default function Reports() {
           <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus a daily breakdown"
             onClick={() => downloadCsv(`/api/reports/full/xlsx?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.xlsx`,
               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').catch(() => alert('Could not download the Excel file'))}>⬇ Excel</button>
+          <button className="btn btn-secondary" disabled={!rangeValid} title="Printable report with every section and a daily breakdown"
+            onClick={() => downloadCsv(`/api/reports/full/pdf?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.pdf`, 'application/pdf')
+              .catch(() => alert('Could not download the PDF'))}>⬇ PDF</button>
           <button className="btn btn-secondary" disabled={!rangeValid} title="Revenue summary as a simple CSV file"
             onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}>⬇ CSV</button>
         </div>
