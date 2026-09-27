@@ -18,11 +18,19 @@
 // split), stays already on an agent invoice (invoiced / paid), and any
 // booking whose meals would be more than its whole net amount (reported).
 //
+// --extras: the same for items SOLD before the item got a breakfast part
+// (e.g. Extra Bed, migration 074): sale lines with meal_amount 0 get
+// breakfast part × units (never more than the line). Only the report split
+// changes (extras vs F&B) — the sale, its total, the folio and payments stay
+// as they are. Old per-night sales have no dates, so the kitchen count can't
+// be fixed for them.
+//
 // Usage (from server/):
 //   node maintenance/resplitMeals.js                  dry run — shows what would change, changes nothing
 //   node maintenance/resplitMeals.js --apply          does it (writes a backup file first)
 //   ... --property zahill                             one property only (slug)
-// Safe to run more than once: a booking that already has a meal split is skipped.
+//   ... --extras                                      sold items (extra bed) instead of room bookings
+// Safe to run more than once: a booking / sale line that already has a meal split is skipped.
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -43,7 +51,43 @@ async function postedTotal(client, bookingId) {
   return parseFloat(r.total);
 }
 
+async function resplitExtras() {
+  const { rows } = await db.query(`
+    SELECT si.id, si.sale_id, si.quantity, si.unit_price, si.subtotal, si.meal_amount,
+           pr.name AS item, pr.meal_price, p.slug, s.created_at, s.payment_method, g.name AS guest_name, u.name AS unit_name
+    FROM sale_items si
+    JOIN sales s ON s.id = si.sale_id
+    JOIN products pr ON pr.id = si.product_id
+    JOIN properties p ON p.id = s.property_id
+    LEFT JOIN bookings b ON b.id = s.booking_id
+    LEFT JOIN guests g ON g.id = b.guest_id
+    LEFT JOIN units u ON u.id = b.unit_id
+    WHERE COALESCE(si.meal_amount, 0) = 0 AND si.per_night = false AND pr.meal_price > 0 AND si.quantity > 0
+      AND s.confirmation_status IS DISTINCT FROM 'rejected'
+      ${PROPERTY ? 'AND p.slug = $1' : ''}
+    ORDER BY s.created_at`, PROPERTY ? [PROPERTY] : []);
+  const plan = rows.map(r => ({ r, meal: round2(Math.min(parseFloat(r.subtotal), parseFloat(r.meal_price) * r.quantity)) }));
+  console.log(`${APPLY ? 'APPLYING' : 'DRY RUN (nothing changes — add --apply to do it)'} · sold items${PROPERTY ? ` · property ${PROPERTY}` : ''}\n`);
+  for (const { r, meal } of plan) {
+    console.log(`${r.slug} · ${new Date(r.created_at).toISOString().slice(0, 10)} · ${r.unit_name || 'walk-in'} · ${r.guest_name || ''} · ${r.quantity}× ${r.item} · ${r.payment_method}`);
+    console.log(`    extras ${fmt(r.subtotal)} → ${fmt(r.subtotal - meal)}   breakfast Rp 0 → ${fmt(meal)}   (total unchanged: ${fmt(r.subtotal)})`);
+  }
+  console.log(`\n${plan.length} sold line(s) to split · ${fmt(plan.reduce((s2, x) => s2 + x.meal, 0))} moves from extras to breakfast (net)`);
+  if (!APPLY || !plan.length) return 0;
+  const dir = path.join(__dirname, 'backups');
+  fs.mkdirSync(dir, { recursive: true });
+  const backupFile = path.join(dir, `resplitExtras-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  fs.writeFileSync(backupFile, JSON.stringify(rows.map(r => ({ sale_item_id: r.id, sale_id: r.sale_id, meal_amount: r.meal_amount })), null, 2));
+  console.log(`Backup of the old values: ${backupFile}`);
+  for (const { r, meal } of plan) {
+    await db.query('UPDATE sale_items SET meal_amount = $1 WHERE id = $2 AND COALESCE(meal_amount, 0) = 0', [meal, r.id]);
+  }
+  console.log(`Done: ${plan.length} split.`);
+  return 0;
+}
+
 (async () => {
+  if (process.argv.includes('--extras')) process.exit(await resplitExtras());
   const { rows } = await db.query(`
     SELECT b.id, b.property_id, b.status, b.check_in_date, b.check_out_date, b.nights, b.num_guests,
            b.total_amount, b.discount_amount, b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.folio_status,

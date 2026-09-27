@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import StayNightsPicker, { defaultNights } from '../components/StayNightsPicker';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
@@ -15,7 +16,7 @@ const CATEGORIES = [
   { key: 'other',       icon: '📦', label: 'Other',        hint: '' },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
-const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '' };
+const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '', per_night: false, meal_price: '' };
 // Not something front desk takes at the till.
 const HIDDEN_PAY_METHODS = ['ota_managed'];
 
@@ -45,6 +46,11 @@ function stockBadge(p) {
   if (p.low_stock_threshold != null && p.stock_quantity <= p.low_stock_threshold) return <span className="badge badge-amber">Low: {p.stock_quantity}</span>;
   return <span className="badge badge-gray">{p.stock_quantity} in stock</span>;
 }
+
+// Per-night items (extra bed, migration 074): units per night × the nights
+// ticked; the rest are one-off (quantity).
+function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
+function lineUnits(i) { return (parseInt(i.quantity) || 0) * (i.per_night ? (i.nights || []).length : 1); }
 
 export default function Sales() {
   const { user } = useAuth();
@@ -95,7 +101,11 @@ export default function Sales() {
     setCart(c => {
       const ex = c.find(i => i.product_id === product.id);
       if (ex) return c.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...c, { product_id: product.id, name: product.name, unit_price: product.price, quantity: 1 }];
+      return [...c, {
+        product_id: product.id, name: product.name, unit_price: product.price, quantity: 1,
+        per_night: !!product.per_night, meal_price: product.meal_price,
+        nights: product.per_night ? defaultNights(selectedBooking) : undefined,
+      }];
     });
   }
 
@@ -108,8 +118,10 @@ export default function Sales() {
     setCart(c => c.map(i => i.product_id === id ? { ...i, quantity: n } : i));
   }
 
-  const cartValid = cart.length > 0 && cart.every(i => Number.isInteger(i.quantity) && i.quantity >= 1);
-  const cartTotal = cart.reduce((sum, i) => sum + i.unit_price * (parseInt(i.quantity) || 0), 0);
+  function setNights(id, nights) { setCart(c => c.map(i => i.product_id === id ? { ...i, nights } : i)); }
+  const perNightMissing = cart.some(i => i.per_night && (!selectedBooking || !(i.nights || []).length));
+  const cartValid = cart.length > 0 && cart.every(i => Number.isInteger(i.quantity) && i.quantity >= 1) && !perNightMissing;
+  const cartTotal = cart.reduce((sum, i) => sum + i.unit_price * lineUnits(i), 0);
   // Prices are before tax. Paid directly, the guest pays service charge + tax
   // on top (same formula as the folio: service on the subtotal, tax on
   // subtotal + service). The server computes the real amounts; this is the
@@ -121,8 +133,16 @@ export default function Sales() {
   const cartTax = round2((cartTotal + cartSc) * taxRate / 100);
   const cartGross = round2(cartTotal + cartSc + cartTax);
 
-  function pickBooking(b) { setSelectedBooking(b); setBookingSearch(''); setBilling('room'); }
-  function clearBooking() { setSelectedBooking(null); setBookingSearch(''); setBilling('room'); }
+  // Per-night items in the cart follow the guest: their nights reset to the
+  // new guest's default (tonight) when a guest is picked, and clear without one.
+  function pickBooking(b) {
+    setSelectedBooking(b); setBookingSearch(''); setBilling('room');
+    setCart(c => c.map(i => i.per_night ? { ...i, nights: defaultNights(b) } : i));
+  }
+  function clearBooking() {
+    setSelectedBooking(null); setBookingSearch(''); setBilling('room');
+    setCart(c => c.map(i => i.per_night ? { ...i, nights: [] } : i));
+  }
 
   const chargeToRoom = !!selectedBooking && billing === 'room';
 
@@ -153,7 +173,7 @@ export default function Sales() {
       const { data: sale } = await api.post('/api/sales', {
         booking_id: selectedBooking?.id || null,
         payment_method: chargeToRoom ? 'room_charge' : payMethod,
-        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_price: i.unit_price })),
+        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, ...(i.per_night ? { nights: i.nights } : {}) })),
       });
       setLastSale({ id: sale.id, paidDirectly: !chargeToRoom });
       setCart([]);
@@ -178,6 +198,7 @@ export default function Sales() {
     setProdForm({
       name: p.name, category: p.category, price: p.price, description: p.description || '', is_available: p.is_available,
       track_stock: p.track_stock, stock_quantity: p.stock_quantity, low_stock_threshold: p.low_stock_threshold ?? '',
+      per_night: !!p.per_night, meal_price: parseFloat(p.meal_price) ? p.meal_price : '',
     });
     setProductModal({ mode: 'edit', id: p.id });
   }
@@ -187,6 +208,7 @@ export default function Sales() {
     const payload = {
       name: prodForm.name, category: prodForm.category, price: prodForm.price, description: prodForm.description, is_available: prodForm.is_available,
       track_stock: prodForm.track_stock, low_stock_threshold: prodForm.low_stock_threshold === '' ? null : parseInt(prodForm.low_stock_threshold),
+      per_night: prodForm.per_night, meal_price: prodForm.meal_price === '' ? 0 : parseFloat(prodForm.meal_price),
     };
     try {
       if (productModal.mode === 'add') {
@@ -354,10 +376,15 @@ export default function Sales() {
             ) : (
               <>
                 {cart.map(i => (
-                  <div key={i.product_id} className="flex-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', gap: 8 }}>
+                  <div key={i.product_id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div className="flex-between" style={{ gap: 8 }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtIDR(i.unit_price)} × {i.quantity || 0} = {fmtIDR(i.unit_price * (parseInt(i.quantity) || 0))}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}{i.per_night && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>per night</span>}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {i.per_night
+                          ? <>{fmtIDR(i.unit_price)} × {i.quantity || 0} × {plural((i.nights || []).length, 'night')} = {fmtIDR(i.unit_price * lineUnits(i))}</>
+                          : <>{fmtIDR(i.unit_price)} × {i.quantity || 0} = {fmtIDR(i.unit_price * lineUnits(i))}</>}
+                      </div>
                     </div>
                     <div className="flex gap-2 flex-center">
                       <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => setQty(i.product_id, (parseInt(i.quantity) || 1) - 1)}>−</button>
@@ -368,10 +395,22 @@ export default function Sales() {
                       <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => removeFromCart(i.product_id)} title="Remove">✕</button>
                     </div>
                   </div>
+                  {i.per_night && (
+                    selectedBooking ? (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                          Which nights? (the number above is per night{parseFloat(i.meal_price) > 0 ? ` · incl. breakfast ${fmtIDR(i.meal_price)}` : ''})
+                        </div>
+                        <StayNightsPicker booking={selectedBooking} value={i.nights || []} onChange={n => setNights(i.product_id, n)} />
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4 }}>
+                        Charged per night of a stay: choose the guest's room above, then tick the nights.
+                      </div>
+                    )
+                  )}
+                  </div>
                 ))}
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                  Per-night items (e.g. extra bed): enter the number of nights as the quantity.
-                </div>
                 {chargeToRoom ? (
                   <>
                     <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, marginTop: 12 }}>
@@ -452,9 +491,15 @@ export default function Sales() {
                 <tbody>
                   {products.map(p => (
                     <tr key={p.id}>
-                      <td style={{ fontWeight: 600 }}>{p.name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {p.name}
+                        {p.per_night && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>per night</span>}
+                      </td>
                       <td>{CAT_BY_KEY[p.category]?.icon} {CAT_BY_KEY[p.category]?.label}</td>
-                      <td>{fmtIDR(p.price)}</td>
+                      <td>
+                        {fmtIDR(p.price)}
+                        {parseFloat(p.meal_price) > 0 && <div className="text-muted" style={{ fontSize: 11 }}>incl. breakfast {fmtIDR(p.meal_price)}</div>}
+                      </td>
                       <td><span className={`badge badge-${p.is_available?'green':'gray'}`}>{p.is_available?'Yes':'No'}</span></td>
                       <td>{stockBadge(p) || <span className="text-muted" style={{ fontSize: 12 }}>Not tracked</span>}</td>
                       {canManageItems && (
@@ -493,6 +538,23 @@ export default function Sales() {
                     <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /></div>
                   </div>
                   <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={prodForm.description} onChange={e=>setProdForm(f=>({...f,description:e.target.value}))} /></div>
+                  <div className="form-group">
+                    <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>
+                      <input type="checkbox" checked={prodForm.per_night} onChange={e=>setProdForm(f=>({...f,per_night:e.target.checked}))} />
+                      Per night — part of the stay (e.g. extra bed)
+                    </label>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Sold for chosen nights of a guest's stay and charged night by night with the room (from Sales or the reservation). The price is per night.
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Breakfast included — net, {prodForm.per_night ? 'per unit per night' : 'per unit'} (IDR)</label>
+                    <input className="form-input" type="number" min="0" value={prodForm.meal_price} placeholder="0 = no breakfast"
+                      onChange={e=>setProdForm(f=>({...f,meal_price:e.target.value}))} />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      This part of the price counts as breakfast (F&amp;B) in the reports{prodForm.per_night ? ' and adds to the kitchen breakfast count the next morning' : ''}. Changing it applies to new sales only.
+                    </div>
+                  </div>
                   {productModal.mode === 'edit' && (
                     <div className="form-group">
                       <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>

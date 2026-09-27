@@ -130,6 +130,12 @@ function RoomStay({ bookingId, kind }) {
         {canCheckin && kind === 'in_house' && (
           <Link to="/checkin" className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>🧳 Check out</Link>
         )}
+        {canOpen && (
+          <Link to={`/reservations/${b.id}#add-item`} className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}
+            title="Extra bed or any Sales item, charged to this room">
+            🛏 + Extra bed / item
+          </Link>
+        )}
         {canOpen && !agentBilled && balance >= 1 && hasModule('financial') && (
           <Link to={`/reservations/${b.id}#record-payment`} className="btn btn-secondary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>
             💳 Record payment

@@ -32,6 +32,12 @@ Last updated: 2026-09-27
   since go-live split (Rp 58.7M net moved room → meals, totals unchanged), backup JSON in
   `server/maintenance/backups/` on the server. 1 skipped: room 801 PURA TULUK BIU BATUR (net Rp 0 — probably a
   free stay not marked complimentary). Don't run it again unless another meal plan gets a price.
+- **Extra bed per night (migration 074)** — sold from Sales (tick the nights) or the reservation ("Extras for this
+  stay" → + Add item), posted night by night with the room, breakfast part (Rp 100.000, adjustable on the item) goes
+  to F&B + the kitchen count. **On production after deploying:** `npm run migrate` (074) → Sales → Items → Extra Bed:
+  tick "Per night" + breakfast 100000 → re-split old extra-bed sales: `node maintenance/resplitMeals.js --property
+  zahill --extras` (dry run), then `--apply`.
+- Next (owner asked, one by one): report breakdown (room / F&B split incl. extras) + download as Excel and PDF.
 - Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
 - Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
 
@@ -1671,7 +1677,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 074
+## Next migration number: 075
 
 ---
 

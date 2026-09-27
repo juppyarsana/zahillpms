@@ -8,6 +8,16 @@ const canManageMenu = requireOwnerOrMenu('resto_menu');
 // Room Display Dining, the rest are hotel extras sold from the PMS Sales page.
 const CATEGORIES = ['drinks', 'food', 'room_addon', 'transport', 'laundry', 'service', 'merchandise', 'other'];
 
+// Breakfast part of an item (migration 074): net, per unit — per unit per
+// night for a per-night item — and never more than the item's price.
+function checkMealPrice(meal, price) {
+  if (meal === undefined || meal === null || meal === '') return null;
+  const m = parseFloat(meal);
+  if (!Number.isFinite(m) || m < 0) return 'Breakfast part must be 0 or more';
+  if (price !== undefined && price !== null && m > parseFloat(price)) return 'Breakfast part can\'t be more than the item price';
+  return null;
+}
+
 // GET /api/products
 router.get('/', auth, async (req, res) => {
   const { category, available } = req.query;
@@ -26,14 +36,17 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/products
 router.post('/', auth, canManageMenu, async (req, res) => {
-  const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold } = req.body;
+  const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
   if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
+  const mealErr = checkMealPrice(meal_price, price);
+  if (mealErr) return res.status(400).json({ error: mealErr });
   try {
     const { rows } = await db.query(
-      `INSERT INTO products (name, category, price, description, property_id, track_stock, stock_quantity, low_stock_threshold)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [name, category || 'other', price, description, req.propertyId, !!track_stock, stock_quantity || 0, low_stock_threshold || null]
+      `INSERT INTO products (name, category, price, description, property_id, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [name, category || 'other', price, description, req.propertyId, !!track_stock, stock_quantity || 0, low_stock_threshold || null,
+       !!per_night, parseFloat(meal_price) || 0]
     );
     // Log the opening count so the item's stock history starts from a real
     // entry instead of an unexplained number.
@@ -52,17 +65,26 @@ router.post('/', auth, canManageMenu, async (req, res) => {
 
 // PUT /api/products/:id
 router.put('/:id', auth, canManageMenu, async (req, res) => {
-  const { name, category, price, description, is_available, track_stock, low_stock_threshold } = req.body;
+  const { name, category, price, description, is_available, track_stock, low_stock_threshold, per_night, meal_price } = req.body;
   if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
   try {
+    if (meal_price !== undefined) {
+      const { rows: [cur] } = await db.query('SELECT price FROM products WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+      const mealErr = checkMealPrice(meal_price, price ?? cur?.price);
+      if (mealErr) return res.status(400).json({ error: mealErr });
+    }
+    // Changing the price / breakfast part / per-night applies to NEW sales
+    // only — what was already sold keeps the amounts it was sold at.
     const { rows } = await db.query(
       `UPDATE products SET
         name = COALESCE($1, name), category = COALESCE($2, category),
         price = COALESCE($3, price), description = COALESCE($4, description),
         is_available = COALESCE($5, is_available), track_stock = COALESCE($6, track_stock),
-        low_stock_threshold = COALESCE($7, low_stock_threshold)
+        low_stock_threshold = COALESCE($7, low_stock_threshold),
+        per_night = COALESCE($10, per_night), meal_price = COALESCE($11, meal_price)
        WHERE id = $8 AND property_id = $9 RETURNING *`,
-      [name, category, price, description, is_available, track_stock, low_stock_threshold, req.params.id, req.propertyId]
+      [name, category, price, description, is_available, track_stock, low_stock_threshold, req.params.id, req.propertyId,
+       per_night === undefined ? null : !!per_night, meal_price === undefined || meal_price === '' ? null : parseFloat(meal_price)]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
     res.json(rows[0]);

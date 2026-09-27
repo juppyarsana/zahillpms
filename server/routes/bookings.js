@@ -297,6 +297,21 @@ const MEAL_FLAGS_SQL = `
          OR (b.status IN ${PRE_ARRIVAL} AND b.check_in_date <= $2::date AND b.check_out_date > $2::date)
        ELSE b.check_in_date <= $2::date AND b.check_out_date > $2::date END AS dinner_here`;
 
+// Breakfasts from per-night extras (an extra bed with breakfast, migration
+// 074): the morning of `date` = add-on nights of the night before, inside the
+// booking's stay. booking_id → units (people). Added to a booking's breakfast
+// count only when that booking has breakfast "here" that morning.
+async function extraBreakfasts(propertyId, date) {
+  const { rows } = await db.query(`
+    SELECT a.booking_id, SUM(a.quantity)::int AS qty
+    FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
+    WHERE a.property_id = $1 AND a.status = 'active' AND a.meal_price > 0
+      AND a.service_date = $2::date - 1
+      AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+    GROUP BY a.booking_id`, [propertyId, date]);
+  return new Map(rows.map(r => [r.booking_id, r.qty]));
+}
+
 // GET /api/bookings/guest-lists?date=YYYY-MM-DD (default today, WITA)
 // Morning briefing for one date — every live booking lands in exactly one list:
 //   arrivals   — check-in on the date (expected, or already arrived)
@@ -375,6 +390,9 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
     }
     const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
     const mealPax = (list, flag) => list.filter(r => r[flag]).reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+    // + breakfasts that come with an extra bed (the night before)
+    const extra = await extraBreakfasts(propertyId, date);
+    const extraBreakfastPax = rows.filter(r => r.breakfast_here).reduce((s, r) => s + (extra.get(r.id) || 0), 0);
     return {
       date,
       is_today: date === today,
@@ -384,7 +402,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
         arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals) },
         in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house) },
         departures: { rooms: lists.departures.length, pax: pax(lists.departures) },
-        breakfast_pax: mealPax(rows.filter(r => r.breakfast_here), 'includes_breakfast'),
+        breakfast_pax: mealPax(rows.filter(r => r.breakfast_here), 'includes_breakfast') + extraBreakfastPax,
         dinner_pax: mealPax(rows.filter(r => r.dinner_here), 'includes_dinner'),
       },
     };
@@ -475,15 +493,27 @@ async function loadKitchen(propertyId, requestedDate) {
   `, [propertyId, date, today]);
 
   const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+  const mealPaxOf = list => list.reduce((s, r) => s + r.meal_pax, 0);
+  // Extra beds with breakfast (the night before) add to that room's breakfast.
+  const extra = await extraBreakfasts(propertyId, date);
+  for (const r of rows) {
+    r.extra_breakfast = r.breakfast_here ? (extra.get(r.id) || 0) : 0;
+    r.breakfast_pax = (r.includes_breakfast ? (parseInt(r.num_guests, 10) || 0) : 0) + r.extra_breakfast;
+  }
   const breakfastIn = rows.filter(r => r.breakfast_here);
   const dinnerIn = rows.filter(r => r.dinner_here);
-  const breakfast = breakfastIn.filter(r => r.includes_breakfast);
-  const dinner = dinnerIn.filter(r => r.includes_dinner);
+  const breakfast = breakfastIn.filter(r => r.includes_breakfast || r.extra_breakfast > 0).map(r => ({ ...r, meal_pax: r.breakfast_pax }));
+  const dinner = dinnerIn.filter(r => r.includes_dinner).map(r => ({ ...r, meal_pax: parseInt(r.num_guests, 10) || 0 }));
+  const breakfastPlanIds = new Set(breakfastIn.filter(r => r.includes_breakfast).map(r => r.id));
   const without = (all, withMeal) => ({ rooms: all.length - withMeal.length, pax: pax(all) - pax(withMeal) });
   return {
     date,
-    breakfast: { rows: breakfast, rooms: breakfast.length, pax: pax(breakfast), without: without(breakfastIn, breakfast) },
-    dinner: { rows: dinner, rooms: dinner.length, pax: pax(dinner), without: without(dinnerIn, dinner) },
+    breakfast: {
+      rows: breakfast, rooms: breakfast.length, pax: mealPaxOf(breakfast),
+      extra_beds: breakfast.reduce((s, r) => s + r.extra_breakfast, 0),
+      without: without(breakfastIn, breakfastIn.filter(r => breakfastPlanIds.has(r.id))),
+    },
+    dinner: { rows: dinner, rooms: dinner.length, pax: mealPaxOf(dinner), without: without(dinnerIn, dinner) },
   };
 }
 

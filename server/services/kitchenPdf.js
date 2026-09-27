@@ -48,7 +48,7 @@ function drawMeal(doc, y, { title, meal, empty, withoutLabel }) {
     const cells = {
       room: [r.unit_name, r.unit_type].filter(Boolean).join('\n'),
       guest: r.guest_name + (r.status !== 'checked_in' && r.status !== 'checked_out' ? '\n(not checked in yet)' : ''),
-      pax: String(r.num_guests ?? ''),
+      pax: `${r.meal_pax ?? r.num_guests ?? ''}${r.extra_breakfast ? ` (+${r.extra_breakfast} extra bed)` : ''}`,
       plan: r.rate_plan_code || '—',
       note: r.special_requests || '—',
       tick: '',

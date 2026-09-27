@@ -72,14 +72,49 @@ async function postStay(client, booking, { upToDate = null, actorUserId = null }
     if (r.roomPosted) roomPosted++;
     if (r.fnbPosted) fnbPosted++;
   }
-  return { roomPosted, fnbPosted, nights: nights.length };
+  const addonsPosted = await postAddons(client, booking, end, actorUserId);
+  return { roomPosted, fnbPosted, addonsPosted, nights: nights.length };
+}
+
+// Per-night stay extras (booking_addons, migration 074 — e.g. an extra bed
+// for 28 Sep): post every active add-on night before `upToDate` (exclusive)
+// that falls inside the stay and isn't on the folio yet — one 'addon' line
+// each (net, breakfast part included; the split lives on booking_addons).
+// Idempotent (uq_folio_charges_addon). Called with the room nights (postStay:
+// checkout catch-up, repost) and by the night audit.
+async function postAddons(client, booking, upToDate, actorUserId = null) {
+  const { rows } = await client.query(
+    `SELECT a.* FROM booking_addons a
+     JOIN bookings b ON b.id = a.booking_id
+     WHERE a.booking_id = $1 AND a.status = 'active'
+       AND a.service_date < $2::date
+       AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+       AND NOT EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false)
+     ORDER BY a.service_date`,
+    [booking.id, ymd(upToDate)]
+  );
+  let posted = 0;
+  for (const a of rows) {
+    const amount = round2(parseFloat(a.unit_price) * a.quantity);
+    try {
+      await client.query(
+        `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, service_date, addon_id, sale_id)
+         VALUES ($1, 'addon', $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [a.booking_id, `${a.description} — ${ymd(a.service_date)}`, a.quantity, a.unit_price, amount, actorUserId, ymd(a.service_date), a.id, a.sale_id]
+      );
+      posted++;
+    } catch (err) {
+      if (err.code !== '23505') throw err;   // posted by someone else meanwhile
+    }
+  }
+  return posted;
 }
 
 // Void auto-posted room/fnb charges with service_date >= fromDate (early departure / shorten).
 async function voidFrom(client, bookingId, fromDate, actorUserId = null) {
   const { rowCount } = await client.query(
     `UPDATE folio_charges SET is_voided = true, voided_by = $1, voided_at = NOW()
-     WHERE booking_id = $2 AND type IN ('room','fnb')
+     WHERE booking_id = $2 AND type IN ('room','fnb','addon')
        AND service_date IS NOT NULL AND service_date >= $3 AND is_voided = false`,
     [actorUserId, bookingId, ymd(fromDate)]
   );
@@ -89,7 +124,7 @@ async function voidFrom(client, bookingId, fromDate, actorUserId = null) {
 async function voidAll(client, bookingId, actorUserId = null) {
   const { rowCount } = await client.query(
     `UPDATE folio_charges SET is_voided = true, voided_by = $1, voided_at = NOW()
-     WHERE booking_id = $2 AND type IN ('room','fnb')
+     WHERE booking_id = $2 AND type IN ('room','fnb','addon')
        AND service_date IS NOT NULL AND is_voided = false`,
     [actorUserId, bookingId]
   );
@@ -111,4 +146,4 @@ async function repostStay(client, booking, actorUserId = null) {
   return { roomPosted: 0, fnbPosted: 0, nights: 0 };
 }
 
-module.exports = { stayNights, nightlyAmount, todayWITA, postNight, postStay, voidFrom, voidAll, repostStay };
+module.exports = { stayNights, nightlyAmount, todayWITA, postNight, postStay, postAddons, voidFrom, voidAll, repostStay };

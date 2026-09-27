@@ -235,6 +235,35 @@ function stayLabel(b, { roomPart, mealPart }) {
 const shortDay = d => new Date(String(d).slice(0, 10) + 'T00:00:00Z')
   .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const nextDay = d => { const x = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+// Per-night extras (type 'addon', migration 074): same idea — one line per
+// item per run of nights at the same price. Description comes in as
+// "Extra Bed — 2026-09-28"; the name is the part before the date.
+function mergeAddonLines(charges) {
+  const runs = [];
+  const lines = charges.filter(c => c.type === 'addon' && c.service_date)
+    .map(c => ({
+      name: String(c.description).replace(/ — \d{4}-\d{2}-\d{2}$/, ''),
+      date: String(c.service_date instanceof Date ? c.service_date.toISOString() : c.service_date).slice(0, 10),
+      qty: parseFloat(c.quantity) || 1,
+      unit: parseFloat(c.unit_price),
+      amount: parseFloat(c.amount),
+      withMeal: !!c.addon_meal,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.date.localeCompare(b.date));
+  for (const l of lines) {
+    const last = runs[runs.length - 1];
+    if (last && last.name === l.name && last.qty === l.qty && last.withMeal === l.withMeal && Math.abs(last.unit - l.unit) < 1 && nextDay(last.to) === l.date) {
+      last.to = l.date; last.nights++; last.sum += l.amount;
+    } else runs.push({ name: l.name, from: l.date, to: l.date, nights: 1, qty: l.qty, unit: l.unit, sum: l.amount, withMeal: l.withMeal });
+  }
+  return runs.map(r => ({
+    type: 'stay',
+    description: `${r.name}${r.withMeal ? ' with Breakfast' : ''}${r.qty > 1 ? ` × ${r.qty}` : ''} · ${shortDay(r.from)} – ${shortDay(nextDay(r.to))}`,
+    quantity: r.nights * r.qty, unit_price: Math.round((r.sum / (r.nights * r.qty)) * 100) / 100,
+    amount: Math.round(r.sum * 100) / 100,
+  }));
+}
+
 function mergeStayLines(charges, booking) {
   const nightly = new Map();   // date → { room, meal }
   for (const c of charges) {
@@ -270,8 +299,12 @@ function mergeStayLines(charges, booking) {
 function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
   // Nightly room + meal lines → one "Room with Breakfast" line per run of
   // nights at the same rate; everything else is listed as posted.
-  const isStayLine = c => (c.type === 'room' || c.type === 'fnb') && c.service_date;
-  const charges = [...mergeStayLines(rawCharges, booking), ...rawCharges.filter(c => !isStayLine(c))];
+  const isStayLine = c => (c.type === 'room' || c.type === 'fnb' || c.type === 'addon') && c.service_date;
+  const charges = [
+    ...mergeStayLines(rawCharges, booking),
+    ...mergeAddonLines(rawCharges),
+    ...rawCharges.filter(c => !isStayLine(c)),
+  ];
   const tableTop = doc.y;
   const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');

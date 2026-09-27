@@ -11,6 +11,7 @@ import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
+import StayExtrasCard from '../components/StayExtras';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -178,6 +179,15 @@ export default function BookingDetail() {
       setRecSaving(false);
     }
   }
+
+  // Opened via "+ Extra bed / item" (e.g. from the Dashboard room window):
+  // Details tab, the Add item window open.
+  const openAddItem = location.hash === '#add-item';
+  useEffect(() => {
+    if (!booking || !openAddItem) return;
+    setTab('details');
+    requestAnimationFrame(() => document.getElementById('stay-extras')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [booking?.id, openAddItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened via a "Pay →" shortcut (e.g. from the group page): jump straight
   // to Payment Tracking once the booking has loaded.
@@ -901,6 +911,9 @@ export default function BookingDetail() {
         )}
       </div>
 
+      <StayExtrasCard booking={booking} openAdd={openAddItem}
+        onChanged={() => { load(); if (folio) loadFolio(); }} />
+
       {booking.special_requests && (
         <div className="card mt-3">
           <div className="card-title">Special Requests</div>
@@ -1011,18 +1024,18 @@ export default function BookingDetail() {
               })()}
               <div style={{ marginBottom: 10 }}>
                 {[
-                  ['Accommodation', c => c.type === 'room'],
+                  ['Accommodation', c => c.type === 'room' || c.type === 'addon'],
                   // 'fnb' = the rate plan's included meal (per-night, migration 044);
                   // a 'sale' (migration 049) is F&B only when it contains
                   // food/drinks (c.is_fnb from the server) — a front-desk extra
                   // like an extra bed (migration 067) goes under Other.
                   // Same grouping as server/routes/folio.js's invoice.
                   ['Food & Beverage', c => c.type === 'fnb' || (c.type === 'sale' && c.is_fnb)],
-                  ['Other', c => c.type !== 'room' && c.type !== 'fnb' && !(c.type === 'sale' && c.is_fnb)],
+                  ['Other', c => c.type !== 'room' && c.type !== 'addon' && c.type !== 'fnb' && !(c.type === 'sale' && c.is_fnb)],
                 ].map(([groupLabel, match]) => {
                   const lines = folio.charges.filter(match);
                   if (!lines.length) return null;
-                  const grouped = folio.charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
+                  const grouped = folio.charges.some(c => c.type === 'room' || c.type === 'addon' || c.type === 'fnb' || c.type === 'sale');
                   return (
                     <div key={groupLabel}>
                       {grouped && (

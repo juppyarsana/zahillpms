@@ -1,7 +1,7 @@
 const db = require('../db');
 const sse = require('../sse');
 const tableSessionService = require('./tableSessionService');
-const { computeFolioTotals } = require('./folioService');
+const { computeFolioTotals, ymd, stayNights } = require('./folioService');
 
 // F&B categories: the only products that go to the kitchen board and the only
 // ones guest-facing menus (Room Display Dining, resto QR/staff menu) list.
@@ -44,13 +44,22 @@ const FNB_CATEGORIES = ['drinks', 'food'];
 // booking ("Pay now" for an in-house guest), it's posted to the folio as the
 // NET charge (the folio adds its own tax) plus a received 'incidental'
 // payment of the gross, so the folio shows it while its balance stays zero.
+//
+// Per-night items (products.per_night, migration 074 — e.g. an extra bed):
+// the item carries `nights: ['YYYY-MM-DD', …]` (nights of the booking's stay)
+// and `quantity` = units per night (beds). They need a booking. The sale line
+// records units × nights, and each night becomes a booking_addons row that's
+// posted to the folio night by night with the room (not now as a 'sale'
+// charge) — nights already past are posted straight away. A product's
+// meal_price (breakfast part, net per unit / per unit per night) is stored
+// on the line as meal_amount so the reports count it as F&B.
 async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource, taxDirectPay }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const productIds = items.map(i => i.product_id);
     const { rows: ownedProducts } = await client.query(
-      'SELECT id, category, track_stock, stock_quantity, name, price FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
+      'SELECT id, category, track_stock, stock_quantity, name, price, per_night, meal_price FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
       [productIds, propertyId]
     );
     if (ownedProducts.length !== new Set(productIds).size) {
@@ -63,7 +72,37 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // these amounts reach the folio, receipts and tax.
     items = items.map(i => ({ ...i, unit_price: productById.get(i.product_id).price }));
 
+    // Per-night items: nights must be nights of this booking's stay.
+    const perNightItems = items.filter(i => productById.get(i.product_id).per_night);
+    let stay = null;
+    if (perNightItems.length) {
+      if (!bookingId) {
+        await client.query('ROLLBACK');
+        return { error: `${productById.get(perNightItems[0].product_id).name} is charged per night of a stay — choose the guest's room first`, code: 'PER_NIGHT_NEEDS_BOOKING' };
+      }
+      const { rows: [bk] } = await client.query(
+        'SELECT id, status, check_in_date, check_out_date FROM bookings WHERE id = $1 AND property_id = $2', [bookingId, propertyId]);
+      if (!bk || ['cancelled', 'no_show'].includes(bk.status)) {
+        await client.query('ROLLBACK');
+        return { error: 'This booking is cancelled', code: 'BOOKING_NOT_ACTIVE' };
+      }
+      const stayDates = new Set(stayNights(bk.check_in_date, bk.check_out_date));
+      for (const i of perNightItems) {
+        const nights = [...new Set((Array.isArray(i.nights) ? i.nights : []).map(d => String(d).slice(0, 10)))].sort();
+        if (!nights.length || nights.some(d => !stayDates.has(d))) {
+          await client.query('ROLLBACK');
+          return { error: `Pick the nights for ${productById.get(i.product_id).name} — they must be nights of the stay (${ymd(bk.check_in_date)} to ${ymd(bk.check_out_date)})`, code: 'BAD_NIGHTS' };
+        }
+        i.nights = nights;
+      }
+      stay = bk;
+    }
+    const isPerNight = i => productById.get(i.product_id).per_night;
+    // Units recorded on the sale line: per night = units × nights.
+    const lineQty = i => parseInt(i.quantity) * (isPerNight(i) ? i.nights.length : 1);
+
     const outOfStock = items
+      .filter(i => !isPerNight(i))
       .filter(i => productById.get(i.product_id).track_stock && productById.get(i.product_id).stock_quantity < parseInt(i.quantity))
       .map(i => ({ product_id: i.product_id, name: productById.get(i.product_id).name, available: productById.get(i.product_id).stock_quantity, requested: parseInt(i.quantity) }));
     if (outOfStock.length > 0) {
@@ -117,7 +156,8 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
 
     const needsKitchen = items.some(i => FNB_CATEGORIES.includes(productById.get(i.product_id).category));
     const pending = !!holdForConfirmation;
-    const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * parseInt(i.quantity), 0);
+    const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * lineQty(i), 0);
+    const perNightTotal = items.filter(isPerNight).reduce((sum, i) => sum + parseFloat(i.unit_price) * lineQty(i), 0);
     const paidDirectly = paymentMethodValue !== 'room_charge' && paymentMethodValue !== 'unpaid';
     let taxes = null;
     if (taxDirectPay && paidDirectly) {
@@ -134,12 +174,27 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
        sessionId, pending ? 'pending' : null, orderSource || null, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null]
     );
     for (const item of items) {
-      const subtotal = parseFloat(item.unit_price) * parseInt(item.quantity);
-      await client.query(
-        'INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5)',
-        [sale.id, item.product_id, item.quantity, item.unit_price, subtotal]
-      );
       const product = productById.get(item.product_id);
+      const qty = lineQty(item);
+      const subtotal = parseFloat(item.unit_price) * qty;
+      const mealAmount = Math.min(subtotal, (parseFloat(product.meal_price) || 0) * qty);
+      const { rows: [line] } = await client.query(
+        `INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal, meal_amount, per_night)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [sale.id, item.product_id, qty, item.unit_price, subtotal, mealAmount, !!product.per_night]
+      );
+      if (product.per_night) {
+        for (const night of item.nights) {
+          await client.query(
+            `INSERT INTO booking_addons (property_id, booking_id, sale_id, sale_item_id, product_id, description, service_date,
+                                         quantity, unit_price, meal_price, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            [propertyId, bookingId, sale.id, line.id, product.id, product.name, night, parseInt(item.quantity),
+             item.unit_price, Math.min(parseFloat(item.unit_price), parseFloat(product.meal_price) || 0), servedBy || null]
+          );
+        }
+        continue;   // an extra bed isn't taken out of stock per night
+      }
       if (product.track_stock) {
         await client.query('UPDATE products SET stock_quantity = stock_quantity - $1 WHERE id = $2', [item.quantity, item.product_id]);
         await client.query(
@@ -161,22 +216,28 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // as decrementing stock immediately — the charge is real from the moment
     // the guest orders); a rejected room-service order's charge is voided by
     // routes/resto.js's reject handler via sale_id.
-    const folioDesc = items
-      .map(i => `${i.quantity}× ${productById.get(i.product_id).name}`)
-      .join(', ')
-      .slice(0, 200);
-    if (paymentMethodValue === 'room_charge' || (taxes && bookingId)) {
+    // Per-night items aren't posted here — their nights post with the room.
+    const itemsText = list => list.map(i => `${i.quantity}× ${productById.get(i.product_id).name}`).join(', ');
+    const folioDesc = itemsText(items.filter(i => !isPerNight(i))).slice(0, 200);
+    const oneOffTotal = total - perNightTotal;
+    if ((paymentMethodValue === 'room_charge' || (taxes && bookingId)) && oneOffTotal > 0) {
       await client.query(
         `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, sale_id)
          VALUES ($1,'sale',$2,1,$3,$3,$4,$5)`,
-        [bookingId, folioDesc, total, servedBy || null, sale.id]
+        [bookingId, folioDesc, oneOffTotal, servedBy || null, sale.id]
       );
+    }
+    // Nights already past (the stay is in house or over) go on the folio now.
+    if (stay && ['checked_in', 'checked_out'].includes(stay.status)) {
+      const roomCharge = require('./roomChargeService');
+      const end = stay.status === 'checked_out' ? stay.check_out_date : roomCharge.todayWITA();
+      await roomCharge.postAddons(client, stay, end, servedBy || null);
     }
     if (taxes && bookingId) {
       await client.query(
         `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, sale_id)
          VALUES ($1,'incidental',$2,'received',$3,NOW(),$4,$5,$6)`,
-        [bookingId, taxes.total, paymentMethodValue, servedBy || null, `Paid at front desk: ${folioDesc}`.slice(0, 250), sale.id]
+        [bookingId, taxes.total, paymentMethodValue, servedBy || null, `Paid at front desk: ${itemsText(items)}`.slice(0, 250), sale.id]
       );
     }
 

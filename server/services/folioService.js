@@ -100,6 +100,7 @@ async function loadFolio(bookingId, propertyId) {
   );
   const chargesQ = db.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.meal_price > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
             -- migration 067) groups under Other. Categories mirror
@@ -173,13 +174,26 @@ async function computeProforma(bookingId, propertyId) {
   );
   const extraChargesQ = db.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
+            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.meal_price > 0) AS addon_meal,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
             ${PAID_AT_DESK_SQL} AS paid_at_desk
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
-     WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb')
+     WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon')
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
+    [bookingId]
+  );
+  // Per-night extras (extra bed, migration 074): every active night inside
+  // the stay, posted or not — projected like the room nights.
+  const addonsQ = db.query(
+    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, s.payment_method
+     FROM booking_addons a
+     JOIN bookings b ON b.id = a.booking_id
+     LEFT JOIN sales s ON s.id = a.sale_id
+     WHERE a.booking_id = $1 AND a.status = 'active'
+       AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+     ORDER BY a.service_date`,
     [bookingId]
   );
   const settingsQ = db.query(
@@ -189,12 +203,21 @@ async function computeProforma(bookingId, propertyId) {
   );
   const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [bookingId]);
 
-  const [{ rows: [booking] }, { rows: extraCharges }, { rows: [settings] }, { rows: payments }] =
-    await Promise.all([bookingQ, extraChargesQ, settingsQ, paymentsQ]);
+  const [{ rows: [booking] }, { rows: extraCharges }, { rows: [settings] }, { rows: payments }, { rows: addons }] =
+    await Promise.all([bookingQ, extraChargesQ, settingsQ, paymentsQ, addonsQ]);
 
   if (!booking) return null;
 
   const nights = stayNights(booking.check_in_date, booking.check_out_date);
+  const addonCharges = addons.map(a => {
+    const amount = round2(parseFloat(a.unit_price) * a.quantity);
+    return {
+      type: 'addon', description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
+      unit_price: a.unit_price, amount, service_date: ymd(a.service_date),
+      paid_at_desk: !!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method),
+      addon_meal: parseFloat(a.meal_price) > 0,
+    };
+  });
   const ratePlanCode = await ratePlanCodeFor(booking.rate_plan_id);
   const roomTotal = booking.room_revenue ?? booking.total_amount;
   const projectedCharges = [];
@@ -204,7 +227,7 @@ async function computeProforma(bookingId, propertyId) {
     if (roomAmt > 0) projectedCharges.push({ type: 'room', description: `Room — ${nights[i]}`, quantity: 1, unit_price: roomAmt, amount: roomAmt, service_date: nights[i] });
     if (mealAmt > 0) projectedCharges.push({ type: 'fnb', description: `Meal plan (${ratePlanCode}) — ${nights[i]}`, quantity: 1, unit_price: mealAmt, amount: mealAmt, service_date: nights[i] });
   }
-  const charges = [...projectedCharges, ...extraCharges];
+  const charges = [...projectedCharges, ...addonCharges, ...extraCharges];
   const complimentary_extras = markComplimentary(booking, charges);
 
   const rawSubtotal = charges.filter(c => !c.complimentary).reduce((sum, c) => sum + parseFloat(c.amount), 0);

@@ -15,7 +15,12 @@ router.get('/', auth, async (req, res) => {
   let query = `
     SELECT s.*, u.name as served_by_name,
            g.name AS guest_name, un.name AS unit_name,
-           COALESCE((SELECT string_agg(si.quantity || '× ' || p.name, ', ' ORDER BY p.name)
+           -- A per-night line (extra bed) reads "Extra Bed · 1 × 28 Sep, 29 Sep".
+           COALESCE((SELECT string_agg(
+                CASE WHEN si.per_night THEN p.name || ' · ' || COALESCE((
+                       SELECT MAX(a.quantity) || ' × ' || string_agg(to_char(a.service_date, 'DD Mon'), ', ' ORDER BY a.service_date)
+                       FROM booking_addons a WHERE a.sale_item_id = si.id AND a.status = 'active'), 'removed')
+                     ELSE si.quantity || '× ' || p.name END, ', ' ORDER BY p.name)
               FROM sale_items si JOIN products p ON p.id = si.product_id
              WHERE si.sale_id = s.id), s.description) AS items_summary
     FROM sales s
@@ -65,7 +70,7 @@ router.post('/', auth, async (req, res) => {
       taxDirectPay: true,
     });
     if (result.code === 'OUT_OF_STOCK') return res.status(409).json({ error: result.error, code: result.code, items: result.items });
-    if (result.error) return res.status(404).json({ error: result.error });
+    if (result.error) return res.status(result.code ? 400 : 404).json({ error: result.error, code: result.code });
     res.status(201).json(result.sale);
   } catch (err) {
     res.status(500).json({ error: err.message });

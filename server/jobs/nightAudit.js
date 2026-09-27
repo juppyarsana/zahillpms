@@ -319,8 +319,11 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
         mealNet: roomChargeService.nightlyAmount(bk.fnb_revenue, nights.length, idx),
         ratePlanCode: bk.rate_plan_code || 'RO',
       });
+      // Per-night extras (extra bed…) for this night — and any earlier night
+      // added after the fact that isn't on the folio yet.
+      const addons = await roomChargeService.postAddons(client, bk, nextDate(businessDate));
       await client.query('COMMIT');
-      if (r.roomPosted || r.fnbPosted) folioPosted++;
+      if (r.roomPosted || r.fnbPosted || addons) folioPosted++;
     } catch (err) {
       await client.query('ROLLBACK');
       folioFailed++;
