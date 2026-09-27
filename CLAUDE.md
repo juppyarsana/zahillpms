@@ -317,7 +317,9 @@ One backend, one database, many properties. The client app, Room Display, and TV
 
 | 075 | Breakfasts per extra bed — `products.meal_pax` (breakfasts one unit includes, default 1; `meal_price` now = ONE breakfast, so existing items are unchanged), `booking_addons.breakfasts` (breakfasts per night, backfilled = quantity where there was a breakfast part; `meal_price` there = one breakfast). Additive only. |
 
-**Next migration number: 076** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
+| 076 | Performance indexes — `payments(booking_id)`, `sale_items(sale_id)`, `booking_addons(sale_item_id)`, `sales(property_id, created_at)`: lookups used on every balance / Sales History / report that previously scanned the whole table. No data changes. |
+
+**Next migration number: 077** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
 
 ---
 

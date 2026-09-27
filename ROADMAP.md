@@ -40,6 +40,7 @@ Last updated: 2026-09-27
   "Per night", breakfasts per unit 1, one breakfast 100000 (rename it "Extra Bed Single" if that's what it is) → add
   "Extra Bed Double" (per night, breakfasts 2, 100000) → re-split old extra-bed sales:
   `node maintenance/resplitMeals.js --property zahill --extras` (dry run), then `--apply`.
+- **Migration 076**: performance indexes (payments, sale items, extra-bed nights, sales by day) — no data changes.
 - Next (owner asked, one by one): report breakdown (room / F&B split incl. extras) + download as Excel and PDF.
 - Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
 - Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
@@ -1680,7 +1681,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 076
+## Next migration number: 077
 
 ---
 
