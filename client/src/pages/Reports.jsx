@@ -355,7 +355,7 @@ export default function Reports() {
                 onChange={e => setCustomTo(e.target.value)} aria-label="To" />
             </>
           )}
-          <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus a daily breakdown"
+          <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus Daily, Room nights (every room, every night) and Reservations"
             onClick={() => downloadCsv(`/api/reports/full/xlsx?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.xlsx`,
               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').catch(() => alert('Could not download the Excel file'))}>⬇ Excel</button>
           <button className="btn btn-secondary" disabled={!rangeValid} title="Printable report with every section and a daily breakdown"

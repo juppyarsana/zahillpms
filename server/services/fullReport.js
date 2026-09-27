@@ -245,4 +245,76 @@ async function buildFullReport(propertyId, from, to) {
   };
 }
 
-module.exports = { buildFullReport, EXTRA_CATEGORIES };
+// Row-level detail for the Excel export (not the page — it can be thousands
+// of rows): one row per room per night, and one row per reservation with a
+// night in the period. Same booking rule and per-night money as the report
+// (NIGHTS_CTE), so the night rows add up to the Rooms / meals totals.
+const bookingRef = id => String(id).slice(0, 8).toUpperCase();
+
+async function buildDetailRows(propertyId, from, to) {
+  const { NIGHTS_CTE } = require('../routes/reports');
+  const P = [from, to, propertyId];
+  const [{ rows: nights }, { rows: reservations }] = await Promise.all([
+    db.query(`
+      ${NIGHTS_CTE}
+      SELECT to_char(n.night, 'YYYY-MM-DD') AS night, n.booking_id, u.name AS room, COALESCE(rt.name, u.type) AS room_type,
+             g.name AS guest, NULLIF(TRIM(g.nationality), '') AS nationality,
+             COALESCE(bs.label, n.source) AS source, rp.name AS rate_plan, n.num_guests, b.status,
+             n.room_rev_per_night AS room_revenue, n.fnb_rev_per_night AS meal_revenue, n.comp,
+             COALESCE(ad.units, 0) AS extra_units, COALESCE(ad.amount, 0) AS extra_amount, ad.items AS extra_items
+      FROM nights n
+      JOIN bookings b ON b.id = n.booking_id
+      JOIN units u ON u.id = n.unit_id
+      LEFT JOIN room_types rt ON rt.id = u.room_type_id
+      JOIN guests g ON g.id = n.guest_id
+      LEFT JOIN booking_sources bs ON bs.id = n.source AND bs.property_id = $3
+      LEFT JOIN rate_plans rp ON rp.id = n.rate_plan_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(a.quantity) AS units, SUM(a.quantity * a.unit_price) AS amount, string_agg(DISTINCT a.description, ', ') AS items
+        FROM booking_addons a WHERE a.booking_id = n.booking_id AND a.service_date = n.night AND a.status = 'active'
+      ) ad ON true
+      ORDER BY n.night, u.name`, P),
+    db.query(`
+      SELECT b.id, g.name AS guest, NULLIF(TRIM(g.nationality), '') AS nationality, u.name AS room, COALESCE(rt.name, u.type) AS room_type,
+             to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in, to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out, b.nights,
+             (LEAST(b.check_out_date, $2::date + 1) - GREATEST(b.check_in_date, $1::date)) AS nights_in_period,
+             b.num_guests, COALESCE(bs.label, b.source) AS source, rp.name AS rate_plan, b.status,
+             b.total_amount, COALESCE(b.discount_amount, 0) AS discount, COALESCE(b.room_revenue, b.total_amount) AS room_revenue,
+             COALESCE(b.fnb_revenue, 0) AS meal_revenue, b.complimentary_scope,
+             to_char((b.created_at AT TIME ZONE 'Asia/Makassar')::date, 'YYYY-MM-DD') AS booked_on,
+             pg.name AS group_booker, b.folio_status,
+             COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')), 0) AS paid,
+             COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.status = 'pending' AND p.type IN ('deposit', 'balance')), 0) AS pending
+      FROM bookings b
+      JOIN guests g ON g.id = b.guest_id
+      JOIN units u ON u.id = b.unit_id
+      LEFT JOIN room_types rt ON rt.id = u.room_type_id
+      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+      LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
+      LEFT JOIN guests pg ON pg.id = rg.primary_guest_id
+      WHERE b.property_id = $3 AND b.status NOT IN ('cancelled', 'no_show')
+        AND b.check_in_date <= $2::date AND b.check_out_date > $1::date
+      ORDER BY b.check_in_date, u.name`, P),
+  ]);
+  return {
+    room_nights: nights.map(n => ({
+      date: n.night, ref: bookingRef(n.booking_id), room: n.room, room_type: n.room_type, guest: n.guest, nationality: n.nationality,
+      source: n.source, rate_plan: n.rate_plan, guests: parseInt(n.num_guests) || 0, status: n.status,
+      room_revenue: r2(n.room_revenue), meal_revenue: r2(n.meal_revenue),
+      extra_bed: parseInt(n.extra_units) ? `${n.extra_units} × ${n.extra_items}` : '', extra_amount: r2(n.extra_amount),
+      complimentary: n.comp ? 'Yes' : '',
+    })),
+    reservations: reservations.map(b => ({
+      ref: bookingRef(b.id), guest: b.guest, nationality: b.nationality, room: b.room, room_type: b.room_type,
+      check_in: b.check_in, check_out: b.check_out, nights: parseInt(b.nights), nights_in_period: parseInt(b.nights_in_period),
+      guests: parseInt(b.num_guests) || 0, source: b.source, rate_plan: b.rate_plan, status: b.status,
+      price: r2(b.total_amount), discount: r2(b.discount), room_revenue: r2(b.room_revenue), meal_revenue: r2(b.meal_revenue),
+      paid: r2(b.paid), pending: r2(b.pending),
+      billing: b.complimentary_scope ? 'Complimentary' : b.folio_status ? 'Agent billed' : '',
+      group: b.group_booker || '', booked_on: b.booked_on,
+    })),
+  };
+}
+
+module.exports = { buildFullReport, buildDetailRows, EXTRA_CATEGORIES };

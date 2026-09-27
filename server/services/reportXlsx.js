@@ -27,19 +27,20 @@ function titleBlock(ws, title, meta) {
 
 // A table: heading line, header row, data rows, optional total row.
 // cols = [{ header, key, width, fmt, align }]; rows = objects (+ _bold, _group, _indent).
-function table(ws, heading, cols, rows, total, note) {
+function table(ws, heading, cols, rows, total, note, { filter = false } = {}) {
   if (heading) ws.addRow([heading]).font = { bold: true, size: 11 };
   if (note) ws.addRow([note]).font = { italic: true, size: 9, color: { argb: 'FF6B7280' } };
   const h = ws.addRow(cols.map(c => c.header));
   h.font = { bold: true, size: 10 };
   h.eachCell(c => { c.fill = HEAD_FILL; c.border = { bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } } }; });
   cols.forEach((c, i) => { if (c.align) h.getCell(i + 1).alignment = { horizontal: c.align }; });
+  if (filter && rows.length) ws.autoFilter = { from: { row: h.number, column: 1 }, to: { row: h.number + rows.length, column: cols.length } };
   if (!rows.length) ws.addRow(['Nothing in this period.']).font = { italic: true, color: { argb: 'FF9CA3AF' } };
   for (const r of rows) {
     const row = ws.addRow(cols.map(c => r[c.key] ?? null));
     cols.forEach((c, i) => {
       const cell = row.getCell(i + 1);
-      if (c.fmt && typeof cell.value === 'number') cell.numFmt = c.fmt;
+      if (c.fmt && (typeof cell.value === 'number' || cell.value instanceof Date)) cell.numFmt = c.fmt;
       if (i === 0 && r._indent) cell.alignment = { indent: 2 };
     });
     if (r._bold || r._group) row.font = { bold: true };
@@ -59,7 +60,11 @@ function table(ws, heading, cols, rows, total, note) {
 
 function widths(ws, list) { list.forEach((w, i) => { ws.getColumn(i + 1).width = w; }); }
 
-async function buildReportXlsx(report, { propertyName } = {}) {
+// 'YYYY-MM-DD' → a real Excel date (UTC midnight, so no timezone shift).
+const xlDate = s => (s ? new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10))) : null);
+const DATE = 'dd mmm yyyy';
+
+async function buildReportXlsx(report, { propertyName, detail } = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'HALF PMS';
   wb.created = new Date();
@@ -199,6 +204,48 @@ async function buildReportXlsx(report, { propertyName } = {}) {
   ], daily, { date: 'Total', room: sum('room'), fnb: sum('fnb'), extras: sum('extras'), activities: sum('activities'), total: sum('total'),
     nights: sum('nights'), expenses: sum('expenses') });
   widths(ws5, [14, 18, 16, 16, 16, 18, 13, 16]);
+
+  // ── Room nights / Reservations (row-level detail) ──
+  if (detail) {
+    const rn = detail.room_nights;
+    const ws6 = wb.addWorksheet('Room nights', { views: [{ state: 'frozen', ySplit: 6, xSplit: 2 }] });
+    titleBlock(ws6, 'Room nights', meta);
+    const rsum = k => rn.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    table(ws6, null, [
+      { header: 'Date', key: 'date', fmt: DATE }, { header: 'Room', key: 'room' }, { header: 'Room type', key: 'room_type' },
+      { header: 'Booking', key: 'ref' }, { header: 'Guest', key: 'guest' }, { header: 'Nationality', key: 'nationality' },
+      { header: 'Source', key: 'source' }, { header: 'Rate plan', key: 'rate_plan' }, { header: 'Guests', key: 'guests', fmt: INT, align: 'right' },
+      { header: 'Status', key: 'status' }, { header: 'Room revenue (Rp)', key: 'room_revenue', fmt: IDR, align: 'right' },
+      { header: 'Meals (Rp)', key: 'meal_revenue', fmt: IDR, align: 'right' }, { header: 'Extra bed', key: 'extra_bed' },
+      { header: 'Extra bed (Rp)', key: 'extra_amount', fmt: IDR, align: 'right' }, { header: 'Complimentary', key: 'complimentary' },
+    ], rn.map(r => ({ ...r, date: xlDate(r.date), status: r.status.replace('_', ' ') })),
+    { date: 'Total', guests: rsum('guests'), room_revenue: rsum('room_revenue'), meal_revenue: rsum('meal_revenue'), extra_amount: rsum('extra_amount') },
+    "One row per room per night sold (every booking except cancelled / no-show). Room revenue and meals are that night's share, net — they add up to the Revenue sheet. Use the filter buttons to pick a room, date or source.",
+    { filter: true });
+    widths(ws6, [13, 10, 14, 11, 24, 14, 16, 18, 8, 12, 16, 13, 22, 14, 13]);
+
+    const rs = detail.reservations;
+    const ws7 = wb.addWorksheet('Reservations', { views: [{ state: 'frozen', ySplit: 6, xSplit: 2 }] });
+    titleBlock(ws7, 'Reservations', meta);
+    const bsum = k => rs.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    table(ws7, null, [
+      { header: 'Booking', key: 'ref' }, { header: 'Guest', key: 'guest' }, { header: 'Nationality', key: 'nationality' },
+      { header: 'Room', key: 'room' }, { header: 'Room type', key: 'room_type' },
+      { header: 'Check-in', key: 'check_in', fmt: DATE }, { header: 'Check-out', key: 'check_out', fmt: DATE },
+      { header: 'Nights', key: 'nights', fmt: INT, align: 'right' }, { header: 'Nights in period', key: 'nights_in_period', fmt: INT, align: 'right' },
+      { header: 'Guests', key: 'guests', fmt: INT, align: 'right' }, { header: 'Source', key: 'source' }, { header: 'Rate plan', key: 'rate_plan' },
+      { header: 'Status', key: 'status' }, { header: 'Price as booked (Rp, incl. tax)', key: 'price', fmt: IDR, align: 'right' },
+      { header: 'Discount (Rp)', key: 'discount', fmt: IDR, align: 'right' }, { header: 'Room, net (Rp)', key: 'room_revenue', fmt: IDR, align: 'right' },
+      { header: 'Meals, net (Rp)', key: 'meal_revenue', fmt: IDR, align: 'right' }, { header: 'Room payments received (Rp)', key: 'paid', fmt: IDR, align: 'right' },
+      { header: 'Room payments pending (Rp)', key: 'pending', fmt: IDR, align: 'right' }, { header: 'Billing', key: 'billing' },
+      { header: 'Group (booked by)', key: 'group' }, { header: 'Booked on', key: 'booked_on', fmt: DATE },
+    ], rs.map(r => ({ ...r, check_in: xlDate(r.check_in), check_out: xlDate(r.check_out), booked_on: xlDate(r.booked_on), status: r.status.replace('_', ' ') })),
+    { ref: 'Total', nights: bsum('nights'), nights_in_period: bsum('nights_in_period'), guests: bsum('guests'), price: bsum('price'), discount: bsum('discount'),
+      room_revenue: bsum('room_revenue'), meal_revenue: bsum('meal_revenue'), paid: bsum('paid'), pending: bsum('pending') },
+    "One row per reservation with at least one night in the period (not cancelled / no-show). Amounts are for the whole stay, which can run outside the period; payments are the room's deposit / balance lines (extras are on each folio).",
+    { filter: true });
+    widths(ws7, [11, 24, 14, 10, 14, 13, 13, 8, 10, 8, 16, 18, 12, 18, 14, 16, 15, 18, 18, 14, 22, 13]);
+  }
 
   for (const ws of wb.worksheets) ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   return wb.xlsx.writeBuffer();

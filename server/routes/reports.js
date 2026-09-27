@@ -341,14 +341,15 @@ router.get('/full/xlsx', auth, requireRole('owner'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {
-    const { buildFullReport } = require('../services/fullReport');
+    const { buildFullReport, buildDetailRows } = require('../services/fullReport');
     const { buildReportXlsx } = require('../services/reportXlsx');
-    const [report, { rows: [p] }] = await Promise.all([
+    const [report, detail, { rows: [p] }] = await Promise.all([
       buildFullReport(req.propertyId, period.from, period.to),
+      buildDetailRows(req.propertyId, period.from, period.to),
       db.query(`SELECT COALESCE(NULLIF(ps.property_name, ''), pr.name) AS name
                 FROM properties pr LEFT JOIN property_settings ps ON ps.property_id = pr.id WHERE pr.id = $1`, [req.propertyId]),
     ]);
-    const buf = await buildReportXlsx(report, { propertyName: p?.name });
+    const buf = await buildReportXlsx(report, { propertyName: p?.name, detail });
     const label = period.from === period.to ? period.from : `${period.from}_to_${period.to}`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="report-${label}.xlsx"`);
