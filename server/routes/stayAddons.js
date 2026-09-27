@@ -18,7 +18,7 @@ router.get('/:id/addons', auth, async (req, res) => {
       'SELECT id, check_in_date, check_out_date FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!b) return res.status(404).json({ error: 'Booking not found' });
     const { rows } = await db.query(`
-      SELECT a.id, a.sale_id, a.product_id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price,
+      SELECT a.id, a.sale_id, a.product_id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts,
              a.status, a.created_at, a.removed_at, a.removed_reason, cu.name AS created_by_name, ru.name AS removed_by_name,
              s.payment_method,
              EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false) AS posted,
@@ -65,7 +65,8 @@ router.delete('/:id/addons/:addonId', auth, async (req, res) => {
       if (line) {
         const qty = Math.max(0, line.quantity - a.quantity);
         const subtotal = round2(parseFloat(line.unit_price) * qty);
-        const meal = round2(parseFloat(a.meal_price) * qty);
+        const nightMeal = Math.min(a.breakfasts * parseFloat(a.meal_price), a.quantity * parseFloat(a.unit_price));
+        const meal = round2(Math.max(0, parseFloat(line.meal_amount) - nightMeal));
         await client.query('UPDATE sale_items SET quantity = $1, subtotal = $2, meal_amount = $3 WHERE id = $4',
           [qty, subtotal, meal, line.id]);
         await client.query(

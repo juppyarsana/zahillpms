@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import StayNightsPicker, { defaultNights } from '../components/StayNightsPicker';
+import { defaultNights } from '../components/StayNightsPicker';
+import PerNightLine, { defaultBreakfasts, withUnits } from '../components/PerNightLine';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
@@ -16,7 +17,7 @@ const CATEGORIES = [
   { key: 'other',       icon: '📦', label: 'Other',        hint: '' },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
-const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '', per_night: false, meal_price: '' };
+const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '', per_night: false, meal_price: '', meal_pax: 1 };
 // Not something front desk takes at the till.
 const HIDDEN_PAY_METHODS = ['ota_managed'];
 
@@ -51,6 +52,8 @@ function stockBadge(p) {
 // ticked; the rest are one-off (quantity).
 function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
 function lineUnits(i) { return (parseInt(i.quantity) || 0) * (i.per_night ? (i.nights || []).length : 1); }
+// A per-night line's price per night can be bargained (migration 075).
+function linePrice(i) { return i.per_night && i.price_per_night !== '' && i.price_per_night != null ? parseFloat(i.price_per_night) || 0 : parseFloat(i.unit_price); }
 
 export default function Sales() {
   const { user } = useAuth();
@@ -100,11 +103,14 @@ export default function Sales() {
     if (product.track_stock && product.stock_quantity <= 0) return;
     setCart(c => {
       const ex = c.find(i => i.product_id === product.id);
-      if (ex) return c.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+      if (ex) return c.map(i => i.product_id === product.id ? (i.per_night ? withUnits(i, product, i.quantity + 1) : { ...i, quantity: i.quantity + 1 }) : i);
       return [...c, {
-        product_id: product.id, name: product.name, unit_price: product.price, quantity: 1,
-        per_night: !!product.per_night, meal_price: product.meal_price,
-        nights: product.per_night ? defaultNights(selectedBooking) : undefined,
+        product_id: product.id, name: product.name, unit_price: product.price, quantity: 1, product,
+        per_night: !!product.per_night,
+        ...(product.per_night ? {
+          nights: defaultNights(selectedBooking), price_per_night: String(parseFloat(product.price)),
+          breakfasts: defaultBreakfasts(product, 1), breakfasts_touched: false,
+        } : {}),
       }];
     });
   }
@@ -115,13 +121,14 @@ export default function Sales() {
     const n = parseInt(qty);
     if (!Number.isFinite(n)) return;
     if (n < 1) { removeFromCart(id); return; }
-    setCart(c => c.map(i => i.product_id === id ? { ...i, quantity: n } : i));
+    setCart(c => c.map(i => i.product_id === id ? (i.per_night ? withUnits(i, i.product, n) : { ...i, quantity: n }) : i));
   }
 
-  function setNights(id, nights) { setCart(c => c.map(i => i.product_id === id ? { ...i, nights } : i)); }
-  const perNightMissing = cart.some(i => i.per_night && (!selectedBooking || !(i.nights || []).length));
+  function setLine(id, line) { setCart(c => c.map(i => i.product_id === id ? { ...i, ...line } : i)); }
+  const perNightMissing = cart.some(i => i.per_night && (!selectedBooking || !(i.nights || []).length
+    || i.price_per_night === '' || parseFloat(i.price_per_night) < 0 || i.breakfasts === '' || i.breakfasts < 0));
   const cartValid = cart.length > 0 && cart.every(i => Number.isInteger(i.quantity) && i.quantity >= 1) && !perNightMissing;
-  const cartTotal = cart.reduce((sum, i) => sum + i.unit_price * lineUnits(i), 0);
+  const cartTotal = cart.reduce((sum, i) => sum + linePrice(i) * lineUnits(i), 0);
   // Prices are before tax. Paid directly, the guest pays service charge + tax
   // on top (same formula as the folio: service on the subtotal, tax on
   // subtotal + service). The server computes the real amounts; this is the
@@ -173,7 +180,8 @@ export default function Sales() {
       const { data: sale } = await api.post('/api/sales', {
         booking_id: selectedBooking?.id || null,
         payment_method: chargeToRoom ? 'room_charge' : payMethod,
-        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity, ...(i.per_night ? { nights: i.nights } : {}) })),
+        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity,
+          ...(i.per_night ? { nights: i.nights, price_per_night: parseFloat(i.price_per_night), breakfasts: i.breakfasts } : {}) })),
       });
       setLastSale({ id: sale.id, paidDirectly: !chargeToRoom });
       setCart([]);
@@ -198,7 +206,7 @@ export default function Sales() {
     setProdForm({
       name: p.name, category: p.category, price: p.price, description: p.description || '', is_available: p.is_available,
       track_stock: p.track_stock, stock_quantity: p.stock_quantity, low_stock_threshold: p.low_stock_threshold ?? '',
-      per_night: !!p.per_night, meal_price: parseFloat(p.meal_price) ? p.meal_price : '',
+      per_night: !!p.per_night, meal_price: parseFloat(p.meal_price) ? p.meal_price : '', meal_pax: p.meal_pax ?? 1,
     });
     setProductModal({ mode: 'edit', id: p.id });
   }
@@ -209,6 +217,7 @@ export default function Sales() {
       name: prodForm.name, category: prodForm.category, price: prodForm.price, description: prodForm.description, is_available: prodForm.is_available,
       track_stock: prodForm.track_stock, low_stock_threshold: prodForm.low_stock_threshold === '' ? null : parseInt(prodForm.low_stock_threshold),
       per_night: prodForm.per_night, meal_price: prodForm.meal_price === '' ? 0 : parseFloat(prodForm.meal_price),
+      meal_pax: prodForm.meal_pax === '' ? 1 : parseInt(prodForm.meal_pax),
     };
     try {
       if (productModal.mode === 'add') {
@@ -382,7 +391,7 @@ export default function Sales() {
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}{i.per_night && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>per night</span>}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {i.per_night
-                          ? <>{fmtIDR(i.unit_price)} × {i.quantity || 0} × {plural((i.nights || []).length, 'night')} = {fmtIDR(i.unit_price * lineUnits(i))}</>
+                          ? <>{fmtIDR(linePrice(i))} × {i.quantity || 0} × {plural((i.nights || []).length, 'night')} = {fmtIDR(linePrice(i) * lineUnits(i))}</>
                           : <>{fmtIDR(i.unit_price)} × {i.quantity || 0} = {fmtIDR(i.unit_price * lineUnits(i))}</>}
                       </div>
                     </div>
@@ -398,10 +407,8 @@ export default function Sales() {
                   {i.per_night && (
                     selectedBooking ? (
                       <div style={{ marginTop: 6 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
-                          Which nights? (the number above is per night{parseFloat(i.meal_price) > 0 ? ` · incl. breakfast ${fmtIDR(i.meal_price)}` : ''})
-                        </div>
-                        <StayNightsPicker booking={selectedBooking} value={i.nights || []} onChange={n => setNights(i.product_id, n)} />
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>The number above is per night.</div>
+                        <PerNightLine booking={selectedBooking} product={i.product} line={i} onChange={l => setLine(i.product_id, l)} />
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4 }}>
@@ -498,7 +505,11 @@ export default function Sales() {
                       <td>{CAT_BY_KEY[p.category]?.icon} {CAT_BY_KEY[p.category]?.label}</td>
                       <td>
                         {fmtIDR(p.price)}
-                        {parseFloat(p.meal_price) > 0 && <div className="text-muted" style={{ fontSize: 11 }}>incl. breakfast {fmtIDR(p.meal_price)}</div>}
+                        {parseFloat(p.meal_price) > 0 && p.meal_pax > 0 && (
+                          <div className="text-muted" style={{ fontSize: 11 }}>
+                            incl. {plural(p.meal_pax, 'breakfast')} × {fmtIDR(p.meal_price)}
+                          </div>
+                        )}
                       </td>
                       <td><span className={`badge badge-${p.is_available?'green':'gray'}`}>{p.is_available?'Yes':'No'}</span></td>
                       <td>{stockBadge(p) || <span className="text-muted" style={{ fontSize: 12 }}>Not tracked</span>}</td>
@@ -547,13 +558,24 @@ export default function Sales() {
                       Sold for chosen nights of a guest's stay and charged night by night with the room (from Sales or the reservation). The price is per night.
                     </div>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Breakfast included — net, {prodForm.per_night ? 'per unit per night' : 'per unit'} (IDR)</label>
-                    <input className="form-input" type="number" min="0" value={prodForm.meal_price} placeholder="0 = no breakfast"
-                      onChange={e=>setProdForm(f=>({...f,meal_price:e.target.value}))} />
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      This part of the price counts as breakfast (F&amp;B) in the reports{prodForm.per_night ? ' and adds to the kitchen breakfast count the next morning' : ''}. Changing it applies to new sales only.
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Breakfasts included {prodForm.per_night ? 'per unit per night' : 'per unit'}</label>
+                      <input className="form-input" type="number" min="0" max="20" value={prodForm.meal_pax}
+                        onChange={e=>setProdForm(f=>({...f,meal_pax:e.target.value}))} />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>e.g. extra bed single 1, double 2. 0 = none.</div>
                     </div>
+                    <div className="form-group">
+                      <label className="form-label">Price of one breakfast — net (IDR)</label>
+                      <input className="form-input" type="number" min="0" value={prodForm.meal_price} placeholder="e.g. 100000"
+                        onChange={e=>setProdForm(f=>({...f,meal_price:e.target.value}))} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -6, marginBottom: 12 }}>
+                    {parseFloat(prodForm.meal_price) > 0 && parseInt(prodForm.meal_pax) > 0
+                      ? <>Of the price, <b>{fmtIDR(parseFloat(prodForm.meal_price) * parseInt(prodForm.meal_pax))}</b> counts as breakfast (F&amp;B) in the reports{prodForm.per_night ? ', and the kitchen gets the breakfasts the next morning. Front desk can change the breakfasts (and the price per night) on each sale' : ''}. </>
+                      : 'No breakfast included. '}
+                    Changes apply to new sales only.
                   </div>
                   {productModal.mode === 'edit' && (
                     <div className="form-group">

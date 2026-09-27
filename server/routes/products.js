@@ -8,14 +8,20 @@ const canManageMenu = requireOwnerOrMenu('resto_menu');
 // Room Display Dining, the rest are hotel extras sold from the PMS Sales page.
 const CATEGORIES = ['drinks', 'food', 'room_addon', 'transport', 'laundry', 'service', 'merchandise', 'other'];
 
-// Breakfast part of an item (migration 074): net, per unit — per unit per
-// night for a per-night item — and never more than the item's price.
-function checkMealPrice(meal, price) {
+// Breakfast on an item (migrations 074/075): meal_price = ONE breakfast (net),
+// meal_pax = breakfasts one unit includes (single extra bed 1, double 2).
+// Together never more than the item's price.
+function checkMealPrice(meal, price, pax = 1) {
   if (meal === undefined || meal === null || meal === '') return null;
   const m = parseFloat(meal);
-  if (!Number.isFinite(m) || m < 0) return 'Breakfast part must be 0 or more';
-  if (price !== undefined && price !== null && m > parseFloat(price)) return 'Breakfast part can\'t be more than the item price';
+  if (!Number.isFinite(m) || m < 0) return 'Breakfast price must be 0 or more';
+  if (price !== undefined && price !== null && m * (parseInt(pax) || 0) > parseFloat(price)) return 'The breakfasts can\'t cost more than the item itself';
   return null;
+}
+function checkMealPax(pax) {
+  if (pax === undefined || pax === null || pax === '') return null;
+  const n = Number(pax);
+  return Number.isInteger(n) && n >= 0 && n <= 20 ? null : 'Breakfasts per unit must be a whole number from 0 to 20';
 }
 
 // GET /api/products
@@ -36,17 +42,17 @@ router.get('/', auth, async (req, res) => {
 
 // POST /api/products
 router.post('/', auth, canManageMenu, async (req, res) => {
-  const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price } = req.body;
+  const { name, category, price, description, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price, meal_pax } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
   if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
-  const mealErr = checkMealPrice(meal_price, price);
+  const mealErr = checkMealPax(meal_pax) || checkMealPrice(meal_price, price, meal_pax ?? 1);
   if (mealErr) return res.status(400).json({ error: mealErr });
   try {
     const { rows } = await db.query(
-      `INSERT INTO products (name, category, price, description, property_id, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      `INSERT INTO products (name, category, price, description, property_id, track_stock, stock_quantity, low_stock_threshold, per_night, meal_price, meal_pax)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [name, category || 'other', price, description, req.propertyId, !!track_stock, stock_quantity || 0, low_stock_threshold || null,
-       !!per_night, parseFloat(meal_price) || 0]
+       !!per_night, parseFloat(meal_price) || 0, meal_pax === undefined || meal_pax === '' ? 1 : parseInt(meal_pax)]
     );
     // Log the opening count so the item's stock history starts from a real
     // entry instead of an unexplained number.
@@ -65,12 +71,14 @@ router.post('/', auth, canManageMenu, async (req, res) => {
 
 // PUT /api/products/:id
 router.put('/:id', auth, canManageMenu, async (req, res) => {
-  const { name, category, price, description, is_available, track_stock, low_stock_threshold, per_night, meal_price } = req.body;
+  const { name, category, price, description, is_available, track_stock, low_stock_threshold, per_night, meal_price, meal_pax } = req.body;
   if (category && !CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
   try {
-    if (meal_price !== undefined) {
-      const { rows: [cur] } = await db.query('SELECT price FROM products WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-      const mealErr = checkMealPrice(meal_price, price ?? cur?.price);
+    const paxErr = checkMealPax(meal_pax);
+    if (paxErr) return res.status(400).json({ error: paxErr });
+    if (meal_price !== undefined || meal_pax !== undefined) {
+      const { rows: [cur] } = await db.query('SELECT price, meal_price, meal_pax FROM products WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+      const mealErr = checkMealPrice(meal_price ?? cur?.meal_price, price ?? cur?.price, meal_pax ?? cur?.meal_pax);
       if (mealErr) return res.status(400).json({ error: mealErr });
     }
     // Changing the price / breakfast part / per-night applies to NEW sales
@@ -81,10 +89,11 @@ router.put('/:id', auth, canManageMenu, async (req, res) => {
         price = COALESCE($3, price), description = COALESCE($4, description),
         is_available = COALESCE($5, is_available), track_stock = COALESCE($6, track_stock),
         low_stock_threshold = COALESCE($7, low_stock_threshold),
-        per_night = COALESCE($10, per_night), meal_price = COALESCE($11, meal_price)
+        per_night = COALESCE($10, per_night), meal_price = COALESCE($11, meal_price), meal_pax = COALESCE($12, meal_pax)
        WHERE id = $8 AND property_id = $9 RETURNING *`,
       [name, category, price, description, is_available, track_stock, low_stock_threshold, req.params.id, req.propertyId,
-       per_night === undefined ? null : !!per_night, meal_price === undefined || meal_price === '' ? null : parseFloat(meal_price)]
+       per_night === undefined ? null : !!per_night, meal_price === undefined || meal_price === '' ? null : parseFloat(meal_price),
+       meal_pax === undefined || meal_pax === '' ? null : parseInt(meal_pax)]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
     res.json(rows[0]);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import StayNightsPicker, { defaultNights } from './StayNightsPicker';
+import { defaultNights } from './StayNightsPicker';
+import PerNightLine, { defaultBreakfasts, withUnits } from './PerNightLine';
 import { fmtYmd } from '../lib/propertyTime';
 
 // The reservation's door to Sales items (migration 074): "Extras for this
@@ -17,7 +18,8 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
   const [products, setProducts] = useState([]);
   const [pick, setPick] = useState(null);          // product
   const [qty, setQty] = useState(1);
-  const [nights, setNights] = useState([]);
+  // Per-night items: { quantity, price_per_night, breakfasts, breakfasts_touched, nights }
+  const [line, setLine] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,19 +29,30 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
 
   function choose(p) {
     setPick(p); setQty(1); setError('');
-    setNights(p.per_night ? defaultNights(booking) : []);
+    setLine(p.per_night ? {
+      quantity: 1, nights: defaultNights(booking), price_per_night: String(parseFloat(p.price)),
+      breakfasts: defaultBreakfasts(p, 1), breakfasts_touched: false,
+    } : null);
+  }
+  function changeQty(v) {
+    setQty(v);
+    if (pick?.per_night) setLine(l => withUnits(l, pick, parseInt(v) || 0));
   }
 
+  const nights = line?.nights || [];
   const units = pick ? (parseInt(qty) || 0) * (pick.per_night ? nights.length : 1) : 0;
-  const total = pick ? parseFloat(pick.price) * units : 0;
-  const valid = pick && parseInt(qty) >= 1 && (!pick.per_night || nights.length > 0);
+  const price = pick?.per_night ? (parseFloat(line.price_per_night) || 0) : parseFloat(pick?.price || 0);
+  const total = pick ? price * units : 0;
+  const valid = pick && parseInt(qty) >= 1 && (!pick.per_night || (nights.length > 0
+    && line.price_per_night !== '' && parseFloat(line.price_per_night) >= 0 && line.breakfasts !== '' && line.breakfasts >= 0));
 
   async function save() {
     setSaving(true); setError('');
     try {
       await api.post('/api/sales', {
         booking_id: booking.id, payment_method: 'room_charge',
-        items: [{ product_id: pick.id, quantity: parseInt(qty), ...(pick.per_night ? { nights } : {}) }],
+        items: [{ product_id: pick.id, quantity: parseInt(qty),
+          ...(pick.per_night ? { nights, price_per_night: parseFloat(line.price_per_night), breakfasts: line.breakfasts } : {}) }],
       });
       onDone();
     } catch (err) {
@@ -77,19 +90,18 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
                   <div style={{ fontWeight: 700 }}>{pick.name}</div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
                     {fmtIDR(pick.price)}{pick.per_night ? ' per night' : ''}
-                    {parseFloat(pick.meal_price) > 0 && ` · incl. breakfast ${fmtIDR(pick.meal_price)}`}
+                    {parseFloat(pick.meal_price) > 0 && pick.meal_pax > 0 && ` · incl. ${plural(pick.meal_pax, 'breakfast')}`}
                   </div>
                 </div>
                 <button className="btn btn-sm btn-ghost" onClick={() => setPick(null)}>← Other item</button>
               </div>
               <div className="form-group">
                 <label className="form-label">{pick.per_night ? 'How many (per night)' : 'Quantity'}</label>
-                <input className="form-input" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} style={{ width: 100 }} />
+                <input className="form-input" type="number" min="1" value={qty} onChange={e => changeQty(e.target.value)} style={{ width: 100 }} />
               </div>
               {pick.per_night && (
                 <div className="form-group">
-                  <label className="form-label">Which nights</label>
-                  <StayNightsPicker booking={booking} value={nights} onChange={setNights} />
+                  <PerNightLine booking={booking} product={pick} line={line} onChange={setLine} />
                 </div>
               )}
               <div className="flex-between" style={{ fontWeight: 700, fontSize: 15, marginTop: 8 }}>
@@ -160,7 +172,7 @@ export default function StayExtrasCard({ booking, openAdd, onChanged }) {
         <div key={item} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
             {item}
-            {parseFloat(rows[0].meal_price) > 0 && <span className="text-muted" style={{ fontWeight: 400 }}> · incl. breakfast</span>}
+            {rows.some(a => a.breakfasts > 0) && <span className="text-muted" style={{ fontWeight: 400 }}> · incl. breakfast (bf = breakfasts per night)</span>}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {rows.map(a => (
@@ -169,6 +181,7 @@ export default function StayExtrasCard({ booking, openAdd, onChanged }) {
                 title={!a.in_stay ? 'Outside the stay dates — not charged' : a.posted ? 'On the folio' : 'Posted with the room at night audit'}>
                 {fmtYmd(a.service_date, { weekday: 'short', day: 'numeric', month: 'short' })}
                 {a.quantity > 1 && ` × ${a.quantity}`} · {fmtIDR(a.unit_price * a.quantity)}
+                {a.breakfasts > 0 && ` · ${a.breakfasts} bf`}
                 {!a.in_stay && ' · not charged'}
                 <button onClick={() => setRemoving(a)} title="Remove this night"
                   style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, fontSize: 12, color: 'inherit' }}>✕</button>

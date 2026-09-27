@@ -100,7 +100,7 @@ async function loadFolio(bookingId, propertyId) {
   );
   const chargesQ = db.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
-            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.meal_price > 0) AS addon_meal,
+            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
             -- migration 067) groups under Other. Categories mirror
@@ -174,7 +174,7 @@ async function computeProforma(bookingId, propertyId) {
   );
   const extraChargesQ = db.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, u.name as posted_by_name,
-            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.meal_price > 0) AS addon_meal,
+            EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
@@ -187,7 +187,7 @@ async function computeProforma(bookingId, propertyId) {
   // Per-night extras (extra bed, migration 074): every active night inside
   // the stay, posted or not — projected like the room nights.
   const addonsQ = db.query(
-    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, s.payment_method
+    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts, s.payment_method
      FROM booking_addons a
      JOIN bookings b ON b.id = a.booking_id
      LEFT JOIN sales s ON s.id = a.sale_id
@@ -215,7 +215,7 @@ async function computeProforma(bookingId, propertyId) {
       type: 'addon', description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
       unit_price: a.unit_price, amount, service_date: ymd(a.service_date),
       paid_at_desk: !!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method),
-      addon_meal: parseFloat(a.meal_price) > 0,
+      addon_meal: a.breakfasts > 0,
     };
   });
   const ratePlanCode = await ratePlanCodeFor(booking.rate_plan_id);

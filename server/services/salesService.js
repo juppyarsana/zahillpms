@@ -51,15 +51,23 @@ const FNB_CATEGORIES = ['drinks', 'food'];
 // records units × nights, and each night becomes a booking_addons row that's
 // posted to the folio night by night with the room (not now as a 'sale'
 // charge) — nights already past are posted straight away. A product's
-// meal_price (breakfast part, net per unit / per unit per night) is stored
-// on the line as meal_amount so the reports count it as F&B.
+// breakfast part (meal_price = one breakfast, net × meal_pax breakfasts per
+// unit, migration 075) is stored on the line as meal_amount so the reports
+// count it as F&B.
+//
+// A per-night item can also carry, per sale (migration 075, owner's choice
+// "any front desk staff"):
+//   price_per_night — a bargained price instead of the item's price
+//   breakfasts      — breakfasts per night (default units × the item's
+//                     meal_pax; e.g. a double extra bed for one person = 1)
+// Both are noted in the booking's Edit History when they differ.
 async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource, taxDirectPay }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const productIds = items.map(i => i.product_id);
     const { rows: ownedProducts } = await client.query(
-      'SELECT id, category, track_stock, stock_quantity, name, price, per_night, meal_price FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
+      'SELECT id, category, track_stock, stock_quantity, name, price, per_night, meal_price, meal_pax FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
       [productIds, propertyId]
     );
     if (ownedProducts.length !== new Set(productIds).size) {
@@ -70,7 +78,18 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // Price always comes from the product row, never from the caller — the
     // staff till (routes/sales.js) forwards the browser's cart as-is, and
     // these amounts reach the folio, receipts and tax.
-    items = items.map(i => ({ ...i, unit_price: productById.get(i.product_id).price }));
+    items = items.map(i => {
+      const p = productById.get(i.product_id);
+      // Price from the product row — except a per-night item's bargained
+      // price per night (validated below).
+      const override = p.per_night && i.price_per_night !== undefined && i.price_per_night !== null && i.price_per_night !== '';
+      return { ...i, unit_price: override ? Math.round(parseFloat(i.price_per_night) * 100) / 100 : p.price, price_changed: override && parseFloat(i.price_per_night) !== parseFloat(p.price) };
+    });
+    const badPrice = items.find(i => !Number.isFinite(parseFloat(i.unit_price)) || parseFloat(i.unit_price) < 0);
+    if (badPrice) {
+      await client.query('ROLLBACK');
+      return { error: 'The price per night must be 0 or more', code: 'BAD_PRICE' };
+    }
 
     // Per-night items: nights must be nights of this booking's stay.
     const perNightItems = items.filter(i => productById.get(i.product_id).per_night);
@@ -94,6 +113,15 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
           return { error: `Pick the nights for ${productById.get(i.product_id).name} — they must be nights of the stay (${ymd(bk.check_in_date)} to ${ymd(bk.check_out_date)})`, code: 'BAD_NIGHTS' };
         }
         i.nights = nights;
+        const p = productById.get(i.product_id);
+        const dflt = parseInt(i.quantity) * (parseInt(p.meal_pax) || 0) * (parseFloat(p.meal_price) > 0 ? 1 : 0);
+        const b = i.breakfasts === undefined || i.breakfasts === null || i.breakfasts === '' ? dflt : parseInt(i.breakfasts);
+        if (!Number.isInteger(b) || b < 0 || b > 50) {
+          await client.query('ROLLBACK');
+          return { error: 'Breakfasts per night must be a whole number, 0 or more', code: 'BAD_BREAKFASTS' };
+        }
+        i.breakfasts = b;
+        i.breakfasts_default = dflt;
       }
       stay = bk;
     }
@@ -177,7 +205,15 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       const product = productById.get(item.product_id);
       const qty = lineQty(item);
       const subtotal = parseFloat(item.unit_price) * qty;
-      const mealAmount = Math.min(subtotal, (parseFloat(product.meal_price) || 0) * qty);
+      const oneBreakfast = parseFloat(product.meal_price) || 0;
+      // Breakfast part: per night = the night's breakfasts × one breakfast
+      // (never more than the night's price); one-off = units × meal_pax.
+      const mealPerNight = product.per_night
+        ? Math.min(parseFloat(item.unit_price) * parseInt(item.quantity), item.breakfasts * oneBreakfast)
+        : 0;
+      const mealAmount = product.per_night
+        ? mealPerNight * item.nights.length
+        : Math.min(subtotal, oneBreakfast * (parseInt(product.meal_pax) || 0) * qty);
       const { rows: [line] } = await client.query(
         `INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal, meal_amount, per_night)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -187,11 +223,19 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
         for (const night of item.nights) {
           await client.query(
             `INSERT INTO booking_addons (property_id, booking_id, sale_id, sale_item_id, product_id, description, service_date,
-                                         quantity, unit_price, meal_price, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                                         quantity, unit_price, meal_price, breakfasts, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [propertyId, bookingId, sale.id, line.id, product.id, product.name, night, parseInt(item.quantity),
-             item.unit_price, Math.min(parseFloat(item.unit_price), parseFloat(product.meal_price) || 0), servedBy || null]
+             item.unit_price, oneBreakfast, item.breakfasts, servedBy || null]
           );
+        }
+        // A bargained price or a different breakfast count is noted on the booking.
+        const notes = [];
+        if (item.price_changed) notes.push(`Rp ${Math.round(item.unit_price).toLocaleString('id-ID')} per night instead of Rp ${Math.round(product.price).toLocaleString('id-ID')}`);
+        if (item.breakfasts !== item.breakfasts_default) notes.push(`${item.breakfasts} breakfast${item.breakfasts === 1 ? '' : 's'} per night instead of ${item.breakfasts_default}`);
+        if (notes.length) {
+          await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
+            bookingId, `${product.name} (${item.nights.join(', ')}): ${notes.join('; ')}.`.slice(0, 1000), servedBy || null]);
         }
         continue;   // an extra bed isn't taken out of stock per night
       }

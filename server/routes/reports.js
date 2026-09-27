@@ -67,8 +67,8 @@ const SALES_SQL = `
 // gives them away (comp).
 const ADDON_NIGHTS_SQL = `
   SELECT a.service_date AS night,
-         a.quantity * (a.unit_price - a.meal_price) AS extra,
-         a.quantity * a.meal_price AS meal,
+         a.quantity * a.unit_price - LEAST(a.breakfasts * a.meal_price, a.quantity * a.unit_price) AS extra,
+         LEAST(a.breakfasts * a.meal_price, a.quantity * a.unit_price) AS meal,
          COALESCE(b.complimentary_scope = 'all', false) AS comp
   FROM booking_addons a
   JOIN bookings b ON b.id = a.booking_id

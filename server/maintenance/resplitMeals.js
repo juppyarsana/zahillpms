@@ -20,7 +20,7 @@
 //
 // --extras: the same for items SOLD before the item got a breakfast part
 // (e.g. Extra Bed, migration 074): sale lines with meal_amount 0 get
-// breakfast part × units (never more than the line). Only the report split
+// one breakfast × breakfasts per unit × units (never more than the line). Only the report split
 // changes (extras vs F&B) — the sale, its total, the folio and payments stay
 // as they are. Old per-night sales have no dates, so the kitchen count can't
 // be fixed for them.
@@ -54,7 +54,7 @@ async function postedTotal(client, bookingId) {
 async function resplitExtras() {
   const { rows } = await db.query(`
     SELECT si.id, si.sale_id, si.quantity, si.unit_price, si.subtotal, si.meal_amount,
-           pr.name AS item, pr.meal_price, p.slug, s.created_at, s.payment_method, g.name AS guest_name, u.name AS unit_name
+           pr.name AS item, pr.meal_price, pr.meal_pax, p.slug, s.created_at, s.payment_method, g.name AS guest_name, u.name AS unit_name
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
     JOIN products pr ON pr.id = si.product_id
@@ -66,7 +66,8 @@ async function resplitExtras() {
       AND s.confirmation_status IS DISTINCT FROM 'rejected'
       ${PROPERTY ? 'AND p.slug = $1' : ''}
     ORDER BY s.created_at`, PROPERTY ? [PROPERTY] : []);
-  const plan = rows.map(r => ({ r, meal: round2(Math.min(parseFloat(r.subtotal), parseFloat(r.meal_price) * r.quantity)) }));
+  const plan = rows.map(r => ({ r, meal: round2(Math.min(parseFloat(r.subtotal), parseFloat(r.meal_price) * (parseInt(r.meal_pax) || 0) * r.quantity)) }))
+    .filter(x => x.meal > 0);
   console.log(`${APPLY ? 'APPLYING' : 'DRY RUN (nothing changes — add --apply to do it)'} · sold items${PROPERTY ? ` · property ${PROPERTY}` : ''}\n`);
   for (const { r, meal } of plan) {
     console.log(`${r.slug} · ${new Date(r.created_at).toISOString().slice(0, 10)} · ${r.unit_name || 'walk-in'} · ${r.guest_name || ''} · ${r.quantity}× ${r.item} · ${r.payment_method}`);

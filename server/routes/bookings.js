@@ -303,9 +303,9 @@ const MEAL_FLAGS_SQL = `
 // count only when that booking has breakfast "here" that morning.
 async function extraBreakfasts(propertyId, date) {
   const { rows } = await db.query(`
-    SELECT a.booking_id, SUM(a.quantity)::int AS qty
+    SELECT a.booking_id, SUM(a.breakfasts)::int AS qty
     FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
-    WHERE a.property_id = $1 AND a.status = 'active' AND a.meal_price > 0
+    WHERE a.property_id = $1 AND a.status = 'active' AND a.breakfasts > 0
       AND a.service_date = $2::date - 1
       AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
     GROUP BY a.booking_id`, [propertyId, date]);
