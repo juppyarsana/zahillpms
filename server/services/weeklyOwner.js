@@ -34,7 +34,8 @@ async function weekFigures(propertyId, from, to, sellable) {
   const capacity = sellable * days;
   return {
     from, to,
-    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, total: r.total_revenue,
+    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: r.activity_revenue || 0, total: r.total_revenue,
+    fnb_rate_plan: r.fnb_breakdown?.rate_plan ?? r.fnb_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights,
     comp_nights: r.comp_nights, comp_value: r.comp_value,
@@ -170,7 +171,7 @@ function weeklyOwnerTelegram(b) {
   L.push(`📅 New bookings: <b>${b.pace.made}</b> · ${b.pace.made_rooms} rooms · ${b.pace.made_nights} nights · ${e(fmtIDR(b.pace.made_value))}${arrowTxt(b.change.made)}`);
   if (b.pace.cancelled) L.push(`❌ Cancelled: ${b.pace.cancelled} · ${e(fmtIDR(b.pace.cancelled_value))}`);
   const top = w.by_source.filter(s => s.revenue > 0).slice(0, 3);
-  const stayRevenue = w.room + w.fnb;   // by_source covers stays only (not extras)
+  const stayRevenue = w.room + w.fnb_rate_plan;   // by_source covers stays only (room + rate-plan meals)
   if (top.length && stayRevenue > 0) L.push(`🔗 Top sources: ${e(top.map(s => `${s.source} ${Math.round((s.revenue / stayRevenue) * 100)}%`).join(' · '))}`);
   if (b.agents.total > 0) {
     L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
@@ -196,14 +197,14 @@ function weeklyOwnerEmail(b) {
     </table>` : `<div style="font-size:13px;color:#9ca3af;">${empty}</div>`;
   const sub = t => `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${t}</div>`;
 
-  const revRows = [['Room', w.room, p.room], ['Meals (rate plan)', w.fnb, p.fnb], ['Extras', w.extras, p.extras]]
+  const revRows = [['Room', w.room, p.room], ['F&B', w.fnb, p.fnb], ['Extras', w.extras, p.extras], ['Activities', w.activities, p.activities]]
     .filter(([, a, c]) => a || c).map(([k, a, c]) => [k, esc(fmtIDR(a)), esc(fmtIDR(c))]);
   revRows.push(['<b>Total revenue</b>', `<b>${esc(fmtIDR(w.total))}</b>`, esc(fmtIDR(p.total))]);
   if (b.has_expenses) {
     revRows.push(['Expenses', esc(fmtIDR(w.expenses)), esc(fmtIDR(p.expenses))]);
     revRows.push(['<b>Net income</b>', `<b>${esc(fmtIDR(w.net_income))}</b>`, esc(fmtIDR(p.net_income))]);
   }
-  const stayRevenue = w.room + w.fnb;
+  const stayRevenue = w.room + w.fnb_rate_plan;
 
   const html = `
   <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">

@@ -34,7 +34,8 @@ async function monthFigures(propertyId, y, m, sellable) {
   const capacity = sellable * days;
   return {
     y, m, from, to, label: monthName(y, m), report: r,
-    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, total: r.total_revenue,
+    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: r.activity_revenue || 0, total: r.total_revenue,
+    fnb_rate_plan: r.fnb_breakdown?.rate_plan ?? r.fnb_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights, bookings: r.bookings_count,
     comp_nights: r.comp_nights, comp_value: r.comp_value,
@@ -44,7 +45,7 @@ async function monthFigures(propertyId, y, m, sellable) {
     by_source: r.by_source.map(s => ({ source: s.source, count: parseInt(s.count, 10), revenue: parseFloat(s.revenue) }))
       .filter(s => s.revenue > 0).sort((a, b) => b.revenue - a.revenue),
     best_day: r.daily_revenue.reduce((best, d) => {
-      const total = parseFloat(d.room_revenue) + parseFloat(d.fnb_revenue) + d.ancillary_revenue;
+      const total = d.total_revenue;
       return total > (best?.total || 0) ? { date: String(d.date instanceof Date ? d.date.toISOString() : d.date).slice(0, 10), total } : best;
     }, null),
   };
@@ -81,8 +82,9 @@ function monthlyPdf(b) {
     heading('Summary');
     row(['', cm.label, pm.label, ly ? ly.label : 'Last year'], { bold: true, color: '#555' });
     row(['Room revenue', fmtIDR(cm.room), fmtIDR(pm.room), ly ? fmtIDR(ly.room) : '—']);
-    row(['Meals (rate plan)', fmtIDR(cm.fnb), fmtIDR(pm.fnb), ly ? fmtIDR(ly.fnb) : '—']);
+    row(['F&B', fmtIDR(cm.fnb), fmtIDR(pm.fnb), ly ? fmtIDR(ly.fnb) : '—']);
     row(['Extras', fmtIDR(cm.extras), fmtIDR(pm.extras), ly ? fmtIDR(ly.extras) : '—']);
+    row(['Activities', fmtIDR(cm.activities), fmtIDR(pm.activities), ly ? fmtIDR(ly.activities) : '—']);
     row(['Total revenue', fmtIDR(cm.total), fmtIDR(pm.total), ly ? fmtIDR(ly.total) : '—'], { bold: true });
     if (b.has_expenses) {
       row(['Expenses', fmtIDR(cm.expenses), fmtIDR(pm.expenses), ly ? fmtIDR(ly.expenses) : '—']);
@@ -100,7 +102,7 @@ function monthlyPdf(b) {
 
     heading('Stays by source');
     row(['Source', 'Bookings', 'Revenue', 'Share'], { bold: true, color: '#555' });
-    const stayRev = cm.room + cm.fnb;
+    const stayRev = cm.room + cm.fnb_rate_plan;
     for (const s of cm.by_source) row([s.source, s.count, fmtIDR(s.revenue), stayRev ? `${Math.round((s.revenue / stayRev) * 100)}%` : '']);
 
     if (b.agents.total > 0) {
@@ -182,7 +184,7 @@ function monthlyTelegram(b) {
     b.change.vs_last_year != null && `${arrowTxt(b.change.vs_last_year).trim()} vs last year`,
   ].filter(Boolean).join(' · ');
   L.push(`💰 Revenue: <b>${e(fmtIDR(c.total))}</b>${vs ? ` ${e(vs)}` : ''}`);
-  L.push(`     Room ${e(fmtIDR(c.room))}${c.fnb ? ` · Meals ${e(fmtIDR(c.fnb))}` : ''}${c.extras ? ` · Extras ${e(fmtIDR(c.extras))}` : ''}`);
+  L.push(`     Room ${e(fmtIDR(c.room))}${c.fnb ? ` · F&amp;B ${e(fmtIDR(c.fnb))}` : ''}${c.extras ? ` · Extras ${e(fmtIDR(c.extras))}` : ''}${c.activities ? ` · Activities ${e(fmtIDR(c.activities))}` : ''}`);
   if (b.has_expenses) L.push(`🧾 Expenses ${e(fmtIDR(c.expenses))} · Net income <b>${e(fmtIDR(c.net_income))}</b>`);
   L.push(`🛏 Occupancy: <b>${c.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${c.rooms_sold} room-nights`);
   L.push(`💵 ADR ${e(fmtIDR(c.adr))} · RevPAR ${e(fmtIDR(c.revpar))}`);
@@ -211,12 +213,12 @@ function monthlyEmail(b) {
   const cols = [{ label: '' }, { label: esc(c.label), right: true }, { label: esc(b.prev.label), right: true }, ...(b.last_year ? [{ label: esc(b.last_year.label), right: true }] : [])];
   const line = (k, f) => [k, esc(f(c)), esc(f(b.prev)), ...(b.last_year ? [esc(f(b.last_year))] : [])];
   const rows = [
-    line('Room', x => fmtIDR(x.room)), line('Meals (rate plan)', x => fmtIDR(x.fnb)), line('Extras', x => fmtIDR(x.extras)),
+    line('Room', x => fmtIDR(x.room)), line('F&B', x => fmtIDR(x.fnb)), line('Extras', x => fmtIDR(x.extras)), line('Activities', x => fmtIDR(x.activities)),
     line('<b>Total revenue</b>', x => fmtIDR(x.total)),
     ...(b.has_expenses ? [line('Expenses', x => fmtIDR(x.expenses)), line('<b>Net income</b>', x => fmtIDR(x.net_income))] : []),
     line('Occupancy', x => `${x.occupancy}%`), line('ADR', x => fmtIDR(x.adr)), line('RevPAR', x => fmtIDR(x.revpar)),
   ];
-  const stayRev = c.room + c.fnb;
+  const stayRev = c.room + c.fnb_rate_plan;
   const html = `
   <div class="hk-wrap" style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Monthly Report</div>

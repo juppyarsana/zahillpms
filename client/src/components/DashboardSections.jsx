@@ -193,7 +193,7 @@ export function MonthSection({ isOwner }) {
         <>
           <div className="month-strip">
             <Box label="Revenue so far" value={<span title={fmtIDR(m.so_far.revenue)}>{fmtShortIDR(m.so_far.revenue)}</span>}>
-              <div>room {fmtShortIDR(m.so_far.room)}{m.so_far.meals > 0 && ` · meals ${fmtShortIDR(m.so_far.meals)}`}{m.so_far.extras > 0 && ` · extras ${fmtShortIDR(m.so_far.extras)}`}</div>
+              <div>room {fmtShortIDR(m.so_far.room)}{m.so_far.meals > 0 && ` · F&B ${fmtShortIDR(m.so_far.meals)}`}{m.so_far.extras > 0 && ` · extras ${fmtShortIDR(m.so_far.extras)}`}{m.so_far.activities > 0 && ` · activities ${fmtShortIDR(m.so_far.activities)}`}</div>
               <div><Change value={m.change.revenue} /></div>
             </Box>
             <Box label="Occupancy so far" value={`${m.so_far.occupancy}%`}>

@@ -46,16 +46,21 @@ const COMP_SALE_SQL = `(s.payment_method = 'room_charge' AND s.booking_id IN (SE
 // Sales by the WITA day they were made, with each sale's lines split
 // (migration 074): `pn` = per-night lines (extra bed) — NOT counted here,
 // they're counted night by night from booking_addons (ADDON_NIGHTS_SQL);
-// `meal` = the breakfast part of the other lines → F&B, the rest → extras.
-// $1=from, $2=to, $3=property_id.
+// `meal` = the breakfast part of the other hotel-extra lines → F&B;
+// `outlet` = food & drink lines (resto app, Room Display dining, staff POS)
+// and external POS bills (no sale_items, migration 070) → F&B outlets;
+// the rest → extras. $1=from, $2=to, $3=property_id.
 const SALES_SQL = `
   SELECT s.*, (s.created_at AT TIME ZONE 'Asia/Makassar')::date AS day,
-         COALESCE(li.pn, 0) AS pn, COALESCE(li.meal, 0) AS meal, COALESCE(${COMP_SALE_SQL}, false) AS comp
+         COALESCE(li.pn, 0) AS pn, COALESCE(li.meal, 0) AS meal,
+         COALESCE(li.outlet, 0) + CASE WHEN s.order_source = 'external_pos' THEN s.total_amount ELSE 0 END AS outlet,
+         COALESCE(${COMP_SALE_SQL}, false) AS comp
   FROM sales s
   LEFT JOIN LATERAL (
-    SELECT SUM(subtotal) FILTER (WHERE per_night) AS pn,
-           SUM(meal_amount) FILTER (WHERE NOT per_night) AS meal
-    FROM sale_items WHERE sale_id = s.id
+    SELECT SUM(si.subtotal) FILTER (WHERE si.per_night) AS pn,
+           SUM(si.meal_amount) FILTER (WHERE NOT si.per_night AND p.category NOT IN ('food', 'drinks')) AS meal,
+           SUM(si.subtotal) FILTER (WHERE NOT si.per_night AND p.category IN ('food', 'drinks')) AS outlet
+    FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id
   ) li ON true
   WHERE s.property_id = $3 AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date
     AND s.confirmation_status IS DISTINCT FROM 'rejected'`;
@@ -76,6 +81,23 @@ const ADDON_NIGHTS_SQL = `
     AND b.status NOT IN ('cancelled', 'no_show')
     AND a.service_date BETWEEN $1::date AND $2::date
     AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date`;
+
+// Activities (migration 037) on the day they take place, once confirmed or
+// completed (a request isn't a sale yet; cancelled / no-show aren't). NET:
+// an activity priced tax-included (migration 078) has its service + tax
+// parts taken out. Charged to a stay complimentary for everything = given
+// away (comp).
+const ACTIVITY_SQL = `
+  SELECT ab.scheduled_date AS day, a.name,
+         CASE WHEN ab.tax_mode = 'included'
+              THEN ab.total_amount - COALESCE(ab.service_charge_amount, 0) - COALESCE(ab.tax_amount, 0)
+              ELSE ab.total_amount END AS net,
+         COALESCE(ab.payment_method = 'room_charge' AND b.complimentary_scope = 'all', false) AS comp
+  FROM activity_bookings ab
+  JOIN activities a ON a.id = ab.activity_id
+  LEFT JOIN bookings b ON b.id = ab.booking_id
+  WHERE ab.property_id = $3 AND ab.status IN ('confirmed', 'completed')
+    AND ab.scheduled_date BETWEEN $1::date AND $2::date`;
 
 // Shared by GET /revenue and GET /revenue/export (CSV) so the two never
 // drift — the export must show exactly what the page shows. `from`/`to` are
@@ -107,11 +129,23 @@ async function getReport(propertyId, from, to) {
   // away, not revenue — counted in comp_extras_value instead.
   const ancillaryQ = db.query(`
     WITH x AS (${SALES_SQL})
-    SELECT COALESCE(SUM(total_amount - pn - meal) FILTER (WHERE NOT comp), 0) as ancillary_revenue,
+    SELECT COALESCE(SUM(total_amount - pn - meal - outlet) FILTER (WHERE NOT comp), 0) as ancillary_revenue,
            COALESCE(SUM(meal) FILTER (WHERE NOT comp), 0) as sales_meal_revenue,
+           COALESCE(SUM(outlet) FILTER (WHERE NOT comp), 0) as outlet_revenue,
            COUNT(*) FILTER (WHERE NOT comp) as sales_count,
            COALESCE(SUM(total_amount - pn) FILTER (WHERE comp), 0) as comp_extras_value
     FROM x
+  `, [from, to, propertyId]);
+  const activityQ = db.query(`
+    WITH x AS (${ACTIVITY_SQL})
+    SELECT COALESCE(SUM(net) FILTER (WHERE NOT comp), 0) AS revenue,
+           COUNT(*) FILTER (WHERE NOT comp) AS count,
+           COALESCE(SUM(net) FILTER (WHERE comp), 0) AS comp_value
+    FROM x
+  `, [from, to, propertyId]);
+  const activityDailyQ = db.query(`
+    WITH x AS (${ACTIVITY_SQL})
+    SELECT day AS date, COALESCE(SUM(net), 0) AS amount FROM x WHERE NOT comp GROUP BY 1
   `, [from, to, propertyId]);
   const addonQ = db.query(`
     WITH x AS (${ADDON_NIGHTS_SQL})
@@ -142,7 +176,8 @@ async function getReport(propertyId, from, to) {
   // above — merged into daily_revenue for the CSV's daily breakdown.
   const ancillaryDailyQ = db.query(`
     WITH x AS (${SALES_SQL})
-    SELECT day AS date, COALESCE(SUM(total_amount - pn - meal), 0) AS amount, COALESCE(SUM(meal), 0) AS meal
+    SELECT day AS date, COALESCE(SUM(total_amount - pn - meal - outlet), 0) AS amount, COALESCE(SUM(meal), 0) AS meal,
+           COALESCE(SUM(outlet), 0) AS outlet
     FROM x WHERE NOT comp
     GROUP BY 1
   `, [from, to, propertyId]);
@@ -187,38 +222,49 @@ async function getReport(propertyId, from, to) {
       AND incurred_on BETWEEN $1::date AND $2::date
   `, [from, to, propertyId]);
 
-  const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }, { rows: [expenses] }, { rows: [addon] }] =
-    await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ, expensesQ, addonQ]);
-  const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }] = await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ]);
+  const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }, { rows: [expenses] }, { rows: [addon] }, { rows: [activity] }] =
+    await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ, expensesQ, addonQ, activityQ]);
+  const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }, { rows: actDaily }] =
+    await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ, activityDailyQ]);
   const dayKey = d => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   const ancByDay = new Map(ancDaily.map(r => [dayKey(r.date), r]));
   const addonByDay = new Map(addonDaily.map(r => [dayKey(r.date), r]));
   const expByDay = new Map(expDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
+  const actByDay = new Map(actDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
   for (const d of daily) {
     const sa = ancByDay.get(dayKey(d.date));
     const ad = addonByDay.get(dayKey(d.date));
     d.fnb_rate_plan = parseFloat(d.fnb_revenue);
     d.fnb_extras = (sa ? parseFloat(sa.meal) : 0) + (ad ? parseFloat(ad.meal) : 0);
-    d.fnb_revenue = d.fnb_rate_plan + d.fnb_extras;
+    d.fnb_outlets = sa ? parseFloat(sa.outlet) : 0;
+    d.fnb_revenue = d.fnb_rate_plan + d.fnb_extras + d.fnb_outlets;
     d.ancillary_revenue = (sa ? parseFloat(sa.amount) : 0) + (ad ? parseFloat(ad.extra) : 0);
+    d.activity_revenue = actByDay.get(dayKey(d.date)) || 0;
+    d.total_revenue = parseFloat(d.room_revenue) + d.fnb_revenue + d.ancillary_revenue + d.activity_revenue;
     d.expenses = expByDay.get(dayKey(d.date)) || 0;
   }
 
   const roomRev = parseFloat(room.room_revenue);
   // F&B = meals included in the rate plan + the breakfast part of extras
-  // (extra bed nights, items with a breakfast part).
+  // (extra bed nights, items with a breakfast part) + restaurant / POS sales.
   const fnbRatePlan = parseFloat(room.fnb_revenue);
   const fnbExtras = parseFloat(ancillary.sales_meal_revenue) + parseFloat(addon.meal);
-  const fnbRev = fnbRatePlan + fnbExtras;
+  const fnbOutlets = parseFloat(ancillary.outlet_revenue);
+  const fnbRev = fnbRatePlan + fnbExtras + fnbOutlets;
   const ancRev = parseFloat(ancillary.ancillary_revenue) + parseFloat(addon.extra);
-  const totalRevenue = roomRev + fnbRev + ancRev;
+  const activityRev = parseFloat(activity.revenue);
+  const totalRevenue = roomRev + fnbRev + ancRev + activityRev;
   const expensesTotal = parseFloat(expenses.total);
   return {
     from, to,
     room_revenue: roomRev,
     fnb_revenue: fnbRev,
-    fnb_breakdown: { rate_plan: round2(fnbRatePlan), extras: round2(fnbExtras) },
+    fnb_breakdown: { rate_plan: round2(fnbRatePlan), extras: round2(fnbExtras), outlets: round2(fnbOutlets) },
+    // ancillary_revenue = hotel extras (Sales items, extra bed nights) only;
+    // activities are their own line.
     ancillary_revenue: ancRev,
+    activity_revenue: activityRev,
+    activity_count: parseInt(activity.count),
     total_revenue: totalRevenue,
     expenses_total: expensesTotal,
     net_income: totalRevenue - expensesTotal,
@@ -229,7 +275,7 @@ async function getReport(propertyId, from, to) {
     paid_nights: parseInt(room.paid_nights),
     comp_nights: parseInt(room.comp_nights),
     // NET value given away: comp room(+meal) nights + comped extras.
-    comp_value: round2(parseFloat(room.comp_room_value) + parseFloat(ancillary.comp_extras_value) + parseFloat(addon.comp_value)),
+    comp_value: round2(parseFloat(room.comp_room_value) + parseFloat(ancillary.comp_extras_value) + parseFloat(addon.comp_value) + parseFloat(activity.comp_value)),
     daily_revenue: daily,
     by_source: bySource,
   };
@@ -308,7 +354,11 @@ function revenueCsv(data) {
     `Period,${csvEscape(label)}`,
     `Room Revenue,${data.room_revenue}`,
     `F&B Revenue,${data.fnb_revenue}`,
-    `Ancillary Revenue,${data.ancillary_revenue}`,
+    `  F&B - meals in rate plan,${data.fnb_breakdown?.rate_plan ?? ''}`,
+    `  F&B - breakfast in extras,${data.fnb_breakdown?.extras ?? ''}`,
+    `  F&B - restaurant / POS,${data.fnb_breakdown?.outlets ?? ''}`,
+    `Extras Revenue,${data.ancillary_revenue}`,
+    `Activities Revenue,${data.activity_revenue ?? 0}`,
     `Total Revenue,${data.total_revenue}`,
     `Expenses,${data.expenses_total}`,
     `Net Income,${data.net_income}`,
@@ -326,10 +376,10 @@ function revenueCsv(data) {
   // so the rows add up to the summary above.
   if (period.from !== period.to) {
     const r2 = n => Math.round(parseFloat(n) * 100) / 100;
-    lines.push('', 'Date,Room Revenue,F&B Revenue,Ancillary Revenue,Total Revenue,Expenses,Net Income,Room Nights');
+    lines.push('', 'Date,Room Revenue,F&B Revenue,Extras Revenue,Activities Revenue,Total Revenue,Expenses,Net Income,Room Nights');
     for (const d of data.daily_revenue) {
-      const total = r2(parseFloat(d.room_revenue) + parseFloat(d.fnb_revenue) + d.ancillary_revenue);
-      lines.push([String(d.date).slice(0, 10), r2(d.room_revenue), r2(d.fnb_revenue), r2(d.ancillary_revenue),
+      const total = r2(d.total_revenue);
+      lines.push([String(d.date).slice(0, 10), r2(d.room_revenue), r2(d.fnb_revenue), r2(d.ancillary_revenue), r2(d.activity_revenue || 0),
         total, r2(d.expenses), r2(total - d.expenses), d.nights_sold].join(','));
     }
   }

@@ -206,12 +206,12 @@ export default function Reports() {
             <div className="stat-card" style={{ borderTop: '3px solid #0D9488' }}>
               <div className="stat-label">F&amp;B Revenue</div>
               <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.fnb_revenue)}</div>
-              <div className="stat-sub">From room arrangements</div>
+              <div className="stat-sub">Rate-plan meals, extra-bed breakfast, restaurant / POS</div>
             </div>
             <div className="stat-card" style={{ borderTop: '3px solid #D97706' }}>
-              <div className="stat-label">Ancillary Revenue</div>
-              <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.ancillary_revenue)}</div>
-              <div className="stat-sub">Sales / POS, excl. rejected</div>
+              <div className="stat-label">Extras &amp; Activities</div>
+              <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.ancillary_revenue + (data.activity_revenue || 0))}</div>
+              <div className="stat-sub">Extras {fmtIDR(data.ancillary_revenue)} · activities {fmtIDR(data.activity_revenue || 0)}</div>
             </div>
             <div className="stat-card" style={{ borderTop: '3px solid #111827', background: '#111827' }}>
               <div className="stat-label" style={{ color: 'rgba(255,255,255,0.6)' }}>Total Revenue</div>

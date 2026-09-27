@@ -235,7 +235,7 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_s
     const sellable = parseInt(u.sellable, 10) || 0;
     const figures = (r, days) => ({
       revenue: r.total_revenue,
-      room: r.room_revenue, meals: r.fnb_revenue, extras: r.ancillary_revenue,
+      room: r.room_revenue, meals: r.fnb_revenue, extras: r.ancillary_revenue, activities: r.activity_revenue || 0,
       room_nights: r.total_nights,
       occupancy: sellable && days ? Math.round((r.total_nights / (sellable * days)) * 100) : 0,
       adr: r.paid_nights > 0 ? r.room_revenue / r.paid_nights : 0,

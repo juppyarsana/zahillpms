@@ -136,7 +136,7 @@ async function sendAuditEmail(propertyId, businessDate, data) {
             </tr>
             <tr>
               ${statCard('F&B Revenue (net)', fmtIDR(fnbRevenue), '#111827')}
-              ${statCard('Other Revenue', fmtIDR(ancillaryRevenue), '#111827')}
+              ${statCard('Extras &amp; Activities', fmtIDR(ancillaryRevenue), '#111827')}
             </tr>
             <tr>
               ${statCard('Total Revenue', fmtIDR(totalRevenue), '#2D5016')}
@@ -342,7 +342,9 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   const day = await getReport(propertyId, businessDate, businessDate);
   const roomRevenue = day.room_revenue;
   const fnbRevenue = day.fnb_revenue;
-  const ancillaryRevenue = day.ancillary_revenue;
+  // Extras + activities (migration 078) together — the audit keeps one
+  // "other revenue" figure (night_audit_runs.ancillary_revenue).
+  const ancillaryRevenue = day.ancillary_revenue + (day.activity_revenue || 0);
 
   // 5+6. The new day's balances to collect from guests leaving, and its
   // arrivals — the same lists as Balance Due / Guest Lists (and the Daily

@@ -39,6 +39,7 @@ async function dayFigures(propertyId, date, sellable) {
     room: r.room_revenue,
     fnb: r.fnb_revenue,
     extras: r.ancillary_revenue,
+    activities: r.activity_revenue || 0,
     total: r.total_revenue,
     rooms_sold: roomsSold,
     occupancy: sellable > 0 ? Math.round((roomsSold / sellable) * 100) : 0,
@@ -185,7 +186,7 @@ function dailyCloseTelegram(b) {
   L.push('<i>Daily Close</i>');
   L.push('');
   L.push(`💰 Revenue: <b>${e(fmtIDR(t.total))}</b>${b.change.total != null ? ` (${arrow(b.change.total)})` : ''}`);
-  L.push(`     Room ${e(fmtIDR(t.room))}${t.fnb ? ` · Meals ${e(fmtIDR(t.fnb))}` : ''}${t.extras ? ` · Extras ${e(fmtIDR(t.extras))}` : ''}`);
+  L.push(`     Room ${e(fmtIDR(t.room))}${t.fnb ? ` · F&amp;B ${e(fmtIDR(t.fnb))}` : ''}${t.extras ? ` · Extras ${e(fmtIDR(t.extras))}` : ''}${t.activities ? ` · Activities ${e(fmtIDR(t.activities))}` : ''}`);
   L.push(`🛏 Occupancy: <b>${t.occupancy}%</b> (${t.rooms_sold}/${b.sellable})${b.change.occupancy_pts ? ` ${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts` : ''}`);
   if (t.rooms_sold > 0) L.push(`     ADR ${e(fmtIDR(t.adr))} · RevPAR ${e(fmtIDR(t.revpar))}`);
   if (t.comp_nights > 0 || t.comp_value > 0) L.push(`🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(t.comp_value))}`);
@@ -221,7 +222,7 @@ function dailyCloseEmail(b) {
     </table>` : `<div style="font-size:13px;color:#9ca3af;">${empty}</div>`;
 
   const revRows = [
-    ['Room', t.room, lw.room], ['Meals (rate plan)', t.fnb, lw.fnb], ['Extras', t.extras, lw.extras],
+    ['Room', t.room, lw.room], ['F&B', t.fnb, lw.fnb], ['Extras', t.extras, lw.extras], ['Activities', t.activities, lw.activities],
   ].filter(([, a, c]) => a || c).map(([k, a, c]) => [k, esc(fmtIDR(a)), esc(fmtIDR(c))]);
   revRows.push([`<b>Total</b>`, `<b>${esc(fmtIDR(t.total))}</b>`, esc(fmtIDR(lw.total))]);
 
