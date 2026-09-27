@@ -37,6 +37,8 @@ room-display-kiosk/*.keystore
 # Uploads (user-generated content)
 server/uploads/*
 !server/uploads/.gitkeep
+# Backups written by one-off maintenance scripts (e.g. resplitMeals.js) — stay on the server
+server/maintenance/backups/
 
 # Logs
 *.log

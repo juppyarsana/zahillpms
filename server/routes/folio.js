@@ -219,11 +219,59 @@ router.delete('/charge/:id', auth, async (req, res) => {
   }
 });
 
+// Guest-facing stay lines: each night's room + meal-plan charges printed as
+// ONE line ("Room with Breakfast"), and nights in a row at the same rate
+// grouped ("27 Sep – 29 Sep · 2 nights × rate") — the way guests (and the
+// previous PMS) expect it; the breakfast price isn't shown on its own. The
+// folio underneath, the Folio tab and the reports keep room and meals apart.
+function stayLabel(b, { roomPart, mealPart }) {
+  const bf = b?.includes_breakfast, lu = b?.includes_lunch, di = b?.includes_dinner;
+  const meals = bf && lu && di ? 'Full Board' : bf && di ? 'Half Board' : bf && !lu && !di ? 'Breakfast'
+    : (bf || lu || di) ? (b?.rate_plan_name || 'meals') : null;
+  if (roomPart && mealPart) return meals ? `Room with ${meals}` : 'Room with meals';
+  if (roomPart) return 'Room';
+  return meals || 'Meals';   // room complimentary, meals charged
+}
+const shortDay = d => new Date(String(d).slice(0, 10) + 'T00:00:00Z')
+  .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const nextDay = d => { const x = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+function mergeStayLines(charges, booking) {
+  const nightly = new Map();   // date → { room, meal }
+  for (const c of charges) {
+    if (!(c.type === 'room' || c.type === 'fnb') || !c.service_date) continue;
+    const d = String(c.service_date instanceof Date ? c.service_date.toISOString() : c.service_date).slice(0, 10);
+    const n = nightly.get(d) || { room: 0, meal: 0 };
+    if (c.type === 'room') n.room += parseFloat(c.amount); else n.meal += parseFloat(c.amount);
+    nightly.set(d, n);
+  }
+  const runs = [];
+  for (const d of [...nightly.keys()].sort()) {
+    const n = nightly.get(d);
+    const rate = Math.round((n.room + n.meal) * 100) / 100;
+    const label = stayLabel(booking, { roomPart: n.room > 0, mealPart: n.meal > 0 });
+    const last = runs[runs.length - 1];
+    // < Rp 1 apart = the same rate (the last night carries the rounding cent).
+    if (last && Math.abs(last.rate - rate) < 1 && last.label === label && nextDay(last.to) === d) {
+      last.to = d; last.nights++; last.sum += rate;
+    } else runs.push({ from: d, to: d, nights: 1, rate, sum: rate, label });
+  }
+  return runs.map(r => ({
+    type: 'stay',
+    description: `${r.label} · ${shortDay(r.from)} – ${shortDay(nextDay(r.to))}`,
+    quantity: r.nights, unit_price: Math.round((r.sum / r.nights) * 100) / 100,
+    amount: Math.round(r.sum * 100) / 100,
+  }));
+}
+
 // Draws the line-item table + totals + payments-received + (optionally)
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
-function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
+function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
+  // Nightly room + meal lines → one "Room with Breakfast" line per run of
+  // nights at the same rate; everything else is listed as posted.
+  const isStayLine = c => (c.type === 'room' || c.type === 'fnb') && c.service_date;
+  const charges = [...mergeStayLines(rawCharges, booking), ...rawCharges.filter(c => !isStayLine(c))];
   const tableTop = doc.y;
   const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
@@ -244,9 +292,9 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
   // client/src/pages/BookingDetail.jsx's Folio tab.
   const isFnb = c => c.type === 'fnb' || (c.type === 'sale' && c.is_fnb);
   const GROUPS = [
-    { key: 'Accommodation', match: c => c.type === 'room' },
+    { key: 'Accommodation', match: c => c.type === 'room' || c.type === 'stay' },
     { key: 'Food & Beverage', match: isFnb },
-    { key: 'Other', match: c => c.type !== 'room' && !isFnb(c) },
+    { key: 'Other', match: c => c.type !== 'room' && c.type !== 'stay' && !isFnb(c) },
   ];
   const renderLine = c => {
     if (y > 720) { doc.addPage(); y = 50; }
@@ -260,7 +308,7 @@ function drawChargeTable(doc, { charges, payments, subtotal, tax_rate, service_c
     y += 16;
   };
 
-  const anyGrouped = charges.some(c => c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
+  const anyGrouped = charges.some(c => c.type === 'stay' || c.type === 'room' || c.type === 'fnb' || c.type === 'sale');
   if (charges.length === 0) {
     doc.font('Helvetica').fontSize(10).fillColor('#888').text('No charges posted', colX.desc, y);
     doc.fillColor('#000');

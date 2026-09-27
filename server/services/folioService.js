@@ -88,11 +88,13 @@ async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
             g.name as guest_name, u.name as unit_name,
-            bs.payment_status as source_payment_status, bs.label as source_label
+            bs.payment_status as source_payment_status, bs.label as source_label,
+            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
@@ -160,10 +162,12 @@ async function computeProforma(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.total_amount, b.discount_amount,
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
-            g.name as guest_name, u.name as unit_name
+            g.name as guest_name, u.name as unit_name,
+            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
+     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );

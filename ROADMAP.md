@@ -25,6 +25,11 @@ Last updated: 2026-09-27
 - **Old bookings that never checked in** (stay over, still pending/deposit-paid — the night audit only no-shows
   `confirmed`) are now listed apart ("mark no-show or cancel") on Guest Lists, Dashboard, Morning Brief — they
   count as sold in the reports until cleaned up. **On production after deploying: clean these up.**
+- **Invoice / pro forma**: room + breakfast printed as one line ("Room with Breakfast"), nights at the same rate
+  grouped, like VHP; reports still split room / F&B.
+- **BB meal price set on production (2026-09-27)** → old BB bookings still have Rp 0 breakfast. Run on production:
+  `cd server && node maintenance/resplitMeals.js --property zahill` (dry run, check the list), then `--apply`.
+  Owner chose all BB bookings since go-live. Nothing deleted; backup JSON in `server/maintenance/backups/`.
 - Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
 - Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
 
