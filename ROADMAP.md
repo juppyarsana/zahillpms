@@ -4,46 +4,61 @@ Last updated: 2026-09-27
 
 ---
 
-## 🔖 Session handoff — 2026-09-27 — one status rule for every report, Dashboard Today / This Month, "Booked on"
+## 🔖 Session handoff — 2026-09-27 (evening) — reports fixed, Dashboard Today/Month, Booked on, breakfast split, extra bed
 
-**PMS (`dev`; no migration — deploy = pull, build client, restart)**
-- **Report numbers fixed** (`3d01e2d`, on `main`): Reports / Daily Close / Weekly / Monthly counted only
-  confirmed/checked-in/checked-out bookings, so pending & deposit-paid rooms were missing (Daily Close 23/33 vs
-  Guest Lists 33). Now everything except cancelled / no-show counts. Police Guest Report PDF drops cancelled /
-  no-show. Night audit (email + page) now uses the same figures as the Daily Close.
-- **Dashboard sections**: **Today** (Arriving · Staying over · Departing · Tonight · New reservations — totals
-  fixed all day, progress inside, Arriving + Staying (+ overdue) = Tonight) + a **Tomorrow** line; **This Month**
-  (revenue / occupancy / ADR so far vs the same days last month, on the books for the whole month, reservations
-  made, night-by-night chart, sources, unpaid deposits) — owners or the new **`month_summary`** permission
-  (Roles & Permissions → Revenue); **Market**. The old client-side "Revenue — Last 7 Days" chart and the
-  "Revenue This Month" card (shown to all staff) are gone.
-- **Reservations → 🆕 Booked on**: reservations by the day they were MADE (Today / Yesterday / This week /
-  This month / dates), a group = one row. Same counter (`services/bookingPickup.js`) as the Dashboard, Daily
-  Close and Weekly report (they now say "N bookings · M rooms").
-- **Property time**: "today" everywhere on the Dashboard / Guest Lists / Booked on is Bali (WITA), whatever the
-  viewer's timezone (`client/src/lib/propertyTime.js`; Dashboard queries no longer use the server clock).
-- **Old bookings that never checked in** (stay over, still pending/deposit-paid — the night audit only no-shows
-  `confirmed`) are now listed apart ("mark no-show or cancel") on Guest Lists, Dashboard, Morning Brief — they
-  count as sold in the reports until cleaned up. **On production after deploying: clean these up.**
-- **Invoice / pro forma**: room + breakfast printed as one line ("Room with Breakfast"), nights at the same rate
-  grouped, like VHP; reports still split room / F&B.
-- **BB meal price set on production (2026-09-27, Rp 100.000 net per guest per night)** and
-  `maintenance/resplitMeals.js --property zahill --apply` **RUN on production 2026-09-27**: 248 BB bookings
-  since go-live split (Rp 58.7M net moved room → meals, totals unchanged), backup JSON in
-  `server/maintenance/backups/` on the server. 1 skipped: room 801 PURA TULUK BIU BATUR (net Rp 0 — probably a
-  free stay not marked complimentary). Don't run it again unless another meal plan gets a price.
-- **Extra bed per night (migration 074)** — sold from Sales (tick the nights) or the reservation ("Extras for this
-  stay" → + Add item), posted night by night with the room, breakfast part (Rp 100.000, adjustable on the item) goes
-  to F&B + the kitchen count. Single and double are separate items (migration 075: "breakfasts per unit" 1 / 2);
-  FO can change the price per night and the breakfasts per night on each sale (logged in Edit History).
-  **On production after deploying:** `npm run migrate` (074 + 075) → Sales → Items: the existing "Extra Bed" → tick
-  "Per night", breakfasts per unit 1, one breakfast 100000 (rename it "Extra Bed Single" if that's what it is) → add
-  "Extra Bed Double" (per night, breakfasts 2, 100000) → re-split old extra-bed sales:
-  `node maintenance/resplitMeals.js --property zahill --extras` (dry run), then `--apply`.
-- **Migration 076**: performance indexes (payments, sale items, extra-bed nights, sales by day) — no data changes.
-- Next (owner asked, one by one): report breakdown (room / F&B split incl. extras) + download as Excel and PDF.
-- Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
-- Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
+**Code:** `dev` = `main` = `bfd8a69`, pushed. **Migrations 074, 075, 076** are new since production's last deploy.
+
+### ⏸ Where we stopped
+The owner was **deploying to their DEV server** (build finished fine, 1m12s — slow VM, not an error). Not yet on
+production. Order for each server (dev first, then production):
+1. `git pull` → `cd client && npm run build`
+2. `pm2 stop <server app>` → `cd server && npm run migrate` (✓ 074, ✓ 075, ✓ 076) → `pm2 start <server app>`
+   (stop first: 074 alters `folio_charges`/`products`/`sale_items` and waits forever if the running app holds a lock)
+3. Reload the app twice (PWA cache).
+4. **Sales → Items** (owner's numbers, 2026-09-27):
+   - existing "Extra Bed" → rename **Extra Bed Single**: price **350000**, ✓ Per night, breakfasts per unit **1**,
+     price of one breakfast **150000** (→ bed part 200.000). Extra-bed breakfast = à la carte price 150.000, NOT the
+     BB package 100.000 (that one stays on the BB rate plan).
+   - add **Extra Bed Double**: price = owner's (e.g. 500000 = 200.000 bed + 2 × 150.000), ✓ Per night, breakfasts
+     per unit **2**, one breakfast **150000**. Price must be ≥ breakfasts × 150.000.
+5. **Only after step 4**: `cd server && node maintenance/resplitMeals.js --property zahill --extras` (dry run),
+   check, then `--apply` (old extra-bed sales get their breakfast part; totals unchanged; backup JSON written).
+6. Try: Sales → Sell → in-house guest → Extra Bed → tick nights; reservation → "Extras for this stay" → + Add item;
+   change breakfasts / price on a double → Edit History note; Guest Lists → Kitchen next morning counts it.
+7. Clean up the yellow **"old bookings never checked in"** list (mark no-show / cancel) — they count as sold.
+8. Grant **"Dashboard — Month summary"** (Roles & Permissions → Revenue) to roles that should see month money.
+9. If the app still feels slow after deploying: ask which page; next option = code-splitting the 980 kB bundle.
+
+### ✅ Done this session (details in CLAUDE.md, search the bold titles)
+- **One status rule for every report** (`3d01e2d`): Reports / Daily Close / Weekly / Monthly now count every booking
+  except cancelled / no-show (pending & deposit-paid were missing — Daily Close showed 23/33 vs Guest Lists 33).
+  Police Guest Report PDF drops cancelled / no-show. Night audit email/page uses the same figures as the Daily Close.
+  Morning Brief "Tonight" = the Dashboard's rule.
+- **Dashboard Today / This Month + Reservations "Booked on"** (`2c87371`): Today strip (fixed totals + progress,
+  Arriving + Staying = Tonight, New reservations) + Tomorrow line; This Month (owner / `month_summary` permission);
+  Market. Reservations → 🆕 Booked on (reservations by the day they were made, group = one row).
+  `services/bookingPickup.js` = one "reservations made" definition (also Daily Close, Weekly). Property time (WITA)
+  for "today" (`client/src/lib/propertyTime.js`). Guest Lists today: checked-in arrivals stay under Arriving;
+  stays already over that never checked in listed apart.
+- **Invoice / pro forma**: room + breakfast = one line ("Room with Breakfast"), same-rate nights grouped, like VHP.
+  Reports still split room / F&B. Breakfast revenue is posted with its NIGHT (not the breakfast morning) — owner OK.
+- **BB meal price Rp 100.000 set on production** + `resplitMeals.js --property zahill --apply` **RUN on production**:
+  248 BB bookings re-split (Rp 58.7M net room → meals, totals unchanged). 1 skipped: room 801 PURA TULUK BIU BATUR
+  (net Rp 0 — free stay not marked complimentary?). Don't re-run unless another meal plan gets a price.
+- **Extra bed per night** (074): two doors, one record — Sales till (tick nights) or reservation (+ Add item, any
+  Sales item charged to the room). Posted night by night with the room; breakfast part → F&B + kitchen next
+  morning; invoice "Extra Bed … with Breakfast". **Single / double** (075): breakfasts per unit + price of one
+  breakfast on the item; FO can change **price per night** and **breakfasts per night** per sale (option B —
+  any FO), logged in Edit History.
+- **Performance indexes** (076): payments, sale items, extra-bed nights, sales by day.
+
+### ⏭ Next
+- **Report breakdown + download as Excel and PDF** (owner asked, "one by one" — this is next): Reports page with
+  room / F&B (rate plan vs extras) / extras split, and Excel + PDF export (today only CSV exists).
+- Open question for the owner: should the night audit also auto no-show **pending / deposit-paid** bookings
+  (today only `confirmed`)?
+- Known gaps: extra bed not taken out of stock; removing a night of a Pay-now extra bed leaves a credit (no refund
+  flow); per-property timezone setting (WITA hardcoded ~30 places) when a non-WITA client signs.
 
 ---
 
