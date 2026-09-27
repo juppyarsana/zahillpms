@@ -1,6 +1,68 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
+
+---
+
+## 🔖 Session handoff — 2026-09-28 — folio Add item, activities on the folio + tax per activity, full Reports (Excel / PDF)
+
+**Code:** everything below is on `dev` (last commit `21f32ea`), pushed. **Not on `main` / production yet.**
+New since production's last deploy: **migrations 074–078** and a new server dependency **`exceljs`**.
+
+### ⏸ Where we stopped
+Work is done and pushed to `dev`; the owner has not deployed it yet. Order for each server (dev first, then production):
+1. `git pull` → **`cd server && npm install`** (new: `exceljs`) → `cd client && npm run build`
+2. `pm2 stop <server app>` → `cd server && npm run migrate` (074, 075, 076, 077, 078) → `pm2 start <server app>`
+   (stop first — 074 alters tables and waits on locks)
+3. Reload the app twice (PWA cache).
+4. Still pending from 2026-09-27 (see that handoff below): extra-bed items in Sales → Items, then
+   `node maintenance/resplitMeals.js --property zahill --extras` (dry run → `--apply`).
+5. **Activities → Catalog → Edit each tour → "Service charge & tax"**: every activity starts as *Added on top*
+   (like rooms). Zahill resells vendor tours under its own name → set those to *Included in the price* or *None*
+   (which one is the accountant's call). Hotel-run activities stay *Added on top*.
+6. Expect revenue figures to shift after deploy: **F&B up / Extras down** (restaurant & POS food moved to F&B) and
+   **totals up by activities** (now counted). A correction, not new money.
+7. **Releasing to `main`:** `git checkout main && git merge --ff-only dev && git push`.
+
+### ✅ Done this session (details in CLAUDE.md, search the bold titles)
+- **Folio "+ Add item"** (077, `17f59e9`): the free-text "+ Add Charge" is gone (never in Sales History / reports,
+  could post room/tax lines by hand). The folio button opens the same Add item window as "Extras for this stay".
+  **"Other charge"** item seeded per property — *Price typed at sale*: FO types what it is + the price. Any item can
+  be made open-price in Sales → Items (not per-night, not F&B). `POST /api/folio/:id/charge` removed.
+- **"Paid · Cash" on folio lines** (`fbcfd27`): extras paid at the desk are badged on the Folio tab / Master Folio
+  and print "(paid · method)" on invoice / pro forma; voiding one warns its payment stays as a credit.
+- **"+ Book activity" on the reservation + tax per activity** (078, `96a675f`): shared booking form
+  (`ActivityBookingModal`), also used by the Activities page; Add item windows link to it. Owner chose **option C**:
+  each activity has *added on top / included / none*; the folio adds service + tax only to "added" lines
+  (`folio_charges.tax_mode`; agent bills follow). Paid-directly activities on a reservation go on the folio **with
+  their payment** (balance unchanged); cancel / no-show voids the line (payment stays as credit — no refund flow).
+- **Reports, step by step** (owner picked "start smaller"):
+  1. `413c49a` numbers fixed: **activities counted** (net; tax-included ones net of their parts) and
+     **restaurant / POS food = F&B**, not extras. F&B split: rate-plan meals · breakfast in extras · restaurant & POS.
+     Daily Close / Weekly / Monthly / Dashboard / night audit / CSV all show Room · F&B · Extras · Activities.
+  2. `8a03132` **Reports page in sections** (`services/fullReport.js`, `GET /api/reports/full`): Revenue (by
+     category / activity), Rooms (occupancy, ADR, RevPAR by room type / rate plan / nationality), Channels, Money
+     (received by method incl. walk-in activities, service & tax estimate at today's rates, discounts, still owed by
+     guests / agents today), Net income.
+  3. `79ca190` **⬇ Excel** (`exceljs`): Revenue, Rooms, Channels, Money, Daily — real numbers, Rupiah format.
+  4. `3206267` **⬇ PDF**: same sections with the logo header, daily breakdown page, page numbers (month ≈ 4 pages).
+  5. `287ccf9` **pinned section bar** on the page (highlights where you are, "↑ Top").
+  6. `21f32ea` Excel **Room nights** (every room, every night — owner asked for per-room per-day data) and
+     **Reservations** sheets, with filter buttons.
+- Every push this session was checked first: all server files load, client builds, lint unchanged, smoke test of
+  the main endpoints, fresh-database run of all migrations (for 077/078), test rows removed, dev rates back to 0%.
+
+### ⏭ Next / open
+- Deploy (above) and have the owner try: folio + Add item / Other charge; Book activity with each tax setting;
+  Reports page, Excel, PDF.
+- Report sections not built yet (owner chose "start smaller"): **bookings activity** (made / cancelled / no-shows)
+  and **costs by expense category**.
+- Known limits: occupancy uses rooms out of order *today* (out of order isn't dated); service & tax on the report is
+  an estimate at today's rates; no refund flow for a cancelled paid-directly activity or extra.
+- `npm audit`: `exceljs` bundles `uuid` 8 (moderate advisory for v3/v5/v6 with a caller buffer — exceljs only uses
+  v4, not reachable). The suggested fix downgrades exceljs a major version; left as is.
+- Still open from before: night audit auto no-show for pending / deposit-paid bookings (not decided); if the app
+  feels slow after deploy → code-split the ~1 MB client bundle.
 
 ---
 
