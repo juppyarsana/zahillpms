@@ -8,6 +8,11 @@ Last updated: 2026-09-27
 
 **Code:** `dev` = `main` = `bfd8a69`, pushed. **Migrations 074, 075, 076** are new since production's last deploy.
 
+**Later the same day (not yet committed at time of writing): migration 077** — the folio's free-text "+ Add Charge"
+is replaced by "+ Add item" (Sales items), plus an "Other charge" item with the price typed at sale. See CLAUDE.md
+"Folio + Add item". Deploys the same way (`npm run migrate` picks up 077). Next agreed steps: "+ Book activity" on
+the reservation (+ paid-directly activities onto the folio), then activity revenue in the reports.
+
 ### ⏸ Where we stopped
 The owner was **deploying to their DEV server** (build finished fine, 1m12s — slow VM, not an error). Not yet on
 production. Order for each server (dev first, then production):
@@ -1696,7 +1701,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 077
+## Next migration number: 078
 
 ---
 

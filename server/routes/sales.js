@@ -20,7 +20,7 @@ router.get('/', auth, async (req, res) => {
                 CASE WHEN si.per_night THEN p.name || ' · ' || COALESCE((
                        SELECT MAX(a.quantity) || ' × ' || string_agg(to_char(a.service_date, 'DD Mon'), ', ' ORDER BY a.service_date)
                        FROM booking_addons a WHERE a.sale_item_id = si.id AND a.status = 'active'), 'removed')
-                     ELSE si.quantity || '× ' || p.name END, ', ' ORDER BY p.name)
+                     ELSE si.quantity || '× ' || COALESCE(si.description, p.name) END, ', ' ORDER BY p.name)
               FROM sale_items si JOIN products p ON p.id = si.product_id
              WHERE si.sale_id = s.id), s.description) AS items_summary
     FROM sales s
@@ -101,7 +101,7 @@ router.get('/:id/receipt', auth, async (req, res) => {
     sale.payment_method_label = sale.payment_method_label || sale.payment_method;
 
     const { rows: items } = await db.query(
-      `SELECT p.name, si.quantity, si.unit_price, si.subtotal
+      `SELECT COALESCE(si.description, p.name) AS name, si.quantity, si.unit_price, si.subtotal
        FROM sale_items si JOIN products p ON p.id = si.product_id
        WHERE si.sale_id = $1 ORDER BY p.name`,
       [sale.id]

@@ -17,7 +17,7 @@ const CATEGORIES = [
   { key: 'other',       icon: '📦', label: 'Other',        hint: '' },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
-const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '', per_night: false, meal_price: '', meal_pax: 1 };
+const EMPTY_PRODUCT_FORM = { name: '', category: 'room_addon', price: '', description: '', is_available: true, track_stock: false, stock_quantity: '', low_stock_threshold: '', per_night: false, meal_price: '', meal_pax: 1, open_price: false };
 // Not something front desk takes at the till.
 const HIDDEN_PAY_METHODS = ['ota_managed'];
 
@@ -53,7 +53,13 @@ function stockBadge(p) {
 function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
 function lineUnits(i) { return (parseInt(i.quantity) || 0) * (i.per_night ? (i.nights || []).length : 1); }
 // A per-night line's price per night can be bargained (migration 075).
-function linePrice(i) { return i.per_night && i.price_per_night !== '' && i.price_per_night != null ? parseFloat(i.price_per_night) || 0 : parseFloat(i.unit_price); }
+function linePrice(i) {
+  if (i.open_price) return parseFloat(i.unit_price) || 0;
+  return i.per_night && i.price_per_night !== '' && i.price_per_night != null ? parseFloat(i.price_per_night) || 0 : parseFloat(i.unit_price);
+}
+// Cart lines are keyed by product, except open-price items ("Other charge",
+// migration 077): each tap adds its own line with its own description + price.
+let openLineSeq = 0;
 
 export default function Sales() {
   const { user } = useAuth();
@@ -102,10 +108,14 @@ export default function Sales() {
     setLastSale(null);
     if (product.track_stock && product.stock_quantity <= 0) return;
     setCart(c => {
-      const ex = c.find(i => i.product_id === product.id);
-      if (ex) return c.map(i => i.product_id === product.id ? (i.per_night ? withUnits(i, product, i.quantity + 1) : { ...i, quantity: i.quantity + 1 }) : i);
+      if (product.open_price) {
+        return [...c, { key: `${product.id}-${++openLineSeq}`, product_id: product.id, name: product.name, product, quantity: 1,
+          open_price: true, description: '', unit_price: parseFloat(product.price) > 0 ? String(parseFloat(product.price)) : '' }];
+      }
+      const ex = c.find(i => i.key === product.id);
+      if (ex) return c.map(i => i.key === product.id ? (i.per_night ? withUnits(i, product, i.quantity + 1) : { ...i, quantity: i.quantity + 1 }) : i);
       return [...c, {
-        product_id: product.id, name: product.name, unit_price: product.price, quantity: 1, product,
+        key: product.id, product_id: product.id, name: product.name, unit_price: product.price, quantity: 1, product,
         per_night: !!product.per_night,
         ...(product.per_night ? {
           nights: defaultNights(selectedBooking), price_per_night: String(parseFloat(product.price)),
@@ -115,19 +125,20 @@ export default function Sales() {
     });
   }
 
-  function removeFromCart(id) { setCart(c => c.filter(i => i.product_id !== id)); }
+  function removeFromCart(id) { setCart(c => c.filter(i => i.key !== id)); }
   function setQty(id, qty) {
-    if (qty === '') { setCart(c => c.map(i => i.product_id === id ? { ...i, quantity: '' } : i)); return; }
+    if (qty === '') { setCart(c => c.map(i => i.key === id ? { ...i, quantity: '' } : i)); return; }
     const n = parseInt(qty);
     if (!Number.isFinite(n)) return;
     if (n < 1) { removeFromCart(id); return; }
-    setCart(c => c.map(i => i.product_id === id ? (i.per_night ? withUnits(i, i.product, n) : { ...i, quantity: n }) : i));
+    setCart(c => c.map(i => i.key === id ? (i.per_night ? withUnits(i, i.product, n) : { ...i, quantity: n }) : i));
   }
 
-  function setLine(id, line) { setCart(c => c.map(i => i.product_id === id ? { ...i, ...line } : i)); }
+  function setLine(id, line) { setCart(c => c.map(i => i.key === id ? { ...i, ...line } : i)); }
   const perNightMissing = cart.some(i => i.per_night && (!selectedBooking || !(i.nights || []).length
     || i.price_per_night === '' || parseFloat(i.price_per_night) < 0 || i.breakfasts === '' || i.breakfasts < 0));
-  const cartValid = cart.length > 0 && cart.every(i => Number.isInteger(i.quantity) && i.quantity >= 1) && !perNightMissing;
+  const openMissing = cart.some(i => i.open_price && (!i.description.trim() || !(parseFloat(i.unit_price) > 0)));
+  const cartValid = cart.length > 0 && cart.every(i => Number.isInteger(i.quantity) && i.quantity >= 1) && !perNightMissing && !openMissing;
   const cartTotal = cart.reduce((sum, i) => sum + linePrice(i) * lineUnits(i), 0);
   // Prices are before tax. Paid directly, the guest pays service charge + tax
   // on top (same formula as the folio: service on the subtotal, tax on
@@ -181,7 +192,8 @@ export default function Sales() {
         booking_id: selectedBooking?.id || null,
         payment_method: chargeToRoom ? 'room_charge' : payMethod,
         items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity,
-          ...(i.per_night ? { nights: i.nights, price_per_night: parseFloat(i.price_per_night), breakfasts: i.breakfasts } : {}) })),
+          ...(i.per_night ? { nights: i.nights, price_per_night: parseFloat(i.price_per_night), breakfasts: i.breakfasts } : {}),
+          ...(i.open_price ? { description: i.description.trim(), unit_price: parseFloat(i.unit_price) } : {}) })),
       });
       setLastSale({ id: sale.id, paidDirectly: !chargeToRoom });
       setCart([]);
@@ -207,17 +219,19 @@ export default function Sales() {
       name: p.name, category: p.category, price: p.price, description: p.description || '', is_available: p.is_available,
       track_stock: p.track_stock, stock_quantity: p.stock_quantity, low_stock_threshold: p.low_stock_threshold ?? '',
       per_night: !!p.per_night, meal_price: parseFloat(p.meal_price) ? p.meal_price : '', meal_pax: p.meal_pax ?? 1,
+      open_price: !!p.open_price,
     });
     setProductModal({ mode: 'edit', id: p.id });
   }
 
   async function saveProduct() {
-    if (!prodForm.name || !prodForm.price) return;
+    if (!prodForm.name || (prodForm.price === '' && !prodForm.open_price)) return;
     const payload = {
       name: prodForm.name, category: prodForm.category, price: prodForm.price, description: prodForm.description, is_available: prodForm.is_available,
       track_stock: prodForm.track_stock, low_stock_threshold: prodForm.low_stock_threshold === '' ? null : parseInt(prodForm.low_stock_threshold),
       per_night: prodForm.per_night, meal_price: prodForm.meal_price === '' ? 0 : parseFloat(prodForm.meal_price),
       meal_pax: prodForm.meal_pax === '' ? 1 : parseInt(prodForm.meal_pax),
+      open_price: prodForm.open_price, ...(prodForm.open_price && prodForm.price === '' ? { price: 0 } : {}),
     };
     try {
       if (productModal.mode === 'add') {
@@ -303,7 +317,7 @@ export default function Sales() {
                         style={{ flexDirection: 'column', height: 72, fontSize: 12, opacity: outOfStock ? 0.5 : 1 }}
                         onClick={() => addToCart(p)}>
                         <span style={{ fontWeight: 600 }}>{p.name}</span>
-                        <span style={{ color: 'var(--green)', fontSize: 11 }}>{fmtIDR(p.price)}</span>
+                        <span style={{ color: 'var(--green)', fontSize: 11 }}>{p.open_price ? 'type the price' : fmtIDR(p.price)}</span>
                         {outOfStock && <span style={{ fontSize: 10, color: 'var(--danger-text)' }}>Out of stock</span>}
                       </button>
                     );
@@ -385,30 +399,40 @@ export default function Sales() {
             ) : (
               <>
                 {cart.map(i => (
-                  <div key={i.product_id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div key={i.key} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                   <div className="flex-between" style={{ gap: 8 }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}{i.per_night && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>per night</span>}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {i.per_night
                           ? <>{fmtIDR(linePrice(i))} × {i.quantity || 0} × {plural((i.nights || []).length, 'night')} = {fmtIDR(linePrice(i) * lineUnits(i))}</>
-                          : <>{fmtIDR(i.unit_price)} × {i.quantity || 0} = {fmtIDR(i.unit_price * lineUnits(i))}</>}
+                          : <>{fmtIDR(linePrice(i))} × {i.quantity || 0} = {fmtIDR(linePrice(i) * lineUnits(i))}</>}
                       </div>
                     </div>
                     <div className="flex gap-2 flex-center">
-                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => setQty(i.product_id, (parseInt(i.quantity) || 1) - 1)}>−</button>
+                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => setQty(i.key, (parseInt(i.quantity) || 1) - 1)}>−</button>
                       <input className="form-input" type="number" min="1" inputMode="numeric" value={i.quantity}
-                        onChange={e => setQty(i.product_id, e.target.value)}
+                        onChange={e => setQty(i.key, e.target.value)}
                         style={{ width: 56, textAlign: 'center', padding: '4px 6px' }} aria-label={`Quantity of ${i.name}`} />
-                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => setQty(i.product_id, (parseInt(i.quantity) || 0) + 1)}>+</button>
-                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => removeFromCart(i.product_id)} title="Remove">✕</button>
+                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => setQty(i.key, (parseInt(i.quantity) || 0) + 1)}>+</button>
+                      <button className="btn btn-icon" style={{ fontSize: 12 }} onClick={() => removeFromCart(i.key)} title="Remove">✕</button>
                     </div>
                   </div>
+                  {i.open_price && (
+                    <div className="flex gap-2" style={{ marginTop: 6 }}>
+                      <input className="form-input" style={{ flex: 2, padding: '4px 8px', fontSize: 13 }} maxLength={200}
+                        placeholder="What is it? e.g. Broken glass" value={i.description}
+                        onChange={e => setLine(i.key, { description: e.target.value })} aria-label="What is it" />
+                      <input className="form-input" style={{ flex: 1, padding: '4px 8px', fontSize: 13 }} type="number" min="0"
+                        placeholder="Price" value={i.unit_price}
+                        onChange={e => setLine(i.key, { unit_price: e.target.value })} aria-label="Price before tax" />
+                    </div>
+                  )}
                   {i.per_night && (
                     selectedBooking ? (
                       <div style={{ marginTop: 6 }}>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>The number above is per night.</div>
-                        <PerNightLine booking={selectedBooking} product={i.product} line={i} onChange={l => setLine(i.product_id, l)} />
+                        <PerNightLine booking={selectedBooking} product={i.product} line={i} onChange={l => setLine(i.key, l)} />
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4 }}>
@@ -501,6 +525,7 @@ export default function Sales() {
                       <td style={{ fontWeight: 600 }}>
                         {p.name}
                         {p.per_night && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>per night</span>}
+                        {p.open_price && <span className="badge badge-amber" style={{ marginLeft: 6, fontSize: 10 }}>price typed at sale</span>}
                       </td>
                       <td>{CAT_BY_KEY[p.category]?.icon} {CAT_BY_KEY[p.category]?.label}</td>
                       <td>
@@ -549,6 +574,18 @@ export default function Sales() {
                     <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /></div>
                   </div>
                   <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={prodForm.description} onChange={e=>setProdForm(f=>({...f,description:e.target.value}))} /></div>
+                  {!prodForm.per_night && (
+                    <div className="form-group">
+                      <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>
+                        <input type="checkbox" checked={prodForm.open_price} onChange={e=>setProdForm(f=>({...f,open_price:e.target.checked}))} />
+                        Price typed at sale (e.g. Other charge, damage fee)
+                      </label>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Front desk types what it is and the price each time. The price above is only a suggestion (0 = none).
+                      </div>
+                    </div>
+                  )}
+                  {!prodForm.open_price && (
                   <div className="form-group">
                     <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>
                       <input type="checkbox" checked={prodForm.per_night} onChange={e=>setProdForm(f=>({...f,per_night:e.target.checked}))} />
@@ -558,6 +595,7 @@ export default function Sales() {
                       Sold for chosen nights of a guest's stay and charged night by night with the room (from Sales or the reservation). The price is per night.
                     </div>
                   </div>
+                  )}
                   <div className="form-row">
                     <div className="form-group">
                       <label className="form-label">Breakfasts included {prodForm.per_night ? 'per unit per night' : 'per unit'}</label>

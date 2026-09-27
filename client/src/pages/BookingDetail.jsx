@@ -11,7 +11,7 @@ import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
-import StayExtrasCard from '../components/StayExtras';
+import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -23,7 +23,6 @@ const AGENT_BILLING = {
   invoiced:              { label: 'Invoiced — awaiting payment', badge: 'blue' },
   paid:                  { label: 'Paid by agent', badge: 'green' },
 };
-const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
 const ACTIVITY_STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
 // Same list NewBooking.jsx uses for the same field.
 const EDIT_BED_PREFS = [
@@ -109,9 +108,9 @@ export default function BookingDetail() {
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
   const [estimate, setEstimate] = useState(null);
-  const [addingCharge, setAddingCharge] = useState(false);
-  const [chargeForm, setChargeForm] = useState({ type: 'misc', description: '', quantity: 1, unit_price: '' });
-  const [chargeError, setChargeError] = useState('');
+  // Folio "+ Add item" — the same window as "Extras for this stay" (Sales items
+  // charged to the room; no free-text folio charges since migration 077).
+  const [addingItem, setAddingItem] = useState(false);
   const [activityBookings, setActivityBookings] = useState(null);
   // Record Payment on the folio — settles what's owed on the stay incl.
   // extras charged to the room (room lines first, the rest as extras).
@@ -220,19 +219,6 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { if (tab === 'activities' && !activityBookings) loadActivityBookings(); }, [tab]);
-
-  async function addCharge() {
-    setChargeError('');
-    if (!chargeForm.description.trim()) { setChargeError('Description required'); return; }
-    try {
-      await api.post(`/api/folio/${id}/charge`, chargeForm);
-      setChargeForm({ type: 'misc', description: '', quantity: 1, unit_price: '' });
-      setAddingCharge(false);
-      loadFolio();
-    } catch (err) {
-      setChargeError(err.response?.data?.error || 'Failed to add charge');
-    }
-  }
 
   async function voidCharge(chargeId) {
     if (!confirm('Void this charge?')) return;
@@ -1066,38 +1052,13 @@ export default function BookingDetail() {
                 {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0' }}>No charges posted yet.</div>}
               </div>
 
-              {addingCharge ? (
-                <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Type</label>
-                      <select className="form-select" value={chargeForm.type} onChange={e => setChargeForm(f => ({ ...f, type: e.target.value }))}>
-                        {CHARGE_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ flex: 2 }}>
-                      <label className="form-label">Description</label>
-                      <input className="form-input" value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Quantity</label>
-                      <input className="form-input" type="number" value={chargeForm.quantity} onChange={e => setChargeForm(f => ({ ...f, quantity: e.target.value }))} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Unit Price</label>
-                      <input className="form-input" type="number" value={chargeForm.unit_price} onChange={e => setChargeForm(f => ({ ...f, unit_price: e.target.value }))} />
-                    </div>
-                  </div>
-                  {chargeError && <div className="alert alert-error" style={{ marginBottom: 8 }}>{chargeError}</div>}
-                  <div className="flex gap-2">
-                    <button className="btn btn-primary btn-sm" onClick={addCharge}>Add Charge</button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setAddingCharge(false); setChargeError(''); }}>Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <button className="btn btn-secondary btn-sm mb-3" onClick={() => setAddingCharge(true)}>+ Add Charge</button>
+              {!['cancelled', 'no_show'].includes(booking.status) && (
+                <button className="btn btn-secondary btn-sm mb-3" onClick={() => setAddingItem(true)}
+                  title="Extra bed, transport, laundry… or Other charge for anything not in the list">+ Add item</button>
+              )}
+              {addingItem && (
+                <AddStayItemModal booking={booking} onClose={() => setAddingItem(false)}
+                  onDone={() => { setAddingItem(false); load(); loadFolio(); }} />
               )}
 
               <div className="divider" />

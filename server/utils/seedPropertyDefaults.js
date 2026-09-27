@@ -108,6 +108,15 @@ async function seedPropertyDefaults(propertyId) {
     [propertyId]
   );
 
+  // "Other charge" — the Sales item for charges not in the list, price typed
+  // at sale (migration 077; the folio has no free-text charge any more).
+  await db.query(
+    `INSERT INTO products (name, category, price, description, property_id, open_price)
+     SELECT 'Other charge', 'other', 0, 'Anything not in the list — type what it is and the price.', $1, true
+      WHERE NOT EXISTS (SELECT 1 FROM products WHERE property_id = $1 AND open_price)`,
+    [propertyId]
+  );
+
   // Seed all modules. Modules that are OFF by default: room_controller is
   // hardware-dependent; resto_ordering and back_office are paid add-on tiers.
   // Everything else is on by default.

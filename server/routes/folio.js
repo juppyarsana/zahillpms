@@ -6,8 +6,6 @@ const { loadFolio, computeProforma, round2 } = require('../services/folioService
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 
-const CHARGE_TYPES = ['room', 'fnb', 'sale', 'activity', 'misc', 'discount', 'tax', 'service_charge'];
-
 function fmtIDR(n) {
   // Fixed 2 decimals — the default toLocaleString('id-ID') caps at 3 fraction
   // digits but trims trailing zeros down to the minimum of 0, so e.g.
@@ -87,31 +85,10 @@ router.get('/:bookingId/estimate', auth, async (req, res) => {
   }
 });
 
-// POST /api/folio/:bookingId/charge
-router.post('/:bookingId/charge', auth, async (req, res) => {
-  const { type, description, quantity, unit_price } = req.body;
-  if (!CHARGE_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of ${CHARGE_TYPES.join(', ')}` });
-  if (!description || !description.trim()) return res.status(400).json({ error: 'description required' });
-  const qty = quantity == null || quantity === '' ? 1 : parseFloat(quantity);
-  const price = parseFloat(unit_price);
-  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be a positive number' });
-  if (!Number.isFinite(price)) return res.status(400).json({ error: 'unit_price must be a number' });
-  const amount = round2(qty * price);
-
-  try {
-    const { rows: [booking] } = await db.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
-
-    const { rows: [charge] } = await db.query(
-      `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.params.bookingId, type, description.trim(), qty, price, amount, req.user.id]
-    );
-    res.status(201).json(charge);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// No free-text charges on the folio (removed with migration 077): anything
+// charged to a guest goes through a Sales item (POST /api/sales, room_charge)
+// so Sales History and the reports count it — including "Other charge", an
+// item whose description and price are typed at sale.
 
 // POST /api/folio/:bookingId/payment — record money received against the
 // whole folio: { amount, method, received_at?, notes? }. Settles what's

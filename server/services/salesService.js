@@ -61,13 +61,18 @@ const FNB_CATEGORIES = ['drinks', 'food'];
 //   breakfasts      — breakfasts per night (default units × the item's
 //                     meal_pax; e.g. a double extra bed for one person = 1)
 // Both are noted in the booking's Edit History when they differ.
+//
+// Open-price items (products.open_price, migration 077 — "Other charge"):
+// the item carries its own `unit_price` and `description` (what it is, e.g.
+// "Broken glass"), both required; stored on the sale line so Sales History,
+// the folio and the receipt show what was typed.
 async function createSale(propertyId, { bookingId, paymentMethod, items, orderType, tableNumber, tableId, servedBy, holdForConfirmation, orderSource, taxDirectPay }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const productIds = items.map(i => i.product_id);
     const { rows: ownedProducts } = await client.query(
-      'SELECT id, category, track_stock, stock_quantity, name, price, per_night, meal_price, meal_pax FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
+      'SELECT id, category, track_stock, stock_quantity, name, price, per_night, meal_price, meal_pax, open_price FROM products WHERE id = ANY($1) AND property_id = $2 FOR UPDATE',
       [productIds, propertyId]
     );
     if (ownedProducts.length !== new Set(productIds).size) {
@@ -82,9 +87,17 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       const p = productById.get(i.product_id);
       // Price from the product row — except a per-night item's bargained
       // price per night (validated below).
+      if (p.open_price) {
+        return { ...i, unit_price: Math.round(parseFloat(i.unit_price) * 100) / 100, description: String(i.description || '').trim().slice(0, 200) };
+      }
       const override = p.per_night && i.price_per_night !== undefined && i.price_per_night !== null && i.price_per_night !== '';
-      return { ...i, unit_price: override ? Math.round(parseFloat(i.price_per_night) * 100) / 100 : p.price, price_changed: override && parseFloat(i.price_per_night) !== parseFloat(p.price) };
+      return { ...i, unit_price: override ? Math.round(parseFloat(i.price_per_night) * 100) / 100 : p.price, price_changed: override && parseFloat(i.price_per_night) !== parseFloat(p.price), description: null };
     });
+    const badOpen = items.find(i => productById.get(i.product_id).open_price && (!i.description || !(parseFloat(i.unit_price) > 0)));
+    if (badOpen) {
+      await client.query('ROLLBACK');
+      return { error: `${productById.get(badOpen.product_id).name}: type what it is and a price above 0`, code: 'OPEN_PRICE_MISSING' };
+    }
     const badPrice = items.find(i => !Number.isFinite(parseFloat(i.unit_price)) || parseFloat(i.unit_price) < 0);
     if (badPrice) {
       await client.query('ROLLBACK');
@@ -215,9 +228,9 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
         ? mealPerNight * item.nights.length
         : Math.min(subtotal, oneBreakfast * (parseInt(product.meal_pax) || 0) * qty);
       const { rows: [line] } = await client.query(
-        `INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal, meal_amount, per_night)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [sale.id, item.product_id, qty, item.unit_price, subtotal, mealAmount, !!product.per_night]
+        `INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, subtotal, meal_amount, per_night, description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [sale.id, item.product_id, qty, item.unit_price, subtotal, mealAmount, !!product.per_night, item.description || null]
       );
       if (product.per_night) {
         for (const night of item.nights) {
@@ -261,7 +274,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // the guest orders); a rejected room-service order's charge is voided by
     // routes/resto.js's reject handler via sale_id.
     // Per-night items aren't posted here — their nights post with the room.
-    const itemsText = list => list.map(i => `${i.quantity}× ${productById.get(i.product_id).name}`).join(', ');
+    const itemsText = list => list.map(i => `${i.quantity}× ${i.description || productById.get(i.product_id).name}`).join(', ');
     const folioDesc = itemsText(items.filter(i => !isPerNight(i))).slice(0, 200);
     const oneOffTotal = total - perNightTotal;
     if ((paymentMethodValue === 'room_charge' || (taxes && bookingId)) && oneOffTotal > 0) {

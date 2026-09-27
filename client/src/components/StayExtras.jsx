@@ -20,6 +20,9 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
   const [qty, setQty] = useState(1);
   // Per-night items: { quantity, price_per_night, breakfasts, breakfasts_touched, nights }
   const [line, setLine] = useState(null);
+  // "Other charge" and other open-price items (migration 077): typed each time.
+  const [openDesc, setOpenDesc] = useState('');
+  const [openPrice, setOpenPrice] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -29,6 +32,7 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
 
   function choose(p) {
     setPick(p); setQty(1); setError('');
+    setOpenDesc(''); setOpenPrice(p.open_price && parseFloat(p.price) > 0 ? String(parseFloat(p.price)) : '');
     setLine(p.per_night ? {
       quantity: 1, nights: defaultNights(booking), price_per_night: String(parseFloat(p.price)),
       breakfasts: defaultBreakfasts(p, 1), breakfasts_touched: false,
@@ -41,9 +45,10 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
 
   const nights = line?.nights || [];
   const units = pick ? (parseInt(qty) || 0) * (pick.per_night ? nights.length : 1) : 0;
-  const price = pick?.per_night ? (parseFloat(line.price_per_night) || 0) : parseFloat(pick?.price || 0);
+  const price = pick?.per_night ? (parseFloat(line.price_per_night) || 0)
+    : pick?.open_price ? (parseFloat(openPrice) || 0) : parseFloat(pick?.price || 0);
   const total = pick ? price * units : 0;
-  const valid = pick && parseInt(qty) >= 1 && (!pick.per_night || (nights.length > 0
+  const valid = pick && parseInt(qty) >= 1 && (!pick.open_price || (openDesc.trim() && parseFloat(openPrice) > 0)) && (!pick.per_night || (nights.length > 0
     && line.price_per_night !== '' && parseFloat(line.price_per_night) >= 0 && line.breakfasts !== '' && line.breakfasts >= 0));
 
   async function save() {
@@ -52,7 +57,8 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
       await api.post('/api/sales', {
         booking_id: booking.id, payment_method: 'room_charge',
         items: [{ product_id: pick.id, quantity: parseInt(qty),
-          ...(pick.per_night ? { nights, price_per_night: parseFloat(line.price_per_night), breakfasts: line.breakfasts } : {}) }],
+          ...(pick.per_night ? { nights, price_per_night: parseFloat(line.price_per_night), breakfasts: line.breakfasts } : {}),
+          ...(pick.open_price ? { description: openDesc.trim(), unit_price: parseFloat(openPrice) } : {}) }],
       });
       onDone();
     } catch (err) {
@@ -77,7 +83,7 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
                 {products.map(p => (
                   <button key={p.id} className="btn btn-secondary" style={{ flexDirection: 'column', height: 70, fontSize: 12 }} onClick={() => choose(p)}>
                     <span style={{ fontWeight: 600 }}>{p.name}</span>
-                    <span style={{ color: 'var(--green)', fontSize: 11 }}>{fmtIDR(p.price)}{p.per_night ? ' / night' : ''}</span>
+                    <span style={{ color: 'var(--green)', fontSize: 11 }}>{p.open_price ? 'type the price' : `${fmtIDR(p.price)}${p.per_night ? ' / night' : ''}`}</span>
                   </button>
                 ))}
                 {products.length === 0 && <div className="text-muted">No items — add them in Sales → Items.</div>}
@@ -89,12 +95,25 @@ export function AddStayItemModal({ booking, onClose, onDone }) {
                 <div>
                   <div style={{ fontWeight: 700 }}>{pick.name}</div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
-                    {fmtIDR(pick.price)}{pick.per_night ? ' per night' : ''}
+                    {pick.open_price ? 'Type what it is and the price' : <>{fmtIDR(pick.price)}{pick.per_night ? ' per night' : ''}</>}
                     {parseFloat(pick.meal_price) > 0 && pick.meal_pax > 0 && ` · incl. ${plural(pick.meal_pax, 'breakfast')}`}
                   </div>
                 </div>
                 <button className="btn btn-sm btn-ghost" onClick={() => setPick(null)}>← Other item</button>
               </div>
+              {pick.open_price && (
+                <div className="form-row">
+                  <div className="form-group" style={{ flex: 2 }}>
+                    <label className="form-label">What is it? *</label>
+                    <input className="form-input" value={openDesc} maxLength={200} autoFocus
+                      onChange={e => setOpenDesc(e.target.value)} placeholder="e.g. Broken glass" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Price (IDR, before tax) *</label>
+                    <input className="form-input" type="number" min="0" value={openPrice} onChange={e => setOpenPrice(e.target.value)} />
+                  </div>
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">{pick.per_night ? 'How many (per night)' : 'Quantity'}</label>
                 <input className="form-input" type="number" min="1" value={qty} onChange={e => changeQty(e.target.value)} style={{ width: 100 }} />
