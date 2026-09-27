@@ -33,7 +33,10 @@ const NIGHTS_CTE = `
         INTERVAL '1 day'
       ) AS d
     WHERE b.property_id = $3
-      AND b.status IN ('checked_in', 'checked_out', 'confirmed')
+      -- Every live reservation, paid or not: pending / deposit_paid rooms
+      -- are real bookings (Guest Lists, Dashboard and availability all count
+      -- them) — leaving them out made occupancy and revenue too low.
+      AND b.status NOT IN ('cancelled', 'no_show')
   )
 `;
 

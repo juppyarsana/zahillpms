@@ -131,7 +131,7 @@ async function sendAuditEmail(propertyId, businessDate, data) {
             <div style="margin-bottom:20px;">
             ${CARD_TABLE_OPEN}
             <tr>
-              ${statCard('Units Occupied', unitsOccupied, '#2D5016')}
+              ${statCard('Rooms Occupied', unitsOccupied, '#2D5016')}
               ${statCard('Room Revenue (net)', fmtIDR(roomRevenue), '#111827')}
             </tr>
             <tr>
@@ -210,7 +210,7 @@ async function sendAuditEmail(propertyId, businessDate, data) {
             <div style="margin-bottom:24px;">
               <div style="display:flex;align-items:center;margin-bottom:12px;">
                 <span style="font-size:13px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:0.05em;">
-                  Payments Due Tomorrow
+                  To Collect — Guests Leaving
                 </span>
                 <span style="margin-left:8px;font-size:11px;color:#6b7280;">${fmtDateShort(tomorrow)}</span>
                 <span style="margin-left:8px;background:${pendingBalances.length ? '#fef3c7' : '#d1fae5'};color:${pendingBalances.length ? '#92400e' : '#065f46'};font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;">
@@ -225,7 +225,7 @@ async function sendAuditEmail(propertyId, businessDate, data) {
                     <th style="padding:10px 12px;font-size:11px;font-weight:700;color:#6b7280;text-align:right;text-transform:uppercase;letter-spacing:0.05em;">Balance Due</th>
                   </tr>
                 </thead>
-                <tbody>${listRows(pendingBalances, 'All balances settled — nothing due tomorrow.')}</tbody>
+                <tbody>${listRows(pendingBalances, 'Nothing to collect from guests leaving.')}</tbody>
               </table>
             </div>
 
@@ -331,48 +331,31 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   }
   if (inHouse.length) console.log(`[Night Audit] Folio: ${folioPosted} booking(s) posted, ${folioFailed} failed`);
 
-  // 3. Room + F&B revenue tally (one night's NET share per checked-in booking)
-  const { rows: roomRows } = await db.query(
-    `SELECT
-       COALESCE(SUM(COALESCE(room_revenue, total_amount)::numeric / GREATEST(nights, 1)), 0) AS room_revenue,
-       COALESCE(SUM(fnb_revenue::numeric / GREATEST(nights, 1)), 0) AS fnb_revenue
-     FROM bookings WHERE status = 'checked_in' AND property_id = $1`,
-    [propertyId]
-  );
-  const roomRevenue = parseFloat(roomRows[0].room_revenue);
-  const fnbRevenue = parseFloat(roomRows[0].fnb_revenue);
+  // 3+4. Rooms sold + revenue for the business date — the Reports page's
+  // own getReport(), so the audit, Daily Close and /reports never disagree
+  // (every booking except cancelled / no-show; night-based; extras by the
+  // day they were sold). Runs after the no-show step above.
+  const { getReport } = require('../routes/reports');
+  const day = await getReport(propertyId, businessDate, businessDate);
+  const roomRevenue = day.room_revenue;
+  const fnbRevenue = day.fnb_revenue;
+  const ancillaryRevenue = day.ancillary_revenue;
 
-  // 4. Ancillary revenue tally
-  const { rows: ancillaryRows } = await db.query(
-    `SELECT COALESCE(SUM(total_amount), 0) AS ancillary_revenue
-     FROM sales WHERE DATE(created_at AT TIME ZONE 'Asia/Makassar') = $1 AND property_id = $2
-       AND confirmation_status IS DISTINCT FROM 'rejected'`,
-    [businessDate, propertyId]
-  );
-  const ancillaryRevenue = parseFloat(ancillaryRows[0].ancillary_revenue);
-
-  // 5. Pending balance alert (checkouts tomorrow)
+  // 5+6. The new day's balances to collect from guests leaving, and its
+  // arrivals — the same lists as Balance Due / Guest Lists (and the Daily
+  // Close): whole-stay balance incl. extras, agent-billed stays left out;
+  // every arrival not yet checked in, paid or not.
   const tomorrow = nextDate(businessDate);
-  const { rows: pendingBalances } = await db.query(
-    `SELECT b.id, g.name AS guest_name, u.name AS unit_name, p.amount
-     FROM bookings b
-     JOIN guests g   ON g.id = b.guest_id
-     JOIN units u    ON u.id = b.unit_id
-     JOIN payments p ON p.booking_id = b.id AND p.type = 'balance' AND p.status = 'pending'
-     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in') AND b.property_id = $2`,
-    [tomorrow, propertyId]
-  );
-
-  // 6. Arriving guests (check-in = tomorrow)
-  const { rows: arrivingToday } = await db.query(
-    `SELECT g.name AS guest_name, u.name AS unit_name, b.num_guests
-     FROM bookings b
-     JOIN guests g ON g.id = b.guest_id
-     JOIN units u  ON u.id = b.unit_id
-     WHERE b.check_in_date = $1 AND b.status = 'confirmed' AND b.property_id = $2
-     ORDER BY u.name`,
-    [tomorrow, propertyId]
-  );
+  const { loadGuestLists, loadBalanceDue } = require('../routes/bookings');
+  const [gl, due] = await Promise.all([
+    loadGuestLists(propertyId, tomorrow),
+    loadBalanceDue(propertyId, tomorrow),
+  ]);
+  const pendingBalances = due.departing
+    .filter(r => !r.agent_billed)
+    .map(r => ({ id: r.id, guest_name: r.guest_name, unit_name: r.unit_name, amount: r.balance_due }));
+  const arrivingToday = gl.arrivals
+    .map(a => ({ guest_name: a.guest_name, unit_name: a.unit_name, num_guests: a.num_guests }));
 
   // 7. Guests still checked in on or after their check-out date. The audit
   // runs at night, so anyone due out today who hasn't been checked out by now
@@ -422,15 +405,11 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
     [businessDate, propertyId]
   );
 
-  // Count currently occupied units
-  const { rows: occRows } = await db.query(
-    `SELECT COUNT(*) AS count FROM bookings WHERE status = 'checked_in' AND property_id = $1`,
-    [propertyId]
-  );
-  const unitsOccupied = parseInt(occRows[0].count);
+  // Rooms sold that night — same figure as the Daily Close / Reports.
+  const unitsOccupied = day.total_nights;
 
   const folioNote = inHouse.length ? ` · ${folioPosted} folio night(s) posted${folioFailed ? ` (${folioFailed} failed)` : ''}` : '';
-  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} payment(s) due tomorrow${overdueCheckouts.length ? ` · ${overdueCheckouts.length} still checked in past check-out` : ''}${folioNote}`;
+  const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} balance(s) to collect from guests leaving today${overdueCheckouts.length ? ` · ${overdueCheckouts.length} still checked in past check-out` : ''}${folioNote}`;
 
   // 10. Write audit log
   await db.query(

@@ -175,9 +175,12 @@ async function buildMorningBrief(propertyId) {
 
   const outOfOrder = units.filter(u => u.status === 'out_of_order');
   const sellable = units.length - outOfOrder.length;
-  // Rooms with someone sleeping here tonight: guests still to arrive today +
-  // guests staying over. Overdue guests are left out (they should be leaving).
-  const tonightRooms = gl.arrivals.length + gl.in_house.length;
+  // Rooms taken tonight — the Dashboard's "Tonight's Occupancy" rule: guests
+  // still to arrive whose stay covers tonight, guests staying over, and
+  // overdue guests (still checked in past check-out — their room stays blocked).
+  const ymd = d => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  const tonightRooms = gl.arrivals.filter(a => ymd(a.check_out_date) > date).length
+    + gl.in_house.length + gl.departures.filter(d => d.overdue).length;
   const arrivalUnits = new Set(gl.arrivals.map(a => a.unit_name));
   const dirty = units.filter(u => u.housekeeping_status === 'dirty' && u.status !== 'occupied');
 

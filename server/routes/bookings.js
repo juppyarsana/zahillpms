@@ -159,7 +159,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/guest-report/pdf', auth, async (req, res) => {
   try {
     const { query, params } = buildBookingsQuery(req.propertyId, req.query);
-    const [{ rows }, { rows: [property] }] = await Promise.all([
+    const [{ rows: all }, { rows: [property] }] = await Promise.all([
       db.query(query, params),
       db.query(
         `SELECT property_name, property_address, property_phone, property_email, logo_url
@@ -167,6 +167,10 @@ router.get('/guest-report/pdf', auth, async (req, res) => {
         [req.propertyId]
       ),
     ]);
+
+    // A police report lists guests who actually stay: cancelled / no-show
+    // bookings are left out unless that status was asked for explicitly.
+    const rows = req.query.status ? all : all.filter(b => !['cancelled', 'no_show'].includes(b.status));
 
     const { date_from, date_to, month, year } = req.query;
     // Filename must stay ASCII-only (an en-dash or similar in a

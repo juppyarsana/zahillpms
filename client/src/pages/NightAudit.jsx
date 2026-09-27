@@ -48,7 +48,7 @@ function ExpandedRow({ run }) {
 
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-              Pending balances due ({pendingBalances.length})
+              To collect from guests leaving ({pendingBalances.length})
             </div>
             {pendingBalances.length === 0
               ? <p style={{ fontSize: 13, color: '#9CA3AF' }}>None</p>
@@ -151,7 +151,7 @@ export default function NightAudit() {
           <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                {['Date', 'Triggered by', 'Occupied', 'Room Rev (net)', 'F&B Rev (net)', 'Other Rev', 'No-shows', 'Pmt Due'].map(h => (
+                {['Date', 'Triggered by', 'Rooms sold', 'Room Rev (net)', 'F&B Rev (net)', 'Other Rev', 'No-shows', 'To collect'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700,
                     color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                     {h}
