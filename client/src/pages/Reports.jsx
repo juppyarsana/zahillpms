@@ -107,6 +107,173 @@ const TD = { padding: '10px 14px', fontSize: 13 };
 
 const SOURCE_COLORS = ['#2563EB', '#7C3AED', '#0D9488', '#D97706', '#DB2777', '#6B7280'];
 
+const pct1 = n => `${(Number(n) || 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`;
+const num = n => (Number(n) || 0).toLocaleString('id-ID');
+const plural = (n, w) => `${num(n)} ${w}${Number(n) === 1 ? '' : 's'}`;
+// Big amounts stay on one line, sized to the screen.
+const AMOUNT = { fontSize: 'clamp(15px, 4.2vw, 20px)', whiteSpace: 'nowrap' };
+const SECTIONS = [
+  { id: 'revenue', label: 'Revenue' },
+  { id: 'rooms', label: 'Rooms' },
+  { id: 'channels', label: 'Channels' },
+  { id: 'money', label: 'Money' },
+];
+
+function Section({ id, title, subtitle, children }) {
+  return (
+    <section id={`report-${id}`} style={{ marginBottom: 28, scrollMarginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', margin: '4px 0 12px' }}>
+        <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{title}</h2>
+        {subtitle && <span style={{ fontSize: 12, color: '#6B7280' }}>{subtitle}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// A plain table card: columns = [{ key, label, align, render }]
+function TableCard({ title, note, columns, rows, footer, empty = 'Nothing in this period.' }) {
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+      {title && <div className="card-title" style={{ padding: '14px 14px 0' }}>{title}</div>}
+      {note && <div style={{ fontSize: 12, color: '#6B7280', padding: '4px 14px 0' }}>{note}</div>}
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: '#9CA3AF', padding: 14 }}>{empty}</div>
+      ) : (
+        <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+              {columns.map(c => <th key={c.key} style={{ ...TH, textAlign: c.align || 'left' }}>{c.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid #F3F4F6', ...(r._style || {}) }}>
+                {columns.map(c => <td key={c.key} style={{ ...TD, textAlign: c.align || 'left', ...(c.align === 'right' ? { whiteSpace: 'nowrap' } : {}), ...(r._cell || {}) }}>{c.render ? c.render(r) : r[c.key]}</td>)}
+              </tr>
+            ))}
+          </tbody>
+          {footer && (
+            <tfoot>
+              <tr style={{ borderTop: '2px solid #E5E7EB', fontWeight: 700 }}>
+                {columns.map(c => <td key={c.key} style={{ ...TD, textAlign: c.align || 'left', whiteSpace: 'nowrap' }}>{footer[c.key] ?? ''}</td>)}
+              </tr>
+            </tfoot>
+          )}
+        </table></div>
+      )}
+    </div>
+  );
+}
+
+function ShareBar({ pct, color = '#2563EB' }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 120 }}>
+      <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', background: color, borderRadius: 3 }} />
+      </div>
+      <span style={{ fontSize: 12, color: '#6B7280', width: 44, textAlign: 'right' }}>{pct1(pct)}</span>
+    </div>
+  );
+}
+
+function Kpis({ items }) {
+  return (
+    <div className="card" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, marginBottom: 16, overflow: 'hidden' }}>
+      {items.filter(Boolean).map(([label, value, sub], i) => (
+        <div key={label} style={{ flex: '1 1 150px', padding: '14px 18px', borderLeft: i > 0 ? '1px solid #E5E7EB' : 'none' }}>
+          <div className="stat-label">{label}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#111' }}>{value}</div>
+          {sub && <div className="stat-sub">{sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Daily room revenue bar chart (not shown for a single day).
+function DailyChart({ daily, adr, label, from, to }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const maxDaily = Math.max(1, ...daily.map(d => Number(d.room_revenue)));
+  const hasDailyRevenue = daily.some(d => Number(d.room_revenue) > 0);
+  const dayCount = daily.length;
+  const xLabelStep = dayCount > 60 ? 14 : dayCount > 20 ? 5 : dayCount > 10 ? 3 : 1;
+  const chartOneMonth = from && to && from.slice(0, 7) === to.slice(0, 7);
+  const total = daily.reduce((s, d) => s + Number(d.room_revenue), 0);
+  const peak = daily.reduce((max, d) => Number(d.room_revenue) > Number(max.room_revenue) ? d : max, daily[0]);
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <div className="card-title">Daily Room Revenue</div>
+        <div style={{ fontSize: 12, color: '#9CA3AF' }}>{label}</div>
+      </div>
+      {!hasDailyRevenue ? (
+        <div style={{ fontSize: 13, color: '#9CA3AF', padding: '20px 0', textAlign: 'center' }}>No room revenue in this period.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 14 }}>
+            Total <strong style={{ color: '#111' }}>{fmtIDR(total)}</strong>
+            {' · '}ADR <strong style={{ color: '#111' }}>{fmtIDR(adr)}</strong>
+            {' · '}Best day <strong style={{ color: '#111' }}>{fmtDay(peak.date)}</strong> ({fmtIDR(peak.room_revenue)})
+          </div>
+          <div style={{ display: 'flex' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 140, paddingRight: 10, fontSize: 10, color: '#9CA3AF', textAlign: 'right' }}>
+              <span>{fmtIDRShort(maxDaily)}</span><span>{fmtIDRShort(maxDaily / 2)}</span><span>0</span>
+            </div>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${Math.min(100, (adr / maxDaily) * 100)}%`, borderTop: '1px dashed #D1D5DB', zIndex: 1 }}>
+                <span style={{ position: 'absolute', right: 0, top: -14, fontSize: 10, color: '#9CA3AF', background: 'var(--white, #fff)', padding: '0 4px' }}>ADR</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 140, borderBottom: '1px solid #E5E7EB', position: 'relative', zIndex: 2 }}>
+                {daily.map((d, i) => {
+                  const v = Number(d.room_revenue);
+                  const isWeekend = weekdayOf(d.date) === 0 || weekdayOf(d.date) === 6;
+                  const isHovered = hoverIdx === i;
+                  return (
+                    <div key={d.date} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}
+                      style={{ flex: 1, alignSelf: 'stretch', display: 'flex', alignItems: 'flex-end', cursor: 'default',
+                        background: isHovered ? 'rgba(37,99,235,0.08)' : isWeekend ? 'rgba(37,99,235,0.04)' : 'transparent' }}>
+                      <div style={{ width: '100%', height: `${Math.max(2, (v / maxDaily) * 100)}%`, minWidth: 3, borderRadius: '2px 2px 0 0',
+                        background: v > 0 ? (isHovered ? '#1E40AF' : isWeekend ? '#1D4ED8' : '#2563EB') : (isHovered ? '#D1D5DB' : '#E5E7EB') }} />
+                    </div>
+                  );
+                })}
+              </div>
+              {hoverIdx !== null && (() => {
+                const d = daily[hoverIdx];
+                const v = Number(d.room_revenue);
+                const nightsSold = Number(d.paid_nights_sold ?? d.nights_sold) || 0;
+                const leftPct = ((hoverIdx + 0.5) / daily.length) * 100;
+                const barTopPx = Math.max(2, (v / maxDaily) * 100) / 100 * 140;
+                const impliedRate = nightsSold > 0 ? v / nightsSold : 0;
+                const vsAdr = adr > 0 && nightsSold > 0 ? ((impliedRate - adr) / adr) * 100 : 0;
+                return (
+                  <div style={{ position: 'absolute', left: `${Math.min(92, Math.max(8, leftPct))}%`, bottom: `${barTopPx + 14}px`, transform: 'translateX(-50%)',
+                    background: '#111827', color: 'white', borderRadius: 8, padding: '8px 12px', fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)', zIndex: 3 }}>
+                    <div style={{ fontWeight: 700 }}>{fmtDayFull(d.date)}</div>
+                    <div style={{ marginTop: 2 }}>{fmtIDR(v)}{nightsSold > 0 ? ` · ${nightsSold} room-night${nightsSold !== 1 ? 's' : ''}` : ''}</div>
+                    <div style={{ marginTop: 2, color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>
+                      {nightsSold === 0 ? 'No rooms sold' : `${fmtIDR(impliedRate)}/night` + (adr <= 0 ? '' : Math.abs(vsAdr) < 1 ? ' · in line with ADR' : ` · ${vsAdr > 0 ? '+' : ''}${vsAdr.toFixed(0)}% vs. ADR`)}
+                    </div>
+                  </div>
+                );
+              })()}
+              <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
+                {daily.map((d, i) => {
+                  const day = Number(String(d.date).slice(8, 10));
+                  const showLabel = i === 0 || i === daily.length - 1 || (chartOneMonth ? day % xLabelStep === 0 : i % xLabelStep === 0);
+                  return <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{showLabel ? (chartOneMonth ? day : fmtDay(d.date)) : ''}</div>;
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Reports() {
   const now = new Date();
   const [preset, setPreset] = useState('this_month');
@@ -119,14 +286,13 @@ export default function Reports() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [hoverIdx, setHoverIdx] = useState(null);
+  const [allNationalities, setAllNationalities] = useState(false);
 
   useEffect(() => {
     if (!rangeValid) return;
     setLoading(true);
     setError(null);
-    setHoverIdx(null);
-    api.get('/api/reports/revenue', { params: { from, to } })
+    api.get('/api/reports/full', { params: { from, to } })
       .then(r => setData(r.data))
       .catch(err => setError(err.response?.data?.error || 'Failed to load report'))
       .finally(() => setLoading(false));
@@ -134,32 +300,15 @@ export default function Reports() {
 
   const label = periodLabel(from, to);
   const singleDay = from === to;
-
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i);
-  const maxDaily = data ? Math.max(1, ...data.daily_revenue.map(d => Number(d.room_revenue))) : 1;
-  const bySource = data ? [...data.by_source].sort((a, b) => Number(b.revenue) - Number(a.revenue)) : [];
-  const sourceTotal = bySource.reduce((s, r) => s + Number(r.revenue), 0);
-  // Complimentary nights (migration 072) count as occupied but not in ADR.
-  const paidNights = data ? (data.paid_nights ?? data.total_nights) : 0;
-  const adr = data && paidNights > 0 ? data.room_revenue / paidNights : 0;
-  const hasDailyRevenue = data && data.daily_revenue.some(d => Number(d.room_revenue) > 0);
-  const dayCount = data ? data.daily_revenue.length : 0;
-  const xLabelStep = dayCount > 60 ? 14 : dayCount > 20 ? 5 : dayCount > 10 ? 3 : 1;
-  // Day numbers when the chart stays inside one month, "3 Sep" otherwise.
-  const chartOneMonth = from && to && from.slice(0, 7) === to.slice(0, 7);
-  const dailyStats = data && hasDailyRevenue ? (() => {
-    const days = data.daily_revenue;
-    const total = days.reduce((s, d) => s + Number(d.room_revenue), 0);
-    const peak = days.reduce((max, d) => Number(d.room_revenue) > Number(max.room_revenue) ? d : max, days[0]);
-    return { total, peak };
-  })() : null;
+  const jump = id => document.getElementById(`report-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">{label} · Owner only</div>
+          <div className="page-subtitle">{label} · Owner only · amounts are net (after discounts, before service charge &amp; tax)</div>
         </div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <select className="form-select" style={{ width: 160 }} value={preset} onChange={e => setPreset(e.target.value)} aria-label="Period">
@@ -189,283 +338,224 @@ export default function Reports() {
       </div>
 
       {!rangeValid && <div className="alert alert-error">Choose a start date on or before the end date.</div>}
-
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading…</div>
-      ) : !data ? null : (
-        <>
-          {/* ── Revenue composition ── */}
-          <div className="grid-4" style={{ marginBottom: 16 }}>
-            <div className="stat-card" style={{ borderTop: '3px solid #2563EB' }}>
-              <div className="stat-label">Room Revenue</div>
-              <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.room_revenue)}</div>
-              <div className="stat-sub">Net, post-discount</div>
+      ) : !data ? null : (() => {
+        const { revenue: rev, rooms, channels, money } = data;
+        const total = rev.total;
+        const share = n => (total > 0 ? (Number(n) / total) * 100 : 0);
+        const sub = { _cell: { paddingLeft: 30, color: '#4B5563' } };
+        const group = { _style: { background: '#F9FAFB' }, _cell: { fontWeight: 700 } };
+        const breakdown = [
+          { item: 'Rooms', detail: plural(rooms.nights_sold, 'room-night'), amount: rev.room, ...group },
+          { item: 'Food & beverage', detail: '', amount: rev.fnb.total, ...group },
+          { item: 'Meals in the rate plan', detail: 'breakfast / half / full board', amount: rev.fnb.rate_plan, ...sub },
+          { item: 'Breakfast in extras', detail: 'e.g. extra bed with breakfast', amount: rev.fnb.extras, ...sub },
+          { item: 'Restaurant & POS', detail: 'resto app, room dining, external POS', amount: rev.fnb.outlets, ...sub },
+          { item: 'Extras', detail: 'Sales items', amount: rev.extras.total, ...group },
+          ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, ...sub })),
+          { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, ...group },
+          ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${num(a.pax)} pax`, amount: a.amount, ...sub })),
+        ];
+        const natRows = allNationalities ? rooms.by_nationality : rooms.by_nationality.slice(0, 10);
+        const owed = money.owed_now;
+        const guestOwed = owed.guests.checked_out.amount + owed.guests.in_house.amount + owed.guests.upcoming.amount;
+        const st = money.service_tax;
+        const hasRates = st.service_charge_rate > 0 || st.tax_rate > 0;
+        const receivedTotal = money.received.total;
+        return (
+          <>
+            <div className="flex gap-2" style={{ marginBottom: 16, flexWrap: 'wrap' }}>
+              {SECTIONS.map(s => <button key={s.id} className="btn btn-sm btn-secondary" onClick={() => jump(s.id)}>{s.label}</button>)}
             </div>
-            <div className="stat-card" style={{ borderTop: '3px solid #0D9488' }}>
-              <div className="stat-label">F&amp;B Revenue</div>
-              <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.fnb_revenue)}</div>
-              <div className="stat-sub">Rate-plan meals, extra-bed breakfast, restaurant / POS</div>
-            </div>
-            <div className="stat-card" style={{ borderTop: '3px solid #D97706' }}>
-              <div className="stat-label">Extras &amp; Activities</div>
-              <div className="stat-value" style={{ fontSize: 21 }}>{fmtIDR(data.ancillary_revenue + (data.activity_revenue || 0))}</div>
-              <div className="stat-sub">Extras {fmtIDR(data.ancillary_revenue)} · activities {fmtIDR(data.activity_revenue || 0)}</div>
-            </div>
-            <div className="stat-card" style={{ borderTop: '3px solid #111827', background: '#111827' }}>
-              <div className="stat-label" style={{ color: 'rgba(255,255,255,0.6)' }}>Total Revenue</div>
-              <div className="stat-value" style={{ fontSize: 21, color: 'white' }}>{fmtIDR(data.total_revenue)}</div>
-              <div className="stat-sub" style={{ color: 'rgba(255,255,255,0.5)' }}>All sources combined</div>
-            </div>
-          </div>
 
-          {/* ── Operational metrics, compact strip ── */}
-          <div className="card" style={{ display: 'flex', padding: 0, marginBottom: 20, overflow: 'hidden' }}>
-            {[
-              ['Bookings', data.bookings_count, 'checked-in / confirmed'],
-              ['Room Nights', data.total_nights, singleDay ? 'occupied that night' : 'sold in this period'],
-              ['ADR', fmtIDR(adr), data.comp_nights > 0 ? 'room revenue ÷ paid nights' : 'room revenue ÷ nights'],
-              (data.comp_nights > 0 || data.comp_value > 0) &&
-                ['🎁 Complimentary', `${data.comp_nights} night${data.comp_nights === 1 ? '' : 's'}`, `value ${fmtIDR(data.comp_value)} before tax`],
-            ].filter(Boolean).map(([label, value, sub], i) => (
-              <div
-                key={label}
-                style={{ flex: 1, padding: '16px 20px', borderLeft: i > 0 ? '1px solid #E5E7EB' : 'none' }}
-              >
-                <div className="stat-label">{label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#111' }}>{value}</div>
-                <div className="stat-sub">{sub}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Daily room revenue (not useful for a single day) ── */}
-          {!singleDay && (
-          <div className="card" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-              <div className="card-title">Daily Room Revenue</div>
-              <div style={{ fontSize: 12, color: '#9CA3AF' }}>{label}</div>
-            </div>
-            {!hasDailyRevenue ? (
-              <div style={{ fontSize: 13, color: '#9CA3AF', padding: '20px 0', textAlign: 'center' }}>
-                No room revenue in this period.
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 14 }}>
-                  Total <strong style={{ color: '#111' }}>{fmtIDR(dailyStats.total)}</strong>
-                  {' · '}ADR <strong style={{ color: '#111' }}>{fmtIDR(adr)}</strong>
-                  {' · '}Best day <strong style={{ color: '#111' }}>{fmtDay(dailyStats.peak.date)}</strong> ({fmtIDR(dailyStats.peak.room_revenue)})
-                </div>
-
-                <div style={{ display: 'flex' }}>
-                  {/* y-axis scale */}
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 140, paddingRight: 10, fontSize: 10, color: '#9CA3AF', textAlign: 'right' }}>
-                    <span>{fmtIDRShort(maxDaily)}</span>
-                    <span>{fmtIDRShort(maxDaily / 2)}</span>
-                    <span>0</span>
+            {/* ── 1. Revenue ── */}
+            <Section id="revenue" title="Revenue" subtitle={label}>
+              <div className="grid-4" style={{ marginBottom: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+                {[['Rooms', rev.room, '#2563EB'], ['Food & beverage', rev.fnb.total, '#0D9488'], ['Extras', rev.extras.total, '#D97706'], ['Activities', rev.activities.total, '#7C3AED']].map(([l, v, c]) => (
+                  <div key={l} className="stat-card" style={{ borderTop: `3px solid ${c}` }}>
+                    <div className="stat-label">{l}</div>
+                    <div className="stat-value" style={AMOUNT}>{fmtIDR(v)}</div>
+                    <div className="stat-sub">{pct1(share(v))} of revenue</div>
                   </div>
+                ))}
+                <div className="stat-card" style={{ borderTop: '3px solid #111827', background: '#111827' }}>
+                  <div className="stat-label" style={{ color: 'rgba(255,255,255,0.6)' }}>Total revenue</div>
+                  <div className="stat-value" style={{ ...AMOUNT, color: 'white' }}>{fmtIDR(total)}</div>
+                  <div className="stat-sub" style={{ color: 'rgba(255,255,255,0.5)' }}>net, before service &amp; tax</div>
+                </div>
+              </div>
+              <TableCard title="Revenue breakdown" rows={breakdown}
+                columns={[
+                  { key: 'item', label: 'Item' },
+                  { key: 'detail', label: '', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.detail}</span> },
+                  { key: 'amount', label: 'Amount', align: 'right', render: r => fmtIDR(r.amount) },
+                  { key: 'share', label: 'Share', render: r => <ShareBar pct={share(r.amount)} /> },
+                ]}
+                footer={{ item: 'Total revenue', amount: fmtIDR(total) }} />
+              {rev.complimentary.nights > 0 || rev.complimentary.value > 0 ? (
+                <div className="alert" style={{ marginBottom: 16 }}>
+                  <div>🎁 Complimentary: {plural(rev.complimentary.nights, 'night')} and extras worth <b>{fmtIDR(rev.complimentary.value)}</b> (net) were given away — not included in revenue.</div>
+                </div>
+              ) : null}
+              {!singleDay && <DailyChart daily={data.daily} adr={rooms.adr} label={label} from={from} to={to} />}
+            </Section>
 
-                  <div style={{ flex: 1, position: 'relative' }}>
-                    {/* ADR reference line — what one room-night at the property's average
-                        rate is worth, so a bar's height above it reads as "more than one
-                        room-night sold (or sold above rate)" at a glance */}
-                    <div
-                      style={{
-                        position: 'absolute', left: 0, right: 0,
-                        bottom: `${Math.min(100, (adr / maxDaily) * 100)}%`,
-                        borderTop: '1px dashed #D1D5DB', zIndex: 1,
-                      }}
-                    >
-                      <span style={{ position: 'absolute', right: 0, top: -14, fontSize: 10, color: '#9CA3AF', background: 'var(--white, #fff)', padding: '0 4px' }}>ADR</span>
-                    </div>
+            {/* ── 2. Rooms ── */}
+            <Section id="rooms" title="Rooms" subtitle={`${rooms.sellable_rooms} rooms in service × ${plural(rooms.days, 'day')} = ${num(rooms.available_nights)} room-nights available`}>
+              <Kpis items={[
+                ['Occupancy', pct1(rooms.occupancy), `${num(rooms.nights_sold)} of ${num(rooms.available_nights)} room-nights`],
+                ['ADR', fmtIDR(rooms.adr), rooms.comp_nights > 0 ? 'room revenue ÷ paid nights' : 'room revenue ÷ nights sold'],
+                ['RevPAR', fmtIDR(rooms.revpar), 'room revenue ÷ room-nights available'],
+                ['Guests', num(rooms.guest_nights), 'guest-nights (people × nights)'],
+                ['Arrivals', num(rooms.arrivals.bookings), `${plural(rooms.arrivals.guests, 'guest')} checking in`],
+                rooms.comp_nights > 0 && ['Complimentary', plural(rooms.comp_nights, 'night'), 'counted in occupancy, not in ADR'],
+              ]} />
+              <TableCard title="By room type" rows={rooms.by_room_type}
+                note="Rooms in service = not out of order today."
+                columns={[
+                  { key: 'room_type', label: 'Room type', render: r => <b>{r.room_type}</b> },
+                  { key: 'sellable', label: 'Rooms', align: 'right' },
+                  { key: 'nights', label: 'Nights sold', align: 'right', render: r => num(r.nights) },
+                  { key: 'occupancy', label: 'Occupancy', align: 'right', render: r => pct1(r.occupancy) },
+                  { key: 'revenue', label: 'Room revenue', align: 'right', render: r => fmtIDR(r.revenue) },
+                  { key: 'adr', label: 'ADR', align: 'right', render: r => fmtIDR(r.adr) },
+                  { key: 'revpar', label: 'RevPAR', align: 'right', render: r => fmtIDR(r.revpar) },
+                ]}
+                footer={{ room_type: 'All rooms', sellable: rooms.sellable_rooms, nights: num(rooms.nights_sold), occupancy: pct1(rooms.occupancy),
+                  revenue: fmtIDR(rev.room), adr: fmtIDR(rooms.adr), revpar: fmtIDR(rooms.revpar) }} />
+              <TableCard title="By rate plan" rows={rooms.by_rate_plan}
+                columns={[
+                  { key: 'rate_plan', label: 'Rate plan', render: r => <b>{r.rate_plan}{r.code ? <span style={{ color: '#9CA3AF', fontWeight: 400 }}> · {r.code}</span> : ''}</b> },
+                  { key: 'nights', label: 'Nights', align: 'right', render: r => num(r.nights) },
+                  { key: 'guest_nights', label: 'Guest-nights', align: 'right', render: r => num(r.guest_nights) },
+                  { key: 'room_revenue', label: 'Room revenue', align: 'right', render: r => fmtIDR(r.room_revenue) },
+                  { key: 'meal_revenue', label: 'Meals', align: 'right', render: r => fmtIDR(r.meal_revenue) },
+                  { key: 'adr', label: 'ADR', align: 'right', render: r => fmtIDR(r.adr) },
+                ]} />
+              <TableCard title="By nationality" rows={natRows}
+                note={rooms.by_nationality.length > 10 && !allNationalities
+                  ? <>Top 10 of {rooms.by_nationality.length}. <button className="btn btn-sm btn-ghost" style={{ padding: '0 4px' }} onClick={() => setAllNationalities(true)}>Show all</button></> : null}
+                columns={[
+                  { key: 'nationality', label: 'Nationality', render: r => <b>{r.nationality}</b> },
+                  { key: 'bookings', label: 'Bookings', align: 'right' },
+                  { key: 'room_nights', label: 'Room-nights', align: 'right', render: r => num(r.room_nights) },
+                  { key: 'guest_nights', label: 'Guest-nights', align: 'right', render: r => num(r.guest_nights) },
+                  { key: 'revenue', label: 'Room & meals', align: 'right', render: r => fmtIDR(r.revenue) },
+                ]} />
+            </Section>
 
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 140, borderBottom: '1px solid #E5E7EB', position: 'relative', zIndex: 2 }}>
-                      {data.daily_revenue.map((d, i) => {
-                        const v = Number(d.room_revenue);
-                        const isWeekend = weekdayOf(d.date) === 0 || weekdayOf(d.date) === 6;
-                        const isHovered = hoverIdx === i;
-                        return (
-                          <div
-                            key={d.date}
-                            onMouseEnter={() => setHoverIdx(i)}
-                            onMouseLeave={() => setHoverIdx(null)}
-                            style={{
-                              flex: 1,
-                              alignSelf: 'stretch',
-                              display: 'flex',
-                              alignItems: 'flex-end',
-                              cursor: 'default',
-                              background: isHovered ? 'rgba(37,99,235,0.08)' : isWeekend ? 'rgba(37,99,235,0.04)' : 'transparent',
-                            }}
-                          >
-                            <div style={{
-                              width: '100%',
-                              height: `${Math.max(2, (v / maxDaily) * 100)}%`,
-                              background: v > 0 ? (isHovered ? '#1E40AF' : isWeekend ? '#1D4ED8' : '#2563EB') : (isHovered ? '#D1D5DB' : '#E5E7EB'),
-                              borderRadius: '2px 2px 0 0',
-                              minWidth: 3,
-                            }} />
-                          </div>
-                        );
-                      })}
-                    </div>
+            {/* ── 3. Channels ── */}
+            <Section id="channels" title="Channels" subtitle="where the stays in this period were booked">
+              <TableCard rows={channels}
+                note="Revenue = room + meals in the rate plan for the nights in this period."
+                columns={[
+                  { key: 'source', label: 'Source', render: r => <b>{r.source}</b> },
+                  { key: 'bookings', label: 'Bookings', align: 'right' },
+                  { key: 'nights', label: 'Nights', align: 'right', render: r => num(r.nights) },
+                  { key: 'revenue', label: 'Revenue', align: 'right', render: r => fmtIDR(r.revenue) },
+                  { key: 'adr', label: 'ADR', align: 'right', render: r => fmtIDR(r.adr) },
+                  { key: 'share', label: 'Share', render: r => <ShareBar pct={r.share} color={SOURCE_COLORS[channels.indexOf(r) % SOURCE_COLORS.length]} /> },
+                ]}
+                footer={{ source: 'Total', bookings: channels.reduce((s, r) => s + r.bookings, 0), nights: num(channels.reduce((s, r) => s + r.nights, 0)),
+                  revenue: fmtIDR(channels.reduce((s, r) => s + r.revenue, 0)) }} />
+            </Section>
 
-                    {/* hover tooltip */}
-                    {hoverIdx !== null && (() => {
-                      const d = data.daily_revenue[hoverIdx];
-                      const v = Number(d.room_revenue);
-                      const nightsSold = Number(d.paid_nights_sold ?? d.nights_sold) || 0;
-                      const count = data.daily_revenue.length;
-                      const leftPct = ((hoverIdx + 0.5) / count) * 100;
-                      const barTopPx = Math.max(2, (v / maxDaily) * 100) / 100 * 140;
-                      // Compare this day's own implied rate (its revenue ÷ its own
-                      // room-nights sold) against ADR — not the day's raw total
-                      // against ADR, which would be misleading on any day with more
-                      // than one room occupied (ADR is a per-room-night rate).
-                      const impliedRate = nightsSold > 0 ? v / nightsSold : 0;
-                      const vsAdr = adr > 0 && nightsSold > 0 ? ((impliedRate - adr) / adr) * 100 : 0;
-                      return (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            left: `${Math.min(92, Math.max(8, leftPct))}%`,
-                            bottom: `${barTopPx + 14}px`,
-                            transform: 'translateX(-50%)',
-                            background: '#111827',
-                            color: 'white',
-                            borderRadius: 8,
-                            padding: '8px 12px',
-                            fontSize: 12,
-                            whiteSpace: 'nowrap',
-                            pointerEvents: 'none',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                            zIndex: 3,
-                          }}
-                        >
-                          <div style={{ fontWeight: 700 }}>{fmtDayFull(d.date)}</div>
-                          <div style={{ marginTop: 2 }}>
-                            {fmtIDR(v)}{nightsSold > 0 ? ` · ${nightsSold} room-night${nightsSold !== 1 ? 's' : ''}` : ''}
-                          </div>
-                          <div style={{ marginTop: 2, color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>
-                            {nightsSold === 0 ? 'No rooms sold'
-                              : `${fmtIDR(impliedRate)}/night` + (
-                                adr <= 0 ? ''
-                                : Math.abs(vsAdr) < 1 ? ' · in line with ADR'
-                                : ` · ${vsAdr > 0 ? '+' : ''}${vsAdr.toFixed(0)}% vs. ADR`
-                              )}
-                            {dailyStats.peak.date === d.date && v > 0 ? ' · Best day' : ''}
-                          </div>
+            {/* ── 4. Money ── */}
+            <Section id="money" title="Money">
+              <div className="grid-2" style={{ alignItems: 'start' }}>
+                <TableCard title={`Received — ${fmtIDR(receivedTotal)}`} rows={money.received.by_method}
+                  note="Payments received in this period (guests, extras & activities paid at the desk, agents)."
+                  empty="No payments received in this period."
+                  columns={[
+                    { key: 'method', label: 'Method', render: r => <b>{r.method}</b> },
+                    { key: 'amount', label: 'Amount', align: 'right', render: r => fmtIDR(r.amount) },
+                    { key: 'share', label: 'Share', render: r => <ShareBar pct={receivedTotal ? (r.amount / receivedTotal) * 100 : 0} color="#16A34A" /> },
+                  ]} />
+                <div>
+                  <div className="card" style={{ marginBottom: 16 }}>
+                    <div className="card-title">Service charge &amp; tax</div>
+                    {!hasRates && st.included_in_activities.tax === 0 && st.included_in_activities.service_charge === 0 ? (
+                      <div style={{ fontSize: 13, color: '#6B7280' }}>Your service charge and tax rates are 0% (Property Details), so none is added.</div>
+                    ) : (
+                      <>
+                        {[['Service charge', st.service_charge, `${st.service_charge_rate}%`], ['Tax', st.tax, `${st.tax_rate}%`]].map(([l, v, r]) => (
+                          <div key={l} className="flex-between" style={{ fontSize: 14, padding: '4px 0' }}><span>{l} <span className="text-muted">({r})</span></span><b>{fmtIDR(v)}</b></div>
+                        ))}
+                        <div className="flex-between" style={{ fontSize: 14, padding: '6px 0', borderTop: '1px solid #E5E7EB', marginTop: 4 }}><span>Total</span><b>{fmtIDR(st.service_charge + st.tax)}</b></div>
+                        <div style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>
+                          On {fmtIDR(st.taxable_revenue)} of revenue, at today's rates
+                          {(st.included_in_activities.tax > 0 || st.included_in_activities.service_charge > 0) && `, plus ${fmtIDR(st.included_in_activities.service_charge + st.included_in_activities.tax)} inside tax-included activities`}.
+                          An estimate for setting money aside — check the filing with your accountant.
                         </div>
-                      );
-                    })()}
-
-                    {/* x-axis day labels */}
-                    <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
-                      {data.daily_revenue.map((d, i) => {
-                        const day = Number(String(d.date).slice(8, 10));
-                        const showLabel = i === 0 || i === data.daily_revenue.length - 1
-                          || (chartOneMonth ? day % xLabelStep === 0 : i % xLabelStep === 0);
-                        return (
-                          <div key={d.date} style={{ flex: 1, textAlign: 'center', fontSize: 10, color: '#9CA3AF', whiteSpace: 'nowrap', overflow: 'visible' }}>
-                            {showLabel ? (chartOneMonth ? day : fmtDay(d.date)) : ''}
-                          </div>
-                        );
-                      })}
+                      </>
+                    )}
+                  </div>
+                  <div className="card" style={{ marginBottom: 16 }}>
+                    <div className="card-title">Discounts given</div>
+                    <div className="flex-between" style={{ fontSize: 14 }}>
+                      <span>{plural(money.discounts.bookings, 'booking')}</span><b>{fmtIDR(money.discounts.amount)}</b>
                     </div>
+                    <div style={{ fontSize: 11, color: '#6B7280', marginTop: 6 }}>Discounts on room prices for the nights in this period, as entered (incl. tax). Revenue above is already after them.</div>
                   </div>
                 </div>
+              </div>
 
-                <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#9CA3AF', marginTop: 12 }}>
-                  <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#2563EB', marginRight: 5 }} />Weekday</span>
-                  <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#1D4ED8', marginRight: 5 }} />Weekend</span>
-                  <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#E5E7EB', marginRight: 5 }} />No revenue</span>
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-title">Still owed — as of today</div>
+                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>Not tied to the period above: what's unpaid right now.</div>
+                <div className="grid-3" style={{ marginBottom: 14 }}>
+                  {[['Guests who left', owed.guests.checked_out, '#DC2626'], ['Guests in house', owed.guests.in_house, '#D97706'], ['Upcoming stays', owed.guests.upcoming, '#6B7280']].map(([l, g, c]) => (
+                    <div key={l}>
+                      <div style={{ fontSize: 12, color: '#6B7280' }}>{l}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: g.amount > 0 ? c : '#111' }}>{fmtIDR(g.amount)}</div>
+                      <div style={{ fontSize: 11, color: '#9CA3AF' }}>{plural(g.bookings, 'booking')} · deposits &amp; balances not received</div>
+                    </div>
+                  ))}
                 </div>
-              </>
-            )}
-          </div>
-          )}
+                <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 12 }}>
+                  Guests: {fmtIDR(guestOwed)} in room deposit / balance lines (extras charged to a room are on each Balance Due). Agents: {fmtIDR(owed.agents.total)}{owed.agents.overdue > 0 && `, ${fmtIDR(owed.agents.overdue)} overdue`}.
+                </div>
+                {owed.agents.rows.length > 0 && (
+                  <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                      {['Agent', 'Open bookings', 'Owed', 'Not due yet', 'Overdue', 'Over 60 days'].map((h, i) => <th key={h} style={{ ...TH, textAlign: i ? 'right' : 'left' }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {owed.agents.rows.map(a => (
+                        <tr key={a.agent} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <td style={{ ...TD, fontWeight: 600 }}>{a.agent}</td>
+                          <td style={{ ...TD, textAlign: 'right' }}>{a.open_bookings}</td>
+                          <td style={{ ...TD, textAlign: 'right', fontWeight: 600 }}>{fmtIDR(a.outstanding)}</td>
+                          <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(a.current)}</td>
+                          <td style={{ ...TD, textAlign: 'right', color: a.overdue > 0 ? '#DC2626' : undefined }}>{fmtIDR(a.overdue)}</td>
+                          <td style={{ ...TD, textAlign: 'right', color: a.over_60 > 0 ? '#DC2626' : undefined }}>{fmtIDR(a.over_60)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
+                )}
+              </div>
 
-          {/* ── Revenue by source ── */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div className="card-title" style={{ padding: '14px 14px 0' }}>Revenue by Source</div>
-            {bySource.length === 0 ? (
-              <div style={{ fontSize: 13, color: '#9CA3AF', padding: 14 }}>No room nights in this period.</div>
-            ) : (
-              <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <th style={TH}>Source</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Bookings</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Revenue</th>
-                    <th style={{ ...TH, width: 160 }}>Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bySource.map((r, i) => {
-                    const pct = sourceTotal > 0 ? (Number(r.revenue) / sourceTotal) * 100 : 0;
-                    return (
-                      <tr key={r.source || i} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <td style={{ ...TD, fontWeight: 600 }}>{r.source || 'Unspecified'}</td>
-                        <td style={{ ...TD, textAlign: 'right' }}>{r.count}</td>
-                        <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(r.revenue)}</td>
-                        <td style={TD}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
-                              <div style={{ width: `${pct}%`, height: '100%', background: SOURCE_COLORS[i % SOURCE_COLORS.length], borderRadius: 3 }} />
-                            </div>
-                            <span style={{ fontSize: 12, color: '#6B7280', width: 36, textAlign: 'right' }}>{pct.toFixed(0)}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: '2px solid #E5E7EB', fontWeight: 700 }}>
-                    <td style={TD}>Total</td>
-                    <td style={{ ...TD, textAlign: 'right' }}>{bySource.reduce((s, r) => s + Number(r.count), 0)}</td>
-                    <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(sourceTotal)}</td>
-                    <td style={TD}></td>
-                  </tr>
-                </tfoot>
-              </table></div>
-            )}
-          </div>
-
-          {/* ── Net income — lightweight P&L, not a full accounting system.
-              Expenses come from Back Office's Expenses log (if the property
-              uses it); degrades quietly to "= Total Revenue" for properties
-              that don't. ── */}
-          <div className="card" style={{ marginTop: 20 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>Net Income</div>
-            <div className="grid-3">
-              <div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>Total Revenue</div>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{fmtIDR(data.total_revenue)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>Expenses</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: data.expenses_total > 0 ? '#DC2626' : '#111' }}>
-                  {data.expenses_total > 0 ? `− ${fmtIDR(data.expenses_total)}` : fmtIDR(0)}
+              <div className="card">
+                <div className="card-title" style={{ marginBottom: 12 }}>Net income</div>
+                <div className="grid-3">
+                  <div><div style={{ fontSize: 12, color: '#6B7280' }}>Total revenue</div><div style={{ fontSize: 20, fontWeight: 700 }}>{fmtIDR(total)}</div></div>
+                  <div><div style={{ fontSize: 12, color: '#6B7280' }}>Expenses</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: data.expenses_total > 0 ? '#DC2626' : '#111' }}>{data.expenses_total > 0 ? `− ${fmtIDR(data.expenses_total)}` : fmtIDR(0)}</div></div>
+                  <div><div style={{ fontSize: 12, color: '#6B7280' }}>Net income</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: data.net_income >= 0 ? '#16A34A' : '#DC2626' }}>{fmtIDR(data.net_income)}</div></div>
                 </div>
+                {data.expenses_total === 0 && (
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>No expenses logged in this period — record costs under Back Office → Expenses to see a real profit figure.</div>
+                )}
               </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>Net Income</div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: data.net_income >= 0 ? '#16A34A' : '#DC2626' }}>
-                  {fmtIDR(data.net_income)}
-                </div>
-              </div>
-            </div>
-            {data.expenses_total === 0 && (
-              <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>
-                No expenses logged in this period — Net Income currently just mirrors Total Revenue. Record costs under Back Office → Expenses to see a real profit figure here.
-              </div>
-            )}
-          </div>
-        </>
-      )}
+            </Section>
+          </>
+        );
+      })()}
     </div>
   );
 }

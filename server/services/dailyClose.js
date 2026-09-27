@@ -69,6 +69,17 @@ async function collected(propertyId, from, to = from) {
         AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
         AND NOT EXISTS (SELECT 1 FROM payments p2 WHERE p2.sale_id = s.id)
       UNION ALL
+      -- Activities paid directly with no payment row (walk-in guests, or
+      -- booked before migration 078): what the guest paid, on the day booked.
+      SELECT ab.payment_method,
+             ab.total_amount + CASE WHEN ab.tax_mode = 'added'
+                                    THEN COALESCE(ab.service_charge_amount, 0) + COALESCE(ab.tax_amount, 0) ELSE 0 END
+      FROM activity_bookings ab
+      WHERE ab.property_id = $1 AND ab.payment_method IS NOT NULL AND ab.payment_method <> 'room_charge'
+        AND ab.status <> 'cancelled'
+        AND (ab.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
+        AND NOT EXISTS (SELECT 1 FROM payments p3 WHERE p3.activity_booking_id = ab.id)
+      UNION ALL
       SELECT ap.method, ap.amount
       FROM agent_payments ap
       WHERE ap.property_id = $1 AND ap.received_on BETWEEN $2::date AND $3::date

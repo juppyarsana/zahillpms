@@ -20,6 +20,8 @@ const NIGHTS_CTE = `
     SELECT
       b.id AS booking_id,
       b.source,
+      b.unit_id, b.rate_plan_id, b.guest_id, COALESCE(b.num_guests, 0) AS num_guests,
+      COALESCE(b.discount_amount, 0) / NULLIF(b.nights, 0) AS discount_per_night,
       d::date AS night,
       COALESCE(b.room_revenue, b.total_amount) / NULLIF(b.nights, 0) AS room_rev_per_night,
       COALESCE(b.fnb_revenue, 0) / NULLIF(b.nights, 0) AS fnb_rev_per_night,
@@ -71,7 +73,7 @@ const SALES_SQL = `
 // `meal` = its breakfast part (→ F&B). A stay complimentary for everything
 // gives them away (comp).
 const ADDON_NIGHTS_SQL = `
-  SELECT a.service_date AS night,
+  SELECT a.service_date AS night, a.product_id,
          a.quantity * a.unit_price - LEAST(a.breakfasts * a.meal_price, a.quantity * a.unit_price) AS extra,
          LEAST(a.breakfasts * a.meal_price, a.quantity * a.unit_price) AS meal,
          COALESCE(b.complimentary_scope = 'all', false) AS comp
@@ -88,7 +90,8 @@ const ADDON_NIGHTS_SQL = `
 // parts taken out. Charged to a stay complimentary for everything = given
 // away (comp).
 const ACTIVITY_SQL = `
-  SELECT ab.scheduled_date AS day, a.name,
+  SELECT ab.scheduled_date AS day, a.name, ab.num_participants, ab.tax_mode,
+         COALESCE(ab.service_charge_amount, 0) AS sc_part, COALESCE(ab.tax_amount, 0) AS tax_part,
          CASE WHEN ab.tax_mode = 'included'
               THEN ab.total_amount - COALESCE(ab.service_charge_amount, 0) - COALESCE(ab.tax_amount, 0)
               ELSE ab.total_amount END AS net,
@@ -319,6 +322,19 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
   }
 });
 
+// GET /api/reports/full?from=&to= — every section of the Reports page
+// (services/fullReport.js): revenue, rooms, channels, money.
+router.get('/full', auth, requireRole('owner'), async (req, res) => {
+  const period = resolvePeriod(req.query);
+  if (period.error) return res.status(400).json({ error: period.error });
+  try {
+    const { buildFullReport } = require('../services/fullReport');
+    res.json(await buildFullReport(req.propertyId, period.from, period.to));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function csvEscape(v) {
   if (v == null) return '';
   const s = String(v);
@@ -390,3 +406,10 @@ module.exports = router;
 // Shared with services/dailyClose.js (Smart Reports), so its figures match this page.
 module.exports.getReport = getReport;
 module.exports.revenueCsv = revenueCsv;
+// The building blocks, for services/fullReport.js (Reports page sections,
+// Excel / PDF exports) — same rules, so every figure matches getReport().
+module.exports.NIGHTS_CTE = NIGHTS_CTE;
+module.exports.SALES_SQL = SALES_SQL;
+module.exports.ADDON_NIGHTS_SQL = ADDON_NIGHTS_SQL;
+module.exports.ACTIVITY_SQL = ACTIVITY_SQL;
+module.exports.resolvePeriod = resolvePeriod;
