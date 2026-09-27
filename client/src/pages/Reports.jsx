@@ -121,7 +121,7 @@ const SECTIONS = [
 
 function Section({ id, title, subtitle, children }) {
   return (
-    <section id={`report-${id}`} style={{ marginBottom: 28, scrollMarginTop: 16 }}>
+    <section id={`report-${id}`} data-report-section={id} style={{ marginBottom: 28, scrollMarginTop: 72 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', margin: '4px 0 12px' }}>
         <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>{title}</h2>
         {subtitle && <span style={{ fontSize: 12, color: '#6B7280' }}>{subtitle}</span>}
@@ -302,9 +302,32 @@ export default function Reports() {
   const singleDay = from === to;
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i);
   const jump = id => document.getElementById(`report-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const toTop = () => document.getElementById('report-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Which section is on screen, for the pinned section bar: the last section
+  // whose top has passed just under the bar.
+  const [active, setActive] = useState('revenue');
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    if (!data) return;
+    const secs = [...document.querySelectorAll('[data-report-section]')];
+    const top = document.getElementById('report-top');
+    if (!secs.length || !top) return;
+    const onScroll = () => {
+      let current = secs[0].dataset.reportSection;
+      for (const el of secs) if (el.getBoundingClientRect().top <= 90) current = el.dataset.reportSection;
+      setActive(current);
+      setScrolled(top.getBoundingClientRect().top < -150);
+    };
+    // The page scrolls in the window on desktop and inside .main-content on phones.
+    const targets = [window, document.querySelector('.main-content')].filter(Boolean);
+    targets.forEach(t => t.addEventListener('scroll', onScroll, { passive: true }));
+    onScroll();
+    return () => targets.forEach(t => t.removeEventListener('scroll', onScroll));
+  }, [data]);
 
   return (
-    <div>
+    <div id="report-top" style={{ scrollMarginTop: 80 }}>
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
@@ -373,8 +396,17 @@ export default function Reports() {
         const receivedTotal = money.received.total;
         return (
           <>
-            <div className="flex gap-2" style={{ marginBottom: 16, flexWrap: 'wrap' }}>
-              {SECTIONS.map(s => <button key={s.id} className="btn btn-sm btn-secondary" onClick={() => jump(s.id)}>{s.label}</button>)}
+            {/* Pinned section bar: jump to any section, or back to the top, from anywhere on the page. */}
+            <div style={{ position: 'sticky', top: 0, zIndex: 30, margin: '0 -4px 16px', padding: '8px 4px',
+              background: 'var(--bg)', borderBottom: scrolled ? '1px solid var(--border, #E5E7EB)' : '1px solid transparent',
+              boxShadow: scrolled ? '0 6px 12px -10px rgba(0,0,0,0.25)' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {SECTIONS.map(s => (
+                <button key={s.id} className={`btn btn-sm ${active === s.id ? 'btn-primary' : 'btn-secondary'}`}
+                  aria-current={active === s.id ? 'true' : undefined} onClick={() => jump(s.id)}>{s.label}</button>
+              ))}
+              <span style={{ flex: 1 }} />
+              {scrolled && window.innerWidth >= 640 && <span className="text-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>}
+              {scrolled && <button className="btn btn-sm btn-secondary" onClick={toTop} title="Back to the top: period and downloads">↑ Top</button>}
             </div>
 
             {/* ── 1. Revenue ── */}
