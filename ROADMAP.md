@@ -27,9 +27,11 @@ Last updated: 2026-09-27
   count as sold in the reports until cleaned up. **On production after deploying: clean these up.**
 - **Invoice / pro forma**: room + breakfast printed as one line ("Room with Breakfast"), nights at the same rate
   grouped, like VHP; reports still split room / F&B.
-- **BB meal price set on production (2026-09-27)** → old BB bookings still have Rp 0 breakfast. Run on production:
-  `cd server && node maintenance/resplitMeals.js --property zahill` (dry run, check the list), then `--apply`.
-  Owner chose all BB bookings since go-live. Nothing deleted; backup JSON in `server/maintenance/backups/`.
+- **BB meal price set on production (2026-09-27, Rp 100.000 net per guest per night)** and
+  `maintenance/resplitMeals.js --property zahill --apply` **RUN on production 2026-09-27**: 248 BB bookings
+  since go-live split (Rp 58.7M net moved room → meals, totals unchanged), backup JSON in
+  `server/maintenance/backups/` on the server. 1 skipped: room 801 PURA TULUK BIU BATUR (net Rp 0 — probably a
+  free stay not marked complimentary). Don't run it again unless another meal plan gets a price.
 - Open question for the owner: should the night audit also auto no-show pending / deposit-paid bookings?
 - Future: a per-property timezone setting (Bali time is hardcoded in ~30 places) when a non-WITA client signs.
 
