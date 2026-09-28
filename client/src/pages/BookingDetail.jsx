@@ -127,9 +127,9 @@ function NotChargedYet({ rows, rates }) {
   return (
     <div>
       <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
-        <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Not charged yet</div>
+        <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Not posted yet</div>
         <span className="text-muted" style={{ fontSize: 11 }}>
-          {rows.some(r => r.kind !== 'activity') ? 'nights post at night audit, one at a time' : 'charged once a payment is chosen'}
+          {rows.some(r => r.kind !== 'activity') ? 'nights post at night audit, one at a time' : 'posts once a payment is chosen'}
         </span>
       </div>
       {rows.map((r, i) => (
@@ -153,7 +153,7 @@ function NotChargedYet({ rows, rates }) {
         </div>
       ))}
       <div className="flex-between" style={{ fontWeight: 700, paddingTop: 6, gap: 8 }}>
-        <span>Not charged yet <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>· {counts}</span></span>
+        <span>Not posted yet <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>· {counts}</span></span>
         <span style={{ whiteSpace: 'nowrap' }}>{fmtIDR(notChargedTotal(rows, rates))}</span>
       </div>
       {!rates.prices_include_tax && priceFactor(rates) > 1 && (
@@ -1160,7 +1160,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                    Projected for the whole stay: charged + not charged yet − paid. Use this to know what the guest actually still owes.
+                    Projected for the whole stay: posted + not posted yet − paid. Use this to know what the guest actually still owes.
                   </div>
                   {parseFloat(estimate.balance_due) > 0 && !['cancelled', 'no_show'].includes(booking.status) && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
@@ -1178,8 +1178,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 );
               })()}
               <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 2 }}>
-                <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Charged</div>
-                <span className="text-muted" style={{ fontSize: 11 }}>posted to the folio</span>
+                <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Posted</div>
+                <span className="text-muted" style={{ fontSize: 11 }}>on the bill — see Balance due for what's unpaid</span>
               </div>
               <div style={{ marginBottom: 10 }}>
                 {[
@@ -1232,7 +1232,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     </div>
                   );
                 })}
-                {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>Nothing charged yet.</div>}
+                {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>Nothing posted yet.</div>}
               </div>
 
               {/* Prices incl. service & tax (migration 079): lines above are all-in, so just the total and what's inside it. */}
@@ -1257,7 +1257,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 </div>
               )}
               <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 12 }}>
-                <span>Total charged</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
+                <span>Total posted</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
               </div>
               {folio.prices_include_tax && includesText(folio, fmtIDR) && (
                 <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10, textAlign: 'right' }}>{includesText(folio, fmtIDR)}</div>
@@ -1305,10 +1305,10 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     {notCharged.length > 0 && (
                       <>
                         <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                          <span className="text-muted">Charged − paid</span><span>{fmtIDR(posted)}</span>
+                          <span className="text-muted">Posted − paid</span><span>{fmtIDR(posted)}</span>
                         </div>
                         <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                          <span className="text-muted">+ Not charged yet</span><span>{fmtIDR(notChargedTotal(notCharged, estimate || folio))}</span>
+                          <span className="text-muted">+ Not posted yet</span><span>{fmtIDR(notChargedTotal(notCharged, estimate || folio))}</span>
                         </div>
                       </>
                     )}
