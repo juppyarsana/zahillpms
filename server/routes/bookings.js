@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const agentBilling = require('../services/agentBillingService');
+const agentService = require('../services/agentService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
@@ -40,6 +41,11 @@ const BALANCE_AMOUNT_SQL = `COALESCE(
                (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance'))`;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+// A booking's own commission for Edit History — "10%", "Rp 150.000" or "agent's default".
+function commissionLabel(b) {
+  if (!b.commission_type || b.commission_value == null) return 'agent\'s default';
+  return b.commission_type === 'percent' ? `${parseFloat(b.commission_value)}%` : fmtIDR(b.commission_value);
+}
 // '2026-09-08' → '8 Sep' (for Edit History notes)
 function fmtShortYmd(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 
@@ -90,6 +96,17 @@ async function logBookingChanges(client, { propertyId, bookingId, userId, before
   }
   if (norm(before.purpose_of_stay) !== norm(after.purpose_of_stay)) {
     changes.push(`Purpose of Stay: ${before.purpose_of_stay || '(none)'} → ${after.purpose_of_stay || '(none)'}`);
+  }
+  if (norm(before.agent_id) !== norm(after.agent_id)) {
+    const ids = [before.agent_id, after.agent_id].filter(Boolean);
+    const { rows } = ids.length
+      ? await client.query('SELECT id, name FROM agents WHERE property_id = $1 AND id = ANY($2::uuid[])', [propertyId, ids])
+      : { rows: [] };
+    const nameOf = id => id ? (rows.find(r => r.id === id)?.name || 'Unknown') : 'None';
+    changes.push(`Agent: ${nameOf(before.agent_id)} → ${nameOf(after.agent_id)}`);
+  }
+  if (norm(before.commission_type) !== norm(after.commission_type) || norm(before.commission_value) !== norm(after.commission_value)) {
+    changes.push(`Commission: ${commissionLabel(before)} → ${commissionLabel(after)}`);
   }
 
   if (changes.length === 0) return;
@@ -569,7 +586,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
     SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
            COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
-           bs.payment_status AS source_payment_status,
+           COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name,
            CASE WHEN b.status = 'checked_out' OR b.check_out_date = $2::date THEN 'departing'
                 WHEN b.check_out_date < $2::date THEN 'overdue'
                 ELSE 'staying' END AS section
@@ -577,6 +594,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
     JOIN guests g ON g.id = b.guest_id
     JOIN units u ON u.id = b.unit_id
     LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+    LEFT JOIN agents ag ON ag.id = b.agent_id
     WHERE b.property_id = $1
       AND b.status NOT IN ('cancelled', 'no_show')
       AND (
@@ -929,9 +947,14 @@ router.get('/:id', auth, async (req, res) => {
                        AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending,
              -- Publish Rate off (OTA / agent, migration 065): invoices get a guest copy without the room rate
              (SELECT COALESCE(bs.publish_rate, true) FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_publish_rate,
-             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label
+             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label,
+             -- the booking's agent (migration 084) and its billing terms
+             ag.name AS agent_name, ag.agent_type, ag.payment_status AS agent_payment_status,
+             ag.commission_type AS agent_commission_type, ag.commission_value AS agent_commission_value,
+             ag.credit_limit AS agent_credit_limit
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+      LEFT JOIN agents ag ON ag.id = b.agent_id
       LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id AND ai.property_id = b.property_id
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
     const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [req.params.id]);   // + receipt_kind (Download → Receipts)
@@ -964,6 +987,8 @@ router.post('/', auth, async (req, res) => {
   if (!guest_id || !unit_id || !check_in_date || !check_out_date) {
     return res.status(400).json({ error: 'guest_id, unit_id, check_in_date, check_out_date required' });
   }
+  const commission = agentService.parseBookingCommission(req.body);
+  if (commission.error) return res.status(400).json({ error: commission.error });
   if (bed_preference && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
@@ -975,6 +1000,8 @@ router.post('/', auth, async (req, res) => {
     if (!unitRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Unit not found' }); }
     const { rows: guestRows } = await client.query('SELECT id, name FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
     if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
+    const agentPick = await agentService.agentForBooking(client, req.propertyId, { agentId: req.body.agent_id, source: source || 'direct' });
+    if (agentPick.error) { await client.query('ROLLBACK'); return res.status(404).json({ error: agentPick.error }); }
 
     // Check availability
     const conflict = await client.query(`
@@ -1022,9 +1049,10 @@ router.post('/', auth, async (req, res) => {
     const balanceAmount = round2(net - depositAmount);
 
     const { rows } = await client.query(
-      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
-      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet]
+      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet,
+       agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
     );
     const booking = rows[0];
     if (depositAmount > 0) {
@@ -1083,6 +1111,8 @@ router.post('/group', auth, async (req, res) => {
   if (!guest_id || !check_in_date || !check_out_date || !Array.isArray(rooms) || rooms.length < 2) {
     return res.status(400).json({ error: 'guest_id, check_in_date, check_out_date, and at least 2 rooms are required' });
   }
+  const commission = agentService.parseBookingCommission(req.body);
+  if (commission.error) return res.status(400).json({ error: commission.error });
   const unitIds = rooms.map(r => r.unit_id);
   if (unitIds.some(id => !id) || new Set(unitIds).size !== unitIds.length) {
     return res.status(400).json({ error: 'Each room needs a unit_id, and units must not repeat' });
@@ -1104,6 +1134,9 @@ router.post('/group', auth, async (req, res) => {
 
     const { rows: guestRows } = await client.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
     if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
+    // One agent for the whole group (and its commission, per room)
+    const agentPick = await agentService.agentForBooking(client, req.propertyId, { agentId: req.body.agent_id, source: source || 'direct' });
+    if (agentPick.error) { await client.query('ROLLBACK'); return res.status(404).json({ error: agentPick.error }); }
 
     const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
     if (unitRows.length !== unitIds.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'One or more units not found' }); }
@@ -1182,9 +1215,10 @@ router.post('/group', auth, async (req, res) => {
       const roomStoredTotal = round2(snapPayable(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total, s.roomNet) + s.discountShare);
 
       const { rows: [booking] } = await client.query(
-        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
-        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet]
+        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
+         agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
       );
       if (s.depositShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
@@ -1644,7 +1678,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
 
     // Source / special requests follow the group's existing rooms.
     const { rows: [sibling] } = await client.query(
-      `SELECT source, special_requests FROM bookings WHERE reservation_group_id = $1 AND property_id = $2
+      `SELECT source, special_requests, agent_id, commission_type, commission_value FROM bookings WHERE reservation_group_id = $1 AND property_id = $2
        ORDER BY (status IN ('cancelled','no_show')), created_at LIMIT 1`,
       [group.id, req.propertyId]);
 
@@ -1671,10 +1705,11 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     const balanceAmount = round2(payable - depositAmount);
 
     const { rows: [booking] } = await client.query(
-      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_amount, special_requests, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,'pending',$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_amount, special_requests, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,'pending',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [group.primary_guest_id, unit_id, checkIn, checkOut, guests, sibling?.source || 'direct', payable, depositAmount,
-       sibling?.special_requests || null, req.user.id, req.propertyId, group.id, ratePlan?.id || null, bed_preference || null, roomNet, mealNet]);
+       sibling?.special_requests || null, req.user.id, req.propertyId, group.id, ratePlan?.id || null, bed_preference || null, roomNet, mealNet,
+       sibling?.agent_id || null, sibling?.commission_type || null, sibling?.commission_value ?? null]);
     if (depositAmount > 0) await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', depositAmount]);
     if (balanceAmount > 0) await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', balanceAmount]);
     const why = String(reason || '').trim();
@@ -2453,11 +2488,35 @@ router.put('/:id', auth, async (req, res) => {
   if (bed_preference !== undefined && bed_preference !== null && bed_preference !== '' && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
+  const commission = agentService.parseBookingCommission(req.body);
+  if (commission.error) return res.status(400).json({ error: commission.error });
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [before] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+
+    // Agent (migration 084): agent_id absent = unchanged, '' / null = none.
+    let agentId = before.agent_id;
+    if (req.body.agent_id !== undefined) {
+      if (req.body.agent_id === '' || req.body.agent_id === null) agentId = null;
+      else {
+        const agent = await agentService.getAgent(req.propertyId, req.body.agent_id, client);
+        if (!agent) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Agent not found' }); }
+        agentId = agent.id;
+      }
+      // Already billed to an agent, or its commission already posted at
+      // checkout: the statement / invoice / commission depend on it.
+      const { rows: [posted] } = agentId !== before.agent_id
+        ? await client.query('SELECT 1 FROM agent_commissions WHERE booking_id = $1', [before.id])
+        : { rows: [] };
+      if (agentId !== before.agent_id && (before.folio_status || posted)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'This stay is already billed to its agent — the agent can\'t be changed now', code: 'AGENT_BILLED' });
+      }
+    }
+    const commissionVals = agentId ? commission.values : { commission_type: null, commission_value: null };
+    const commissionChanged = 'commission_type' in commissionVals || agentId !== before.agent_id;
 
     const { rows } = await client.query(
       `UPDATE bookings SET
@@ -2471,10 +2530,14 @@ router.put('/:id', auth, async (req, res) => {
         bed_preference = CASE WHEN $10::text IS NULL THEN bed_preference
                              WHEN $10 = '' THEN NULL ELSE $10 END,
         purpose_of_stay = COALESCE($11, purpose_of_stay),
+        agent_id = $12,
+        commission_type = CASE WHEN $13::boolean THEN $14 ELSE commission_type END,
+        commission_value = CASE WHEN $13::boolean THEN $15::numeric ELSE commission_value END,
         updated_at = NOW()
        WHERE id = $7 AND property_id = $8 RETURNING *`,
       [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId,
-        rate_plan_id || null, bed_preference === undefined ? null : bed_preference, purpose_of_stay]
+        rate_plan_id || null, bed_preference === undefined ? null : bed_preference, purpose_of_stay,
+        agentId, 'commission_type' in commissionVals, commissionVals.commission_type ?? null, commissionVals.commission_value ?? null]
     );
     let booking = rows[0];
 
@@ -2502,6 +2565,10 @@ router.put('/:id', auth, async (req, res) => {
     await logBookingChanges(client, { propertyId: req.propertyId, bookingId: req.params.id, userId: req.user.id, before, after: booking });
 
     await client.query('COMMIT');
+    // A commission already posted at checkout (still unpaid) follows the new rate.
+    if (commissionChanged && booking.agent_id) {
+      await agentBilling.recomputeCommission(req.propertyId, booking.id).catch(err => console.error('Commission recompute failed:', err));
+    }
     res.json(booking);
   } catch (err) {
     await client.query('ROLLBACK');

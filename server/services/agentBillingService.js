@@ -3,8 +3,9 @@ const { loadFolio, round2 } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice B (see ROADMAP.md #13).
 //
-// Two payment-behaviour axes live on the booking's source (booking_sources,
-// migration 041): `payment_status` decides who pays and when.
+// Since migration 084 the billing terms live on the booking's AGENT
+// (agents, bookings.agent_id) instead of its source; `payment_status` there
+// decides who pays and when.
 //   - city_ledger / city_ledger_payment → the guest pays the agent, so at
 //     checkout the folio closes as billed-to-agent instead of collecting
 //     from the guest (bookings.folio_status = 'pending_agent_invoice').
@@ -15,20 +16,30 @@ const { loadFolio, round2 } = require('./folioService');
 const CITY_LEDGER = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'];
 const COMMISSION = ['commission', 'commission_and_city_ledger'];
 
-async function resolveSource(client, propertyId, sourceId) {
-  if (!sourceId) return null;
-  const { rows: [source] } = await client.query(
-    'SELECT * FROM booking_sources WHERE id = $1 AND property_id = $2',
-    [sourceId, propertyId]
+// The booking's agent (migration 084) with the commission that applies to
+// this booking: the booking's own rate when set, else the agent's default.
+async function resolveBookingAgent(client, propertyId, bookingId) {
+  const { rows: [row] } = await client.query(
+    `SELECT a.*, b.commission_type AS booking_commission_type, b.commission_value AS booking_commission_value
+     FROM bookings b JOIN agents a ON a.id = b.agent_id AND a.property_id = b.property_id
+     WHERE b.id = $1 AND b.property_id = $2`,
+    [bookingId, propertyId]
   );
-  return source || null;
+  if (!row) return null;
+  const own = row.booking_commission_type && row.booking_commission_value != null;
+  return {
+    ...row,
+    commission_type: own ? row.booking_commission_type : row.commission_type,
+    commission_value: own ? row.booking_commission_value : row.commission_value,
+  };
 }
 
-function computeCommission(source, folioTotal) {
-  const value = parseFloat(source.commission_value);
+// terms = { commission_type, commission_value } (an agent resolved above).
+function computeCommission(terms, folioTotal) {
+  const value = parseFloat(terms.commission_value);
   if (!Number.isFinite(value) || value <= 0) return 0;
-  if (source.commission_type === 'amount') return round2(value);
-  if (source.commission_type === 'percent') return round2(folioTotal * value / 100);
+  if (terms.commission_type === 'amount') return round2(value);
+  if (terms.commission_type === 'percent') return round2(folioTotal * value / 100);
   return 0;
 }
 
@@ -43,13 +54,14 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
   );
   if (!booking) return { error: 'Booking not found' };
 
-  const source = await resolveSource(client, propertyId, booking.source);
-  const paymentStatus = source?.payment_status || 'normal';
+  const agent = await resolveBookingAgent(client, propertyId, bookingId);
+  const paymentStatus = agent?.payment_status || 'normal';
 
   let folio_status = null;
   if (billToAgent) {
+    if (!agent) return { error: 'This booking has no agent to bill' };
     if (!CITY_LEDGER.includes(paymentStatus)) {
-      return { error: 'This booking\'s source is not set up for agent (city-ledger) billing' };
+      return { error: `${agent.name} is not set up to be billed (city ledger) — change it in Agent Billing` };
     }
     await client.query(
       "UPDATE bookings SET folio_status = 'pending_agent_invoice', updated_at = NOW() WHERE id = $1 AND property_id = $2",
@@ -59,20 +71,20 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
   }
 
   let commission_posted = false;
-  if (source && COMMISSION.includes(paymentStatus)) {
+  if (agent && COMMISSION.includes(paymentStatus)) {
     // loadFolio reads via the pool, not `client` — fine here because folio
     // charges are always posted (and committed) during the stay, well before
     // checkout; nothing in the checkout transaction touches folio_charges.
     const folio = await loadFolio(bookingId, propertyId);
     // Commission base excludes extras the guest paid at the desk (migration
     // 067) — the agent didn't sell or bill those.
-    const amount = computeCommission(source, folio ? folio.agent_billable_total : 0);
+    const amount = computeCommission(agent, folio ? folio.agent_billable_total : 0);
     if (amount > 0) {
       const { rowCount } = await client.query(
-        `INSERT INTO agent_commissions (property_id, booking_id, source_id, amount)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO agent_commissions (property_id, booking_id, agent_id, source_id, amount)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (booking_id) DO NOTHING`,
-        [propertyId, bookingId, source.id, amount]
+        [propertyId, bookingId, agent.id, booking.source, amount]
       );
       commission_posted = rowCount > 0;
     }
@@ -82,12 +94,12 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
 }
 
 // Standalone (own pool query) — called from the credit-check GET route, not
-// from within another transaction. AR outstanding for a source = derived sum
-// over folios across that source's still-active bookings. Folio charges are
+// from within another transaction. AR outstanding for an agent = derived sum
+// over folios across that agent's still-active bookings. Folio charges are
 // stored NET, so they are grossed up by the property's service charge + VAT
 // (matching folioService.computeFolioTotals, approximated as a single
 // factor) before subtracting the received (gross) payments.
-async function getSourceOutstanding(propertyId, sourceId) {
+async function getAgentOutstanding(propertyId, agentId) {
   const { rows: [row] } = await db.query(
     `SELECT COALESCE(SUM(GREATEST(0,
        ROUND(
@@ -102,9 +114,9 @@ async function getSourceOutstanding(propertyId, sourceId) {
      )), 0) AS outstanding
      FROM bookings b
      JOIN property_settings ps ON ps.property_id = b.property_id
-     WHERE b.property_id = $1 AND b.source = $2
+     WHERE b.property_id = $1 AND b.agent_id = $2
        AND b.status NOT IN ('cancelled', 'no_show')`,
-    [propertyId, sourceId]
+    [propertyId, agentId]
   );
   return round2(parseFloat(row.outstanding));
 }
@@ -115,16 +127,16 @@ async function getSourceOutstanding(propertyId, sourceId) {
 // Runs after the price correction commits, since loadFolio reads via the pool.
 async function recomputeCommission(propertyId, bookingId) {
   const { rows: [row] } = await db.query(
-    "SELECT id, source_id FROM agent_commissions WHERE booking_id = $1 AND property_id = $2 AND status = 'unpaid'",
+    "SELECT id FROM agent_commissions WHERE booking_id = $1 AND property_id = $2 AND status = 'unpaid'",
     [bookingId, propertyId]
   );
   if (!row) return null;
-  const source = await resolveSource(db, propertyId, row.source_id);
-  if (!source) return null;
+  const agent = await resolveBookingAgent(db, propertyId, bookingId);
+  if (!agent) return null;
   const folio = await loadFolio(bookingId, propertyId);
-  const amount = computeCommission(source, folio ? folio.agent_billable_total : 0);
+  const amount = computeCommission(agent, folio ? folio.agent_billable_total : 0);
   await db.query('UPDATE agent_commissions SET amount = $1, computed_at = NOW() WHERE id = $2', [amount, row.id]);
   return amount;
 }
 
-module.exports = { settleCheckout, recomputeCommission, getSourceOutstanding, resolveSource, computeCommission, CITY_LEDGER, COMMISSION };
+module.exports = { settleCheckout, recomputeCommission, getAgentOutstanding, resolveBookingAgent, computeCommission, CITY_LEDGER, COMMISSION };

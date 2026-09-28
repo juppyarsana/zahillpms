@@ -324,13 +324,21 @@ router.put('/booking-sources/:id', auth, async (req, res) => {
 router.get('/booking-sources/:id/credit-check', auth, async (req, res) => {
   try {
     const { rows: [source] } = await db.query(
-      'SELECT id, label, credit_limit FROM booking_sources WHERE id = $1 AND property_id = $2',
+      'SELECT id, label FROM booking_sources WHERE id = $1 AND property_id = $2',
       [req.params.id, req.propertyId]
     );
     if (!source) return res.status(404).json({ error: 'Source not found' });
+    // Billing terms moved to the agent (migration 084) — a source that was an
+    // agent answers with that agent's limit and balance. Kept for the old
+    // New Booking screen; the agent picker uses /api/agent-directory/:id/credit-check.
+    const { rows: [agent] } = await db.query(
+      'SELECT id, credit_limit FROM agents WHERE property_id = $1 AND legacy_source_id = $2 ORDER BY created_at LIMIT 1',
+      [req.propertyId, source.id]
+    );
+    source.credit_limit = agent ? agent.credit_limit : null;
 
     const amount = Math.max(0, parseFloat(req.query.amount) || 0);
-    const current_outstanding = await agentBilling.getSourceOutstanding(req.propertyId, source.id);
+    const current_outstanding = agent ? await agentBilling.getAgentOutstanding(req.propertyId, agent.id) : 0;
     const projected_outstanding = Math.round((current_outstanding + amount) * 100) / 100;
     const credit_limit = source.credit_limit == null ? null : parseFloat(source.credit_limit);
     const would_exceed = credit_limit != null && projected_outstanding > credit_limit;

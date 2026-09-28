@@ -8,9 +8,14 @@ const { round2, computeFolioTotals, PAID_AT_DESK_SQL, billRates } = require('./f
 // 'pending_agent_invoice' or 'invoiced') and isn't fully covered by
 // agent_payment_allocations yet. A booking whose allocations cover its
 // folio total moves to folio_status 'paid'.
+//
+// Since migration 084 everything is per AGENT (agents, bookings.agent_id),
+// not per booking source. Rows still carry source_id / source_label as
+// aliases of the agent's id / name for older readers (reports, Agents page).
 
 const OPEN_STATUSES = ['pending_agent_invoice', 'invoiced'];
-const AGENT_SOURCE_FILTER = `(source_type IN ('travel_agent','company','wholesaler') OR payment_status <> 'normal')`;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = v => UUID_RE.test(String(v || ''));
 
 function startOfToday() {
   const d = new Date();
@@ -22,11 +27,11 @@ function ageDays(dueDate) {
   return Math.floor((startOfToday() - due) / 86400000);
 }
 
-// Per-open-booking ledger for one agent source (or all, if sourceId omitted).
-async function bookingLedger(propertyId, { sourceId } = {}) {
+// Per-open-booking ledger for one agent (or all, if agentId omitted).
+async function bookingLedger(propertyId, { agentId } = {}) {
   const params = [propertyId];
-  let sourceFilter = '';
-  if (sourceId) { params.push(sourceId); sourceFilter = `AND b.source = $${params.length}`; }
+  let agentFilter = '';
+  if (agentId) { params.push(agentId); agentFilter = `AND b.agent_id = $${params.length}`; }
 
   const { rows: [settings] } = await db.query(
     'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1',
@@ -34,10 +39,10 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
   );
 
   const { rows: items } = await db.query(
-    `SELECT b.id AS booking_id, b.source AS source_id, b.check_in_date, b.check_out_date,
+    `SELECT b.id AS booking_id, b.agent_id, b.check_in_date, b.check_out_date,
             b.folio_status, b.agent_invoice_id, b.bill_tax_rate, b.bill_service_charge_rate,
             g.name AS guest_name, u.name AS unit_name,
-            bs.label AS source_label,
+            a.name AS agent_name, bs.label AS booking_source_label,
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
             -- extras the guest paid at the desk are never billed to the agent
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
@@ -50,12 +55,13 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
      FROM bookings b
      JOIN guests g ON g.id = b.guest_id
      JOIN units u ON u.id = b.unit_id
+     LEFT JOIN agents a ON a.id = b.agent_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id
      WHERE b.property_id = $1
        AND b.folio_status IN ('pending_agent_invoice','invoiced')
        AND b.status NOT IN ('cancelled','no_show')
-       ${sourceFilter}
+       ${agentFilter}
      ORDER BY b.check_out_date, b.id`,
     params
   );
@@ -69,7 +75,9 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
     const balance = round2(folio_total - allocated);
     const due_date = String((r.invoice_issued_on || r.check_out_date)).slice(0, 10);
     return {
-      booking_id: r.booking_id, source_id: r.source_id, source_label: r.source_label,
+      booking_id: r.booking_id, agent_id: r.agent_id, agent_name: r.agent_name || 'No agent',
+      source_id: r.agent_id, source_label: r.agent_name || 'No agent',   // aliases (pre-084 readers)
+      booking_source_label: r.booking_source_label,
       guest_name: r.guest_name, unit_name: r.unit_name,
       check_in_date: String(r.check_in_date).slice(0, 10),
       check_out_date: String(r.check_out_date).slice(0, 10),
@@ -89,32 +97,38 @@ function bucketFor(age) {
   return 'd90_plus';
 }
 
-function emptyBuckets(source) {
+function emptyBuckets(agent) {
   return {
-    source_id: source.id, source_label: source.label, payment_status: source.payment_status,
+    agent_id: agent.id, agent_name: agent.name, agent_type: agent.agent_type || null,
+    source_id: agent.id, source_label: agent.name,   // aliases (pre-084 readers)
+    payment_status: agent.payment_status, credit_limit: agent.credit_limit == null ? null : parseFloat(agent.credit_limit),
     current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90_plus: 0,
     total_outstanding: 0, unpaid_commission: 0, open_count: 0,
   };
 }
 
-// AR aging: one row per agent source. sourceId → just that source's row.
-async function aging(propertyId, { sourceId } = {}) {
-  const srcParams = [propertyId];
-  let idFilter = '';
-  if (sourceId) { srcParams.push(sourceId); idFilter = `AND id = $2`; }
-  const { rows: sources } = await db.query(
-    `SELECT id, label, payment_status FROM booking_sources
-     WHERE property_id = $1 AND ${AGENT_SOURCE_FILTER} ${idFilter}
-     ORDER BY label`,
-    srcParams
+// AR aging: one row per agent (active ones, plus any inactive one still owed
+// or owing commission). agentId → just that agent's row.
+async function aging(propertyId, { agentId } = {}) {
+  const params = [propertyId];
+  let idFilter = 'AND is_active = true';
+  if (agentId) { params.push(agentId); idFilter = `AND id = $2`; }
+  const { rows: agents } = await db.query(
+    `SELECT id, name, agent_type, payment_status, credit_limit FROM agents
+     WHERE property_id = $1 ${idFilter}
+     ORDER BY lower(name)`,
+    params
   );
 
   const bySource = {};
-  for (const s of sources) bySource[s.id] = emptyBuckets(s);
+  for (const a of agents) bySource[a.id] = emptyBuckets(a);
+  const { rows: all } = await db.query('SELECT id, name, agent_type, payment_status, credit_limit FROM agents WHERE property_id = $1', [propertyId]);
+  const known = Object.fromEntries(all.map(a => [a.id, a]));
+  const rowFor = id => bySource[id] || (bySource[id] = emptyBuckets(known[id] || { id, name: 'No agent', payment_status: null }));
 
-  const ledger = await bookingLedger(propertyId, { sourceId });
+  const ledger = await bookingLedger(propertyId, { agentId });
   for (const item of ledger) {
-    const row = bySource[item.source_id] || (bySource[item.source_id] = emptyBuckets({ id: item.source_id, label: item.source_label, payment_status: null }));
+    const row = rowFor(item.agent_id);
     const b = bucketFor(item.age_days);
     row[b] = round2(row[b] + item.balance);
     row.total_outstanding = round2(row.total_outstanding + item.balance);
@@ -123,36 +137,34 @@ async function aging(propertyId, { sourceId } = {}) {
 
   const commParams = [propertyId];
   let commFilter = '';
-  if (sourceId) { commParams.push(sourceId); commFilter = `AND source_id = $2`; }
+  if (agentId) { commParams.push(agentId); commFilter = `AND agent_id = $2`; }
   const { rows: comm } = await db.query(
-    `SELECT source_id, COALESCE(SUM(amount), 0) AS unpaid
+    `SELECT agent_id, COALESCE(SUM(amount), 0) AS unpaid
      FROM agent_commissions
      WHERE property_id = $1 AND status = 'unpaid' ${commFilter}
-     GROUP BY source_id`,
+     GROUP BY agent_id`,
     commParams
   );
   for (const c of comm) {
-    const row = bySource[c.source_id] || (bySource[c.source_id] = emptyBuckets({ id: c.source_id, label: c.source_id, payment_status: null }));
-    row.unpaid_commission = round2(parseFloat(c.unpaid));
+    rowFor(c.agent_id).unpaid_commission = round2(parseFloat(c.unpaid));
   }
 
   const rows = Object.values(bySource);
-  return sourceId ? (rows[0] || emptyBuckets({ id: sourceId, label: sourceId, payment_status: null })) : rows;
+  return agentId ? (bySource[agentId] || emptyBuckets(known[agentId] || { id: agentId, name: 'No agent', payment_status: null })) : rows;
 }
 
 // Full per-agent statement payload for the detail page.
-async function statement(propertyId, sourceId) {
+async function statement(propertyId, agentId) {
+  if (!isUuid(agentId)) return null;
   const { rows: [agent] } = await db.query(
-    `SELECT id, label, source_type, payment_status, billing_address, tax_id,
-            contact_name, contact_email, contact_phone, credit_terms_days, credit_limit
-     FROM booking_sources WHERE id = $1 AND property_id = $2`,
-    [sourceId, propertyId]
+    `SELECT *, name AS label, agent_type AS source_type FROM agents WHERE id = $1 AND property_id = $2`,
+    [agentId, propertyId]
   );
   if (!agent) return null;
 
   const [openItems, agingRow] = await Promise.all([
-    bookingLedger(propertyId, { sourceId }),
-    aging(propertyId, { sourceId }),
+    bookingLedger(propertyId, { agentId }),
+    aging(propertyId, { agentId }),
   ]);
 
   const { rows: payments } = await db.query(
@@ -165,19 +177,19 @@ async function statement(propertyId, sourceId) {
      LEFT JOIN agent_payment_allocations al ON al.agent_payment_id = ap.id
      LEFT JOIN bookings b ON b.id = al.booking_id
      LEFT JOIN guests g ON g.id = b.guest_id
-     WHERE ap.property_id = $1 AND ap.source_id = $2
+     WHERE ap.property_id = $1 AND ap.agent_id = $2
      GROUP BY ap.id
      ORDER BY ap.received_on DESC, ap.created_at DESC`,
-    [propertyId, sourceId]
+    [propertyId, agentId]
   );
 
   const { rows: invoices } = await db.query(
     `SELECT ai.*,
             (SELECT COUNT(*) FROM bookings WHERE agent_invoice_id = ai.id) AS booking_count
      FROM agent_invoices ai
-     WHERE ai.property_id = $1 AND ai.source_id = $2
+     WHERE ai.property_id = $1 AND ai.agent_id = $2
      ORDER BY ai.issued_on DESC, ai.created_at DESC`,
-    [propertyId, sourceId]
+    [propertyId, agentId]
   );
 
   const { rows: commissions } = await db.query(
@@ -186,9 +198,9 @@ async function statement(propertyId, sourceId) {
      FROM agent_commissions ac
      JOIN bookings b ON b.id = ac.booking_id
      JOIN guests g ON g.id = b.guest_id
-     WHERE ac.property_id = $1 AND ac.source_id = $2
+     WHERE ac.property_id = $1 AND ac.agent_id = $2
      ORDER BY ac.computed_at DESC`,
-    [propertyId, sourceId]
+    [propertyId, agentId]
   );
 
   return { agent, aging: agingRow, open_items: openItems, payments, invoices, commissions };
@@ -239,19 +251,20 @@ function autoAllocate(amount, ledger) {
   return out;
 }
 
-async function recordPayment(propertyId, sourceId, body, userId) {
+async function recordPayment(propertyId, agentId, body, userId) {
   const amount = round2(parseFloat(body.amount));
   if (!Number.isFinite(amount) || amount <= 0) return { error: 'amount must be a positive number' };
+  if (!isUuid(agentId)) return { error: 'Agent not found' };
 
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: [src] } = await client.query(
-      'SELECT id FROM booking_sources WHERE id = $1 AND property_id = $2', [sourceId, propertyId]
+    const { rows: [agent] } = await client.query(
+      'SELECT id FROM agents WHERE id = $1 AND property_id = $2', [agentId, propertyId]
     );
-    if (!src) { await client.query('ROLLBACK'); return { error: 'Source not found' }; }
+    if (!agent) { await client.query('ROLLBACK'); return { error: 'Agent not found' }; }
 
-    const ledger = await bookingLedger(propertyId, { sourceId });
+    const ledger = await bookingLedger(propertyId, { agentId });
     const balByBooking = Object.fromEntries(ledger.map(l => [l.booking_id, l.balance]));
 
     let allocs;
@@ -273,9 +286,9 @@ async function recordPayment(propertyId, sourceId, body, userId) {
     }
 
     const { rows: [payment] } = await client.query(
-      `INSERT INTO agent_payments (property_id, source_id, amount, method, received_on, reference, notes, created_by)
+      `INSERT INTO agent_payments (property_id, agent_id, amount, method, received_on, reference, notes, created_by)
        VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8) RETURNING *`,
-      [propertyId, sourceId, amount, body.method || null, body.received_on || null,
+      [propertyId, agentId, amount, body.method || null, body.received_on || null,
         body.reference || null, body.notes || null, userId || null]
     );
     for (const a of allocs) {
@@ -310,7 +323,7 @@ async function updatePayment(propertyId, paymentId, body) {
     const affected = oldAllocs.map(a => a.booking_id);
 
     if (Array.isArray(body.allocations)) {
-      const ledger = await bookingLedger(propertyId, { sourceId: payment.source_id });
+      const ledger = await bookingLedger(propertyId, { agentId: payment.agent_id });
       // add back this payment's current allocations to each booking's available balance
       const currentByBooking = {};
       const { rows: cur } = await client.query(
@@ -402,16 +415,17 @@ async function nextInvoiceNumber(client, propertyId) {
   return prefix + String(parseInt(count) + 1).padStart(3, '0');
 }
 
-async function createInvoice(propertyId, sourceId, body, userId) {
+async function createInvoice(propertyId, agentId, body, userId) {
+  if (!isUuid(agentId)) return { error: 'Agent not found' };
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: [src] } = await client.query(
-      'SELECT id FROM booking_sources WHERE id = $1 AND property_id = $2', [sourceId, propertyId]
+    const { rows: [agent] } = await client.query(
+      'SELECT id FROM agents WHERE id = $1 AND property_id = $2', [agentId, propertyId]
     );
-    if (!src) { await client.query('ROLLBACK'); return { error: 'Source not found' }; }
+    if (!agent) { await client.query('ROLLBACK'); return { error: 'Agent not found' }; }
 
-    const ledger = await bookingLedger(propertyId, { sourceId });
+    const ledger = await bookingLedger(propertyId, { agentId });
     let targets = ledger.filter(l => l.folio_status === 'pending_agent_invoice');
     if (Array.isArray(body.booking_ids) && body.booking_ids.length) {
       const wanted = new Set(body.booking_ids);
@@ -427,9 +441,9 @@ async function createInvoice(propertyId, sourceId, body, userId) {
     const total = round2(targets.reduce((s, t) => s + t.folio_total, 0));
     const invoiceNumber = await nextInvoiceNumber(client, propertyId);
     const { rows: [invoice] } = await client.query(
-      `INSERT INTO agent_invoices (property_id, source_id, invoice_number, period_start, period_end, total, notes, created_by)
+      `INSERT INTO agent_invoices (property_id, agent_id, invoice_number, period_start, period_end, total, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [propertyId, sourceId, invoiceNumber, body.period_start || null, body.period_end || null,
+      [propertyId, agentId, invoiceNumber, body.period_start || null, body.period_end || null,
         total, body.notes || null, userId || null]
     );
     await client.query(
@@ -455,9 +469,9 @@ async function invoicePayload(propertyId, invoiceId) {
   if (!invoice) return null;
 
   const { rows: [agent] } = await db.query(
-    `SELECT id, label, billing_address, tax_id, contact_name, contact_email, contact_phone
-     FROM booking_sources WHERE id = $1 AND property_id = $2`,
-    [invoice.source_id, propertyId]
+    `SELECT id, name AS label, billing_address, tax_id, contact_name, contact_email, contact_phone
+     FROM agents WHERE id = $1 AND property_id = $2`,
+    [invoice.agent_id, propertyId]
   );
   const { rows: [property] } = await db.query(
     `SELECT property_name, property_address, property_phone, property_email, logo_url,

@@ -9,7 +9,7 @@ const { renderAgentInvoice } = require('../services/agentInvoicePdf');
 // auth + moduleGuard('financial') in server/index.js; owner-only per handler.
 const ownerOnly = [auth, requireRole('owner')];
 
-// AR aging — one row per agent source
+// AR aging — one row per agent (migration 084: agents, not booking sources)
 router.get('/', ownerOnly, async (req, res) => {
   try {
     res.json(await svc.aging(req.propertyId, {}));
@@ -19,9 +19,9 @@ router.get('/', ownerOnly, async (req, res) => {
 });
 
 // Full statement for one agent
-router.get('/:sourceId', ownerOnly, async (req, res) => {
+router.get('/:agentId', ownerOnly, async (req, res) => {
   try {
-    const data = await svc.statement(req.propertyId, req.params.sourceId);
+    const data = await svc.statement(req.propertyId, req.params.agentId);
     if (!data) return res.status(404).json({ error: 'Agent not found' });
     res.json(data);
   } catch (err) {
@@ -29,9 +29,9 @@ router.get('/:sourceId', ownerOnly, async (req, res) => {
   }
 });
 
-router.post('/:sourceId/payments', ownerOnly, async (req, res) => {
+router.post('/:agentId/payments', ownerOnly, async (req, res) => {
   try {
-    const result = await svc.recordPayment(req.propertyId, req.params.sourceId, req.body, req.user.id);
+    const result = await svc.recordPayment(req.propertyId, req.params.agentId, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.status(201).json(result);
   } catch (err) {
@@ -59,9 +59,9 @@ router.delete('/payments/:paymentId', ownerOnly, async (req, res) => {
   }
 });
 
-router.post('/:sourceId/invoices', ownerOnly, async (req, res) => {
+router.post('/:agentId/invoices', ownerOnly, async (req, res) => {
   try {
-    const result = await svc.createInvoice(req.propertyId, req.params.sourceId, req.body, req.user.id);
+    const result = await svc.createInvoice(req.propertyId, req.params.agentId, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.status(201).json(result);
   } catch (err) {

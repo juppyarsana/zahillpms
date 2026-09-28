@@ -72,9 +72,10 @@ function chargeTotals(charges, taxRate, serviceChargeRate) {
 // rollup) and services/agentBillingService.js (commission is a % of the
 // folio total). Returns null when the booking isn't found / not this property.
 //
-// `booking` also carries the resolved booking source (source_payment_status,
-// source_label, folio_status) via a LEFT JOIN so callers can decide whether
-// to offer a "Bill to Agent" checkout without a second query.
+// `booking` also carries the booking's agent (agent_id, agent_name, and its
+// billing mode as agent_payment_status — migration 084; source_payment_status
+// is the same value, kept for older readers), source_label and folio_status,
+// so callers can decide whether to offer a "Bill to Agent" checkout.
 // SQL predicate (folio_charges aliased `fc`): the charge is a sale the guest
 // already paid at the front desk ("Pay now", migration 067). It sits on the
 // folio so the stay's record is complete — offset there by its 'incidental'
@@ -153,13 +154,16 @@ async function loadFolio(bookingId, propertyId) {
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
-            bs.payment_status as source_payment_status, bs.label as source_label,
+            b.agent_id, ag.name AS agent_name,
+            COALESCE(ag.payment_status, 'normal') AS agent_payment_status,
+            COALESCE(ag.payment_status, 'normal') AS source_payment_status, bs.label as source_label,
             COALESCE(bs.publish_rate, true) AS publish_rate,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN agents ag ON ag.id = b.agent_id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]

@@ -306,6 +306,16 @@ router.get('/registration-cards', auth, async (req, res) => {
 // PUT /api/checkout/:bookingId/complete
 router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   const { condition_notes, bill_to_agent } = req.body;
+  // Only a guest who is checked in can be checked out (the screens only offer
+  // it then; the API used to accept any booking — e.g. check out and bill a
+  // future stay to its agent).
+  {
+    const { rows: [cur] } = await db.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
+    if (!cur) return res.status(404).json({ error: 'Booking not found' });
+    if (cur.status !== 'checked_in') {
+      return res.status(409).json({ error: `Only a checked-in guest can be checked out (this booking is ${cur.status.replace('_', ' ')})`, code: 'NOT_CHECKED_IN' });
+    }
+  }
 
   // ── Early departure ─────────────────────────────────────────────────
   // Leaving before the booked check-out date (e.g. checked in today, has to

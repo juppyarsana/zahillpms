@@ -87,6 +87,7 @@ app.use('/api/reports', auth, moduleGuard('financial'), require('./routes/report
 app.use('/api/night-audit', auth, moduleGuard('financial'), require('./routes/nightAudit'));
 app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));
+app.use('/api/agent-directory', auth, moduleGuard('reservations'), require('./routes/agentDirectory'));
 app.use('/api/tasks', auth, moduleGuard('operations'), require('./routes/tasks'));
 app.use('/api/products', auth, moduleGuard('sales'), require('./routes/products'));
 app.use('/api/sales', auth, moduleGuard('sales'), require('./routes/sales'));
