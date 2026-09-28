@@ -59,7 +59,7 @@ async function run() {
   };
   for (const p of properties) {
     const { rows: sources } = await db.query(
-      `SELECT bs.*, a.id AS agent_id, a.name AS agent_name, a.agent_type,
+      `SELECT bs.*, a.id AS agent_id, a.name AS agent_name, a.agent_type, a.payment_status AS agent_payment_status,
               (SELECT COUNT(*) FROM bookings b WHERE b.property_id = bs.property_id AND b.source = bs.id)::int AS bookings,
               (SELECT COUNT(*) FROM bookings b WHERE b.property_id = bs.property_id AND b.source = bs.id AND b.agent_id IS NULL)::int AS unlinked,
               (SELECT COUNT(*) FROM agent_invoices x WHERE x.property_id = bs.property_id AND x.source_id = bs.id)::int AS invoices,
@@ -90,7 +90,9 @@ async function run() {
       // before = this source's Publish Rate; after = the generic source's
       // (on) unless the agent bills the hotel.
       if (target && s.bookings) {
-        const billed = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(s.payment_status);
+        // the AGENT's how-they-pay decides it now (set in Agent Billing); a
+        // source not turned into an agent yet falls back to its own setting
+        const billed = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(s.agent_id ? s.agent_payment_status : s.payment_status);
         const beforeHidden = s.publish_rate === false;   // how it printed until this release
         const afterHidden = billed;
         console.log(`     rate on Reg. Card / invoice: until now ${beforeHidden ? 'hidden' : 'shown'} → from now ${afterHidden ? 'hidden' : 'shown'}`
