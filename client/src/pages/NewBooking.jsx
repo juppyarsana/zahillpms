@@ -4,6 +4,7 @@ import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import CountrySelect from '../components/CountrySelect';
 import { useAuth } from '../context/AuthContext';
+import { shownAmount, includesText } from '../lib/priceBasis';
 
 // Staff-facing heads-up when the chosen source is an agent with a non-standard
 // billing arrangement. Informational only — booking creation is unchanged; the
@@ -537,7 +538,7 @@ export default function NewBooking() {
                     <div className="flex-between" style={{ marginBottom: 4 }}>
                       <span className="text-muted">
                         Room ({priceSuggestion.nights} night{priceSuggestion.nights > 1 ? 's' : ''}
-                        {!priceSuggestion.varies_by_night && ` × Rp ${Number(priceSuggestion.room_rate_per_night).toLocaleString('id-ID')}`})
+                        {!priceSuggestion.varies_by_night && ` × Rp ${Number(priceSuggestion.night_breakdown?.[0]?.entered_rate ?? priceSuggestion.room_rate_per_night).toLocaleString('id-ID')}`})
                         {!priceSuggestion.varies_by_night && priceSuggestion.period && (
                           <span style={{ background: priceSuggestion.period.color, color: 'white', borderRadius: 4, padding: '1px 6px', fontSize: 10, fontWeight: 600, marginLeft: 6 }}>
                             {priceSuggestion.period.name}
@@ -545,7 +546,7 @@ export default function NewBooking() {
                         )}
                         {priceSuggestion.varies_by_night && <span style={{ fontStyle: 'italic' }}> · rates vary by night, see below</span>}
                       </span>
-                      <span>Rp {Number(priceSuggestion.room_total).toLocaleString('id-ID')}</span>
+                      <span>Rp {Math.round(shownAmount(priceSuggestion.room_total, priceSuggestion)).toLocaleString('id-ID')}</span>
                     </div>
 
                     {priceSuggestion.meal_total > 0 && (
@@ -553,21 +554,24 @@ export default function NewBooking() {
                         <span className="text-muted">
                           {priceSuggestion.rate_plan?.name || 'Breakfast'} ({room.num_guests} guest{room.num_guests > 1 ? 's' : ''} × {priceSuggestion.nights} night{priceSuggestion.nights > 1 ? 's' : ''} × Rp {Number(priceSuggestion.rate_plan?.meal_price || 0).toLocaleString('id-ID')})
                         </span>
-                        <span>Rp {Number(priceSuggestion.meal_total).toLocaleString('id-ID')}</span>
+                        <span>Rp {Math.round(shownAmount(priceSuggestion.meal_total, priceSuggestion)).toLocaleString('id-ID')}</span>
                       </div>
                     )}
 
+                    {/* Prices incl. service & tax (migration 079): lines are all-in, no tax rows. */}
+                    {!priceSuggestion.prices_include_tax && (
                     <div className="flex-between" style={{ marginBottom: 4, paddingTop: 4, borderTop: '1px solid var(--border)' }}>
                       <span className="text-muted">Subtotal</span>
                       <span>Rp {Number(priceSuggestion.subtotal).toLocaleString('id-ID')}</span>
                     </div>
-                    {priceSuggestion.service_charge_amount > 0 && (
+                    )}
+                    {!priceSuggestion.prices_include_tax && priceSuggestion.service_charge_amount > 0 && (
                       <div className="flex-between" style={{ marginBottom: 4 }}>
                         <span className="text-muted">Service Charge ({priceSuggestion.service_charge_rate}%)</span>
                         <span>Rp {Number(priceSuggestion.service_charge_amount).toLocaleString('id-ID')}</span>
                       </div>
                     )}
-                    {priceSuggestion.tax_amount > 0 && (
+                    {!priceSuggestion.prices_include_tax && priceSuggestion.tax_amount > 0 && (
                       <div className="flex-between" style={{ marginBottom: 4 }}>
                         <span className="text-muted">Tax ({priceSuggestion.tax_rate}%)</span>
                         <span>Rp {Number(priceSuggestion.tax_amount).toLocaleString('id-ID')}</span>
@@ -578,6 +582,11 @@ export default function NewBooking() {
                       <span>Grand Total</span>
                       <span>Rp {Number(suggestedTotal).toLocaleString('id-ID')}</span>
                     </div>
+                    {priceSuggestion.prices_include_tax && includesText(priceSuggestion, n => 'Rp ' + Math.round(n).toLocaleString('id-ID')) && (
+                      <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>
+                        {includesText(priceSuggestion, n => 'Rp ' + Math.round(n).toLocaleString('id-ID'))}
+                      </div>
+                    )}
 
                     {!room.total_amount && (
                       <button type="button" className="btn btn-sm btn-secondary mt-2" onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
@@ -601,7 +610,7 @@ export default function NewBooking() {
                                   </span>
                                 )}
                               </span>
-                              <span>Rp {Number(n.room_rate).toLocaleString('id-ID')}</span>
+                              <span>Rp {Number(n.entered_rate ?? n.room_rate).toLocaleString('id-ID')}</span>
                             </div>
                           ))}
                         </div>

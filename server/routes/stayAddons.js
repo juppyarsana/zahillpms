@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { round2 } = require('../services/folioService');
+const { priceBasis, shown } = require('../services/priceBasis');
 
 // Per-night stay extras on a booking (booking_addons, migration 074 — e.g. an
 // extra bed for 28 Sep). ADDED through the normal sale path (POST /api/sales
@@ -75,9 +76,10 @@ router.delete('/:id/addons/:addonId', auth, async (req, res) => {
       }
     }
     const night = String(a.service_date instanceof Date ? a.service_date.toISOString() : a.service_date).slice(0, 10);
+    const perNight = shown(a.unit_price, await priceBasis(req.propertyId, client));   // as entered (079)
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
       a.booking_id,
-      `${a.description} removed for ${night} (${a.quantity} × Rp ${Math.round(a.unit_price).toLocaleString('id-ID')})${voided ? ' — folio line voided' : ''}${reason ? `. Reason: ${reason}` : ''}`.slice(0, 1000),
+      `${a.description} removed for ${night} (${a.quantity} × Rp ${Math.round(perNight).toLocaleString('id-ID')})${voided ? ' — folio line voided' : ''}${reason ? `. Reason: ${reason}` : ''}`.slice(0, 1000),
       req.user.id,
     ]);
     await client.query('COMMIT');

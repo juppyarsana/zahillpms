@@ -15,6 +15,7 @@ import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
+import { lineShown, includesText, shownTotal } from '../lib/priceBasis';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -1011,12 +1012,12 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
                   <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                     <span className="text-muted">Estimated Total (full stay)</span>
-                    <span>{fmtIDR(estimate.total)}</span>
+                    <span>{fmtIDR(shownTotal(estimate.total, estimate))}</span>
                   </div>
                   <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
                     <span>Estimated Balance Due</span>
                     <span style={{ color: parseFloat(estimate.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
-                      {fmtIDR(estimate.balance_due)}
+                      {fmtIDR(shownTotal(estimate.balance_due, estimate))}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
@@ -1063,16 +1064,16 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                           <div>
                             <div style={{ fontWeight: 600 }}>{c.description}</div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(c.unit_price)}
-                              {c.tax_mode === 'included' && ' · tax & service included'}
+                              {c.type.replace('_', ' ')} · {parseFloat(c.quantity)} × {fmtIDR(lineShown(c.unit_price, c, folio))}
+                              {c.tax_mode === 'included' && !folio.prices_include_tax && ' · tax & service included'}
                               {c.tax_mode === 'none' && ' · no tax or service'}
                               {c.posted_by_name && ` · ${c.posted_by_name}`}
                             </div>
                           </div>
                           <div className="flex gap-2 items-center">
                             {c.complimentary
-                              ? <span title={`${fmtIDR(c.amount)} — complimentary stay, not charged`}><s className="text-muted">{fmtIDR(c.amount)}</s> <span className="badge badge-green">Free</span></span>
-                              : <span style={{ fontWeight: 600 }}>{fmtIDR(c.amount)}</span>}
+                              ? <span title={`${fmtIDR(lineShown(c.amount, c, folio))} — complimentary stay, not charged`}><s className="text-muted">{fmtIDR(lineShown(c.amount, c, folio))}</s> <span className="badge badge-green">Free</span></span>
+                              : <span style={{ fontWeight: 600 }}>{fmtIDR(lineShown(c.amount, c, folio))}</span>}
                             {c.paid_method && (
                               <span className="badge badge-green" title="Paid at the front desk — its payment is under Payments, so it isn't owed again">
                                 Paid · {c.paid_method}
@@ -1099,29 +1100,33 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               )}
 
               <div className="divider" />
-              {(parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
+              {/* Prices incl. service & tax (migration 079): lines above are all-in, so just the total and what's inside it. */}
+              {!folio.prices_include_tax && (parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
                 <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                   <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
                 </div>
               )}
-              {(parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && parseFloat(folio.untaxed_subtotal) > 0 && (
+              {!folio.prices_include_tax && (parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && parseFloat(folio.untaxed_subtotal) > 0 && (
                 <div className="text-muted" style={{ fontSize: 11, marginBottom: 4, textAlign: 'right' }}>
                   Service &amp; tax on {fmtIDR(folio.subtotal - folio.untaxed_subtotal)} — activities priced tax-included / without tax excluded
                 </div>
               )}
-              {parseFloat(folio.service_charge_rate) > 0 && (
+              {!folio.prices_include_tax && parseFloat(folio.service_charge_rate) > 0 && (
                 <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                   <span className="text-muted">Service Charge ({folio.service_charge_rate}%)</span><span>{fmtIDR(folio.service_charge_amount)}</span>
                 </div>
               )}
-              {parseFloat(folio.tax_rate) > 0 && (
+              {!folio.prices_include_tax && parseFloat(folio.tax_rate) > 0 && (
                 <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                   <span className="text-muted">Tax ({folio.tax_rate}%)</span><span>{fmtIDR(folio.tax_amount)}</span>
                 </div>
               )}
               <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 10 }}>
-                <span>Total</span><span>{fmtIDR(folio.total)}</span>
+                <span>Total</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
               </div>
+              {folio.prices_include_tax && includesText(folio, fmtIDR) && (
+                <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10, textAlign: 'right' }}>{includesText(folio, fmtIDR)}</div>
+              )}
 
               {folio.payments.filter(p => p.status === 'received').length > 0 && (
                 <>
@@ -1138,7 +1143,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               <div className="flex-between mt-3" style={{ fontWeight: 700, fontSize: 16 }}>
                 <span>Posted Balance</span>
                 <span style={{ color: parseFloat(folio.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
-                  {fmtIDR(folio.balance_due)}
+                  {fmtIDR(shownTotal(folio.balance_due, folio))}
                 </span>
               </div>
               {(() => {
@@ -1539,7 +1544,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
             <div className="modal-body">
               {estimate && (
                 <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-                  <span>Still owed on this stay</span><span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(estimate.balance_due)}</span>
+                  <span>Still owed on this stay</span><span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(shownTotal(estimate.balance_due, estimate))}</span>
                 </div>
               )}
               <div className="form-row">

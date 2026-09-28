@@ -17,6 +17,12 @@ New since production's last deploy: **migrations 074–078** and a new server de
   arrived (standard practice: the audit never checks a guest in).
 - **Reports:** "Reservations made / cancelled / no-shows" strip (Channels) and **Costs by category** (Money) on the
   page, Excel and PDF. The "start smaller" report scope is now complete.
+- **Prices include service & tax (migration 079)** — Property Details → Service charge & tax: rates + "prices are
+  entered including service & tax (nett) / before (++)". Zahill = nett. Changing the rates re-splits open bookings so
+  guest prices stay as agreed (`taxChangeService`). **Production order:** deploy → `npm run migrate` (079) →
+  extra-bed items + `resplitMeals.js` (dry run → `--apply`, both `--extras` and without) → THEN Property Details →
+  Service charge & tax: set the real rates (e.g. 10% / 11%) with "Including service & tax" → check the confirm window
+  (N open bookings re-split, prices unchanged) → Confirm. Invoices then show "Includes service … and tax …".
 
 ### ⏸ Where we stopped
 Work is done and pushed to `dev`; the owner has not deployed it yet. Order for each server (dev first, then production):
@@ -1775,7 +1781,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 079
+## Next migration number: 080
 
 ---
 

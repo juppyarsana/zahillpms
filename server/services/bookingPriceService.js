@@ -2,26 +2,25 @@ const ratePlanService = require('./ratePlanService');
 const roomCharge = require('./roomChargeService');
 const { computeFolioTotals, round2 } = require('./folioService');
 const { recomputeBookingStatus } = require('./paymentStatusService');
+const { priceBasis } = require('./priceBasis');
 
 // Booking price maths shared by routes/bookings.js (booking creation, Edit
 // Price, Change Room, Amend Dates) and routes/checkin.js (early departure).
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
-// Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100).
+// Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100),
+// plus how prices are entered (divisor: F when they include tax, else 1 —
+// migration 079; pass it to ratePlanService.mealNetPerNight).
 async function grossFactor(client, propertyId) {
-  const { rows: [s] } = await client.query(
-    'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]
-  );
-  const tax = parseFloat(s?.tax_rate ?? 0) / 100;
-  const sc = parseFloat(s?.service_charge_rate ?? 0) / 100;
-  return { F: (1 + sc) * (1 + tax), tax_rate: s?.tax_rate ?? 0, service_charge_rate: s?.service_charge_rate ?? 0 };
+  const b = await priceBasis(propertyId, client);
+  return { F: b.F, tax_rate: b.tax_rate, service_charge_rate: b.service_charge_rate, divisor: b.divisor, include: b.include };
 }
 
 // Split a stay's gross post-discount total into NET room + NET meal amounts.
 // meal is rate-plan-derived and fixed; room absorbs the rest.
-function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue }) {
-  const mealNet = round2(ratePlanService.mealNetPerNight(ratePlan, numGuests) * nights);
+function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue, divisor = 1 }) {
+  const mealNet = round2(ratePlanService.mealNetPerNight(ratePlan, numGuests, divisor) * nights);
   let roomNet;
   if (clientRoomRevenue !== undefined && clientRoomRevenue !== null && clientRoomRevenue !== '') {
     roomNet = round2(parseFloat(clientRoomRevenue));
@@ -53,7 +52,7 @@ function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomReve
 //     meals still paid). The discount becomes 0; newTotal is ignored.
 async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null }) {
   const reqBody = { received_was_typo: receivedWasTypo };
-  const { F, tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
+  const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId);
   let discountAmount = 0;
   let roomNet, mealNet;
   if (split) {
@@ -71,7 +70,7 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
       nights: Math.max(1, parseInt(before.nights, 10) || 1),
       ratePlan,
       numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
-      F,
+      F, divisor,
     }));
   }
   const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;

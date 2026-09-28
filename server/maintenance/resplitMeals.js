@@ -31,6 +31,10 @@
 //   ... --property zahill                             one property only (slug)
 //   ... --extras                                      sold items (extra bed) instead of room bookings
 // Safe to run more than once: a booking / sale line that already has a meal split is skipped.
+//
+// Prices incl. service & tax (migration 079): meal prices are read the way the
+// property enters them NOW, so run this BEFORE changing the service charge /
+// tax settings — a line sold under the old settings would be split wrong after.
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -38,6 +42,17 @@ const db = require('../db');
 const ratePlanService = require('../services/ratePlanService');
 const roomCharge = require('../services/roomChargeService');
 const { round2 } = require('../services/folioService');
+const { basisFrom } = require('../services/priceBasis');
+
+// Prices entered incl. service & tax: fine for lines made under the current
+// settings, wrong for older ones — say so before anything happens.
+function warnNett(rows) {
+  const nett = [...new Set(rows.filter(r => r.prices_include_tax).map(r => r.slug))];
+  if (nett.length) {
+    console.log(`⚠  ${nett.join(', ')}: prices are set to include service & tax — meal prices are read that way.`);
+    console.log('   Anything sold / booked before that setting was switched on would be split wrong. Check the dry run.\n');
+  }
+}
 
 const APPLY = process.argv.includes('--apply');
 const propIdx = process.argv.indexOf('--property');
@@ -54,11 +69,13 @@ async function postedTotal(client, bookingId) {
 async function resplitExtras() {
   const { rows } = await db.query(`
     SELECT si.id, si.sale_id, si.quantity, si.unit_price, si.subtotal, si.meal_amount,
-           pr.name AS item, pr.meal_price, pr.meal_pax, p.slug, s.created_at, s.payment_method, g.name AS guest_name, u.name AS unit_name
+           pr.name AS item, pr.meal_price, pr.meal_pax, p.slug, s.created_at, s.payment_method, g.name AS guest_name, u.name AS unit_name,
+           ps.tax_rate, ps.service_charge_rate, ps.prices_include_tax
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
     JOIN products pr ON pr.id = si.product_id
     JOIN properties p ON p.id = s.property_id
+    JOIN property_settings ps ON ps.property_id = s.property_id
     LEFT JOIN bookings b ON b.id = s.booking_id
     LEFT JOIN guests g ON g.id = b.guest_id
     LEFT JOIN units u ON u.id = b.unit_id
@@ -66,7 +83,8 @@ async function resplitExtras() {
       AND s.confirmation_status IS DISTINCT FROM 'rejected'
       ${PROPERTY ? 'AND p.slug = $1' : ''}
     ORDER BY s.created_at`, PROPERTY ? [PROPERTY] : []);
-  const plan = rows.map(r => ({ r, meal: round2(Math.min(parseFloat(r.subtotal), parseFloat(r.meal_price) * (parseInt(r.meal_pax) || 0) * r.quantity)) }))
+  warnNett(rows);
+  const plan = rows.map(r => ({ r, meal: round2(Math.min(parseFloat(r.subtotal), parseFloat(r.meal_price) / basisFrom(r).divisor * (parseInt(r.meal_pax) || 0) * r.quantity)) }))
     .filter(x => x.meal > 0);
   console.log(`${APPLY ? 'APPLYING' : 'DRY RUN (nothing changes — add --apply to do it)'} · sold items${PROPERTY ? ` · property ${PROPERTY}` : ''}\n`);
   for (const { r, meal } of plan) {
@@ -94,7 +112,7 @@ async function resplitExtras() {
            b.total_amount, b.discount_amount, b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.folio_status,
            p.slug, p.name AS property_name, g.name AS guest_name, u.name AS unit_name,
            rp.code AS plan_code, rp.meal_price, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
-           ps.tax_rate, ps.service_charge_rate
+           ps.tax_rate, ps.service_charge_rate, ps.prices_include_tax
     FROM bookings b
     JOIN properties p ON p.id = b.property_id
     JOIN property_settings ps ON ps.property_id = b.property_id
@@ -110,6 +128,7 @@ async function resplitExtras() {
       ${PROPERTY ? 'AND p.slug = $1' : ''}
     ORDER BY p.slug, b.check_in_date, u.name`, PROPERTY ? [PROPERTY] : []);
 
+  warnNett(rows);
   const plan = [];
   const skipped = [];
   for (const b of rows) {
@@ -118,7 +137,7 @@ async function resplitExtras() {
     const net = b.room_revenue != null
       ? parseFloat(b.room_revenue)
       : round2((parseFloat(b.total_amount) - parseFloat(b.discount_amount || 0)) / F);
-    const meals = round2(ratePlanService.mealNetPerNight(b, b.num_guests) * b.nights);
+    const meals = round2(ratePlanService.mealNetPerNight(b, b.num_guests, basisFrom(b).divisor) * b.nights);
     const room = round2(net - meals);
     if (room < 0) { skipped.push({ b, why: `meals ${fmt(meals)} are more than the whole net amount ${fmt(net)}` }); continue; }
     plan.push({ b, net, meals, room });

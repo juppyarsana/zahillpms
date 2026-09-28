@@ -24,7 +24,12 @@ function fmtDateTime(d) {
 
 const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
 
-function renderSaleReceipt(doc, { sale, items }) {
+function renderSaleReceipt(doc, { sale, items, basis }) {
+  // Prices entered incl. service & tax (migration 079): a taxed sale's lines
+  // are shown all-in and the total says what's inside it.
+  const allIn = !!basis?.include && sale.tax_amount != null;
+  const show = n => (allIn ? Math.round(parseFloat(n) * basis.F * 100) / 100 : n);
+  const money = allIn ? n => fmtIDR(Math.round(parseFloat(n) || 0)) : fmtIDR;
   doc.fontSize(14).font('Helvetica-Bold').fillColor('#000').text('Sales Receipt', 50, doc.y, { width: 495 });
   doc.fontSize(9).font('Helvetica').fillColor('#777').text('Payment received — paid directly, not charged to a room.', 50, doc.y, { width: 495 });
   doc.fillColor('#000');
@@ -52,8 +57,8 @@ function renderSaleReceipt(doc, { sale, items }) {
     const h = doc.heightOfString(it.name, { width: 240 });
     doc.text(it.name, colX.desc, y, { width: 240 });
     doc.text(String(it.quantity), colX.qty, y, { width: 50, align: 'right' });
-    doc.text(fmtIDR(it.unit_price), colX.price, y, { width: 90, align: 'right' });
-    doc.text(fmtIDR(it.subtotal), colX.amount, y, { width: 90, align: 'right' });
+    doc.text(money(show(it.unit_price)), colX.price, y, { width: 90, align: 'right' });
+    doc.text(money(show(it.subtotal)), colX.amount, y, { width: 90, align: 'right' });
     y += Math.max(20, h + 6);
   }
 
@@ -64,11 +69,11 @@ function renderSaleReceipt(doc, { sale, items }) {
   const sc = parseFloat(sale.service_charge_amount || 0);
   const tax = parseFloat(sale.tax_amount || 0);
   const totalPaid = parseFloat(sale.total_amount) + sc + tax;
-  if (taxed) {
+  if (taxed && !allIn) {
     const line = (label, amount) => {
       doc.font('Helvetica').fontSize(10);
       doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
-      doc.text(fmtIDR(amount), colX.amount, y, { width: 90, align: 'right' });
+      doc.text(money(amount), colX.amount, y, { width: 90, align: 'right' });
       y += 16;
     };
     line('Subtotal', sale.total_amount);
@@ -79,13 +84,19 @@ function renderSaleReceipt(doc, { sale, items }) {
 
   doc.font('Helvetica-Bold').fontSize(11);
   doc.text('Total Paid', colX.price - 150, y, { width: 150, align: 'right' });
-  doc.text(fmtIDR(totalPaid), colX.amount, y, { width: 90, align: 'right' });
-  y += 26;
+  doc.text(money(totalPaid), colX.amount, y, { width: 90, align: 'right' });
+  y += allIn && (sc > 0 || tax > 0) ? 16 : 26;
+  if (allIn && (sc > 0 || tax > 0)) {
+    const parts = [sc > 0 && `service charge ${money(sc)}`, tax > 0 && `tax ${money(tax)}`].filter(Boolean);
+    doc.font('Helvetica').fontSize(8).fillColor('#777').text(`Includes ${parts.join(' and ')}`, 50, y, { width: 500, align: 'right' });
+    doc.fillColor('#000');
+    y += 20;
+  }
 
   doc.font('Helvetica-Bold').fontSize(10).text('Payment Received', colX.desc, y);
   y += 16;
   doc.font('Helvetica').text(`${sale.payment_method_label}  ·  ${fmtDateTime(sale.created_at)}`, colX.desc, y, { width: 240 });
-  doc.text(fmtIDR(totalPaid), colX.amount, y, { width: 90, align: 'right' });
+  doc.text(money(totalPaid), colX.amount, y, { width: 90, align: 'right' });
   y += 20;
 
   doc.x = 50;

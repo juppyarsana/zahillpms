@@ -3,6 +3,8 @@ import api from '../services/api';
 import { defaultNights } from './StayNightsPicker';
 import PerNightLine, { defaultBreakfasts, withUnits } from './PerNightLine';
 import { fmtYmd } from '../lib/propertyTime';
+import { useSettings } from '../context/SettingsContext';
+import { shownAmount } from '../lib/priceBasis';
 
 // The reservation's door to Sales items (migration 074): "Extras for this
 // stay" lists the per-night extras on the booking (extra bed on 28 Sep…) and
@@ -159,6 +161,7 @@ export default function StayExtrasCard({ booking, openAdd, onChanged, onBookActi
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const { branding } = useSettings();   // per-night price as entered (migration 079)
   const load = () => api.get(`/api/bookings/${booking.id}/addons`).then(r => setAddons(r.data)).catch(() => {});
   useEffect(() => { load(); }, [booking.id, booking.check_in_date, booking.check_out_date]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (openAdd) setAdding(true); }, [openAdd]);
@@ -205,7 +208,7 @@ export default function StayExtrasCard({ booking, openAdd, onChanged, onBookActi
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', fontSize: 12 }}
                 title={!a.in_stay ? 'Outside the stay dates — not charged' : a.posted ? 'On the folio' : 'Posted with the room at night audit'}>
                 {fmtYmd(a.service_date, { weekday: 'short', day: 'numeric', month: 'short' })}
-                {a.quantity > 1 && ` × ${a.quantity}`} · {fmtIDR(a.unit_price * a.quantity)}
+                {a.quantity > 1 && ` × ${a.quantity}`} · {fmtIDR(shownAmount(a.unit_price * a.quantity, branding))}
                 {a.breakfasts > 0 && ` · ${a.breakfasts} bf`}
                 {!a.in_stay && ' · not charged'}
                 <button onClick={() => setRemoving(a)} title="Remove this night"

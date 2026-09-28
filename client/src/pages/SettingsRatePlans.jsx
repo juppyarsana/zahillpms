@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
+import PriceBasisHint from '../components/PriceBasisHint';
 
 const EMPTY = {
   code: '', name: '',
@@ -160,8 +161,9 @@ function RatePlanForm({ form, set, onSave, onCancel, saving, error, isNew }) {
       </div>
       <div className="form-row">
         <div className="form-group">
-          <label className="form-label">Meal price — net, per guest per night (IDR)</label>
+          <label className="form-label">Meal price — per guest per night (IDR)</label>
           <input className="form-input" type="number" value={form.meal_price} onChange={e => set('meal_price', e.target.value)} placeholder="100000" />
+          <PriceBasisHint />
         </div>
         <div className="form-group" style={{ maxWidth: 120 }}>
           <label className="form-label">Sort order</label>

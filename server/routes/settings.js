@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const modules = require('../modules');
 const agentBilling = require('../services/agentBillingService');
+const taxChangeService = require('../services/taxChangeService');
 
 const ownerOnly = [auth, requireRole('owner')];
 
@@ -71,7 +72,7 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
 
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
-const PROPERTY_FIELDS = `tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email,
+const PROPERTY_FIELDS = `tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email,
         smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice, birthday_offer`;
 
 router.get('/property', ownerOnly, async (req, res) => {
@@ -99,6 +100,15 @@ router.patch('/property', ownerOnly, async (req, res) => {
     return res.status(400).json({ error: 'From Address must include an email address, e.g. "Zahill Resort" <info@zahill.com>' });
   }
   try {
+    // Service charge / tax go through PUT /tax, which keeps open bookings'
+    // prices (taxChangeService) — refuse a change here so nothing skips that.
+    if (tax_rate !== undefined || service_charge_rate !== undefined) {
+      const { rows: [cur] } = await db.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [req.propertyId]);
+      const differs = (v, c) => v !== undefined && v !== null && v !== '' && parseFloat(v) !== parseFloat(c);
+      if (cur && (differs(tax_rate, cur.tax_rate) || differs(service_charge_rate, cur.service_charge_rate))) {
+        return res.status(400).json({ error: 'Change service charge and tax in the "Service charge & tax" card', code: 'USE_TAX_SETTINGS' });
+      }
+    }
     const { rows } = await db.query(
       `UPDATE property_settings SET
         tax_rate            = COALESCE($1, tax_rate),
@@ -130,6 +140,43 @@ router.patch('/property', ownerOnly, async (req, res) => {
   }
 });
 
+// ── Service charge & tax (migration 079) ────────────────────────────────────
+// GET  /tax/preview?tax_rate=&service_charge_rate= — what a change would touch
+// PUT  /tax { tax_rate, service_charge_rate, prices_include_tax } — saves it
+//      and re-splits open bookings so each guest's price stays as agreed
+//      (services/taxChangeService.js).
+function parseRate(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n * 100) / 100 : NaN;
+}
+
+router.get('/tax/preview', ownerOnly, async (req, res) => {
+  const tax_rate = parseRate(req.query.tax_rate), service_charge_rate = parseRate(req.query.service_charge_rate);
+  if (Number.isNaN(tax_rate) || Number.isNaN(service_charge_rate)) return res.status(400).json({ error: 'Rates must be between 0 and 100' });
+  try {
+    res.json(await taxChangeService.preview(req.propertyId, { tax_rate, service_charge_rate }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/tax', ownerOnly, async (req, res) => {
+  const tax_rate = parseRate(req.body.tax_rate), service_charge_rate = parseRate(req.body.service_charge_rate);
+  if (Number.isNaN(tax_rate) || Number.isNaN(service_charge_rate)) return res.status(400).json({ error: 'Rates must be between 0 and 100' });
+  const { prices_include_tax } = req.body;
+  if (prices_include_tax !== undefined && typeof prices_include_tax !== 'boolean') {
+    return res.status(400).json({ error: 'prices_include_tax must be true or false' });
+  }
+  try {
+    const r = await taxChangeService.apply(req.propertyId, { tax_rate, service_charge_rate, prices_include_tax }, req.user.id);
+    if (r.error) return res.status(r.status || 400).json({ error: r.error });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/settings/branding — logo/name/color for the nav bar. Any
 // authenticated staff role (not owner-only) since everyone sees the nav.
 router.get('/branding', auth, async (req, res) => {
@@ -139,7 +186,8 @@ router.get('/branding', auth, async (req, res) => {
               logo_url, brand_color,
               market_area AS area, -- e.g. "Kintamani, Bali" (Dashboard subtitle, guest WhatsApp messages)
               birthday_offer, -- optional line in the birthday WhatsApp (Guests page)
-              tax_rate, service_charge_rate -- the Sales till shows tax on directly-paid extras
+              tax_rate, service_charge_rate, -- the Sales till shows tax on directly-paid extras
+              prices_include_tax -- prices entered incl. service & tax (migration 079)
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );

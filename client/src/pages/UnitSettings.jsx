@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
+import PriceBasisHint from '../components/PriceBasisHint';
 
 const STATUS_OPTIONS = [
   ['available', 'available'],
@@ -163,6 +164,7 @@ export default function UnitSettings() {
         <div className="form-group">
           <label className="form-label">Base Rate / Night (IDR)</label>
           <input className="form-input" type="number" min={0} placeholder="0" value={typeForm.base_rate} onChange={e => setT('base_rate', e.target.value)} />
+          <PriceBasisHint />
         </div>
         <div className="form-group">
           <label className="form-label">Max Guests</label>

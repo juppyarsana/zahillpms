@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const { loadFolio, computeProforma, round2 } = require('../services/folioService');
 const { drawDocumentHeader } = require('../services/pdfHeader');
+const { factor } = require('../services/priceBasis');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 
 function fmtIDR(n) {
@@ -46,6 +47,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
       subtotal: sum('subtotal'),
       service_charge_rate: folios[0]?.service_charge_rate ?? 0,
       tax_rate: folios[0]?.tax_rate ?? 0,
+      prices_include_tax: !!folios[0]?.prices_include_tax,
       service_charge_amount: sum('service_charge_amount'),
       tax_amount: sum('tax_amount'),
       total: sum('total'),
@@ -271,11 +273,36 @@ function mergeStayLines(charges, booking) {
   }));
 }
 
+// Prices entered incl. service & tax: each line the folio adds service + tax
+// to ('added' — rooms, meals, extras, "++" activities) shown all-in. Lines
+// already all-in ('included' / 'none' activities) stay as they are.
+function allInCharges(charges, taxRate, serviceChargeRate) {
+  const F = factor(taxRate, serviceChargeRate);
+  return charges.map(c => (c.tax_mode && c.tax_mode !== 'added') ? c : {
+    ...c,
+    unit_price: round2(parseFloat(c.unit_price) * F),
+    amount: round2(parseFloat(c.amount) * F),
+  });
+}
+
+// "Includes service charge Rp … (10%) and tax Rp … (11%)", or null at 0%.
+function includesNote({ service_charge_rate, service_charge_amount, tax_rate, tax_amount }, fmt = fmtIDR) {
+  const parts = [];
+  if (parseFloat(service_charge_rate) > 0) parts.push(`service charge ${fmt(service_charge_amount)} (${parseFloat(service_charge_rate)}%)`);
+  if (parseFloat(tax_rate) > 0) parts.push(`tax ${fmt(tax_amount)} (${parseFloat(tax_rate)}%)`);
+  return parts.length ? `Includes ${parts.join(' and ')}` : null;
+}
+
 // Draws the line-item table + totals + payments-received + (optionally)
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
-function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, showBalance = true }) {
+function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, showBalance = true }) {
+  // Prices entered incl. service & tax (migration 079): every line the folio
+  // adds service + tax to is shown all-in, and the totals say what's inside.
+  const rawCharges = prices_include_tax ? allInCharges(netCharges, tax_rate, service_charge_rate) : netCharges;
+  // All-in amounts print in whole rupiah (the parts inside carry the cents).
+  const money = prices_include_tax ? n => fmtIDR(Math.round(parseFloat(n) || 0)) : fmtIDR;
   // Nightly room + meal lines → one "Room with Breakfast" line per run of
   // nights at the same rate; everything else is listed as posted.
   const isStayLine = c => (c.type === 'room' || c.type === 'fnb' || c.type === 'addon') && c.service_date;
@@ -315,16 +342,17 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
     // payment is under Payments Received, so it isn't owed again.
     // An activity priced tax-included / without tax (migration 078) gets no
     // service/tax added below — say so on its line.
-    const taxNote = c.tax_mode === 'included' ? ' (tax incl.)' : c.tax_mode === 'none' ? ' (no tax)' : '';
+    const taxNote = prices_include_tax ? (c.tax_mode === 'none' ? ' (no tax)' : '')
+      : c.tax_mode === 'included' ? ' (tax incl.)' : c.tax_mode === 'none' ? ' (no tax)' : '';
     const desc = c.complimentary ? `${c.description} (complimentary)`
       : c.paid_method ? `${c.description}${taxNote} (paid · ${c.paid_method})` : `${c.description}${taxNote}`;
     const rowH = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
     doc.text(desc, colX.desc, y, { width: 240 });
     doc.text(String(parseFloat(c.quantity)), colX.qty, y, { width: 50, align: 'right' });
-    doc.text(fmtIDR(c.unit_price), colX.price, y, { width: 90, align: 'right' });
+    doc.text(money(c.unit_price), colX.price, y, { width: 90, align: 'right' });
     // A comped extra (stay complimentary for everything, migration 072) is
     // listed at its price but not counted in the totals.
-    doc.text(c.complimentary ? 'Free' : fmtIDR(c.amount), colX.amount, y, { width: 90, align: 'right' });
+    doc.text(c.complimentary ? 'Free' : money(c.amount), colX.amount, y, { width: 90, align: 'right' });
     y += rowH;
   };
 
@@ -366,18 +394,28 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
   // and no Subtotal either since it would just repeat the Total.
   const hasSc = parseFloat(service_charge_rate) > 0;
   const hasTax = parseFloat(tax_rate) > 0;
-  if (hasSc || hasTax) totalsLine('Subtotal', fmtIDR(subtotal));
+  if (prices_include_tax) {
+    totalsLine('Total', money(total), { bold: true });
+    const inc = includesNote({ service_charge_rate, service_charge_amount, tax_rate, tax_amount }, money);
+    if (inc) {
+      doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, y - 4, { width: 500, align: 'right' });
+      doc.fillColor('#000');
+      y += 10;
+    }
+  } else {
+  if (hasSc || hasTax) totalsLine('Subtotal', money(subtotal));
   // Lines marked "tax incl." / "no tax" (migration 078) get nothing added —
   // say what service + tax were worked out on, so the % doesn't look wrong.
   if ((hasSc || hasTax) && parseFloat(untaxed_subtotal) > 0) {
     doc.font('Helvetica').fontSize(8).fillColor('#777')
-      .text(`Service & tax on ${fmtIDR(parseFloat(subtotal) - parseFloat(untaxed_subtotal))} — lines marked tax incl. / no tax excluded`, 50, y, { width: 490, align: 'right' });
+      .text(`Service & tax on ${money(parseFloat(subtotal) - parseFloat(untaxed_subtotal))} — lines marked tax incl. / no tax excluded`, 50, y, { width: 490, align: 'right' });
     doc.fillColor('#000');
     y += 12;
   }
-  if (hasSc) totalsLine(`Service Charge (${service_charge_rate}%)`, fmtIDR(service_charge_amount));
-  if (hasTax) totalsLine(`Tax (${tax_rate}%)`, fmtIDR(tax_amount));
-  totalsLine('Total', fmtIDR(total), { bold: true });
+  if (hasSc) totalsLine(`Service Charge (${service_charge_rate}%)`, money(service_charge_amount));
+  if (hasTax) totalsLine(`Tax (${tax_rate}%)`, money(tax_amount));
+  totalsLine('Total', money(total), { bold: true });
+  }
 
   const received = payments.filter(p => p.status === 'received');
   if (received.length) {
@@ -391,14 +429,14 @@ function drawChargeTable(doc, { booking, charges: rawCharges, payments, subtotal
       const typeLabel = p.type === 'incidental' ? 'extras' : p.type;
       const when = p.received_at ? new Date(p.received_at).toLocaleDateString('en-GB') : '';
       doc.font('Helvetica').text(`${typeLabel} — ${(p.method || '').replace('_', ' ')} · ${when}`, colX.desc, y, { width: 240 });
-      doc.text(fmtIDR(p.amount), colX.amount, y, { width: 90, align: 'right' });
+      doc.text(money(p.amount), colX.amount, y, { width: 90, align: 'right' });
       y += 16;
     }
   }
 
   if (showBalance) {
     y += 8;
-    totalsLine('Balance Due', fmtIDR(balance_due), { bold: true });
+    totalsLine('Balance Due', money(balance_due), { bold: true });
   }
 
   doc.y = y;
@@ -505,7 +543,7 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     );
     const folios = await Promise.all(bookingRows.map(b => computeProforma(b.id, req.propertyId)));
     const { rows: [settings] } = await db.query(
-      `SELECT tax_rate, service_charge_rate, property_name, property_address, property_phone, property_email, logo_url
+      `SELECT tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email, logo_url
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );
@@ -572,11 +610,22 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     }
     const hasSc = parseFloat(grand.service_charge_rate) > 0;
     const hasTax = parseFloat(grand.tax_rate) > 0;
-    if (hasSc || hasTax) grandLine('Subtotal', fmtIDR(grand.subtotal));
-    if (hasSc) grandLine(`Service Charge (${grand.service_charge_rate}%)`, fmtIDR(grand.service_charge_amount));
-    if (hasTax) grandLine(`Tax (${grand.tax_rate}%)`, fmtIDR(grand.tax_amount));
-    grandLine('Total', fmtIDR(grand.total), { bold: true });
-    grandLine('Estimated Balance Due', fmtIDR(grand.balance_due), { bold: true });
+    const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
+    if (settings?.prices_include_tax) {
+      grandLine('Total', whole(grand.total), { bold: true });
+      const inc = includesNote(grand, whole);
+      if (inc) {
+        doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, doc.y - 4, { width: 500, align: 'right' });
+        doc.fillColor('#000');
+        doc.moveDown(0.6);
+      }
+    } else {
+      if (hasSc || hasTax) grandLine('Subtotal', fmtIDR(grand.subtotal));
+      if (hasSc) grandLine(`Service Charge (${grand.service_charge_rate}%)`, fmtIDR(grand.service_charge_amount));
+      if (hasTax) grandLine(`Tax (${grand.tax_rate}%)`, fmtIDR(grand.tax_amount));
+      grandLine('Total', fmtIDR(grand.total), { bold: true });
+    }
+    grandLine('Estimated Balance Due', settings?.prices_include_tax ? whole(grand.balance_due) : fmtIDR(grand.balance_due), { bold: true });
 
     doc.moveDown(2);
     doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });

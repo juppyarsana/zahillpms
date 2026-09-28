@@ -1,6 +1,9 @@
 const db = require('../db');
+const { priceBasis, toNet } = require('./priceBasis');
 
-// A unit's normal room rate for each night of a stay (NET, before tax):
+// A unit's normal room rate for each night of a stay (NET, before tax — a
+// rate entered incl. service & tax (migration 079) is converted here, so every
+// caller gets NET; `entered_rate` is the figure as entered):
 // the unit's base rate, overridden per night by the highest-priority active
 // pricing period covering that night (manual periods and the yield engine's
 // 'auto' ones alike). Shared by GET /api/pricing/suggest (New Booking's
@@ -12,6 +15,7 @@ async function nightlyRoomRates(propertyId, unitId, checkIn, checkOut, client = 
   const { rows: [unit] } = await client.query('SELECT * FROM units WHERE id = $1 AND property_id = $2', [unitId, propertyId]);
   if (!unit) return null;
   const baseRate = parseFloat(unit.base_rate);
+  const basis = await priceBasis(propertyId, client);
 
   // Every active period overlapping ANY night of the stay, highest-priority first.
   const { rows: periods } = await client.query(`
@@ -28,17 +32,18 @@ async function nightlyRoomRates(propertyId, unitId, checkIn, checkOut, client = 
   for (let t = new Date(checkIn + 'T00:00:00Z').getTime(); t < new Date(checkOut + 'T00:00:00Z').getTime(); t += 86400000) {
     const dateStr = new Date(t).toISOString().slice(0, 10);
     const period = periods.find(p => p.date_from <= dateStr && p.date_to >= dateStr) || null;
-    const room_rate = Math.round(period
+    const entered_rate = Math.round(period
       ? (period.type === 'fixed' ? parseFloat(period.value) : baseRate * parseFloat(period.value))
       : baseRate);
     night_breakdown.push({
       date: dateStr,
-      room_rate,
+      room_rate: toNet(entered_rate, basis),
+      entered_rate,
       period: period ? { name: period.name, type: period.type, value: period.value, color: period.color } : null,
     });
   }
-  const room_total = night_breakdown.reduce((sum, n) => sum + n.room_rate, 0);
-  return { unit, baseRate, night_breakdown, room_total };
+  const room_total = Math.round(night_breakdown.reduce((sum, n) => sum + n.room_rate, 0) * 100) / 100;
+  return { unit, baseRate, night_breakdown, room_total, prices_include_tax: basis.include };
 }
 
 module.exports = { nightlyRoomRates };

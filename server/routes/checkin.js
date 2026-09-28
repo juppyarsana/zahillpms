@@ -16,6 +16,7 @@ const { drawDocumentHeader } = require('../services/pdfHeader');
 const { sendControlAlert } = require('../services/ownerAlerts');
 const { renderRegistrationCard } = require('../services/registrationCardPdf');
 const { saveIdDocument } = require('../services/idDocument');
+const { basisFrom, shown } = require('../services/priceBasis');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -202,10 +203,12 @@ async function loadRegCardData(where, params) {
        bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
        lt.name AS membership,
        pm.label AS payment_method_label,
-       cu.name AS checked_in_by
+       cu.name AS checked_in_by,
+       ps.tax_rate, ps.service_charge_rate, ps.prices_include_tax
      FROM bookings b
      JOIN guests g ON g.id = b.guest_id
      JOIN units u ON u.id = b.unit_id
+     LEFT JOIN property_settings ps ON ps.property_id = b.property_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
      -- "Checked In By" = whoever actually checked the guest in; blank (to
@@ -220,7 +223,8 @@ async function loadRegCardData(where, params) {
      ${where}`,
     params
   );
-  for (const d of rows) d.room_rate = d.nights > 0 ? Number(d.room_revenue || 0) / d.nights : null;
+  // NET per night — or all-in when the property's prices include tax (079).
+  for (const d of rows) d.room_rate = d.nights > 0 ? shown(d.room_revenue || 0, basisFrom(d)) / d.nights : null;
   return rows;
 }
 

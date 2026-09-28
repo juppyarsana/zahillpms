@@ -2,6 +2,7 @@ const db = require('../db');
 const sse = require('../sse');
 const tableSessionService = require('./tableSessionService');
 const { computeFolioTotals, ymd, stayNights } = require('./folioService');
+const { priceBasis } = require('./priceBasis');
 
 // F&B categories: the only products that go to the kitchen board and the only
 // ones guest-facing menus (Room Display Dining, resto QR/staff menu) list.
@@ -80,6 +81,11 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
       return { error: 'One or more products not found' };
     }
     const productById = new Map(ownedProducts.map(p => [p.id, p]));
+    // Item prices (and a typed / bargained price) are entered incl. service &
+    // tax when the property's prices include tax (migration 079): the sale,
+    // its lines and the folio keep NET amounts — entered ÷ divisor.
+    const basis = await priceBasis(propertyId, client);
+    const net = v => Math.round(parseFloat(v) / basis.divisor * 100) / 100;
     // Price always comes from the product row, never from the caller — the
     // staff till (routes/sales.js) forwards the browser's cart as-is, and
     // these amounts reach the folio, receipts and tax.
@@ -141,6 +147,13 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     const isPerNight = i => productById.get(i.product_id).per_night;
     // Units recorded on the sale line: per night = units × nights.
     const lineQty = i => parseInt(i.quantity) * (isPerNight(i) ? i.nights.length : 1);
+    // NET per unit (per night for per-night items) and per line — the line
+    // from the entered price × units, so an all-in line grosses back exactly.
+    for (const i of items) {
+      i.entered_price = parseFloat(i.unit_price);
+      i.unit_price = net(i.entered_price);
+      i.line_net = net(i.entered_price * lineQty(i));
+    }
 
     const outOfStock = items
       .filter(i => !isPerNight(i))
@@ -197,8 +210,8 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
 
     const needsKitchen = items.some(i => FNB_CATEGORIES.includes(productById.get(i.product_id).category));
     const pending = !!holdForConfirmation;
-    const total = items.reduce((sum, i) => sum + parseFloat(i.unit_price) * lineQty(i), 0);
-    const perNightTotal = items.filter(isPerNight).reduce((sum, i) => sum + parseFloat(i.unit_price) * lineQty(i), 0);
+    const total = Math.round(items.reduce((sum, i) => sum + i.line_net, 0) * 100) / 100;
+    const perNightTotal = items.filter(isPerNight).reduce((sum, i) => sum + i.line_net, 0);
     const paidDirectly = paymentMethodValue !== 'room_charge' && paymentMethodValue !== 'unpaid';
     let taxes = null;
     if (taxDirectPay && paidDirectly) {
@@ -206,6 +219,12 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
         'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]
       );
       taxes = computeFolioTotals(total, ps?.tax_rate, ps?.service_charge_rate);
+      // Nett prices: the guest pays exactly the prices entered — the rounding
+      // cent goes into the tax part.
+      if (basis.include) {
+        const entered = Math.round(items.reduce((sum, i) => sum + i.entered_price * lineQty(i), 0) * 100) / 100;
+        taxes = { ...taxes, tax_amount: Math.round((entered - total - taxes.service_charge_amount) * 100) / 100, total: entered };
+      }
     }
     const { rows: [sale] } = await client.query(
       `INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id, order_type, table_number, table_id, kitchen_status,
@@ -217,8 +236,8 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     for (const item of items) {
       const product = productById.get(item.product_id);
       const qty = lineQty(item);
-      const subtotal = parseFloat(item.unit_price) * qty;
-      const oneBreakfast = parseFloat(product.meal_price) || 0;
+      const subtotal = item.line_net;
+      const oneBreakfast = net(parseFloat(product.meal_price) || 0);
       // Breakfast part: per night = the night's breakfasts × one breakfast
       // (never more than the night's price); one-off = units × meal_pax.
       const mealPerNight = product.per_night
@@ -244,7 +263,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
         }
         // A bargained price or a different breakfast count is noted on the booking.
         const notes = [];
-        if (item.price_changed) notes.push(`Rp ${Math.round(item.unit_price).toLocaleString('id-ID')} per night instead of Rp ${Math.round(product.price).toLocaleString('id-ID')}`);
+        if (item.price_changed) notes.push(`Rp ${Math.round(item.entered_price).toLocaleString('id-ID')} per night instead of Rp ${Math.round(product.price).toLocaleString('id-ID')}`);
         if (item.breakfasts !== item.breakfasts_default) notes.push(`${item.breakfasts} breakfast${item.breakfasts === 1 ? '' : 's'} per night instead of ${item.breakfasts_default}`);
         if (notes.length) {
           await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
@@ -276,7 +295,7 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
     // Per-night items aren't posted here — their nights post with the room.
     const itemsText = list => list.map(i => `${i.quantity}× ${i.description || productById.get(i.product_id).name}`).join(', ');
     const folioDesc = itemsText(items.filter(i => !isPerNight(i))).slice(0, 200);
-    const oneOffTotal = total - perNightTotal;
+    const oneOffTotal = Math.round((total - perNightTotal) * 100) / 100;
     if ((paymentMethodValue === 'room_charge' || (taxes && bookingId)) && oneOffTotal > 0) {
       await client.query(
         `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, sale_id)

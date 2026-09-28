@@ -4,6 +4,8 @@ import PerNightLine, { defaultBreakfasts, withUnits } from '../components/PerNig
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { shownAmount, priceFactor, includesText } from '../lib/priceBasis';
+import PriceBasisHint from '../components/PriceBasisHint';
 
 // Hotel extras sold from the front desk (migration 067). F&B ('food'/'drinks')
 // lives in the resto app / external POS and is deliberately hidden here;
@@ -147,9 +149,14 @@ export default function Sales() {
   const scRate = parseFloat(branding?.service_charge_rate || 0);
   const taxRate = parseFloat(branding?.tax_rate || 0);
   const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
-  const cartSc = round2(cartTotal * scRate / 100);
-  const cartTax = round2((cartTotal + cartSc) * taxRate / 100);
-  const cartGross = round2(cartTotal + cartSc + cartTax);
+  // Prices entered incl. service & tax (migration 079): the cart total IS
+  // what the guest pays; the service + tax inside it are shown for info.
+  const nett = !!branding?.prices_include_tax;
+  const cartNet = nett ? round2(cartTotal / priceFactor(branding)) : cartTotal;
+  const cartSc = round2(cartNet * scRate / 100);
+  const cartTax = round2((cartNet + cartSc) * taxRate / 100);
+  const cartGross = nett ? round2(cartTotal) : round2(cartTotal + cartSc + cartTax);
+  const inclText = nett ? includesText({ service_charge_rate: scRate, service_charge_amount: cartSc, tax_rate: taxRate, tax_amount: cartTax }, fmtIDR) : '';
 
   // Per-night items in the cart follow the guest: their nights reset to the
   // new guest's default (tonight) when a guest is picked, and clear without one.
@@ -447,7 +454,9 @@ export default function Sales() {
                     <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, marginTop: 12 }}>
                       <span>Total</span><span>{fmtIDR(cartTotal)}</span>
                     </div>
-                    {(scRate > 0 || taxRate > 0) && (
+                    {nett ? (inclText && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{inclText}</div>
+                    )) : (scRate > 0 || taxRate > 0) && (
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
                         Before tax. {scRate > 0 ? `Service ${scRate}% and tax` : 'Tax'}{taxRate > 0 ? ` ${taxRate}%` : ''} are added on the folio at checkout.
                       </div>
@@ -455,7 +464,7 @@ export default function Sales() {
                   </>
                 ) : (
                   <div style={{ marginTop: 12, marginBottom: 8 }}>
-                    {(cartSc > 0 || cartTax > 0) && (
+                    {!nett && (cartSc > 0 || cartTax > 0) && (
                       <>
                         <div className="flex-between" style={{ fontSize: 13 }}><span>Subtotal</span><span>{fmtIDR(cartTotal)}</span></div>
                         {cartSc > 0 && <div className="flex-between" style={{ fontSize: 13 }}><span>Service Charge ({scRate}%)</span><span>{fmtIDR(cartSc)}</span></div>}
@@ -465,6 +474,7 @@ export default function Sales() {
                     <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, marginTop: 4 }}>
                       <span>Total to collect</span><span>{fmtIDR(cartGross)}</span>
                     </div>
+                    {inclText && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{inclText}</div>}
                     {selectedBooking && (
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Also recorded on the guest's folio as paid.</div>
                     )}
@@ -492,7 +502,9 @@ export default function Sales() {
                     <td>{s.items_summary || '—'}</td>
                     <td>{s.guest_name ? <>{s.guest_name}<div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.unit_name}</div></> : <span className="text-muted">Walk-in</span>}</td>
                     <td><span className={'badge ' + (s.payment_method === 'unpaid' ? 'badge-amber' : 'badge-gray')}>{methodLabel(s.payment_method)}</span></td>
-                    <td>{fmtIDR(parseFloat(s.total_amount) + parseFloat(s.service_charge_amount || 0) + parseFloat(s.tax_amount || 0))}</td>
+                    <td>{fmtIDR(s.tax_amount != null
+                      ? parseFloat(s.total_amount) + parseFloat(s.service_charge_amount || 0) + parseFloat(s.tax_amount || 0)
+                      : shownAmount(s.total_amount, branding))}</td>
                     <td>{s.served_by_name || '—'}</td>
                     <td>
                       {s.payment_method !== 'room_charge' && s.payment_method !== 'unpaid' && (
@@ -571,7 +583,7 @@ export default function Sales() {
                       </select>
                       {CAT_BY_KEY[prodForm.category]?.hint && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{CAT_BY_KEY[prodForm.category].hint}</div>}
                     </div>
-                    <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /></div>
+                    <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /><PriceBasisHint /></div>
                   </div>
                   <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={prodForm.description} onChange={e=>setProdForm(f=>({...f,description:e.target.value}))} /></div>
                   {!prodForm.per_night && (

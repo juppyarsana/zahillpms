@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const { computeFolioTotals } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
+const { basisFrom } = require('../services/priceBasis');
 
 // GET /api/pricing/periods
 router.get('/periods', auth, async (req, res) => {
@@ -53,13 +54,13 @@ router.get('/suggest', auth, async (req, res) => {
     // the stay, doesn't key off pricing_periods.
     const plan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
     const guests = Math.max(1, parseInt(num_guests, 10) || 1);
-    const meal_per_night = ratePlanService.mealNetPerNight(plan, guests);
-    const meal_total = Math.round(meal_per_night * nights); // NET
-
     const { rows: [settings] } = await db.query(
-      'SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1',
+      'SELECT tax_rate, service_charge_rate, prices_include_tax FROM property_settings WHERE property_id = $1',
       [req.propertyId]
     );
+    const divisor = basisFrom(settings).divisor;
+    const meal_per_night = ratePlanService.mealNetPerNight(plan, guests, divisor);
+    const meal_total = Math.round(meal_per_night * nights * 100) / 100; // NET
     const gross = computeFolioTotals(room_total + meal_total, settings?.tax_rate, settings?.service_charge_rate);
 
     res.json({
@@ -76,6 +77,7 @@ router.get('/suggest', auth, async (req, res) => {
       service_charge_rate: gross.service_charge_rate,
       service_charge_amount: gross.service_charge_amount,
       grand_total: gross.total,             // GROSS — what the guest pays
+      prices_include_tax: !!settings?.prices_include_tax, // rates entered all-in (migration 079)
       suggested_total: room_total,          // back-compat (was rate_per_night * nights)
       period,                               // null if it varies by night — see night_breakdown
       varies_by_night,

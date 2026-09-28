@@ -69,7 +69,7 @@ async function searchAvailability(propertyId, { checkIn, checkOut, guestsPerRoom
       const rates = await nightlyRoomRates(propertyId, u.id, checkIn, checkOut);
       const total = round2(computeFolioTotals(rates.room_total, settings?.tax_rate, settings?.service_charge_rate).total);
       room.price = total;
-      room.nights = rates.night_breakdown.map(n => ({ date: n.date, rate: n.room_rate, period: n.period?.name || null }));
+      room.nights = rates.night_breakdown.map(n => ({ date: n.date, rate: n.entered_rate, period: n.period?.name || null }));   // as entered (incl. tax when the property's prices include tax)
       t.available_count++;
     }
     t.units.push(room);

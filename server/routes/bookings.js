@@ -987,9 +987,9 @@ router.post('/', auth, async (req, res) => {
     const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
     const guests = Math.max(1, parseInt(num_guests, 10) || 1);
     const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
-    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+    const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
     const { roomNet, mealNet } = splitRevenue({
-      grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, clientRoomRevenue: room_revenue,
+      grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, divisor, clientRoomRevenue: room_revenue,
     });
     // Store total_amount consistently with the split (pre-discount gross rack).
     const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
@@ -1087,7 +1087,7 @@ router.post('/group', auth, async (req, res) => {
     }
 
     const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
-    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+    const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
 
     const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
 
@@ -1133,7 +1133,7 @@ router.post('/group', auth, async (req, res) => {
       // isolation, which is intentional, not a bug to "fix" later.
       const roomGuests = Math.max(1, parseInt(s.room.num_guests, 10) || 1);
       const roomPlan = await ratePlanService.resolveForBooking(req.propertyId, s.room.rate_plan_id || null);
-      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests) * nights);
+      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests, divisor) * nights);
       let roomRevNet = round2(s.roomNet / F) - mealNet;
       if (roomRevNet < 0) roomRevNet = 0;
       const roomStoredTotal = round2(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total + s.discountShare);
@@ -1296,7 +1296,7 @@ async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
   const nightsOf = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
   const oldNights = Math.max(1, nightsOf(oldCi, oldCo));
   const newNights = nightsOf(checkIn, checkOut);
-  const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
+  const { tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId);
   const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
 
   // The booking's own price (room + meals, after discount, incl. service/tax)
@@ -1311,7 +1311,7 @@ async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
     ratePlanService.resolveForBooking(propertyId, booking.rate_plan_id || null),
   ]);
   const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
-  const normalNew = round2(gross(newR.room_total + ratePlanService.mealNetPerNight(plan, guests) * newNights));
+  const normalNew = round2(gross(newR.room_total + ratePlanService.mealNetPerNight(plan, guests, divisor) * newNights));
 
   return {
     old: { check_in: oldCi, check_out: oldCo, nights: oldNights, total: oldTotal },
@@ -1604,7 +1604,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     const nights = Math.max(1, Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000));
     const guests = Math.max(1, parseInt(num_guests, 10) || 1);
     const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
-    const { F, tax_rate, service_charge_rate } = await grossFactor(client, req.propertyId);
+    const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
 
     let total;
     if (given(total_amount)) {
@@ -1612,11 +1612,11 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
       if (!Number.isFinite(total) || total < 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'total_amount must be a positive number' }); }
     } else {
       const rates = await nightlyRoomRates(req.propertyId, unit_id, checkIn, checkOut, client);
-      const meal = ratePlanService.mealNetPerNight(ratePlan, guests) * nights;
+      const meal = ratePlanService.mealNetPerNight(ratePlan, guests, divisor) * nights;
       total = computeFolioTotals(rates.room_total + meal, tax_rate, service_charge_rate).total;
     }
 
-    const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F });
+    const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F, divisor });
     const payable = round2(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total);
     const depositAmount = given(deposit_amount)
       ? Math.max(0, Math.min(parseFloat(deposit_amount) || 0, payable))
@@ -2329,7 +2329,8 @@ router.put('/:id', auth, async (req, res) => {
       const plan = await ratePlanService.resolveForBooking(req.propertyId, booking.rate_plan_id);
       const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
       const grossNet = round2(parseFloat(before.room_revenue ?? before.total_amount) + parseFloat(before.fnb_revenue || 0));
-      const newFnb = round2(ratePlanService.mealNetPerNight(plan, guests) * booking.nights);
+      const { divisor } = await grossFactor(client, req.propertyId);
+      const newFnb = round2(ratePlanService.mealNetPerNight(plan, guests, divisor) * booking.nights);
       let newRoom = round2(grossNet - newFnb);
       if (newRoom < 0) newRoom = 0;
       const { rows: [b2] } = await client.query(

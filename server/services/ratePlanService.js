@@ -7,12 +7,14 @@ const { round2 } = require('./folioService');
 const CODE_RE = /^[A-Z0-9]{1,10}$/;
 
 // NET meal charge per night for `numGuests`. Zero unless the plan includes a meal.
-function mealNetPerNight(ratePlan, numGuests) {
+// divisor: priceBasis(...).divisor — the meal price is entered incl. service &
+// tax when the property's prices include tax (migration 079), else 1.
+function mealNetPerNight(ratePlan, numGuests, divisor = 1) {
   if (!ratePlan) return 0;
   const hasMeal = ratePlan.includes_breakfast || ratePlan.includes_lunch || ratePlan.includes_dinner;
   if (!hasMeal) return 0;
   const price = parseFloat(ratePlan.meal_price) || 0;
-  return round2(price * (parseInt(numGuests) || 1));
+  return round2(price * (parseInt(numGuests) || 1) / (divisor || 1));
 }
 
 async function listRatePlans(propertyId, { activeOnly = false } = {}) {
