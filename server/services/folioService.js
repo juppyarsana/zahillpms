@@ -128,6 +128,19 @@ function billRates(booking, settings) {
 const BILL_TAX_SQL = 'COALESCE(b.bill_tax_rate, ps.tax_rate)';
 const BILL_SC_SQL = 'COALESCE(b.bill_service_charge_rate, ps.service_charge_rate)';
 
+// The receipt a payment has, if any: 'lines' — specific folio items paid on
+// their own (migration 082, GET /api/folio/payment/:id/receipt); 'sale' — an
+// extra paid with Pay now at the Sales till (GET /api/sales/:sale_id/receipt);
+// 'activity' — an activity paid directly (GET /api/activities/bookings/:id/receipt).
+// Room deposit / balance payments have none (they're on the invoice).
+const PAYMENTS_WITH_RECEIPT_SQL = `
+  SELECT p.*, CASE
+      WHEN EXISTS (SELECT 1 FROM folio_charges x WHERE x.paid_payment_id = p.id AND x.is_voided = false) THEN 'lines'
+      WHEN p.sale_id IS NOT NULL THEN 'sale'
+      WHEN p.activity_booking_id IS NOT NULL THEN 'activity'
+    END AS receipt_kind
+  FROM payments p WHERE p.booking_id = $1 ORDER BY p.type`;
+
 async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
@@ -166,7 +179,7 @@ async function loadFolio(bookingId, propertyId) {
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
-  const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [bookingId]);
+  const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [bookingId]);
 
   const [{ rows: [booking] }, { rows: charges }, { rows: [settings] }, { rows: payments }] =
     await Promise.all([bookingQ, chargesQ, settingsQ, paymentsQ]);
@@ -259,7 +272,7 @@ async function computeProforma(bookingId, propertyId) {
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
-  const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [bookingId]);
+  const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [bookingId]);
 
   const [{ rows: [booking] }, { rows: extraCharges }, { rows: [settings] }, { rows: payments }, { rows: addons }] =
     await Promise.all([bookingQ, extraChargesQ, settingsQ, paymentsQ, addonsQ]);
@@ -306,4 +319,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, PAYMENTS_WITH_RECEIPT_SQL, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };

@@ -192,6 +192,13 @@ export default function BookingDetail() {
   async function downloadLinesReceipt(paymentId) {
     await downloadPdf(`/api/folio/payment/${paymentId}/receipt`, `receipt-${String(paymentId).slice(0, 8)}.pdf`);
   }
+  // Any payment's receipt (receipt_kind from the server): specific items paid
+  // from Record Payment, an extra paid with Pay now, an activity paid directly.
+  async function downloadPaymentReceipt(p) {
+    if (p.receipt_kind === 'lines') return downloadLinesReceipt(p.id);
+    if (p.receipt_kind === 'sale') return downloadPdf(`/api/sales/${p.sale_id}/receipt`, `receipt-sale-${String(p.sale_id).slice(0, 8)}.pdf`);
+    if (p.receipt_kind === 'activity') return downloadPdf(`/api/activities/bookings/${p.activity_booking_id}/receipt`, `receipt-activity-${String(p.activity_booking_id).slice(0, 8)}.pdf`);
+  }
 
   // Opened via Balance Due's "Record payment →" once the estimate is in.
   useEffect(() => {
@@ -765,6 +772,22 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 { divider: true },
                 // OTA / agent stay (source Publish Rate off): an accounting copy
                 // with everything, and a guest copy without the room rate.
+                // Every receipt for this stay (payments that have one), newest first.
+                ...(() => {
+                  const withReceipt = (booking.payments || [])
+                    .filter(p => p.receipt_kind && p.status === 'received')
+                    .sort((a, b) => new Date(b.received_at || 0) - new Date(a.received_at || 0));
+                  if (!withReceipt.length) return [];
+                  return [
+                    ...withReceipt.map(p => ({
+                      label: `Receipt · ${p.received_at ? new Date(p.received_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''} · ${fmtIDR(p.amount)}`,
+                      icon: '🖨',
+                      hint: `${{ lines: 'Items paid on their own', sale: 'Extra paid at the Sales till', activity: 'Activity paid directly' }[p.receipt_kind]} · ${(paymentMethods.find(m => m.id === p.method)?.label) || p.method}`,
+                      onClick: () => downloadPaymentReceipt(p),
+                    })),
+                    { divider: true },
+                  ];
+                })(),
                 ...(booking.source_publish_rate === false ? [
                   { label: 'Invoice — accounting', icon: '🧾', hint: 'Everything, incl. the room rate — for accounting / the agent', onClick: () => downloadInvoice(false) },
                   { label: 'Invoice — guest copy', icon: '🧾', hint: `Room shown as arranged by ${booking.source_label || 'the agent'}, without its rate; the guest's own charges and payments`, onClick: () => downloadInvoice(true) },
@@ -1196,7 +1219,12 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   {folio.payments.filter(p => p.status === 'received').map(p => (
                     <div key={p.id} className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                       <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type === 'incidental' ? 'Extras (paid at desk)' : p.type} · {p.method?.replace('_', ' ')}</span>
-                      <span>{fmtIDR(p.amount)}</span>
+                      <span className="flex gap-2 items-center">
+                        {p.receipt_kind && (
+                          <button className="btn btn-icon btn-sm" style={{ padding: '0 6px' }} title="Print the receipt for this payment" onClick={() => downloadPaymentReceipt(p)}>🖨</button>
+                        )}
+                        {fmtIDR(p.amount)}
+                      </span>
                     </div>
                   ))}
                 </>

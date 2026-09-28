@@ -6,7 +6,7 @@ const requireRole = require('../middleware/role');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const agentBilling = require('../services/agentBillingService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
-const { computeFolioTotals, computeProforma, round2 } = require('../services/folioService');
+const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice } = require('../services/bookingPriceService');
 const { nightlyRoomRates } = require('../services/pricingService');
@@ -921,7 +921,7 @@ router.get('/:id', auth, async (req, res) => {
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id AND ai.property_id = b.property_id
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
-    const paymentsQ = db.query('SELECT * FROM payments WHERE booking_id = $1 ORDER BY type', [req.params.id]);
+    const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [req.params.id]);   // + receipt_kind (Download → Receipts)
     const notesQ = db.query(`
       SELECT bn.*, u.name as author_name FROM booking_notes bn
       LEFT JOIN users u ON bn.author_id = u.id
