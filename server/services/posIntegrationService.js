@@ -9,7 +9,11 @@ const { computeProforma } = require('./folioService');
 //
 // `amount` is NET: after the POS's own discount, before service charge and
 // tax — the folio adds the property's service/tax on top of every charge, so
-// a gross amount would be taxed twice.
+// a gross amount would be taxed twice. A POS whose menu prices include tax
+// sends `gross_amount` instead (what the guest pays, all-in): the PMS takes
+// its own service + tax out (priceBasis factor, nudged to the cent so the
+// folio shows exactly that figure) and posts the NET part. An older PMS
+// refuses a gross-only charge (no `amount`) rather than taxing it twice.
 
 const IN_HOUSE_SQL = `
   SELECT b.id AS booking_id, u.name AS room, u.controller_id AS room_id,
@@ -48,6 +52,7 @@ function saleResult(sale, folioChargeId, folio, replayed) {
     folio_charge_id: folioChargeId,
     booking_id: sale.booking_id,
     amount: parseFloat(sale.total_amount),
+    gross_amount: sale.shown_total != null ? parseFloat(sale.shown_total) : null,
     balance_due: folio ? folio.balance_due : null,
     replayed,
   };
@@ -55,8 +60,20 @@ function saleResult(sale, folioChargeId, folio, replayed) {
 
 // Returns { error, status } or the posted sale. Safe to retry with the same
 // externalRef: the original sale comes back with replayed: true.
-async function postTransaction(propertyId, { bookingId, room, amount, description, externalRef }) {
-  const amt = Number(amount);
+// All-in amount → NET at the property's rates (service, then tax on top).
+async function netFromGross(propertyId, gross) {
+  const { priceBasis } = require('./priceBasis');
+  const { fitToGross } = require('./bookingPriceService');
+  const { round2 } = require('./folioService');
+  const b = await priceBasis(propertyId);
+  const g = round2(gross);
+  return fitToGross(round2(g / b.F), 0, g, b.tax_rate, b.service_charge_rate);
+}
+
+async function postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef }) {
+  const gross = grossAmount != null && grossAmount !== '' ? Number(grossAmount) : null;
+  if (gross != null && (!Number.isFinite(gross) || gross <= 0)) return { error: 'gross_amount must be a positive number', status: 400 };
+  const amt = gross != null ? await netFromGross(propertyId, gross) : Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) return { error: 'amount must be a positive number', status: 400 };
   const desc = String(description || '').trim().slice(0, 500) || 'Restaurant bill';
   const ref = externalRef ? String(externalRef).trim().slice(0, 100) : null;
@@ -104,10 +121,10 @@ async function postTransaction(propertyId, { bookingId, room, amount, descriptio
     }
 
     const { rows: [sale] } = await client.query(
-      `INSERT INTO sales (property_id, booking_id, payment_method, total_amount, order_source, external_ref, description)
-       VALUES ($1, $2, 'room_charge', $3, 'external_pos', $4, $5)
+      `INSERT INTO sales (property_id, booking_id, payment_method, total_amount, order_source, external_ref, description, shown_total)
+       VALUES ($1, $2, 'room_charge', $3, 'external_pos', $4, $5, $6)
        RETURNING *`,
-      [propertyId, booking.id, amt, ref, desc]
+      [propertyId, booking.id, amt, ref, desc, gross != null ? Math.round(gross * 100) / 100 : null]
     );
     const { rows: [charge] } = await client.query(
       `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, sale_id)
@@ -123,7 +140,7 @@ async function postTransaction(propertyId, { bookingId, room, amount, descriptio
     // Two concurrent retries with the same ref: the loser hits the unique
     // index — return the winner's sale instead of an error.
     if (err.code === '23505' && ref) {
-      return postTransaction(propertyId, { bookingId, room, amount, description, externalRef: ref });
+      return postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef: ref });
     }
     throw err;
   } finally {

@@ -178,4 +178,4 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
   return { after, payable, storedTotal, received, credit, receivedFixes, discountAmount };
 }
 
-module.exports = { grossFactor, splitRevenue, applyBookingPrice, snapPayable };
+module.exports = { grossFactor, splitRevenue, applyBookingPrice, snapPayable, fitToGross };

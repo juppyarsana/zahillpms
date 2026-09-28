@@ -33,13 +33,15 @@ router.get('/rooms/:room', gate, async (req, res) => {
 });
 
 // POST /api/pos/transactions — charge a bill to a room.
-// Body: { room | booking_id, amount (NET: after discount, before service/tax),
-//         description, external_ref (the POS transaction id — makes retries safe) }
+// Body: { room | booking_id, amount (NET: after discount, before service/tax)
+//         OR gross_amount (all-in: what the guest pays — the PMS takes its own
+//         service + tax out), description, external_ref (the POS transaction
+//         id — makes retries safe) }
 router.post('/transactions', gate, async (req, res) => {
-  const { room, booking_id, amount, description, external_ref } = req.body || {};
+  const { room, booking_id, amount, gross_amount, description, external_ref } = req.body || {};
   try {
     const result = await pos.postTransaction(req.propertyId, {
-      bookingId: booking_id, room, amount, description, externalRef: external_ref,
+      bookingId: booking_id, room, amount, grossAmount: gross_amount, description, externalRef: external_ref,
     });
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(result.replayed ? 200 : 201).json(result);
