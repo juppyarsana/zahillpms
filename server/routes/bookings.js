@@ -851,6 +851,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
     const { rows: bookings } = await db.query(`
       SELECT b.*, u.name as unit_name,
              g.name AS guest_name, g.nationality AS guest_nationality, g.id_number AS guest_id_number,
+             (SELECT name FROM agents ag WHERE ag.id = b.agent_id) AS agent_name,
              (SELECT checkin_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkin_time,
              (SELECT checkout_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkout_time
       FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id

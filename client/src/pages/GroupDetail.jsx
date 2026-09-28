@@ -326,6 +326,8 @@ export default function GroupDetail() {
   const activeRooms = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status));
   const groupNights = Math.max(0, Math.round((new Date(group.check_out_date?.slice(0, 10)) - new Date(group.check_in_date?.slice(0, 10))) / 86400000));
   const groupPax = activeRooms.reduce((sum, b) => sum + (parseInt(b.num_guests, 10) || 0), 0);
+  // The group's agent(s) (migration 084) — one normally; set per room in Edit Details.
+  const groupAgents = [...new Set(activeRooms.map(b => b.agent_name).filter(Boolean))];
   const inHouse = activeRooms.filter(b => b.status === 'checked_in').length;
   const groupState = group.status === 'cancelled' || activeRooms.length === 0 ? { label: 'Cancelled', color: 'red' }
     : activeRooms.every(b => b.status === 'checked_out') ? { label: 'Checked out', color: 'gray' }
@@ -363,7 +365,8 @@ export default function GroupDetail() {
           `${groupNights} night${groupNights === 1 ? '' : 's'}`,
           `${rollup.room_count} room${rollup.room_count === 1 ? '' : 's'}`,
           `${groupPax} guest${groupPax === 1 ? '' : 's'}`,
-        ]}
+          groupAgents.length > 0 && `Agent: ${groupAgents.join(', ')}`,
+        ].filter(Boolean)}
         badge={<span className={`badge badge-${groupState.color}`}>{groupState.label}</span>}
         actions={<>
           {anyEligibleForCheckin && (

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import AgentFormModal from '../components/AgentFormModal';
+import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, commissionText } from '../lib/agents';
 
 function fmtIDR(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -26,89 +28,130 @@ const TH = {
 const TD = { padding: '10px 14px', fontSize: 13 };
 
 export default function Agents() {
-  const { sourceId } = useParams();
-  return sourceId ? <AgentDetail sourceId={sourceId} /> : <AgentList />;
+  const { agentId } = useParams();
+  return agentId ? <AgentDetail agentId={agentId} /> : <AgentList />;
 }
 
-// ─────────────────────────────────────────── AR aging list ──
+// ─────────────────────────────────────────── agents list + what they owe ──
+// Every agent / company (migration 084), with its billing terms and what it
+// owes (city-ledger AR aging). Rows open the agent's statement.
 
 function AgentList() {
   const nav = useNavigate();
-  const [rows, setRows] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [aging, setAging] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+  const [editing, setEditing] = useState(null);   // agent row | 'new'
 
-  useEffect(() => {
-    api.get('/api/agents').then(r => setRows(r.data)).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  function load() {
+    return Promise.all([api.get('/api/agent-directory'), api.get('/api/agents')])
+      .then(([d, a]) => { setAgents(d.data); setAging(a.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
 
-  const totals = rows.reduce((acc, r) => {
-    for (const [k] of BUCKETS) acc[k] = (acc[k] || 0) + Number(r[k] || 0);
-    acc.total_outstanding += Number(r.total_outstanding || 0);
-    acc.unpaid_commission += Number(r.unpaid_commission || 0);
-    return acc;
-  }, { total_outstanding: 0, unpaid_commission: 0 });
+  const owed = Object.fromEntries(aging.filter(r => r.agent_id).map(r => [r.agent_id, r]));
+  const noAgent = aging.find(r => !r.agent_id && r.total_outstanding > 0);
+  const overdue = r => r ? Number(r.total_outstanding || 0) - Number(r.current || 0) : 0;
+  const totals = aging.reduce((t, r) => ({
+    owed: t.owed + Number(r.total_outstanding || 0),
+    overdue: t.overdue + overdue(r),
+    commission: t.commission + Number(r.unpaid_commission || 0),
+  }), { owed: 0, overdue: 0, commission: 0 });
+
+  const needle = q.trim().toLowerCase();
+  const rows = agents.filter(a =>
+    (showInactive || a.is_active || Number(owed[a.id]?.total_outstanding) > 0 || Number(owed[a.id]?.unpaid_commission) > 0)
+    && (!needle || [a.name, a.contact_name, a.contact_phone].some(v => v && v.toLowerCase().includes(needle))));
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Agent Accounts</div>
-          <div className="page-subtitle">City-ledger AR aging · Owner only</div>
+          <div className="page-title">Agent Billing</div>
+          <div className="page-subtitle">Travel agents, companies and wholesalers — billing terms and what they owe · Owner only</div>
         </div>
+        <button className="btn btn-primary" onClick={() => setEditing('new')}>+ New agent</button>
+      </div>
+
+      <div className="stat-grid" style={{ marginBottom: 16 }}>
+        <div className="stat-card"><div className="stat-label">Owed by agents</div><div className="stat-value">{fmtIDR(totals.owed)}</div></div>
+        <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{ color: totals.overdue > 0 ? '#DC2626' : undefined }}>{fmtIDR(totals.overdue)}</div></div>
+        <div className="stat-card"><div className="stat-label">Commission to pay</div><div className="stat-value" style={{ color: totals.commission > 0 ? '#D97706' : undefined }}>{fmtIDR(totals.commission)}</div></div>
+      </div>
+
+      <div className="flex gap-2 items-center" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+        <input className="form-input" style={{ maxWidth: 280 }} placeholder="Search name or contact…" value={q} onChange={e => setQ(e.target.value)} />
+        <label className="flex gap-2 items-center" style={{ fontSize: 13, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} /> Show inactive
+        </label>
       </div>
 
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading…</div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && !noAgent ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: '#6B7280' }}>
-          No agent sources yet. Set a booking source's type to Company / Travel Agent / Wholesaler in Settings → Sources &amp; Methods.
+          {agents.length === 0 ? 'No agents yet. Add one here, or from a booking (New Booking → Agent).' : 'No agent matches.'}
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'auto' }}>
-          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+        <div className="card" style={{ padding: 0 }}>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                 <th style={TH}>Agent</th>
-                {BUCKETS.map(([k, l]) => <th key={k} style={{ ...TH, textAlign: 'right' }}>{l}</th>)}
-                <th style={{ ...TH, textAlign: 'right' }}>Outstanding</th>
-                <th style={{ ...TH, textAlign: 'right' }}>Unpaid Comm.</th>
+                <th style={TH}>How they pay</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Bookings</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Owed</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Overdue</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Commission to pay</th>
+                <th style={TH}></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr
-                  key={r.source_id}
-                  onClick={() => nav(`/agents/${r.source_id}`)}
-                  style={{ borderBottom: '1px solid #E5E7EB', cursor: 'pointer', background: i % 2 ? '#FAFAFA' : 'white' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#F3F4F6'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = i % 2 ? '#FAFAFA' : 'white'; }}
-                >
-                  <td style={{ ...TD, fontWeight: 600 }}>
-                    {r.source_label}
-                    {r.open_count > 0 && <span style={{ color: '#9CA3AF', fontWeight: 400 }}> · {r.open_count} open</span>}
-                  </td>
-                  {BUCKETS.map(([k]) => (
-                    <td key={k} style={{ ...TD, textAlign: 'right', color: k === 'd90_plus' && r[k] > 0 ? '#DC2626' : '#111' }}>
-                      {r[k] > 0 ? fmtIDR(r[k]) : '—'}
+              {rows.map(a => {
+                const r = owed[a.id];
+                return (
+                  <tr key={a.id} onClick={() => nav(`/agents/${a.id}`)} style={{ borderBottom: '1px solid #E5E7EB', cursor: 'pointer', opacity: a.is_active ? 1 : 0.6 }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#F3F4F6'; }} onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
+                    <td style={TD}>
+                      <div style={{ fontWeight: 600 }}>{a.name}{!a.is_active && <span className="badge badge-gray" style={{ marginLeft: 6, fontSize: 10 }}>Inactive</span>}</div>
+                      <div style={{ fontSize: 11, color: '#9CA3AF' }}>{[AGENT_TYPE_LABEL[a.agent_type], a.contact_name, a.contact_phone].filter(Boolean).join(' · ')}</div>
                     </td>
-                  ))}
-                  <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{fmtIDR(r.total_outstanding)}</td>
-                  <td style={{ ...TD, textAlign: 'right', color: r.unpaid_commission > 0 ? '#D97706' : '#9CA3AF' }}>
-                    {r.unpaid_commission > 0 ? fmtIDR(r.unpaid_commission) : '—'}
-                  </td>
+                    <td style={TD}>
+                      {PAYMENT_MODE_SHORT[a.payment_status] || 'Guest pays'}
+                      {HAS_COMMISSION.includes(a.payment_status) && commissionText(a.commission_type, a.commission_value) && (
+                        <span style={{ color: '#6B7280' }}> · {commissionText(a.commission_type, a.commission_value)}</span>
+                      )}
+                    </td>
+                    <td style={{ ...TD, textAlign: 'right', color: '#6B7280' }}>{a.booking_count || '—'}</td>
+                    <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{Number(r?.total_outstanding) > 0 ? fmtIDR(r.total_outstanding) : '—'}</td>
+                    <td style={{ ...TD, textAlign: 'right', color: overdue(r) > 0 ? '#DC2626' : '#9CA3AF' }}>{overdue(r) > 0 ? fmtIDR(overdue(r)) : '—'}</td>
+                    <td style={{ ...TD, textAlign: 'right', color: Number(r?.unpaid_commission) > 0 ? '#D97706' : '#9CA3AF' }}>{Number(r?.unpaid_commission) > 0 ? fmtIDR(r.unpaid_commission) : '—'}</td>
+                    <td style={{ ...TD, textAlign: 'right' }}>
+                      <button className="btn btn-sm btn-secondary" onClick={e => { e.stopPropagation(); setEditing(a); }}>Edit</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {noAgent && (
+                <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+                  <td style={TD} colSpan={3}><span style={{ fontWeight: 600 }}>No agent</span> <span style={{ fontSize: 11, color: '#9CA3AF' }}>· billed stays without an agent — set one on the booking</span></td>
+                  <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{fmtIDR(noAgent.total_outstanding)}</td>
+                  <td style={{ ...TD, textAlign: 'right' }}>{overdue(noAgent) > 0 ? fmtIDR(overdue(noAgent)) : '—'}</td>
+                  <td colSpan={2} />
                 </tr>
-              ))}
+              )}
             </tbody>
-            <tfoot>
-              <tr style={{ borderTop: '2px solid #E5E7EB', fontWeight: 700 }}>
-                <td style={TD}>Total</td>
-                {BUCKETS.map(([k]) => <td key={k} style={{ ...TD, textAlign: 'right' }}>{fmtIDR(totals[k])}</td>)}
-                <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(totals.total_outstanding)}</td>
-                <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(totals.unpaid_commission)}</td>
-              </tr>
-            </tfoot>
           </table></div>
         </div>
+      )}
+
+      {editing && (
+        <AgentFormModal agent={editing === 'new' ? null : editing} onClose={() => setEditing(null)}
+          onSaved={a => { setEditing(null); if (editing === 'new') nav(`/agents/${a.id}`); else load(); }} />
       )}
     </div>
   );
@@ -116,13 +159,14 @@ function AgentList() {
 
 // ─────────────────────────────────────────── per-agent statement ──
 
-function AgentDetail({ sourceId }) {
+function AgentDetail({ agentId }) {
   const nav = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [payOpen, setPayOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
@@ -130,13 +174,13 @@ function AgentDetail({ sourceId }) {
   }
 
   function load() {
-    return api.get(`/api/agents/${sourceId}`)
+    return api.get(`/api/agents/${agentId}`)
       .then(r => setData(r.data))
       .catch(err => showToast(err.response?.data?.error || 'Failed to load', 'error'))
       .finally(() => setLoading(false));
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [sourceId]);
+  useEffect(() => { load(); }, [agentId]);
 
   async function downloadInvoicePdf(invoiceId, number) {
     try {
@@ -181,16 +225,22 @@ function AgentDetail({ sourceId }) {
       <div className="page-header">
         <div>
           <div className="page-title">
-            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>Agents</span>
+            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>Agent Billing</span>
             {' / '}{agent.label}
+            {!agent.is_active && <span className="badge badge-gray" style={{ marginLeft: 8, fontSize: 11 }}>Inactive</span>}
           </div>
           <div className="page-subtitle">
-            {agent.tax_id ? `NPWP ${agent.tax_id} · ` : ''}
-            {agent.contact_name || agent.contact_email || '—'}
+            {[AGENT_TYPE_LABEL[agent.agent_type], agent.contact_name, agent.contact_phone, agent.contact_email, agent.tax_id && `NPWP ${agent.tax_id}`].filter(Boolean).join(' · ') || '—'}
+          </div>
+          <div style={{ fontSize: 13, marginTop: 4 }}>
+            {PAYMENT_MODE_LABEL[agent.payment_status] || 'Guest pays the hotel'}
+            {HAS_COMMISSION.includes(agent.payment_status) && commissionText(agent.commission_type, agent.commission_value) ? ` · default commission ${commissionText(agent.commission_type, agent.commission_value)}` : ''}
+            {agent.credit_terms_days != null ? ` · ${agent.credit_terms_days} days to pay` : ''}
             {agent.credit_limit != null ? ` · limit ${fmtIDR(agent.credit_limit)}` : ''}
           </div>
         </div>
         <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={() => setEditOpen(true)}>Edit</button>
           <button className="btn btn-secondary" onClick={() => setInvOpen(true)} disabled={!open_items.some(i => i.folio_status === 'pending_agent_invoice')}>
             Generate Invoice
           </button>
@@ -290,8 +340,9 @@ function AgentDetail({ sourceId }) {
         ))}
       </Section>
 
-      {payOpen && <RecordPaymentModal sourceId={sourceId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
-      {invOpen && <GenerateInvoiceModal sourceId={sourceId} openItems={open_items.filter(i => i.folio_status === 'pending_agent_invoice')} onClose={() => setInvOpen(false)} onDone={(inv) => { setInvOpen(false); showToast(`Invoice ${inv.invoice_number} created`); downloadInvoicePdf(inv.id, inv.invoice_number); load(); }} onError={m => showToast(m, 'error')} />}
+      {editOpen && <AgentFormModal agent={agent} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); showToast('Saved'); load(); }} />}
+      {payOpen && <RecordPaymentModal agentId={agentId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
+      {invOpen && <GenerateInvoiceModal agentId={agentId} openItems={open_items.filter(i => i.folio_status === 'pending_agent_invoice')} onClose={() => setInvOpen(false)} onDone={(inv) => { setInvOpen(false); showToast(`Invoice ${inv.invoice_number} created`); downloadInvoicePdf(inv.id, inv.invoice_number); load(); }} onError={m => showToast(m, 'error')} />}
     </div>
   );
 }
@@ -310,7 +361,7 @@ function Empty({ children }) {
 
 // ─────────────────────────────────────────── modals ──
 
-function RecordPaymentModal({ sourceId, openItems, outstanding, onClose, onDone, onError }) {
+function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, onError }) {
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('bank_transfer');
   const [receivedOn, setReceivedOn] = useState(new Date().toISOString().slice(0, 10));
@@ -341,7 +392,7 @@ function RecordPaymentModal({ sourceId, openItems, outstanding, onClose, onDone,
       const allocationArr = Object.entries(allocations)
         .map(([booking_id, v]) => ({ booking_id, amount: parseFloat(v) || 0 }))
         .filter(a => a.amount > 0);
-      const { data } = await api.post(`/api/agents/${sourceId}/payments`, {
+      const { data } = await api.post(`/api/agents/${agentId}/payments`, {
         amount: amt, method, received_on: receivedOn, reference,
         allocations: allocationArr.length ? allocationArr : undefined,
       });
@@ -417,7 +468,7 @@ function RecordPaymentModal({ sourceId, openItems, outstanding, onClose, onDone,
   );
 }
 
-function GenerateInvoiceModal({ sourceId, openItems, onClose, onDone, onError }) {
+function GenerateInvoiceModal({ agentId, openItems, onClose, onDone, onError }) {
   const [selected, setSelected] = useState(() => new Set(openItems.map(i => i.booking_id)));
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -431,7 +482,7 @@ function GenerateInvoiceModal({ sourceId, openItems, onClose, onDone, onError })
   async function submit() {
     setSaving(true);
     try {
-      const { data } = await api.post(`/api/agents/${sourceId}/invoices`, {
+      const { data } = await api.post(`/api/agents/${agentId}/invoices`, {
         booking_ids: [...selected], notes,
       });
       onDone(data.invoice);

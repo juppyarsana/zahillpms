@@ -459,7 +459,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
-> **2026-09-28 — agents become their own list (migration 084), 🟡 Session 1 of 3 done (backend).** Agents / companies move out of `booking_sources` into `agents`; a booking gets an optional agent + its own commission; all agent billing is keyed by agent. Session 2 = screens, Session 3 = reports / Reg Card / production tidy-up with `maintenance/splitAgentSources.js`. Full write-up in `CLAUDE.md` ("Agents & companies as their own list"). Accounting (GL export + light books) waits for this.
+> **2026-09-28 — agents become their own list (migration 084), 🟡 Sessions 1–2 of 3 done (backend 2026-09-28, screens 2026-09-29).** Agents / companies move out of `booking_sources` into `agents`; a booking gets an optional agent + its own commission; all agent billing is keyed by agent. Session 2 = screens, Session 3 = reports / Reg Card / production tidy-up with `maintenance/splitAgentSources.js`. Full write-up in `CLAUDE.md` ("Agents & companies as their own list"). Accounting (GL export + light books) waits for this.
 
 > Scoped 2026-08-17 after a client conversation: their property takes many
 > group bookings placed by a *company*, not an individual — the defining

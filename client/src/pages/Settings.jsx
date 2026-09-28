@@ -16,110 +16,30 @@ const SOURCE_TYPES = [
   { value: 'booking_engine', label: 'Booking Engine' },
   { value: 'ota',            label: 'OTA' },
   { value: 'travel_agent',   label: 'Travel Agent' },
-  { value: 'company',        label: 'Company' },
+  { value: 'company',        label: 'Corporate / company' },
   { value: 'wholesaler',     label: 'Wholesaler' },
 ];
 const SOURCE_TYPE_LABEL = Object.fromEntries(SOURCE_TYPES.map(t => [t.value, t.label]));
 const AGENT_TYPES = ['travel_agent', 'company', 'wholesaler'];
 
-const PAYMENT_STATUSES = [
-  { value: 'normal',                      label: 'Normal — guest pays the property directly' },
-  { value: 'city_ledger',                 label: 'City ledger — agent is invoiced, AR posts automatically' },
-  { value: 'city_ledger_payment',         label: 'City ledger — agent is invoiced, AR needs manual confirmation' },
-  { value: 'commission',                  label: 'Commission — guest pays property, property pays agent a commission' },
-  { value: 'commission_and_city_ledger',  label: 'City ledger + commission — agent pays property, then gets a commission back' },
-];
-const PAYMENT_STATUS_SHORT = {
-  normal: 'Normal',
-  city_ledger: 'City ledger',
-  city_ledger_payment: 'City ledger (manual)',
-  commission: 'Commission',
-  commission_and_city_ledger: 'City ledger + commission',
-};
-const HAS_COMMISSION = new Set(['commission', 'commission_and_city_ledger']);
-
-// Shared source-type + agent-billing fields, used by both the add and edit forms.
+// A source is a channel / segment (for statistics). The agents and companies
+// themselves — with their billing and commission — are their own list in
+// Agent Billing (migration 084); a booking on an agent-type source shows the
+// Agent field on New Booking.
 function SourceAgentFields({ form, set }) {
   const sourceType = form.source_type || 'direct';
-  const isAgent = AGENT_TYPES.includes(sourceType);
-  const paymentStatus = form.payment_status || 'normal';
-
   return (
-    <>
-      <div className="form-group">
-        <label className="form-label">Source Type</label>
-        <select className="form-select" value={sourceType} onChange={e => set('source_type', e.target.value)}>
-          {SOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-      </div>
-
-      {isAgent && (
-        <div style={{ borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
-          <div className="card-title" style={{ fontSize: 13, marginBottom: 10 }}>Agent Billing</div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Contact Name</label>
-              <input className="form-input" value={form.contact_name || ''} onChange={e => set('contact_name', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Contact Email</label>
-              <input className="form-input" type="email" value={form.contact_email || ''} onChange={e => set('contact_email', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Contact Phone</label>
-              <input className="form-input" value={form.contact_phone || ''} onChange={e => set('contact_phone', e.target.value)} />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Billing Address</label>
-            <textarea className="form-input" rows={2} value={form.billing_address || ''} onChange={e => set('billing_address', e.target.value)} />
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Tax ID (NPWP)</label>
-              <input className="form-input" value={form.tax_id || ''} onChange={e => set('tax_id', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Credit Terms (days)</label>
-              <input className="form-input" type="number" min={0} value={form.credit_terms_days ?? ''}
-                onChange={e => set('credit_terms_days', e.target.value)} style={{ maxWidth: 120 }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Credit Limit (IDR)</label>
-              <input className="form-input" type="number" min={0} value={form.credit_limit ?? ''}
-                onChange={e => set('credit_limit', e.target.value)} />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Payment Arrangement</label>
-            <select className="form-select" value={paymentStatus} onChange={e => set('payment_status', e.target.value)}>
-              {PAYMENT_STATUSES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-            </select>
-          </div>
-
-          {HAS_COMMISSION.has(paymentStatus) && (
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Commission Type</label>
-                <select className="form-select" value={form.commission_type || 'percent'} onChange={e => set('commission_type', e.target.value)}>
-                  <option value="percent">Percent (%)</option>
-                  <option value="amount">Fixed amount (IDR)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Commission Value</label>
-                <input className="form-input" type="number" min={0} value={form.commission_value ?? ''}
-                  onChange={e => set('commission_value', e.target.value)} />
-              </div>
-            </div>
-          )}
+    <div className="form-group">
+      <label className="form-label">Source Type</label>
+      <select className="form-select" value={sourceType} onChange={e => set('source_type', e.target.value)}>
+        {SOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </select>
+      {AGENT_TYPES.includes(sourceType) && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+          Bookings on this source ask for the agent / company. Each agent's billing and commission are set in Agent Billing, not here.
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -133,11 +53,7 @@ export default function Settings() {
   const [addForm, setAddForm] = useState({});
   const [error, setError] = useState('');
 
-  const AGENT_FIELDS = [
-    'source_type', 'payment_status', 'billing_address', 'tax_id', 'contact_name',
-    'contact_email', 'contact_phone', 'credit_terms_days', 'credit_limit',
-    'commission_type', 'commission_value',
-  ];
+  const AGENT_FIELDS = ['source_type'];
 
   function startEdit(type, item) {
     setEditingId(`${type}:${item.id}`);
@@ -145,7 +61,6 @@ export default function Settings() {
       const f = { label: item.label, is_ota: item.is_ota, color: item.color, sort_order: item.sort_order };
       for (const k of AGENT_FIELDS) f[k] = item[k] ?? '';
       f.source_type = item.source_type || 'direct';
-      f.payment_status = item.payment_status || 'normal';
       f.publish_rate = item.publish_rate !== false;
       setEditForm(f);
     } else {
@@ -187,7 +102,7 @@ export default function Settings() {
     if (type === 'source') {
       const used = new Set(sources.map(s => s.color?.toLowerCase()));
       const autoColor = AUTO_COLORS.find(c => !used.has(c.toLowerCase())) || AUTO_COLORS[0];
-      setAddForm({ color: autoColor, is_ota: false, source_type: 'direct', payment_status: 'normal', publish_rate: true });
+      setAddForm({ color: autoColor, is_ota: false, source_type: 'direct', publish_rate: true });
     } else {
       setAddForm({});
     }
@@ -224,7 +139,7 @@ export default function Settings() {
       <div className="page-header">
         <div>
           <div className="page-title">Booking Sources & Methods</div>
-          <div className="page-subtitle">Configure booking channels, agents, and payment methods</div>
+          <div className="page-subtitle">Configure booking channels and payment methods</div>
         </div>
       </div>
 
@@ -232,8 +147,9 @@ export default function Settings() {
       <div className="card mb-3">
         <div className="card-title">Booking Sources</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Channels guests book through. Mark OTA sources — their check-in flow will skip the payment gate since payment is handled by the platform.
-          Set a source type of Travel Agent, Company, or Wholesaler to record billing details and a payment arrangement (city ledger / commission).
+          Channels guests book through — keep this list short (Direct, Walk-in, each OTA, Travel Agent, Corporate, Wholesaler). Mark OTA sources — their check-in flow will skip the payment gate since payment is handled by the platform.
+          Agents and companies themselves, with their billing and commission, are in{' '}
+          <a href="/agents" onClick={e => { e.preventDefault(); nav('/agents'); }}>Agent Billing</a>.
         </p>
 
         {sources.map(s => (
@@ -291,18 +207,10 @@ export default function Settings() {
                       {SOURCE_TYPE_LABEL[s.source_type]}
                     </span>
                   )}
-                  {s.payment_status && s.payment_status !== 'normal' && (
-                    <span className="badge badge-blue" style={{ fontSize: 10, padding: '2px 6px' }}>
-                      {PAYMENT_STATUS_SHORT[s.payment_status]}
-                    </span>
-                  )}
                   {s.publish_rate === false && <span className="badge badge-amber" style={{ fontSize: 10, padding: '2px 6px' }}>Rate hidden on Reg. Card</span>}
                   {!s.is_active && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Inactive</span>}
                 </div>
                 <div className="flex gap-2">
-                  {AGENT_TYPES.includes(s.source_type) && (
-                    <button className="btn btn-sm btn-secondary" onClick={() => nav(`/agents/${s.id}`)}>Statement →</button>
-                  )}
                   <button className="btn btn-sm btn-secondary" onClick={() => startEdit('source', s)}>Edit</button>
                   <button className="btn btn-sm btn-secondary" onClick={() => toggleActive('source', s.id, s.is_active)}>
                     {s.is_active ? 'Deactivate' : 'Activate'}

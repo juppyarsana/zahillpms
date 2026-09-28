@@ -6,21 +6,21 @@ import { useSettings } from '../context/SettingsContext';
 import CountrySelect from '../components/CountrySelect';
 import { useAuth } from '../context/AuthContext';
 import { shownAmount, includesText } from '../lib/priceBasis';
+import BookingAgentFields from '../components/BookingAgentFields';
+import { CITY_LEDGER, HAS_COMMISSION, commissionText as fmtCommission, EMPTY_AGENT_VALUE, agentBody } from '../lib/agents';
 
-// Staff-facing heads-up when the chosen source is an agent with a non-standard
-// billing arrangement. Informational only — booking creation is unchanged; the
-// actual city-ledger / commission settlement flow lands in a later slice.
-function SourceBillingNote({ source }) {
-  if (!source || !source.payment_status || source.payment_status === 'normal') return null;
-  const ps = source.payment_status;
-  const cityLedger = ps === 'city_ledger' || ps === 'city_ledger_payment' || ps === 'commission_and_city_ledger';
-  const commission = ps === 'commission' || ps === 'commission_and_city_ledger';
-  const commissionText = commission && source.commission_value
-    ? ` Commission to ${source.label}: ${source.commission_value}${source.commission_type === 'amount' ? ' IDR' : '%'}.`
-    : '';
+// Staff-facing heads-up when the booking's agent (migration 084) has a
+// billing arrangement: billed to the agent at checkout and/or a commission.
+function AgentBillingNote({ value }) {
+  const agent = value?.agent;
+  if (!agent || !agent.payment_status || agent.payment_status === 'normal') return null;
+  const cityLedger = CITY_LEDGER.includes(agent.payment_status);
+  const commission = HAS_COMMISSION.includes(agent.payment_status)
+    && (value.own && value.amount !== '' ? fmtCommission(value.type, value.amount) : fmtCommission(agent.commission_type, agent.commission_value));
+  const commissionText = commission ? ` Commission to ${agent.name}: ${commission}.` : '';
   const msg = cityLedger
-    ? `Billed to ${source.label} — settled via the agent statement, not collected from the guest at checkout.${commissionText}`
-    : `Property pays ${source.label} a commission on this booking.${commissionText}`;
+    ? `Billed to ${agent.name} — settled via the agent statement, not collected from the guest at checkout.${commissionText}`
+    : `The guest pays the hotel; ${agent.name} earns a commission on this booking.${commissionText}`;
   return (
     <div style={{ marginTop: 6, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>
       {msg}
@@ -169,6 +169,8 @@ export default function NewBooking() {
   const [availabilities, setAvailabilities] = useState([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [creditCheck, setCreditCheck] = useState(null);
+  const [agentVal, setAgentVal] = useState(EMPTY_AGENT_VALUE);   // the booking's agent + commission (084)
+  const [showAgent, setShowAgent] = useState(false);
   // Nights ↔ check-out stay in sync: type nights and check-out follows, pick
   // check-out and nights follows; moving check-in keeps the number of nights.
   const [nights, setNights] = useState(preIn && preOut && preOut > preIn ? String(nightsBetween(preIn, preOut)) : '');
@@ -320,7 +322,9 @@ export default function NewBooking() {
   }
   const extrasTotal = rooms.reduce((s, r) => s + extraTotal(r), 0);
   const srcObj = sources.find(s => s.id === form.source);
-  const extrasInDeposit = !(srcObj?.is_ota || AGENT_SOURCE_TYPES.includes(srcObj?.source_type));
+  const extrasInDeposit = !(srcObj?.is_ota || AGENT_SOURCE_TYPES.includes(srcObj?.source_type) || CITY_LEDGER.includes(agentVal.agent?.payment_status));
+  // The agent field shows by itself for Travel Agent / Corporate / Wholesaler sources.
+  const agentFieldShown = showAgent || !!agentVal.agent || ['travel_agent', 'company', 'wholesaler'].includes(srcObj?.source_type);
 
   const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
   const dValue     = parseFloat(form.discount_value || 0);
@@ -332,16 +336,17 @@ export default function NewBooking() {
   // the room's deposit line, never more than the room itself.
   const depositFor = pct => Math.min(netAmt, Math.round((netAmt + (extrasInDeposit ? extrasTotal : 0)) * pct / 100));
 
+  const agentId = agentVal.agent?.id;
+  const agentHasLimit = agentVal.agent?.credit_limit != null;
   useEffect(() => {
-    const src = sources.find(s => s.id === form.source);
-    if (!src || src.credit_limit == null) { setCreditCheck(null); return; }
+    if (!agentId || !agentHasLimit) { setCreditCheck(null); return; }
     const t = setTimeout(() => {
-      api.get(`/api/settings/booking-sources/${form.source}/credit-check?amount=${netAmt}`)
-        .then(r => setCreditCheck(r.data))
+      api.get(`/api/agent-directory/${agentId}/credit-check?amount=${netAmt}`)
+        .then(r => setCreditCheck({ ...r.data, label: r.data.name }))
         .catch(() => setCreditCheck(null));
     }, 400);
     return () => clearTimeout(t);
-  }, [form.source, netAmt, sources]);
+  }, [agentId, agentHasLimit, netAmt]);
 
   // Form submit only checks the form and opens the review; createBooking()
   // (the review's Confirm) actually saves.
@@ -385,6 +390,7 @@ export default function NewBooking() {
           check_in_date: form.check_in_date,
           check_out_date: form.check_out_date,
           source: form.source,
+          ...agentBody(agentVal),
           status: form.status,
           special_requests: form.special_requests,
           deposit_amount,
@@ -401,6 +407,7 @@ export default function NewBooking() {
           check_in_date: form.check_in_date,
           check_out_date: form.check_out_date,
           source: form.source,
+          ...agentBody(agentVal),
           status: form.status,
           special_requests: form.special_requests,
           group_discount_type: form.discount_type || null,
@@ -545,9 +552,18 @@ export default function NewBooking() {
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
-            <SourceBillingNote source={sources.find(s => s.id === form.source)} />
-            <CreditLimitNote check={creditCheck} />
+            {!agentFieldShown && (
+              <button type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 6 }} onClick={() => setShowAgent(true)}>+ Agent / company (optional)</button>
+            )}
           </div>
+          {agentFieldShown && (
+            <div>
+              <BookingAgentFields value={agentVal} onChange={setAgentVal}
+                hint={!agentVal.agent ? 'Travel agent, company, wholesaler — or a guide / driver who sent the guest. Their billing and commission come from Agent Billing.' : null} />
+              <AgentBillingNote value={agentVal} />
+              <CreditLimitNote check={creditCheck} />
+            </div>
+          )}
         </div>
 
         {rooms.map((room, i) => {
@@ -953,6 +969,13 @@ export default function NewBooking() {
                   <div><span className="text-muted">Stay:</span> <strong>{form.check_in_date} → {form.check_out_date}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}
                     {anyOwnDates && <span className="text-muted"> — some rooms have their own dates (below)</span>}</div>
                   <div><span className="text-muted">Source:</span> {sourceLabel}</div>
+                  {agentVal.agent && (
+                    <div><span className="text-muted">Agent:</span> {agentVal.agent.name}
+                      {HAS_COMMISSION.includes(agentVal.agent.payment_status) && (agentVal.own && agentVal.amount !== ''
+                        ? ` · commission ${fmtCommission(agentVal.type, agentVal.amount)} (this booking)`
+                        : fmtCommission(agentVal.agent.commission_type, agentVal.agent.commission_value) ? ` · commission ${fmtCommission(agentVal.agent.commission_type, agentVal.agent.commission_value)}` : '')}
+                    </div>
+                  )}
                 </div>
                 <div className="table-wrap">
                   <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>

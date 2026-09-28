@@ -15,6 +15,8 @@ import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
+import BookingAgentFields from '../components/BookingAgentFields';
+import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentBody, agentValueFromBooking } from '../lib/agents';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
@@ -202,6 +204,7 @@ export default function BookingDetail() {
   const [editingDetails, setEditingDetails] = useState(false);
   const [editDetailsForm, setEditDetailsForm] = useState({});
   const [editDetailsLoading, setEditDetailsLoading] = useState(false);
+  const [editAgent, setEditAgent] = useState(null);   // BookingAgentFields value
   const [changingGuest, setChangingGuest] = useState(null); // null = closed, else GuestPicker value
   const [guestSaving, setGuestSaving] = useState(false);
   const [guestError, setGuestError] = useState('');
@@ -414,12 +417,11 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
     setCheckoutNotes('');
     setEarlyCo({ early: false, valid: true, early_departure: null });
     setCheckoutCredit(null);
-    const src = sources.find(s => s.id === booking.source);
-    const cityLedger = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(src?.payment_status);
-    setBillToAgent(cityLedger);
-    if (src && src.credit_limit != null) {
-      api.get(`/api/settings/booking-sources/${src.id}/credit-check?amount=0`)
-        .then(r => setCheckoutCredit(r.data))
+    // Billing terms belong to the booking's agent (migration 084).
+    setBillToAgent(CITY_LEDGER.includes(booking.agent_payment_status));
+    if (booking.agent_id && booking.agent_credit_limit != null) {
+      api.get(`/api/agent-directory/${booking.agent_id}/credit-check?amount=0`)
+        .then(r => setCheckoutCredit({ ...r.data, label: r.data.name }))
         .catch(() => {});
     }
   }
@@ -600,13 +602,14 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
       internal_notes: booking.internal_notes || '',
       bed_preference: booking.bed_preference || '',
     });
+    setEditAgent(agentValueFromBooking(booking));
     setEditingDetails(true);
   }
 
   async function doEditDetails() {
     setEditDetailsLoading(true);
     try {
-      await api.put(`/api/bookings/${id}`, editDetailsForm);
+      await api.put(`/api/bookings/${id}`, { ...editDetailsForm, ...agentBody(editAgent) });
       setEditingDetails(false);
       load();
     } catch (err) {
@@ -739,8 +742,13 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
   const pendingBalance = roomPaymentLines
     .filter(p => p.type === 'balance' && p.status !== 'received')
     .reduce((s, p) => s + parseFloat(p.amount), 0);
-  const bookingSource = sources.find(s => s.id === booking.source);
-  const cityLedgerSource = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(bookingSource?.payment_status);
+  // Billed to the booking's agent at checkout (city ledger, migration 084).
+  const cityLedgerSource = CITY_LEDGER.includes(booking.agent_payment_status);
+  const bookingCommission = booking.agent_id && HAS_COMMISSION.includes(booking.agent_payment_status)
+    ? (commissionText(booking.commission_type, booking.commission_value)
+        ? `${commissionText(booking.commission_type, booking.commission_value)} (this booking)`
+        : commissionText(booking.agent_commission_type, booking.agent_commission_value))
+    : '';
 
   // Modify Booking (moderate consequence) and Danger Zone (rare, destructive)
   // stay collapsed behind ⋮, visually separated by a divider — Communication
@@ -930,6 +938,15 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
             <span className="text-muted">Source</span>
             <SourceBadge sourceId={booking.source} />
           </div>
+          {booking.agent_id && (
+            <div className="flex-between" style={{ marginBottom: 6, gap: 8, alignItems: 'flex-start' }}>
+              <span className="text-muted">Agent</span>
+              <span style={{ textAlign: 'right' }}>
+                {isOwner ? <Link to={`/agents/${booking.agent_id}`} style={{ fontWeight: 600 }}>{booking.agent_name}</Link> : <b>{booking.agent_name}</b>}
+                {bookingCommission && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Commission {bookingCommission}</div>}
+              </span>
+            </div>
+          )}
           <div className="flex-between">
             <span className="text-muted">Status</span>
             <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
@@ -971,7 +988,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtIDR(booking.agent_paid_amount)} received so far</div>
                 )}
                 {isOwner && (
-                  <div style={{ fontSize: 12 }}><Link to={`/agents/${booking.source}`}>Agent statement →</Link></div>
+                  <div style={{ fontSize: 12 }}>{booking.agent_id ? <Link to={`/agents/${booking.agent_id}`}>Agent statement →</Link> : <span className="text-muted">No agent on this booking</span>}</div>
                 )}
               </span>
             </div>
@@ -1504,6 +1521,10 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     onChange={e => setEditDetailsForm(f => ({ ...f, num_guests: e.target.value }))} />
                 </div>
               </div>
+              {editAgent && (booking.folio_status
+                ? <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Agent: <b>{booking.agent_name || '—'}</b> — already billed to the agent, so it can't be changed here.</div>
+                : <BookingAgentFields value={editAgent} onChange={setEditAgent}
+                    hint={AGENT_SOURCE_TYPES.includes(sources.find(s => s.id === editDetailsForm.source)?.source_type) && !editAgent.agent ? 'This source usually comes with an agent — pick one so it shows in Agent Billing.' : null} />)}
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Bed Preference</label>
@@ -1527,11 +1548,6 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 <textarea className="form-textarea" value={editDetailsForm.internal_notes || ''}
                   onChange={e => setEditDetailsForm(f => ({ ...f, internal_notes: e.target.value }))} />
               </div>
-              {booking.folio_status && editDetailsForm.source !== booking.source && (
-                <div className="alert alert-error">
-                  This booking already has agent billing activity ({booking.folio_status.replace('_', ' ')}) tied to its current source — changing the source now won't move that billing history, so double-check with whoever handles Agent Billing before saving.
-                </div>
-              )}
               <div className="alert alert-success" style={{ marginTop: 12 }}>
                 Dates and room assignment aren't edited here — use Amend Dates / Transfer Room for those.
               </div>
@@ -1885,7 +1901,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
                     <input type="checkbox" checked={billToAgent} onChange={e => setBillToAgent(e.target.checked)} />
                     <span>
-                      Bill <strong>{bookingSource?.label || 'the agent'}</strong> for this stay — the folio closes as
+                      Bill <strong>{booking.agent_name || 'the agent'}</strong> for this stay — the folio closes as
                       billed-to-agent (settled later via the agent statement) instead of collecting from the guest.
                     </span>
                   </label>
