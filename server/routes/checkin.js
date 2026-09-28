@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const agentBilling = require('../services/agentBillingService');
+const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
 const roomCharge = require('../services/roomChargeService');
 const { applyBookingPrice } = require('../services/bookingPriceService');
 const { round2 } = require('../services/folioService');
@@ -36,11 +37,21 @@ const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
 async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason } = {}) {
   const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [bookingId, propertyId]);
   if (!booking) { const err = new Error('Booking not found'); err.status = 404; throw err; }
-  const isOTA = OTA_SOURCES.includes(booking.source);
+  // Paid elsewhere: an OTA (source marked OTA) or an agent that pays the
+  // hotel later (city ledger, migration 084) — the guest doesn't pay the
+  // room at the desk, so the full-payment rule doesn't apply.
+  const { rows: [chan] } = await db.query(
+    `SELECT COALESCE(bs.is_ota, false) AS is_ota, ag.payment_status AS agent_payment_status
+     FROM bookings b
+     LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN agents ag ON ag.id = b.agent_id
+     WHERE b.id = $1`, [bookingId]);
+  const isOTA = OTA_SOURCES.includes(booking.source) || chan?.is_ota
+    || agentBilling.CITY_LEDGER.includes(chan?.agent_payment_status);
   let payLaterUnpaid = null;   // set when checked in without full payment
 
   if (isOTA) {
-    // OTA manages payment externally — allow from any pre-checkin status
+    // OTA / billed agent manages payment — allow from any pre-checkin status
     if (!['confirmed', 'deposit_paid', 'pending'].includes(booking.status)) {
       const err = new Error(`Cannot check in — booking status is ${booking.status}`); err.status = 409; throw err;
     }
@@ -203,7 +214,7 @@ async function loadRegCardData(where, params) {
        b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.fnb_revenue, b.nights, b.deposit_amount, b.complimentary_scope,
        u.name AS unit_name, u.type AS room_type_name,
        rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
-       bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
+       bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by, ag.name AS agent_name,
        lt.name AS membership,
        pm.label AS payment_method_label,
        cu.name AS checked_in_by,
@@ -215,6 +226,7 @@ async function loadRegCardData(where, params) {
      LEFT JOIN property_settings ps ON ps.property_id = b.property_id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN agents ag ON ag.id = b.agent_id
      LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
      -- "Checked In By" = whoever actually checked the guest in; blank (to
      -- fill in by hand) on a card printed before arrival.
@@ -437,7 +449,9 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     const settlement = await agentBilling.settleCheckout(client, {
       propertyId: req.propertyId,
       bookingId: req.params.bookingId,
-      billToAgent: !!bill_to_agent,
+      // Not sent (Check-in/out, Quick Check-in screens): follow the agent — a
+      // stay whose agent pays the hotel later is billed to it.
+      billToAgent: bill_to_agent === undefined || bill_to_agent === null ? null : !!bill_to_agent,
       actorUserId: req.user.id,
     });
     if (settlement.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: settlement.error }); }

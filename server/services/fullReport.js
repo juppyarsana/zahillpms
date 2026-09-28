@@ -9,7 +9,7 @@ const { round2, computeFolioTotals } = require('./folioService');
 //              extras by category, activities by activity, complimentary
 //   rooms    — occupancy, ADR, RevPAR, by room type, by rate plan, guests,
 //              by nationality
-//   channels — by booking source
+//   channels — by booking source; agents — by agent / company (migration 084)
 //   money    — received by method, service charge & tax, discounts, still
 //              owed as of today (guests, agents)
 //   bookings — reservations made / cancelled / no-shows in the period
@@ -39,7 +39,7 @@ async function buildFullReport(propertyId, from, to) {
   const notComp = `NOT (s.payment_method = 'room_charge' AND s.booking_id IN (SELECT id FROM bookings WHERE complimentary_scope = 'all'))`;
   const [
     base, { rows: extraLines }, { rows: addonCats }, { rows: activities }, { rows: settingsRows },
-    { rows: typeUnits }, { rows: byType }, { rows: byPlan }, { rows: byNat }, { rows: [arrivals] }, { rows: bySource },
+    { rows: typeUnits }, { rows: byType }, { rows: byPlan }, { rows: byNat }, { rows: [arrivals] }, { rows: bySource }, { rows: byAgent },
     { rows: [disc] }, received, { rows: owedGuests }, agents,
     pickup, { rows: [noShow] }, { rows: expenseCats },
   ] = await Promise.all([
@@ -102,6 +102,18 @@ async function buildFullReport(propertyId, from, to) {
              COALESCE(SUM(n.room_rev_per_night), 0) AS room_revenue, COALESCE(SUM(n.fnb_rev_per_night), 0) AS meal_revenue
       FROM nights n LEFT JOIN booking_sources bs ON bs.id = n.source AND bs.property_id = $3
       GROUP BY 1`, P),
+    // By agent (migration 084): stays in the period with an agent + the
+    // commission posted in the period (at check-out, WITA day).
+    db.query(`
+      ${NIGHTS_CTE}
+      SELECT a.id AS agent_id, a.name AS agent, a.agent_type,
+             COUNT(DISTINCT n.booking_id) AS bookings, COUNT(*) AS nights, COUNT(*) FILTER (WHERE NOT n.comp) AS paid_nights,
+             COALESCE(SUM(n.room_rev_per_night), 0) AS room_revenue, COALESCE(SUM(n.fnb_rev_per_night), 0) AS meal_revenue,
+             (SELECT COALESCE(SUM(ac.amount), 0) FROM agent_commissions ac
+               WHERE ac.agent_id = a.id AND ac.property_id = $3
+                 AND (ac.computed_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date) AS commission
+      FROM nights n JOIN bookings b ON b.id = n.booking_id JOIN agents a ON a.id = b.agent_id
+      GROUP BY a.id, a.name, a.agent_type`, P),
     db.query(`
       ${NIGHTS_CTE}
       SELECT COALESCE(SUM(discount_per_night), 0) AS amount,
@@ -223,6 +235,13 @@ async function buildFullReport(propertyId, from, to) {
       room_revenue: r2(r.room_revenue), adr: parseInt(r.paid_nights) ? r2(r.room_revenue / r.paid_nights) : 0,
       share: stayTotal ? Math.round((rev / stayTotal) * 1000) / 10 : 0 };
   }).sort((a, b) => b.revenue - a.revenue);
+  // Agents (084): share of all stay revenue (room + rate-plan meals), like channels.
+  const agents_rows = byAgent.map(r => {
+    const rev = parseFloat(r.room_revenue) + parseFloat(r.meal_revenue);
+    return { agent: r.agent, agent_id: r.agent_id, agent_type: r.agent_type, bookings: parseInt(r.bookings), nights: parseInt(r.nights),
+      revenue: r2(rev), adr: parseInt(r.paid_nights) ? r2(r.room_revenue / r.paid_nights) : 0,
+      commission: r2(r.commission), share: stayTotal ? Math.round((rev / stayTotal) * 1000) / 10 : 0 };
+  }).sort((a, b) => b.revenue - a.revenue);
 
   // ── Money ──
   // Service charge + tax on this period's revenue, at today's rates: every
@@ -283,7 +302,7 @@ async function buildFullReport(propertyId, from, to) {
 
   return {
     from, to, days,
-    revenue, rooms, channels, money, bookings, costs,
+    revenue, rooms, channels, agents: agents_rows, money, bookings, costs,
     daily: base.daily_revenue,
     expenses_total: base.expenses_total, net_income: base.net_income,
   };

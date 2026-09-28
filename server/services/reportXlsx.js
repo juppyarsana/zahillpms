@@ -72,7 +72,7 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     property: propertyName || 'Property', from: report.from, to: report.to,
     note: 'Amounts in Rupiah, net: after discounts, before service charge and tax. Same figures as the Reports page.',
   };
-  const { revenue: rev, rooms, channels, money, bookings: bk, costs } = report;
+  const { revenue: rev, rooms, channels, agents = [], money, bookings: bk, costs } = report;
   const total = rev.total || 0;
   const share = n => (total ? Math.round((n / total) * 1000) / 10 : 0);
 
@@ -152,6 +152,16 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
   ], channels, { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0),
     revenue: chTotal, share: chTotal ? 100 : 0 },
   'Revenue = room + meals in the rate plan for the nights in this period.');
+  if (agents.length) {
+    table(ws3, 'By agent / company', [
+      { header: 'Agent', key: 'agent' }, { header: 'Bookings', key: 'bookings', fmt: INT, align: 'right' },
+      { header: 'Nights', key: 'nights', fmt: INT, align: 'right' }, { header: 'Revenue (Rp)', key: 'revenue', fmt: IDR, align: 'right' },
+      { header: 'ADR (Rp)', key: 'adr', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
+      { header: 'Commission (Rp)', key: 'commission', fmt: IDR, align: 'right' },
+    ], agents, { agent: 'Total', bookings: agents.reduce((s, a) => s + a.bookings, 0), nights: agents.reduce((s, a) => s + a.nights, 0),
+      revenue: agents.reduce((s, a) => s + a.revenue, 0), share: agents.reduce((s, a) => s + a.share, 0), commission: agents.reduce((s, a) => s + a.commission, 0) },
+    'Stays with an agent on the booking. Share = of all stay revenue. Commission = posted at check-out in this period.');
+  }
   table(ws3, 'Reservations in this period', [
     { header: '', key: 'k' }, { header: 'Bookings', key: 'bookings', fmt: INT, align: 'right' },
     { header: 'Rooms', key: 'rooms', fmt: INT, align: 'right' }, { header: 'Nights', key: 'nights', fmt: INT, align: 'right' },
@@ -159,7 +169,7 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
   ], [
     { k: 'Made', ...bk.made }, { k: 'Cancelled', ...bk.cancelled }, { k: 'No-shows', ...bk.no_shows },
   ], null, 'Made = by the day entered (a group = 1 booking). Cancelled = by the day cancelled. No-shows = due in during the period, never arrived. Net values.');
-  widths(ws3, [28, 12, 12, 20, 16, 12]);
+  widths(ws3, [28, 12, 12, 20, 16, 12, 18]);
 
   // ── Money ──
   const ws4 = wb.addWorksheet('Money', { views: [{ state: 'frozen', ySplit: 4 }] });

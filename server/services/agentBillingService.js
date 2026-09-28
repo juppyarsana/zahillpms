@@ -56,6 +56,8 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
 
   const agent = await resolveBookingAgent(client, propertyId, bookingId);
   const paymentStatus = agent?.payment_status || 'normal';
+  // billToAgent null = not chosen on screen: bill a city-ledger agent by default.
+  if (billToAgent === null || billToAgent === undefined) billToAgent = !!agent && CITY_LEDGER.includes(paymentStatus);
 
   let folio_status = null;
   if (billToAgent) {

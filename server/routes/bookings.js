@@ -6,6 +6,7 @@ const requireRole = require('../middleware/role');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const agentBilling = require('../services/agentBillingService');
 const agentService = require('../services/agentService');
+const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
@@ -39,6 +40,13 @@ const BALANCE_PAID_SQL = `(EXISTS(SELECT 1 FROM payments p WHERE p.booking_id = 
 const BALANCE_AMOUNT_SQL = `COALESCE(
                (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance' AND p.status = 'pending' AND p.amount > 0),
                (SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.type = 'balance'))`;
+
+// The booking's agent for the Check-in / Quick Check-in lists (migration
+// 084): agent_billed = the agent pays the hotel later, so the guest pays
+// nothing for the room at the desk (like an OTA).
+const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.agent_id) AS agent_name,
+             EXISTS (SELECT 1 FROM agents ag WHERE ag.id = b.agent_id
+                       AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')) AS agent_billed`;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 // A booking's own commission for Edit History — "10%", "Rp 150.000" or "agent's default".
@@ -221,7 +229,8 @@ router.get('/today/arrivals', auth, async (req, res) => {
              )) as deposit_paid,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
-             END AS group_size
+             END AS group_size,
+             ${AGENT_ON_BOOKING_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -247,7 +256,8 @@ router.get('/today/departures', auth, async (req, res) => {
              ${BALANCE_AMOUNT_SQL} as balance_amount,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
-             END AS group_size
+             END AS group_size,
+             ${AGENT_ON_BOOKING_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -273,7 +283,8 @@ router.get('/in-house', auth, async (req, res) => {
              ${BALANCE_AMOUNT_SQL} as balance_amount,
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
-             END AS group_size
+             END AS group_size,
+             ${AGENT_ON_BOOKING_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -947,7 +958,11 @@ router.get('/:id', auth, async (req, res) => {
              EXISTS (SELECT 1 FROM complimentary_requests cr WHERE cr.booking_id = b.id
                        AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending,
              -- Publish Rate off (OTA / agent, migration 065): invoices get a guest copy without the room rate
-             (SELECT COALESCE(bs.publish_rate, true) FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_publish_rate,
+             -- rate hidden: source Publish Rate off, or an agent billing the hotel (services/publishRate.js)
+             (SELECT ${PUBLISH_RATE_SQL} FROM (SELECT 1) x LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+                LEFT JOIN agents ag ON ag.id = b.agent_id) AS source_publish_rate,
+             (SELECT ${ARRANGED_BY_SQL} FROM (SELECT 1) x LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+                LEFT JOIN agents ag ON ag.id = b.agent_id) AS arranged_by,
              (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label,
              -- the booking's agent (migration 084) and its billing terms
              ag.name AS agent_name, ag.agent_type, ag.payment_status AS agent_payment_status,

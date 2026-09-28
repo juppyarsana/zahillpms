@@ -115,7 +115,7 @@ export default function CheckIn() {
     setIdFile(null);
     setPayLaterReason(null);
 
-    if (!otaSources.includes(b.source)) {
+    if (!otaSources.includes(b.source) && !b.agent_billed) {
       if (b.status === 'deposit_paid') {
         setDepositBlockId(b.id);
         setMsg('balance_unpaid');
@@ -221,7 +221,8 @@ export default function CheckIn() {
     window.open(`https://wa.me/${waNum}?text=${text}`, '_blank');
   }
 
-  const isOTA = (b) => otaSources.includes(b.source);
+  // OTA, or an agent that pays the hotel later (migration 084): nothing to collect for the room
+  const isOTA = (b) => otaSources.includes(b.source) || !!b.agent_billed;
 
   return (
     <div>
@@ -299,7 +300,7 @@ export default function CheckIn() {
                     </span>
                     <div style={{ fontSize: 11, marginTop: 4, color: depositOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
                       {isOTA(b)
-                        ? '🏷 OTA managed'
+                        ? (b.agent_billed ? `🧾 Billed to ${b.agent_name}` : '🏷 OTA managed')
                         : b.deposit_paid
                           ? '✓ Deposit paid'
                           : '⚠ Deposit pending'}
@@ -377,7 +378,7 @@ export default function CheckIn() {
                   </span>
                   <div style={{ fontSize: 11, marginTop: 4, color: balanceOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
                     {isOTA(b)
-                      ? '🏷 OTA managed'
+                      ? (b.agent_billed ? `🧾 Billed to ${b.agent_name}` : '🏷 OTA managed')
                       : b.balance_paid
                         ? '✓ Balance paid'
                         : parseFloat(b.balance_amount || 0) === 0
@@ -424,7 +425,7 @@ export default function CheckIn() {
                   </span>
                   <div style={{ fontSize: 11, marginTop: 4, color: balanceOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
                     {isOTA(b)
-                      ? '🏷 OTA managed'
+                      ? (b.agent_billed ? `🧾 Billed to ${b.agent_name}` : '🏷 OTA managed')
                       : b.balance_paid
                         ? '✓ Balance paid'
                         : parseFloat(b.balance_amount || 0) === 0
@@ -652,7 +653,7 @@ export default function CheckIn() {
                   {/* Balance status */}
                   {isOTA(selected) ? (
                     <div className="alert alert-success" style={{ marginTop: 0, marginBottom: 12 }}>
-                      🏷 OTA managed — payment handled by {selected.source.replace('_', '.')}
+                      {selected.agent_billed ? `🧾 Billed to ${selected.agent_name} — the agent pays the hotel` : `🏷 OTA managed — payment handled by ${selected.source.replace('_', '.')}`}
                     </div>
                   ) : selected.balance_paid || parseFloat(selected.balance_amount || 0) === 0 ? (
                     <div className="alert alert-success" style={{ marginTop: 0, marginBottom: 12 }}>

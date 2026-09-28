@@ -1,3 +1,4 @@
+const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('./publishRate');
 const db = require('../db');
 
 function round2(n) {
@@ -157,7 +158,7 @@ async function loadFolio(bookingId, propertyId) {
             b.agent_id, ag.name AS agent_name,
             COALESCE(ag.payment_status, 'normal') AS agent_payment_status,
             COALESCE(ag.payment_status, 'normal') AS source_payment_status, bs.label as source_label,
-            COALESCE(bs.publish_rate, true) AS publish_rate,
+            ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
@@ -238,12 +239,13 @@ async function computeProforma(bookingId, propertyId) {
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
-            bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate
+            bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     LEFT JOIN agents ag ON ag.id = b.agent_id
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );

@@ -60,7 +60,7 @@ function renderRegistrationCard(doc, { property, data }) {
   // a plain note instead of the numbers, naming the actual source
   // rather than a generic placeholder.
   const showRate = data.publish_rate !== false;
-  const rateHiddenNote = `Arranged by ${data.source_label || 'Agent'}`;
+  const rateHiddenNote = `Arranged by ${data.arranged_by || data.source_label || 'Agent'}`;
   // Complimentary stay (migration 072): the room is free — say so, not "Rp 0".
   const comp = data.complimentary_scope;
   const compNote = comp === 'room' ? 'Complimentary (room)' : comp === 'room_meals' ? 'Complimentary (room + meals)' : comp === 'all' ? 'Complimentary' : null;
@@ -144,7 +144,7 @@ function renderRegistrationCard(doc, { property, data }) {
   gridRow(doc, {
     cells: [
       { label: 'Room Number', value: data.unit_name },
-      { label: 'Source of Booking', value: data.source_label },
+      { label: 'Source of Booking', value: data.agent_name ? `${data.source_label || ''} · ${data.agent_name}` : data.source_label },
       { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? `${fmtIDR(data.room_rate)}${data.rate_includes ? ` (incl. ${data.rate_includes})` : ''}` : '') : rateHiddenNote) },
     ],
   });

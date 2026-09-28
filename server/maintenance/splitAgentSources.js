@@ -86,6 +86,16 @@ async function run() {
       console.log(target
         ? `     ${s.bookings} booking(s) → source "${target.label}" · source "${s.label}" switched off`
         : `     OTA — bookings and source stay as they are (agent kept for billing only)`);
+      // Rate on the Registration Card / invoices (services/publishRate.js):
+      // before = this source's Publish Rate; after = the generic source's
+      // (on) unless the agent bills the hotel.
+      if (target && s.bookings) {
+        const billed = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(s.payment_status);
+        const beforeHidden = s.publish_rate === false;   // how it printed until this release
+        const afterHidden = billed;
+        console.log(`     rate on Reg. Card / invoice: until now ${beforeHidden ? 'hidden' : 'shown'} → from now ${afterHidden ? 'hidden' : 'shown'}`
+          + (beforeHidden !== afterHidden ? (afterHidden ? '  ⚠ CHANGES — the agent pays the hotel later, so the rate is hidden' : '  ⚠ CHANGES — the guest pays the hotel, so the rate will show') : ''));
+      }
 
       if (!APPLY) continue;
       const client = await db.pool.connect();

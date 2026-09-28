@@ -782,8 +782,8 @@ function complimentaryNote(scope) {
   return null;
 }
 
-// Guest copy of an OTA / agent stay (source Publish Rate off, migration 065 —
-// same switch as the Registration Card): the room is on the bill without its
+// Guest copy of an OTA / agent stay (rate not published — services/publishRate.js:
+// source Publish Rate off, or an agent that bills the hotel; same rule as the Registration Card): the room is on the bill without its
 // rate ("arranged by Booking.com"), and the totals, payments and balance are
 // the guest's own — the extras and what they paid for them. Room payments
 // (from the OTA / agent) aren't shown. Other stays: the folio as it is.
@@ -797,7 +797,7 @@ function guestCopyOf(folio) {
     ...folio, payments,
     subtotal: t.subtotal, untaxed_subtotal: t.untaxed_subtotal, service_charge_amount: t.service_charge_amount,
     tax_amount: t.tax_amount, total: t.total, balance_due: round2(t.total - received),
-    hideStayFor: folio.booking.source_label || 'the agent',
+    hideStayFor: folio.booking.arranged_by || folio.booking.source_label || 'the agent',
   };
 }
 

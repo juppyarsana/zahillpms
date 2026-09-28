@@ -855,7 +855,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 })(),
                 ...(booking.source_publish_rate === false ? [
                   { label: 'Invoice — accounting', icon: '🧾', hint: 'Everything, incl. the room rate — for accounting / the agent', onClick: () => downloadInvoice(false) },
-                  { label: 'Invoice — guest copy', icon: '🧾', hint: `Room shown as arranged by ${booking.source_label || 'the agent'}, without its rate; the guest's own charges and payments`, onClick: () => downloadInvoice(true) },
+                  { label: 'Invoice — guest copy', icon: '🧾', hint: `Room shown as arranged by ${booking.arranged_by || booking.source_label || 'the agent'}, without its rate; the guest's own charges and payments`, onClick: () => downloadInvoice(true) },
                   { divider: true },
                   { label: 'Pro Forma — accounting', icon: '📋', hint: 'Estimate for the whole stay, incl. the room rate', onClick: () => downloadProforma(false) },
                   { label: 'Pro Forma — guest copy', icon: '📋', hint: 'Estimate of the guest\'s own charges, room rate hidden', onClick: () => downloadProforma(true) },

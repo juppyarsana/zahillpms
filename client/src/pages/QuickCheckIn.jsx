@@ -120,7 +120,7 @@ export default function QuickCheckIn() {
 
   // ── Check-in helpers ──
   function openCheckin(b) {
-    const isOTA = otaSources.includes(b.source);
+    const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
     setCiSelected(b);
     setIdFile(null);
     setCiMsg('');
@@ -251,7 +251,7 @@ export default function QuickCheckIn() {
             {clusterByGroup(arrivals).map(item => {
               if (item.type === 'single') {
                 const b = item.booking;
-                const isOTA = otaSources.includes(b.source);
+                const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
                 const ready = b.deposit_paid || isOTA;
                 return (
                   <GuestCard
@@ -284,7 +284,7 @@ export default function QuickCheckIn() {
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {bookings.map(b => {
-                      const isOTA = otaSources.includes(b.source);
+                      const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
                       const ready = b.deposit_paid || isOTA;
                       return (
                         <GuestCard
@@ -321,7 +321,7 @@ export default function QuickCheckIn() {
               </div>
             )}
             {overdueInHouse.map(b => {
-              const isOTA = otaSources.includes(b.source);
+              const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
               const balanceOk = b.balance_paid || isOTA || parseFloat(b.balance_amount || 0) === 0;
               return (
                 <GuestCard
@@ -341,7 +341,7 @@ export default function QuickCheckIn() {
               </div>
             )}
             {departures.map(b => {
-              const isOTA = otaSources.includes(b.source);
+              const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
               const balanceOk = b.balance_paid || isOTA || parseFloat(b.balance_amount || 0) === 0;
               return (
                 <GuestCard
@@ -486,7 +486,7 @@ export default function QuickCheckIn() {
                 <>
                   {/* Balance warning */}
                   {(() => {
-                    const isOTA = otaSources.includes(coSelected.source);
+                    const isOTA = otaSources.includes(coSelected.source) || !!coSelected.agent_billed;
                     const balanceOk = coSelected.balance_paid || isOTA || parseFloat(coSelected.balance_amount || 0) === 0;
                     if (!balanceOk) return (
                       <div className="alert alert-error" style={{ marginBottom: 16 }}>
@@ -496,7 +496,7 @@ export default function QuickCheckIn() {
                     );
                     return (
                       <div className="alert alert-success" style={{ marginBottom: 16 }}>
-                        ✓ {isOTA ? `OTA managed — ${coSelected.source.replace('_', '.')}` : 'Pembayaran lunas'}
+                        ✓ {isOTA ? (coSelected.agent_billed ? `Ditagih ke ${coSelected.agent_name}` : `OTA managed — ${coSelected.source.replace('_', '.')}`) : 'Pembayaran lunas'}
                       </div>
                     );
                   })()}

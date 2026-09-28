@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { Link } from 'react-router-dom';
 
 function fmtIDR(n) {
   return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
@@ -372,7 +373,7 @@ export default function Reports() {
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading…</div>
       ) : !data ? null : (() => {
-        const { revenue: rev, rooms, channels, money, bookings: bk, costs } = data;
+        const { revenue: rev, rooms, channels, agents = [], money, bookings: bk, costs } = data;
         const total = rev.total;
         const share = n => (total > 0 ? (Number(n) / total) * 100 : 0);
         const sub = { _cell: { paddingLeft: 30, color: '#4B5563' } };
@@ -507,6 +508,22 @@ export default function Reports() {
                 ]}
                 footer={{ source: 'Total', bookings: channels.reduce((s, r) => s + r.bookings, 0), nights: num(channels.reduce((s, r) => s + r.nights, 0)),
                   revenue: fmtIDR(channels.reduce((s, r) => s + r.revenue, 0)) }} />
+              {agents.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <TableCard title="By agent / company" rows={agents}
+                    note="Stays with an agent on the booking. Share = of all stay revenue. Commission = posted at check-out in this period."
+                    columns={[
+                      { key: 'agent', label: 'Agent', render: r => <Link to={`/agents/${r.agent_id}`} style={{ fontWeight: 700 }}>{r.agent}</Link> },
+                      { key: 'bookings', label: 'Bookings', align: 'right' },
+                      { key: 'nights', label: 'Nights', align: 'right', render: r => num(r.nights) },
+                      { key: 'revenue', label: 'Revenue', align: 'right', render: r => fmtIDR(r.revenue) },
+                      { key: 'commission', label: 'Commission', align: 'right', render: r => (r.commission ? fmtIDR(r.commission) : '—') },
+                      { key: 'share', label: 'Share', render: r => <ShareBar pct={r.share} color="#0891B2" /> },
+                    ]}
+                    footer={{ agent: 'Total', bookings: agents.reduce((s, r) => s + r.bookings, 0), nights: num(agents.reduce((s, r) => s + r.nights, 0)),
+                      revenue: fmtIDR(agents.reduce((s, r) => s + r.revenue, 0)), commission: fmtIDR(agents.reduce((s, r) => s + r.commission, 0)) }} />
+                </div>
+              )}
             </Section>
 
             {/* ── 4. Money ── */}

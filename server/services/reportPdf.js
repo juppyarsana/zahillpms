@@ -28,7 +28,7 @@ function buildReportPdf(report, property) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const { revenue: rev, rooms, channels, money, bookings: bk, costs } = report;
+    const { revenue: rev, rooms, channels, agents = [], money, bookings: bk, costs } = report;
     const total = rev.total || 0;
     const share = n => (total ? (Number(n) / total) * 100 : 0);
     const label = periodLabel(report.from, report.to);
@@ -179,6 +179,16 @@ function buildReportPdf(report, property) {
       { label: 'Nights', w: 0.1, align: 'right', get: r => num(r.nights) }, { label: 'Revenue', w: 0.19, align: 'right', get: r => fmtIDR(r.revenue) },
       { label: 'ADR', w: 0.17, align: 'right', get: r => (r.adr === '' ? '' : fmtIDR(r.adr)) }, { label: 'Share', w: 0.13, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
     ], channels, { total: { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0), revenue: chTotal, adr: '', share: '' } });
+    if (agents.length) {
+      subheading('By agent / company', 'Stays with an agent on the booking. Share = of all stay revenue. Commission = posted at check-out in this period.', Math.min(agents.length + 2, 12));
+      table([
+        { label: 'Agent', w: 0.28, key: 'agent' }, { label: 'Bookings', w: 0.1, align: 'right', get: r => num(r.bookings) },
+        { label: 'Nights', w: 0.09, align: 'right', get: r => num(r.nights) }, { label: 'Revenue', w: 0.18, align: 'right', get: r => fmtIDR(r.revenue) },
+        { label: 'Share', w: 0.1, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
+        { label: 'Commission', w: 0.25, align: 'right', get: r => (r.commission ? fmtIDR(r.commission) : '—') },
+      ], agents, { total: { agent: 'Total', bookings: agents.reduce((s, a) => s + a.bookings, 0), nights: agents.reduce((s, a) => s + a.nights, 0),
+        revenue: agents.reduce((s, a) => s + a.revenue, 0), share: '', commission: agents.reduce((s, a) => s + a.commission, 0) } });
+    }
     subheading('Reservations in this period', 'Made = by the day entered (a group = 1 booking). Cancelled = by the day cancelled. No-shows = due in during the period, never arrived. Net values.', 3);
     table([
       { label: '', w: 0.3, key: 'k' }, { label: 'Bookings', w: 0.15, align: 'right', get: r => num(r.bookings) },
