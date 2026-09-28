@@ -142,6 +142,12 @@ const PAYMENTS_WITH_RECEIPT_SQL = `
     END AS receipt_kind
   FROM payments p WHERE p.booking_id = $1 ORDER BY p.type`;
 
+// A balance of a few cents is rounding (service + tax on net amounts can't
+// always land on the exact rupiah the guest paid) — nothing is owed.
+function settleCents(balance) {
+  return Math.abs(balance) <= 0.05 ? 0 : balance;
+}
+
 async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
@@ -193,7 +199,7 @@ async function loadFolio(bookingId, propertyId) {
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
     chargeTotals(billable, rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
-  const balance_due = round2(total - receivedTotal);
+  const balance_due = settleCents(round2(total - receivedTotal));
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
   const agent_billable_total = chargeTotals(
@@ -307,7 +313,7 @@ async function computeProforma(bookingId, propertyId) {
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
     chargeTotals(charges.filter(c => !c.complimentary), rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
-  const balance_due = round2(total - receivedTotal);
+  const balance_due = settleCents(round2(total - receivedTotal));
 
   return {
     booking, charges, payments,

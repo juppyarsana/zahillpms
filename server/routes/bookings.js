@@ -8,7 +8,7 @@ const agentBilling = require('../services/agentBillingService');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
-const { grossFactor, splitRevenue, applyBookingPrice } = require('../services/bookingPriceService');
+const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
 const { nightlyRoomRates } = require('../services/pricingService');
 const { searchAvailability } = require('../services/availabilityService');
 const roomCharge = require('../services/roomChargeService');
@@ -1006,9 +1006,13 @@ router.post('/', auth, async (req, res) => {
     const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
     const { roomNet, mealNet } = splitRevenue({
       grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, divisor, clientRoomRevenue: room_revenue,
+      tax_rate, service_charge_rate,
     });
-    // Store total_amount consistently with the split (pre-discount gross rack).
-    const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
+    // Store total_amount consistently with the split (pre-discount gross rack);
+    // the price typed when the split lands within a few cents of it.
+    const payable = room_revenue != null && room_revenue !== ''
+      ? computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total
+      : snapPayable(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total, total - discountAmount);
     const storedTotal = round2(payable + discountAmount);
 
     const net = payable;
@@ -1172,10 +1176,10 @@ router.post('/group', auth, async (req, res) => {
       // isolation, which is intentional, not a bug to "fix" later.
       const roomGuests = Math.max(1, parseInt(s.room.num_guests, 10) || 1);
       const roomPlan = await ratePlanService.resolveForBooking(req.propertyId, s.room.rate_plan_id || null);
-      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests, divisor) * nightsOf(s.room));
-      let roomRevNet = round2(s.roomNet / F) - mealNet;
-      if (roomRevNet < 0) roomRevNet = 0;
-      const roomStoredTotal = round2(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total + s.discountShare);
+      const { roomNet: roomRevNet, mealNet } = splitRevenue({
+        grossNet: s.roomNet, nights: nightsOf(s.room), ratePlan: roomPlan, numGuests: roomGuests, F, divisor, tax_rate, service_charge_rate,
+      });
+      const roomStoredTotal = round2(snapPayable(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total, s.roomNet) + s.discountShare);
 
       const { rows: [booking] } = await client.query(
         `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
@@ -1659,8 +1663,8 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
       total = computeFolioTotals(rates.room_total + meal, tax_rate, service_charge_rate).total;
     }
 
-    const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F, divisor });
-    const payable = round2(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total);
+    const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F, divisor, tax_rate, service_charge_rate });
+    const payable = snapPayable(round2(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total), total);
     const depositAmount = given(deposit_amount)
       ? Math.max(0, Math.min(parseFloat(deposit_amount) || 0, payable))
       : Math.round(payable * 0.5); // 50%, same default as New Booking

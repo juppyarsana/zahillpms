@@ -18,17 +18,43 @@ async function grossFactor(client, propertyId) {
 }
 
 // Split a stay's gross post-discount total into NET room + NET meal amounts.
-// meal is rate-plan-derived and fixed; room absorbs the rest.
-function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue, divisor = 1 }) {
+// meal is rate-plan-derived and fixed; room absorbs the rest. With the rates
+// given (tax_rate / service_charge_rate), the room part is nudged by the
+// rounding cent so service + tax added back give EXACTLY the price typed —
+// 3.000.000 ÷ 1.21 rounded back up otherwise lands on 2.999.999,99.
+function splitRevenue({ grossNet, nights, ratePlan, numGuests, F, clientRoomRevenue, divisor = 1, tax_rate, service_charge_rate }) {
   const mealNet = round2(ratePlanService.mealNetPerNight(ratePlan, numGuests, divisor) * nights);
   let roomNet;
   if (clientRoomRevenue !== undefined && clientRoomRevenue !== null && clientRoomRevenue !== '') {
     roomNet = round2(parseFloat(clientRoomRevenue));
   } else {
     roomNet = round2(grossNet / F - mealNet);
+    if (roomNet > 0 && tax_rate !== undefined) roomNet = fitToGross(roomNet, mealNet, grossNet, tax_rate, service_charge_rate);
   }
   if (roomNet < 0) roomNet = 0;
   return { roomNet, mealNet };
+}
+
+// The room NET (± a few cents) whose total with meals, service and tax is
+// exactly `gross`. Gives up (keeps the closest) after a few steps.
+function fitToGross(roomNet, mealNet, gross, taxRate, serviceChargeRate) {
+  const target = round2(gross);
+  const off = r => Math.abs(round2(target - computeFolioTotals(r + mealNet, taxRate, serviceChargeRate).total));
+  let best = roomNet;
+  for (let d = -3; d <= 3; d++) {
+    const r = round2(roomNet + d * 0.01);
+    if (r >= 0 && off(r) < off(best)) best = r;
+  }
+  return best;
+}
+
+// What the guest pays: the price typed, when service + tax on the net
+// amounts land within a few cents of it (cent rounding can make the exact
+// figure unreachable, e.g. 10% + 10% jumps from 2.999.999,99 to
+// 3.000.000,01). Payment lines and the stored total use this.
+function snapPayable(computed, typed) {
+  const t = round2(parseFloat(typed));
+  return Number.isFinite(t) && Math.abs(computed - t) <= 0.05 ? t : computed;
 }
 
 // Sets a booking's price (total_amount: the gross, tax-included figure New
@@ -70,16 +96,21 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
       nights: Math.max(1, parseInt(before.nights, 10) || 1),
       ratePlan,
       numGuests: Math.max(1, parseInt(before.num_guests, 10) || 1),
-      F, divisor,
+      F, divisor, tax_rate, service_charge_rate,
     }));
   }
-  const payable = computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total;
+  const payable = split ? computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total
+    : snapPayable(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total, newTotal - discountAmount);
   const storedTotal = round2(payable + discountAmount);
 
   // Room payment lines: keep received ones, reshape the pending ones so
   // they add up to what's still owed.
   const { rows: lines } = await client.query(
-    "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY created_at FOR UPDATE",
+    // Deposit first, always: a booking's deposit and balance lines are created
+    // at the same instant, so ordering by time alone let the balance line go
+    // first at random — it took the whole price and the deposit dropped to 0.
+    `SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance')
+     ORDER BY (type = 'deposit') DESC, created_at, id FOR UPDATE`,
     [before.id]
   );
   let received = round2(lines.filter(l => l.status === 'received').reduce((s, l) => s + parseFloat(l.amount), 0));
@@ -147,4 +178,4 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
   return { after, payable, storedTotal, received, credit, receivedFixes, discountAmount };
 }
 
-module.exports = { grossFactor, splitRevenue, applyBookingPrice };
+module.exports = { grossFactor, splitRevenue, applyBookingPrice, snapPayable };
