@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AgentFormModal from '../components/AgentFormModal';
-import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, commissionText } from '../lib/agents';
+import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, CITY_LEDGER, commissionText } from '../lib/agents';
 
 function fmtIDR(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -215,7 +215,7 @@ function AgentDetail({ agentId }) {
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
   if (!data) return <div className="alert alert-error">Agent not found</div>;
 
-  const { agent, aging, open_items, payments, invoices, commissions } = data;
+  const { agent, aging, open_items, payments, invoices, commissions, bookings = [] } = data;
 
   return (
     <div>
@@ -266,6 +266,8 @@ function AgentDetail({ agentId }) {
           <div style={{ fontSize: 16, fontWeight: 800 }}>{fmtIDR(aging.total_outstanding)}</div>
         </div>
       </div>
+
+      <AgentBookings bookings={bookings} agent={agent} />
 
       <Section title={`Open Items (${open_items.length})`}>
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (
@@ -350,6 +352,79 @@ function AgentDetail({ agentId }) {
       {payOpen && <RecordPaymentModal agentId={agentId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
       {invOpen && <GenerateInvoiceModal agentId={agentId} openItems={open_items.filter(i => i.folio_status === 'pending_agent_invoice')} onClose={() => setInvOpen(false)} onDone={(inv) => { setInvOpen(false); showToast(`Invoice ${inv.invoice_number} created`); downloadInvoicePdf(inv.id, inv.invoice_number); load(); }} onError={m => showToast(m, 'error')} />}
     </div>
+  );
+}
+
+// Every booking with this agent, by stage, with where its money stands.
+const STAGES = [
+  ['upcoming', 'Upcoming', b => ['pending', 'deposit_paid', 'confirmed'].includes(b.status)],
+  ['in_house', 'In house', b => b.status === 'checked_in'],
+  ['checked_out', 'Checked out', b => b.status === 'checked_out'],
+  ['cancelled', 'Cancelled / no-show', b => ['cancelled', 'no_show'].includes(b.status)],
+];
+
+function billingText(b, billedMode) {
+  if (b.status === 'checked_out') {
+    if (b.folio_status === 'paid') return ['Paid by agent', 'badge-green'];
+    if (b.folio_status === 'invoiced') return [`Invoiced${b.invoice_number ? ` · ${b.invoice_number}` : ''}`, 'badge-blue'];
+    if (b.folio_status === 'pending_agent_invoice') return ['On the bill · not invoiced', 'badge-amber'];
+    return ['Guest paid (not on the agent\'s bill)', 'badge-gray'];
+  }
+  if (['cancelled', 'no_show'].includes(b.status)) return [b.status === 'no_show' ? 'No-show' : 'Cancelled', 'badge-gray'];
+  return billedMode ? ['Billed to the agent at check-out', 'badge-blue'] : ['Guest pays the hotel', 'badge-gray'];
+}
+
+function AgentBookings({ bookings, agent }) {
+  const nav = useNavigate();
+  const counts = Object.fromEntries(STAGES.map(([k, , f]) => [k, bookings.filter(f).length]));
+  const [stage, setStage] = useState(() => (STAGES.find(([k]) => counts[k] > 0) || STAGES[0])[0]);
+  const billedMode = CITY_LEDGER.includes(agent.payment_status);
+  const rows = bookings.filter(STAGES.find(([k]) => k === stage)[2]);
+  return (
+    <Section title={`Bookings (${bookings.length})`}>
+      {bookings.length === 0 ? <Empty>No bookings with this agent yet.</Empty> : (
+        <>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+            {STAGES.map(([k, label]) => (
+              <button key={k} className={`btn btn-sm ${stage === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setStage(k)} disabled={!counts[k]}>
+                {label} ({counts[k]})
+              </button>
+            ))}
+          </div>
+          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
+              <th style={TH}>Guest</th><th style={TH}>Stay</th>
+              <th style={{ ...TH, textAlign: 'right' }}>Price</th><th style={TH}>Billing</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(b => {
+                const [text, badge] = billingText(b, billedMode);
+                return (
+                  <tr key={b.id} style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }} onClick={() => nav(`/reservations/${b.id}`)}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#F9FAFB'; }} onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
+                    <td style={TD}>
+                      <div style={{ fontWeight: 600 }}>{b.guest_name}</div>
+                      <div style={{ fontSize: 11, color: '#9CA3AF' }}>{b.unit_name}{b.reservation_group_id ? ' · 👥 group' : ''}</div>
+                    </td>
+                    <td style={{ ...TD, whiteSpace: 'nowrap' }}>{fmtDate(b.check_in_date)} → {fmtDate(b.check_out_date)}<div style={{ fontSize: 11, color: '#9CA3AF' }}>{b.nights} night{b.nights === 1 ? '' : 's'}</div></td>
+                    <td style={{ ...TD, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {fmtIDR(parseFloat(b.total_amount) - parseFloat(b.discount_amount))}
+                      {parseFloat(b.commission_posted) > 0 && <div style={{ fontSize: 11, color: '#D97706' }}>commission {fmtIDR(b.commission_posted)}</div>}
+                    </td>
+                    <td style={TD}><span className={`badge ${badge}`}>{text}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table></div>
+          {stage === 'checked_out' && billedMode && rows.some(b => !b.folio_status) && (
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
+              "Guest paid" stays were checked out as normal guest stays (e.g. before this agent was set to be billed), so they're not on its bill.
+            </div>
+          )}
+        </>
+      )}
+    </Section>
   );
 }
 

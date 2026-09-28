@@ -211,7 +211,24 @@ async function statement(propertyId, agentId) {
     [propertyId, agentId]
   );
 
-  return { agent, aging: agingRow, open_items: openItems, payments, invoices, commissions };
+  // Every booking with this agent (migration 084) — upcoming, in house,
+  // checked out, cancelled — so the page shows them all, not only the money.
+  const { rows: bookings } = await db.query(
+    `SELECT b.id, b.reservation_group_id, b.check_in_date, b.check_out_date, b.nights, b.status, b.folio_status,
+            b.total_amount, COALESCE(b.discount_amount, 0) AS discount_amount, b.commission_type, b.commission_value,
+            g.name AS guest_name, u.name AS unit_name, ai.invoice_number,
+            (SELECT COALESCE(SUM(amount), 0) FROM agent_commissions ac WHERE ac.booking_id = b.id) AS commission_posted
+     FROM bookings b
+     JOIN guests g ON g.id = b.guest_id
+     JOIN units u ON u.id = b.unit_id
+     LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id
+     WHERE b.property_id = $1 AND b.agent_id = $2
+     ORDER BY b.check_in_date DESC, u.name
+     LIMIT 1000`,
+    [propertyId, agentId]
+  );
+
+  return { agent, aging: agingRow, open_items: openItems, payments, invoices, commissions, bookings };
 }
 
 async function reconcileBookingStatuses(client, propertyId, bookingIds) {
