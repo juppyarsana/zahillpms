@@ -4,10 +4,31 @@ Last updated: 2026-09-28
 
 ---
 
+## ✅ Production deployed — 2026-09-28 (`main` = `dev` = `9a1bcbd`, migrations 074–081)
+
+Everything in the two 2026-09-28 sessions below is **live on production**.
+- **Backup** taken first: `~/zahill-before-074-081-2026-09-28.dump` on the production server (pg_dump -Fc). Keep a few days.
+- `deploy.sh`: `exceljs` installed, migrations 074 → 081 all ✓, server back online.
+- `resplitMeals.js`: nothing to split (bookings already split; old extra beds were free-text folio lines, not Sales
+  items). One skip: room 801 "PURA TULUK BIU BATUR" — a BB booking at Rp 0 (make it complimentary or edit the price).
+- **Tax switched:** service **10%** + tax **10%** (PB1), **prices include service & tax**, breakdown **hidden** →
+  73 open bookings re-split (guest prices unchanged), 190 checked-out stays kept at their 0% bill.
+- 6 checked-out bookings from Aug – early Sep had been booked when the tax setting was **11%** (the later manual change
+  to 0% never re-split them, so their bill already showed without the 11%) → stamped `bill_tax_rate = 11`,
+  `bill_service_charge_rate = 0` by hand. Check afterwards: **263 bookings, 0 differ** (bill = guest price for every
+  booking at its own rates).
+
+**Still open:** guest emails not sending (pm2 log: pre-arrival 0/7, post-checkout 0/27 — predates this release,
+cause not found yet); room 801 above; vendor tours' tax setting in Activities → Catalog; front desk told about the new
+night-audit no-show rule (pending / deposit-paid arrivals not checked in by midnight → no-show, Undo on the booking)
+and the one-off clean-up of the "never arrived" list.
+
+---
+
 ## 🔖 Session handoff — 2026-09-28 — folio Add item, activities on the folio + tax per activity, full Reports (Excel / PDF)
 
-**Code:** everything below is on `dev` (last commit `21f32ea`), pushed. **Not on `main` / production yet.**
-New since production's last deploy: **migrations 074–078** and a new server dependency **`exceljs`**.
+**Code:** deployed to production 2026-09-28 — see above. (Written before the deploy: everything below was on `dev`.)
+New since production's previous deploy: **migrations 074–081** and a new server dependency **`exceljs`**.
 
 ### ➕ Later the same day (2026-09-28, second session)
 - Deployed to the **dev server** by the owner; extra-bed items set up there (dev had no old extra-bed sales, so
