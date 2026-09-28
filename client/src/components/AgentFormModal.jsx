@@ -20,7 +20,8 @@ export default function AgentFormModal({ agent, initialName = '', onClose, onSav
     tax_id: agent?.tax_id || '',
     billing_address: agent?.billing_address || '',
     notes: agent?.notes || '',
-    payment_status: agent?.payment_status || 'normal',
+    // the old 'payments confirmed by hand' mode is the same as billed to the agent
+    payment_status: agent?.payment_status === 'city_ledger_payment' ? 'city_ledger' : (agent?.payment_status || 'normal'),
     credit_terms_days: agent?.credit_terms_days ?? '',
     credit_limit: agent?.credit_limit != null ? String(parseFloat(agent.credit_limit)) : '',
     commission_type: agent?.commission_type || 'percent',
@@ -131,8 +132,9 @@ export default function AgentFormModal({ agent, initialName = '', onClose, onSav
                 {withCommission && <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10 }}>Each booking can have its own commission; this is the starting value.</div>}
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Credit terms (days)</label>
-                    <input className="form-input" type="number" min={0} value={form.credit_terms_days} disabled={!canBill} onChange={e => set('credit_terms_days', e.target.value)} />
+                    <label className="form-label">Days to pay (credit terms)</label>
+                    <input className="form-input" type="number" min={0} value={form.credit_terms_days} disabled={!canBill} placeholder="on receipt" onChange={e => set('credit_terms_days', e.target.value)} />
+                    <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>After the invoice (or check-out, if not invoiced yet) — e.g. 30. Overdue counts from then.</div>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Credit limit (IDR)</label>

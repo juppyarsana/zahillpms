@@ -15,11 +15,14 @@ export const PAYMENT_MODES = [
   { value: 'normal',                     label: 'Guest pays the hotel',                                   short: 'Guest pays' },
   { value: 'commission',                 label: 'Guest pays the hotel · the agent earns a commission',    short: 'Commission' },
   { value: 'city_ledger',                label: 'Agent pays the hotel later (billed to the agent)',       short: 'Billed to agent' },
-  { value: 'city_ledger_payment',        label: 'Agent pays the hotel later — payments confirmed by hand', short: 'Billed to agent' },
   { value: 'commission_and_city_ledger', label: 'Agent pays the hotel later · and earns a commission',    short: 'Billed + commission' },
 ];
-export const PAYMENT_MODE_LABEL = Object.fromEntries(PAYMENT_MODES.map(m => [m.value, m.label]));
-export const PAYMENT_MODE_SHORT = Object.fromEntries(PAYMENT_MODES.map(m => [m.value, m.short]));
+// 'city_ledger_payment' (older data, from migration 041) works exactly like
+// 'city_ledger' — it was never different in the app — so it isn't offered
+// any more and reads as billed to the agent.
+const LEGACY = { value: 'city_ledger_payment', label: 'Agent pays the hotel later (billed to the agent)', short: 'Billed to agent' };
+export const PAYMENT_MODE_LABEL = Object.fromEntries([...PAYMENT_MODES, LEGACY].map(m => [m.value, m.label]));
+export const PAYMENT_MODE_SHORT = Object.fromEntries([...PAYMENT_MODES, LEGACY].map(m => [m.value, m.short]));
 
 export const CITY_LEDGER = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'];
 export const HAS_COMMISSION = ['commission', 'commission_and_city_ledger'];

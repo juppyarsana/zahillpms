@@ -10,14 +10,19 @@ function fmtIDR(n) {
 // per-booking folio invoice in routes/folio.js; kept as its own renderer so
 // that working code stays untouched. `doc` is a live PDFDocument already
 // piped to the response.
-function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid, balance }) {
+function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid, balance, due_date, credit_terms_days }) {
   const period = (invoice.period_start || invoice.period_end)
     ? `Period ${String(invoice.period_start || '').slice(0, 10)} – ${String(invoice.period_end || '').slice(0, 10)}`
     : null;
   drawDocumentHeader(doc, property, {
     title: 'Agent Invoice',
     refLine: invoice.invoice_number,
-    extraLines: [`Issued ${String(invoice.issued_on).slice(0, 10)}`, period].filter(Boolean),
+    extraLines: [
+      `Issued ${String(invoice.issued_on).slice(0, 10)}`,
+      // the agent's credit terms (e.g. 30 days) — due on receipt when none
+      due_date && `Due ${due_date}${credit_terms_days ? ` (${credit_terms_days} days)` : ' (on receipt)'}`,
+      period,
+    ].filter(Boolean),
     dateLine: null,
   });
   doc.moveDown(0.5);

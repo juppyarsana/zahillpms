@@ -268,7 +268,7 @@ function AgentDetail({ agentId }) {
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (
           <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-              {['Booking', 'Dates', 'Status', 'Folio', 'Allocated', 'Balance', 'Age'].map(h => <th key={h} style={{ ...TH, textAlign: h === 'Booking' || h === 'Dates' || h === 'Status' ? 'left' : 'right' }}>{h}</th>)}
+              {['Booking', 'Dates', 'Status', 'Folio', 'Allocated', 'Balance', 'Due'].map(h => <th key={h} style={{ ...TH, textAlign: h === 'Booking' || h === 'Dates' || h === 'Status' ? 'left' : 'right' }}>{h}</th>)}
             </tr></thead>
             <tbody>
               {open_items.map(it => (
@@ -284,7 +284,10 @@ function AgentDetail({ agentId }) {
                   <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(it.folio_total)}</td>
                   <td style={{ ...TD, textAlign: 'right', color: '#6B7280' }}>{it.allocated > 0 ? fmtIDR(it.allocated) : '—'}</td>
                   <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{fmtIDR(it.balance)}</td>
-                  <td style={{ ...TD, textAlign: 'right', color: it.age_days > 90 ? '#DC2626' : it.age_days > 60 ? '#D97706' : '#6B7280' }}>{it.age_days}d</td>
+                  <td style={{ ...TD, textAlign: 'right', whiteSpace: 'nowrap', color: it.age_days > 60 ? '#DC2626' : it.age_days > 0 ? '#D97706' : '#6B7280' }}>
+                    {fmtDate(it.due_date)}
+                    <div style={{ fontSize: 11 }}>{it.age_days > 0 ? `${it.age_days} day${it.age_days === 1 ? '' : 's'} overdue` : it.age_days === 0 ? 'due today' : `in ${-it.age_days} day${it.age_days === -1 ? '' : 's'}`}</div>
+                  </td>
                 </tr>
               ))}
             </tbody>

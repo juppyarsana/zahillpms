@@ -22,6 +22,12 @@ function startOfToday() {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+function addDays(ymd, n) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const x = new Date(Date.UTC(y, m - 1, d + (parseInt(n, 10) || 0)));
+  return x.toISOString().slice(0, 10);
+}
+
 function ageDays(dueDate) {
   const due = new Date(String(dueDate).slice(0, 10) + 'T00:00:00');
   return Math.floor((startOfToday() - due) / 86400000);
@@ -42,7 +48,7 @@ async function bookingLedger(propertyId, { agentId } = {}) {
     `SELECT b.id AS booking_id, b.agent_id, b.check_in_date, b.check_out_date,
             b.folio_status, b.agent_invoice_id, b.bill_tax_rate, b.bill_service_charge_rate,
             g.name AS guest_name, u.name AS unit_name,
-            a.name AS agent_name, bs.label AS booking_source_label,
+            a.name AS agent_name, a.credit_terms_days, bs.label AS booking_source_label,
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
             -- extras the guest paid at the desk are never billed to the agent
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
@@ -73,7 +79,9 @@ async function bookingLedger(propertyId, { agentId } = {}) {
     ).total + parseFloat(r.untaxed_subtotal));
     const allocated = round2(parseFloat(r.allocated));
     const balance = round2(folio_total - allocated);
-    const due_date = String((r.invoice_issued_on || r.check_out_date)).slice(0, 10);
+    // Due = invoiced (or checked out, not invoiced yet) + the agent's credit
+    // terms; no terms = due straight away. Overdue / aging count from here.
+    const due_date = addDays(String((r.invoice_issued_on || r.check_out_date)).slice(0, 10), r.credit_terms_days || 0);
     return {
       booking_id: r.booking_id, agent_id: r.agent_id, agent_name: r.agent_name || 'No agent',
       source_id: r.agent_id, source_label: r.agent_name || 'No agent',   // aliases (pre-084 readers)
@@ -84,7 +92,7 @@ async function bookingLedger(propertyId, { agentId } = {}) {
       folio_status: r.folio_status, agent_invoice_id: r.agent_invoice_id,
       invoice_number: r.invoice_number || null,
       folio_total, allocated, balance,
-      due_date, age_days: ageDays(due_date),
+      due_date, credit_terms_days: r.credit_terms_days, age_days: ageDays(due_date),
     };
   }).filter(r => r.balance > 0.005);
 }
@@ -469,7 +477,7 @@ async function invoicePayload(propertyId, invoiceId) {
   if (!invoice) return null;
 
   const { rows: [agent] } = await db.query(
-    `SELECT id, name AS label, billing_address, tax_id, contact_name, contact_email, contact_phone
+    `SELECT id, name AS label, billing_address, tax_id, contact_name, contact_email, contact_phone, credit_terms_days
      FROM agents WHERE id = $1 AND property_id = $2`,
     [invoice.agent_id, propertyId]
   );
@@ -509,7 +517,9 @@ async function invoicePayload(propertyId, invoiceId) {
   const total = round2(lines.reduce((s, l) => s + l.amount, 0));
   const paid = round2(lines.reduce((s, l) => s + l.paid, 0));
 
-  return { invoice, agent: agent || {}, property: property || {}, lines, total, paid, balance: round2(total - paid) };
+  const terms = parseInt(agent?.credit_terms_days, 10) || 0;
+  const due_date = addDays(String(invoice.issued_on instanceof Date ? invoice.issued_on.toISOString() : invoice.issued_on).slice(0, 10), terms);
+  return { invoice, agent: agent || {}, property: property || {}, lines, total, paid, balance: round2(total - paid), due_date, credit_terms_days: terms };
 }
 
 async function setCommissionStatus(propertyId, commissionId, status) {
