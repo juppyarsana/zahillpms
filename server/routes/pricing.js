@@ -55,7 +55,7 @@ router.get('/suggest', auth, async (req, res) => {
     const plan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
     const guests = Math.max(1, parseInt(num_guests, 10) || 1);
     const { rows: [settings] } = await db.query(
-      'SELECT tax_rate, service_charge_rate, prices_include_tax FROM property_settings WHERE property_id = $1',
+      'SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown FROM property_settings WHERE property_id = $1',
       [req.propertyId]
     );
     const divisor = basisFrom(settings).divisor;
@@ -78,6 +78,7 @@ router.get('/suggest', auth, async (req, res) => {
       service_charge_amount: gross.service_charge_amount,
       grand_total: gross.total,             // GROSS — what the guest pays
       prices_include_tax: !!settings?.prices_include_tax, // rates entered all-in (migration 079)
+      show_tax_breakdown: !!settings?.show_tax_breakdown, // say what's inside the all-in total (080)
       suggested_total: room_total,          // back-compat (was rate_per_night * nights)
       period,                               // null if it varies by night — see night_breakdown
       varies_by_night,

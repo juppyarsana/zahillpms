@@ -72,7 +72,7 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
 
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
-const PROPERTY_FIELDS = `tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email,
+const PROPERTY_FIELDS = `tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email,
         smtp_host, smtp_port, smtp_user, smtp_password, smtp_from, registration_notice, birthday_offer`;
 
 router.get('/property', ownerOnly, async (req, res) => {
@@ -142,7 +142,7 @@ router.patch('/property', ownerOnly, async (req, res) => {
 
 // ── Service charge & tax (migration 079) ────────────────────────────────────
 // GET  /tax/preview?tax_rate=&service_charge_rate= — what a change would touch
-// PUT  /tax { tax_rate, service_charge_rate, prices_include_tax } — saves it
+// PUT  /tax { tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown } — saves it
 //      and re-splits open bookings so each guest's price stays as agreed
 //      (services/taxChangeService.js).
 function parseRate(v) {
@@ -164,12 +164,13 @@ router.get('/tax/preview', ownerOnly, async (req, res) => {
 router.put('/tax', ownerOnly, async (req, res) => {
   const tax_rate = parseRate(req.body.tax_rate), service_charge_rate = parseRate(req.body.service_charge_rate);
   if (Number.isNaN(tax_rate) || Number.isNaN(service_charge_rate)) return res.status(400).json({ error: 'Rates must be between 0 and 100' });
-  const { prices_include_tax } = req.body;
-  if (prices_include_tax !== undefined && typeof prices_include_tax !== 'boolean') {
-    return res.status(400).json({ error: 'prices_include_tax must be true or false' });
+  const { prices_include_tax, show_tax_breakdown } = req.body;
+  if ((prices_include_tax !== undefined && typeof prices_include_tax !== 'boolean')
+      || (show_tax_breakdown !== undefined && typeof show_tax_breakdown !== 'boolean')) {
+    return res.status(400).json({ error: 'prices_include_tax / show_tax_breakdown must be true or false' });
   }
   try {
-    const r = await taxChangeService.apply(req.propertyId, { tax_rate, service_charge_rate, prices_include_tax }, req.user.id);
+    const r = await taxChangeService.apply(req.propertyId, { tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown }, req.user.id);
     if (r.error) return res.status(r.status || 400).json({ error: r.error });
     res.json(r);
   } catch (err) {
@@ -187,7 +188,8 @@ router.get('/branding', auth, async (req, res) => {
               market_area AS area, -- e.g. "Kintamani, Bali" (Dashboard subtitle, guest WhatsApp messages)
               birthday_offer, -- optional line in the birthday WhatsApp (Guests page)
               tax_rate, service_charge_rate, -- the Sales till shows tax on directly-paid extras
-              prices_include_tax -- prices entered incl. service & tax (migration 079)
+              prices_include_tax, -- prices entered incl. service & tax (migration 079)
+              show_tax_breakdown  -- say what's inside an all-in total (080)
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );

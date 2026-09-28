@@ -24,7 +24,7 @@ function fmtDateTime(d) {
 
 const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
 
-function renderSaleReceipt(doc, { sale, items, basis }) {
+function renderSaleReceipt(doc, { sale, items, basis, showBreakdown = false }) {
   // Prices entered incl. service & tax (migration 079): a taxed sale's lines
   // are shown all-in and the total says what's inside it.
   const allIn = !!basis?.include && sale.tax_amount != null;
@@ -85,8 +85,9 @@ function renderSaleReceipt(doc, { sale, items, basis }) {
   doc.font('Helvetica-Bold').fontSize(11);
   doc.text('Total Paid', colX.price - 150, y, { width: 150, align: 'right' });
   doc.text(money(totalPaid), colX.amount, y, { width: 90, align: 'right' });
-  y += allIn && (sc > 0 || tax > 0) ? 16 : 26;
-  if (allIn && (sc > 0 || tax > 0)) {
+  const inclLine = allIn && showBreakdown && (sc > 0 || tax > 0);   // migration 080
+  y += inclLine ? 16 : 26;
+  if (inclLine) {
     const parts = [sc > 0 && `service charge ${money(sc)}`, tax > 0 && `tax ${money(tax)}`].filter(Boolean);
     doc.font('Helvetica').fontSize(8).fillColor('#777').text(`Includes ${parts.join(' and ')}`, 50, y, { width: 500, align: 'right' });
     doc.fillColor('#000');

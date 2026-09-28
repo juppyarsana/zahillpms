@@ -109,7 +109,7 @@ router.get('/:id/receipt', auth, async (req, res) => {
     );
     const { rows: [property] } = await db.query(
       `SELECT property_name, property_address, property_phone, property_email, logo_url,
-              tax_rate, service_charge_rate, prices_include_tax
+              tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );
@@ -120,7 +120,7 @@ router.get('/:id/receipt', auth, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="sales-receipt-${ref.toLowerCase()}.pdf"`);
     doc.pipe(res);
     drawDocumentHeader(doc, property || {}, { title: 'Receipt', refLine: `Sale #${ref}` });
-    renderSaleReceipt(doc, { sale, items, basis: basisFrom(property) });
+    renderSaleReceipt(doc, { sale, items, basis: basisFrom(property), showBreakdown: !!property?.show_tax_breakdown });
     doc.end();
   } catch (err) {
     res.status(500).json({ error: err.message });

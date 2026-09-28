@@ -131,7 +131,8 @@ function TaxCard() {
 
   function load() {
     api.get('/api/settings/property').then(r => {
-      const v = { tax_rate: parseFloat(r.data.tax_rate) || 0, service_charge_rate: parseFloat(r.data.service_charge_rate) || 0, prices_include_tax: !!r.data.prices_include_tax };
+      const v = { tax_rate: parseFloat(r.data.tax_rate) || 0, service_charge_rate: parseFloat(r.data.service_charge_rate) || 0,
+        prices_include_tax: !!r.data.prices_include_tax, show_tax_breakdown: !!r.data.show_tax_breakdown };
       setCur(v); setForm({ ...v, tax_rate: String(v.tax_rate), service_charge_rate: String(v.service_charge_rate) });
     }).catch(() => {});
   }
@@ -139,7 +140,8 @@ function TaxCard() {
   if (!form) return null;
 
   const sc = parseFloat(form.service_charge_rate) || 0, tx = parseFloat(form.tax_rate) || 0;
-  const changed = sc !== cur.service_charge_rate || tx !== cur.tax_rate || form.prices_include_tax !== cur.prices_include_tax;
+  const changed = sc !== cur.service_charge_rate || tx !== cur.tax_rate || form.prices_include_tax !== cur.prices_include_tax
+    || form.show_tax_breakdown !== cur.show_tax_breakdown;
   const F = (1 + sc / 100) * (1 + tx / 100);
   const example = 1000000;
   const fmt = n => 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -156,7 +158,7 @@ function TaxCard() {
   async function save() {
     setBusy(true); setError('');
     try {
-      const r = await api.put('/api/settings/tax', { tax_rate: tx, service_charge_rate: sc, prices_include_tax: form.prices_include_tax });
+      const r = await api.put('/api/settings/tax', { tax_rate: tx, service_charge_rate: sc, prices_include_tax: form.prices_include_tax, show_tax_breakdown: form.show_tax_breakdown });
       setCheck(null);
       setMsg(r.data.bookings ? `Saved — ${r.data.bookings} open booking${r.data.bookings === 1 ? '' : 's'} re-split, guest prices unchanged.` : 'Saved');
       load(); reload();
@@ -196,6 +198,19 @@ function TaxCard() {
             : <>the guest pays {fmt(example * F)}.</>}</>}
         </div>
       </div>
+      {form.prices_include_tax && (
+        <div className="form-group">
+          <label className="flex gap-2" style={{ alignItems: 'flex-start', cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.show_tax_breakdown} style={{ marginTop: 3 }}
+              onChange={e => { setForm(f => ({ ...f, show_tax_breakdown: e.target.checked })); setMsg(''); }} />
+            <span><b style={{ fontSize: 13 }}>Show the service charge &amp; tax inside the total</b>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Adds "Includes service charge Rp … and tax Rp …" under the total on invoices, receipts and the booking screens.
+                Off: just the total. Reports always count the service charge and tax.
+              </div></span>
+          </label>
+        </div>
+      )}
       {error && <div className="alert alert-error" style={{ marginBottom: 8 }}>{error}</div>}
       <div className="flex gap-2 items-center">
         <button className="btn btn-primary btn-sm" onClick={review} disabled={!changed || busy}>{busy && !check ? 'Checking…' : 'Save'}</button>
@@ -209,7 +224,8 @@ function TaxCard() {
             <div className="modal-body">
             <div style={{ fontSize: 14, lineHeight: 1.5 }}>
               <div>Service charge {check.current.service_charge_rate}% → <b>{sc}%</b>, tax {check.current.tax_rate}% → <b>{tx}%</b></div>
-              <div>Prices entered: <b>{form.prices_include_tax ? 'including service & tax' : 'before service & tax'}</b></div>
+              <div>Prices entered: <b>{form.prices_include_tax ? 'including service & tax' : 'before service & tax'}</b>
+                {form.prices_include_tax && <> · service &amp; tax {form.show_tax_breakdown ? 'shown' : 'not shown'} under the total</>}</div>
               {check.rates_change && check.bookings > 0 ? (
                 <div className="alert" style={{ marginTop: 12 }}><div>
                   <b>{check.bookings} open booking{check.bookings === 1 ? '' : 's'}</b> (upcoming and in house){check.extras + check.activities > 0 && <> with {check.extras} extra{check.extras === 1 ? '' : 's'} and {check.activities} activit{check.activities === 1 ? 'y' : 'ies'}</>} will

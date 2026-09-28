@@ -156,7 +156,7 @@ export default function Sales() {
   const cartSc = round2(cartNet * scRate / 100);
   const cartTax = round2((cartNet + cartSc) * taxRate / 100);
   const cartGross = nett ? round2(cartTotal) : round2(cartTotal + cartSc + cartTax);
-  const inclText = nett ? includesText({ service_charge_rate: scRate, service_charge_amount: cartSc, tax_rate: taxRate, tax_amount: cartTax }, fmtIDR) : '';
+  const inclText = nett ? includesText({ service_charge_rate: scRate, service_charge_amount: cartSc, tax_rate: taxRate, tax_amount: cartTax, show_tax_breakdown: branding?.show_tax_breakdown }, fmtIDR) : '';
 
   // Per-night items in the cart follow the guest: their nights reset to the
   // new guest's default (tonight) when a guest is picked, and clear without one.

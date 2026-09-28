@@ -84,7 +84,7 @@ async function apply(propertyId, next, userId) {
   try {
     await client.query('BEGIN');
     const { rows: [cur] } = await client.query(
-      'SELECT tax_rate, service_charge_rate, prices_include_tax FROM property_settings WHERE property_id = $1 FOR UPDATE', [propertyId]);
+      'SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown FROM property_settings WHERE property_id = $1 FOR UPDATE', [propertyId]);
     if (!cur) { await client.query('ROLLBACK'); return { status: 404, error: 'Property settings not found' }; }
     const oldRates = { tax_rate: parseFloat(cur.tax_rate) || 0, service_charge_rate: parseFloat(cur.service_charge_rate) || 0 };
     const newRates = {
@@ -92,9 +92,10 @@ async function apply(propertyId, next, userId) {
       service_charge_rate: next.service_charge_rate ?? oldRates.service_charge_rate,
     };
     const include = next.prices_include_tax ?? cur.prices_include_tax;
+    const showBreakdown = next.show_tax_breakdown ?? cur.show_tax_breakdown;
     await client.query(
-      'UPDATE property_settings SET tax_rate = $1, service_charge_rate = $2, prices_include_tax = $3 WHERE property_id = $4',
-      [newRates.tax_rate, newRates.service_charge_rate, !!include, propertyId]);
+      'UPDATE property_settings SET tax_rate = $1, service_charge_rate = $2, prices_include_tax = $3, show_tax_breakdown = $4 WHERE property_id = $5',
+      [newRates.tax_rate, newRates.service_charge_rate, !!include, !!showBreakdown, propertyId]);
 
     const oldF = factor(oldRates.tax_rate, oldRates.service_charge_rate);
     const newF = factor(newRates.tax_rate, newRates.service_charge_rate);
@@ -173,7 +174,7 @@ async function apply(propertyId, next, userId) {
       }
     }
     await client.query('COMMIT');
-    return { ok: true, ...result, tax_rate: newRates.tax_rate, service_charge_rate: newRates.service_charge_rate, prices_include_tax: !!include };
+    return { ok: true, ...result, tax_rate: newRates.tax_rate, service_charge_rate: newRates.service_charge_rate, prices_include_tax: !!include, show_tax_breakdown: !!showBreakdown };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;

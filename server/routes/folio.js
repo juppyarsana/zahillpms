@@ -48,6 +48,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
       service_charge_rate: folios[0]?.service_charge_rate ?? 0,
       tax_rate: folios[0]?.tax_rate ?? 0,
       prices_include_tax: !!folios[0]?.prices_include_tax,
+      show_tax_breakdown: !!folios[0]?.show_tax_breakdown,
       service_charge_amount: sum('service_charge_amount'),
       tax_amount: sum('tax_amount'),
       total: sum('total'),
@@ -297,7 +298,7 @@ function includesNote({ service_charge_rate, service_charge_amount, tax_rate, ta
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
-function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, showBalance = true }) {
+function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, show_tax_breakdown, showBalance = true }) {
   // Prices entered incl. service & tax (migration 079): every line the folio
   // adds service + tax to is shown all-in, and the totals say what's inside.
   const rawCharges = prices_include_tax ? allInCharges(netCharges, tax_rate, service_charge_rate) : netCharges;
@@ -396,7 +397,8 @@ function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal
   const hasTax = parseFloat(tax_rate) > 0;
   if (prices_include_tax) {
     totalsLine('Total', money(total), { bold: true });
-    const inc = includesNote({ service_charge_rate, service_charge_amount, tax_rate, tax_amount }, money);
+    // Only when the property shows it (migration 080) — else just the total.
+    const inc = show_tax_breakdown && includesNote({ service_charge_rate, service_charge_amount, tax_rate, tax_amount }, money);
     if (inc) {
       doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, y - 4, { width: 500, align: 'right' });
       doc.fillColor('#000');
@@ -543,7 +545,7 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     );
     const folios = await Promise.all(bookingRows.map(b => computeProforma(b.id, req.propertyId)));
     const { rows: [settings] } = await db.query(
-      `SELECT tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email, logo_url
+      `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
        FROM property_settings WHERE property_id = $1`,
       [req.propertyId]
     );
@@ -613,7 +615,7 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
     if (settings?.prices_include_tax) {
       grandLine('Total', whole(grand.total), { bold: true });
-      const inc = includesNote(grand, whole);
+      const inc = settings?.show_tax_breakdown && includesNote(grand, whole);
       if (inc) {
         doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, doc.y - 4, { width: 500, align: 'right' });
         doc.fillColor('#000');

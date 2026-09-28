@@ -22,7 +22,8 @@ New since production's last deploy: **migrations 074–078** and a new server de
   guest prices stay as agreed (`taxChangeService`). **Production order:** deploy → `npm run migrate` (079) →
   extra-bed items + `resplitMeals.js` (dry run → `--apply`, both `--extras` and without) → THEN Property Details →
   Service charge & tax: set the real rates (e.g. 10% / 11%) with "Including service & tax" → check the confirm window
-  (N open bookings re-split, prices unchanged) → Confirm. Invoices then show "Includes service … and tax …".
+  (N open bookings re-split, prices unchanged) → Confirm. Migration 080 adds a tick box *Show the service charge &
+  tax inside the total* (off by default = invoices show just the total; on = "Includes service … and tax …").
 
 ### ⏸ Where we stopped
 Work is done and pushed to `dev`; the owner has not deployed it yet. Order for each server (dev first, then production):
@@ -1781,7 +1782,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 080
+## Next migration number: 081
 
 ---
 

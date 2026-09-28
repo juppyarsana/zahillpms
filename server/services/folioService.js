@@ -142,7 +142,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId]
   );
   const settingsQ = db.query(
-    `SELECT tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email, logo_url
+    `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
@@ -171,6 +171,7 @@ async function loadFolio(bookingId, propertyId) {
     complimentary_extras,
     // Prices entered incl. service & tax (migration 079): show lines all-in.
     prices_include_tax: !!settings?.prices_include_tax,
+    show_tax_breakdown: !!settings?.show_tax_breakdown,   // "Includes service … and tax …" (080)
     property: settings || {},
   };
 }
@@ -225,7 +226,7 @@ async function computeProforma(bookingId, propertyId) {
     [bookingId]
   );
   const settingsQ = db.query(
-    `SELECT tax_rate, service_charge_rate, prices_include_tax, property_name, property_address, property_phone, property_email, logo_url
+    `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
@@ -269,6 +270,7 @@ async function computeProforma(bookingId, propertyId) {
     subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
     complimentary_extras,
     prices_include_tax: !!settings?.prices_include_tax,
+    show_tax_breakdown: !!settings?.show_tax_breakdown,
     property: settings || {},
     is_estimate: true,
   };

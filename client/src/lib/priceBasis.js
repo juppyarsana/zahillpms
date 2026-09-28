@@ -27,8 +27,10 @@ export function shownTotal(v, s) {
   return s?.prices_include_tax ? Math.round(n) : n;
 }
 
-// "Includes service charge Rp … (10%) and tax Rp … (11%)", or '' at 0%.
+// "Includes service charge Rp … (10%) and tax Rp … (11%)" — or '' at 0%, or
+// when the property doesn't show it (show_tax_breakdown, migration 080).
 export function includesText(t, fmt) {
+  if (!t?.show_tax_breakdown) return '';
   const parts = [];
   if (parseFloat(t?.service_charge_rate) > 0) parts.push(`service charge ${fmt(Math.round(t.service_charge_amount))} (${parseFloat(t.service_charge_rate)}%)`);
   if (parseFloat(t?.tax_rate) > 0) parts.push(`tax ${fmt(Math.round(t.tax_amount))} (${parseFloat(t.tax_rate)}%)`);
