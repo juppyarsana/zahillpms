@@ -4,7 +4,7 @@ import PerNightLine, { defaultBreakfasts, withUnits } from '../components/PerNig
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
-import { shownAmount, priceFactor, includesText } from '../lib/priceBasis';
+import { priceFactor, includesText } from '../lib/priceBasis';
 import PriceBasisHint from '../components/PriceBasisHint';
 
 // Hotel extras sold from the front desk (migration 067). F&B ('food'/'drinks')
@@ -502,9 +502,9 @@ export default function Sales() {
                     <td>{s.items_summary || '—'}</td>
                     <td>{s.guest_name ? <>{s.guest_name}<div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.unit_name}</div></> : <span className="text-muted">Walk-in</span>}</td>
                     <td><span className={'badge ' + (s.payment_method === 'unpaid' ? 'badge-amber' : 'badge-gray')}>{methodLabel(s.payment_method)}</span></td>
-                    <td>{fmtIDR(s.tax_amount != null
-                      ? parseFloat(s.total_amount) + parseFloat(s.service_charge_amount || 0) + parseFloat(s.tax_amount || 0)
-                      : shownAmount(s.total_amount, branding))}</td>
+                    {/* shown_total: the all-in price as sold (prices incl. tax, migration 079) — never re-worked at today's rates. */}
+                    <td>{fmtIDR(s.shown_total != null ? Math.round(parseFloat(s.shown_total))
+                      : parseFloat(s.total_amount) + parseFloat(s.service_charge_amount || 0) + parseFloat(s.tax_amount || 0))}</td>
                     <td>{s.served_by_name || '—'}</td>
                     <td>
                       {s.payment_method !== 'room_charge' && s.payment_method !== 'unpaid' && (

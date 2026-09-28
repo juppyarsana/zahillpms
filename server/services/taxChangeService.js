@@ -120,7 +120,7 @@ async function apply(propertyId, next, userId) {
 
         // Extras charged to / paid on this stay
         const { rows: sales } = await client.query(
-          `SELECT id, total_amount, service_charge_amount FROM sales
+          `SELECT id, total_amount, service_charge_amount, tax_amount, shown_total FROM sales
            WHERE booking_id = $1 AND confirmation_status IS DISTINCT FROM 'rejected' FOR UPDATE`, [b.id]);
         for (const s of sales) {
           const { rowCount: lines } = await client.query(
@@ -133,9 +133,15 @@ async function apply(propertyId, next, userId) {
           const total = round2(parseFloat(t.total));
           // Paid directly: its stored service + tax at the new rates.
           const taxes = s.service_charge_amount != null ? computeFolioTotals(total, newRates.tax_rate, newRates.service_charge_rate) : null;
+          // Prices now incl. tax: Sales History shows the price the guest
+          // agreed (the old all-in total), not the re-split net.
+          const oldGross = s.service_charge_amount != null
+            ? round2(parseFloat(s.total_amount) + parseFloat(s.service_charge_amount) + parseFloat(s.tax_amount || 0))
+            : computeFolioTotals(parseFloat(s.total_amount), oldRates.tax_rate, oldRates.service_charge_rate).total;
+          const shownTotal = include ? (s.shown_total != null ? s.shown_total : oldGross) : s.shown_total;
           await client.query(
-            'UPDATE sales SET total_amount = $1, service_charge_amount = $2, tax_amount = $3 WHERE id = $4',
-            [total, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null, s.id]);
+            'UPDATE sales SET total_amount = $1, service_charge_amount = $2, tax_amount = $3, shown_total = $4 WHERE id = $5',
+            [total, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null, shownTotal, s.id]);
           result.extras++;
         }
         await client.query(

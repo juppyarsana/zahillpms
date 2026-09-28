@@ -226,12 +226,16 @@ async function createSale(propertyId, { bookingId, paymentMethod, items, orderTy
         taxes = { ...taxes, tax_amount: Math.round((entered - total - taxes.service_charge_amount) * 100) / 100, total: entered };
       }
     }
+    // Prices incl. service & tax: the all-in total as sold (Sales History).
+    const shownTotal = basis.include
+      ? Math.round(items.reduce((sum, i) => sum + i.entered_price * lineQty(i), 0) * 100) / 100
+      : null;
     const { rows: [sale] } = await client.query(
       `INSERT INTO sales (booking_id, payment_method, total_amount, served_by, property_id, order_type, table_number, table_id, kitchen_status,
-                          table_session_id, confirmation_status, order_source, service_charge_amount, tax_amount)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                          table_session_id, confirmation_status, order_source, service_charge_amount, tax_amount, shown_total)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [bookingId || null, paymentMethodValue, total, servedBy || null, propertyId, orderType || 'takeaway', resolvedTableNumber, tableId || null, needsKitchen ? 'new' : null,
-       sessionId, pending ? 'pending' : null, orderSource || null, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null]
+       sessionId, pending ? 'pending' : null, orderSource || null, taxes ? taxes.service_charge_amount : null, taxes ? taxes.tax_amount : null, shownTotal]
     );
     for (const item of items) {
       const product = productById.get(item.product_id);

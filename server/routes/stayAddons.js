@@ -71,7 +71,11 @@ router.delete('/:id/addons/:addonId', auth, async (req, res) => {
         await client.query('UPDATE sale_items SET quantity = $1, subtotal = $2, meal_amount = $3 WHERE id = $4',
           [qty, subtotal, meal, line.id]);
         await client.query(
-          'UPDATE sales SET total_amount = (SELECT COALESCE(SUM(subtotal), 0) FROM sale_items WHERE sale_id = $1) WHERE id = $1',
+          `UPDATE sales SET
+             shown_total = CASE WHEN shown_total IS NOT NULL AND total_amount > 0
+               THEN ROUND(shown_total * (SELECT COALESCE(SUM(subtotal), 0) FROM sale_items WHERE sale_id = $1) / total_amount) END,
+             total_amount = (SELECT COALESCE(SUM(subtotal), 0) FROM sale_items WHERE sale_id = $1)
+           WHERE id = $1`,
           [line.sale_id]);
       }
     }

@@ -14,3 +14,10 @@
 -- Additive only.
 
 ALTER TABLE property_settings ADD COLUMN IF NOT EXISTS prices_include_tax BOOLEAN NOT NULL DEFAULT false;
+
+-- What the guest pays for a sale, all-in, saved when it's sold while prices
+-- include tax — Sales History shows it, so a sale keeps the price it was
+-- sold at whatever the rates are later. NULL = sold with prices before tax
+-- (History shows the net, or net + the service/tax stored for a sale paid
+-- directly, as before).
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS shown_total NUMERIC(12,2);
