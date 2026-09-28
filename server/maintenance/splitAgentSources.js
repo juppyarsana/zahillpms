@@ -30,6 +30,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
+const { publishesRate } = require('../services/publishRate');
 
 const APPLY = process.argv.includes('--apply');
 const propIdx = process.argv.indexOf('--property');
@@ -59,7 +60,7 @@ async function run() {
   };
   for (const p of properties) {
     const { rows: sources } = await db.query(
-      `SELECT bs.*, a.id AS agent_id, a.name AS agent_name, a.agent_type, a.payment_status AS agent_payment_status,
+      `SELECT bs.*, a.id AS agent_id, a.name AS agent_name, a.agent_type, a.payment_status AS agent_payment_status, a.publish_rate AS agent_publish_rate,
               (SELECT COUNT(*) FROM bookings b WHERE b.property_id = bs.property_id AND b.source = bs.id)::int AS bookings,
               (SELECT COUNT(*) FROM bookings b WHERE b.property_id = bs.property_id AND b.source = bs.id AND b.agent_id IS NULL)::int AS unlinked,
               (SELECT COUNT(*) FROM agent_invoices x WHERE x.property_id = bs.property_id AND x.source_id = bs.id)::int AS invoices,
@@ -76,6 +77,8 @@ async function run() {
     if (!sources.length) { console.log('   No agent sources to tidy.\n'); continue; }
 
     for (const s of sources) {
+      // already tidied (switched off, no bookings or unlinked records left)
+      if (!s.is_active && s.agent_id && !s.bookings && !s.unlinked) continue;
       const kind = s.agent_type || (['travel_agent', 'company', 'wholesaler'].includes(s.source_type) ? s.source_type : 'other');
       const isOta = s.is_ota || s.source_type === 'ota' || kind === 'ota';
       const target = isOta ? null : GENERIC[kind] || GENERIC.other;
@@ -90,13 +93,16 @@ async function run() {
       // before = this source's Publish Rate; after = the generic source's
       // (on) unless the agent bills the hotel.
       if (target && s.bookings) {
-        // the AGENT's how-they-pay decides it now (set in Agent Billing); a
-        // source not turned into an agent yet falls back to its own setting
-        const billed = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(s.agent_id ? s.agent_payment_status : s.payment_status);
+        // the AGENT's settings decide it now (Agent Billing: how they pay,
+        // type, rate on guest documents); a source not turned into an agent
+        // yet is read as the agent it will become
+        const agent = s.agent_id
+          ? { payment_status: s.agent_payment_status, agent_type: s.agent_type, publish_rate: s.agent_publish_rate }
+          : { payment_status: s.payment_status || 'normal', agent_type: kind, publish_rate: 'auto' };
         const beforeHidden = s.publish_rate === false;   // how it printed until this release
-        const afterHidden = billed;
+        const afterHidden = !publishesRate({ sourcePublish: true, agent });
         console.log(`     rate on Reg. Card / invoice: until now ${beforeHidden ? 'hidden' : 'shown'} → from now ${afterHidden ? 'hidden' : 'shown'}`
-          + (beforeHidden !== afterHidden ? (afterHidden ? '  ⚠ CHANGES — the agent pays the hotel later, so the rate is hidden' : '  ⚠ CHANGES — the guest pays the hotel, so the rate will show') : ''));
+          + (beforeHidden !== afterHidden ? (afterHidden ? '  ⚠ CHANGES — rate hidden (agent billed / set to hide in Agent Billing)' : '  ⚠ CHANGES — rate shown (guest pays the hotel, a company, or set to show in Agent Billing)') : ''));
       }
 
       if (!APPLY) continue;

@@ -7,6 +7,13 @@ import { AGENT_TYPES, PAYMENT_MODES, HAS_COMMISSION } from '../lib/agents';
 // from a booking) with its name and contacts; how the agent pays, credit and
 // the default commission are the owner's — shown read-only to others.
 // agent = existing row to edit, or null to add (initialName pre-fills it).
+// What "Automatic" does for these settings (same rule as services/publishRate.js).
+function autoRateText(f) {
+  const billed = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'].includes(f.payment_status);
+  const reseller = ['travel_agent', 'wholesaler', 'ota'].includes(f.agent_type);
+  return billed && reseller ? 'hidden (billed travel agent / wholesaler)' : 'shown';
+}
+
 export default function AgentFormModal({ agent, initialName = '', initialType = null, onClose, onSaved }) {
   const { user } = useAuth();
   const canBill = user?.role === 'owner';
@@ -26,6 +33,7 @@ export default function AgentFormModal({ agent, initialName = '', initialType = 
     credit_limit: agent?.credit_limit != null ? String(parseFloat(agent.credit_limit)) : '',
     commission_type: agent?.commission_type || 'percent',
     commission_value: agent?.commission_value != null ? String(parseFloat(agent.commission_value)) : '',
+    publish_rate: agent?.publish_rate || 'auto',
     is_active: agent ? agent.is_active !== false : true,
   }));
   const [more, setMore] = useState(editing);
@@ -39,7 +47,7 @@ export default function AgentFormModal({ agent, initialName = '', initialType = 
     setSaving(true); setError('');
     const body = { ...form };
     if (!withCommission) { body.commission_type = ''; body.commission_value = ''; }
-    if (!canBill) for (const k of ['payment_status', 'credit_terms_days', 'credit_limit', 'commission_type', 'commission_value']) delete body[k];
+    if (!canBill) for (const k of ['payment_status', 'credit_terms_days', 'credit_limit', 'commission_type', 'commission_value', 'publish_rate']) delete body[k];
     try {
       const { data } = editing
         ? await api.put(`/api/agent-directory/${agent.id}`, body)
@@ -140,6 +148,17 @@ export default function AgentFormModal({ agent, initialName = '', initialType = 
                     <label className="form-label">Credit limit (IDR)</label>
                     <input className="form-input" type="number" min={0} value={form.credit_limit} disabled={!canBill} onChange={e => set('credit_limit', e.target.value)} placeholder="no limit" />
                   </div>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Room rate on Registration Card &amp; invoice</label>
+                <select className="form-select" value={form.publish_rate} disabled={!canBill} onChange={e => set('publish_rate', e.target.value)}>
+                  <option value="auto">Automatic — {autoRateText(form)}</option>
+                  <option value="show">Always show the rate</option>
+                  <option value="hide">Always hide the rate ("Arranged by {form.name || 'the agent'}")</option>
+                </select>
+                <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>
+                  Automatic hides it only when a travel agent / wholesaler bills you (it resold the room at its own price). A company's employee usually needs the rate for a travel claim.
                 </div>
               </div>
               <div className="form-group">

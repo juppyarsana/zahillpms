@@ -12,7 +12,8 @@ const PAYMENT_STATUSES = ['normal', 'city_ledger', 'city_ledger_payment', 'commi
 const COMMISSION_TYPES = ['percent', 'amount'];
 // Fields only the owner (or the agent_billing permission) may set — the rest
 // front desk can fill in when adding an agent from a booking.
-const BILLING_FIELDS = ['payment_status', 'credit_terms_days', 'credit_limit', 'commission_type', 'commission_value'];
+const BILLING_FIELDS = ['payment_status', 'credit_terms_days', 'credit_limit', 'commission_type', 'commission_value', 'publish_rate'];
+const PUBLISH_RATE_MODES = ['auto', 'show', 'hide'];   // migration 085, services/publishRate.js
 
 // Validates + normalises the editable fields. Returns { values } or { error }.
 function parseAgentFields(body, { requireName = false } = {}) {
@@ -30,6 +31,10 @@ function parseAgentFields(body, { requireName = false } = {}) {
   if (body.payment_status !== undefined && body.payment_status !== null && body.payment_status !== '') {
     if (!PAYMENT_STATUSES.includes(body.payment_status)) return { error: `payment_status must be one of ${PAYMENT_STATUSES.join(', ')}` };
     out.payment_status = body.payment_status;
+  }
+  if (body.publish_rate !== undefined && body.publish_rate !== null && body.publish_rate !== '') {
+    if (!PUBLISH_RATE_MODES.includes(body.publish_rate)) return { error: `publish_rate must be one of ${PUBLISH_RATE_MODES.join(', ')}` };
+    out.publish_rate = body.publish_rate;
   }
   if (body.commission_type !== undefined) {
     const v = body.commission_type === '' ? null : body.commission_type;

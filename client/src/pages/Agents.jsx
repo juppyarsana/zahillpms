@@ -125,6 +125,9 @@ function AgentList() {
                       {HAS_COMMISSION.includes(a.payment_status) && commissionText(a.commission_type, a.commission_value) && (
                         <span style={{ color: '#6B7280' }}> · {commissionText(a.commission_type, a.commission_value)}</span>
                       )}
+                      {a.publish_rate && a.publish_rate !== 'auto' && (
+                        <div style={{ fontSize: 11, color: '#6B7280' }}>Rate {a.publish_rate === 'show' ? 'always shown' : 'always hidden'} on guest documents</div>
+                      )}
                     </td>
                     <td style={{ ...TD, textAlign: 'right', color: '#6B7280' }}>{a.booking_count || '—'}</td>
                     <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{Number(r?.total_outstanding) > 0 ? fmtIDR(r.total_outstanding) : '—'}</td>
