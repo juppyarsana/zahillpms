@@ -372,7 +372,7 @@ export default function Reports() {
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading…</div>
       ) : !data ? null : (() => {
-        const { revenue: rev, rooms, channels, money } = data;
+        const { revenue: rev, rooms, channels, money, bookings: bk, costs } = data;
         const total = rev.total;
         const share = n => (total > 0 ? (Number(n) / total) * 100 : 0);
         const sub = { _cell: { paddingLeft: 30, color: '#4B5563' } };
@@ -487,6 +487,14 @@ export default function Reports() {
 
             {/* ── 3. Channels ── */}
             <Section id="channels" title="Channels" subtitle="where the stays in this period were booked">
+              <Kpis items={[
+                ['Reservations made', num(bk.made.bookings), `${plural(bk.made.rooms, 'room')} · ${plural(bk.made.nights, 'night')} · ${fmtIDR(bk.made.value)}`],
+                ['Cancelled', num(bk.cancelled.bookings), `${plural(bk.cancelled.rooms, 'room')} · ${fmtIDR(bk.cancelled.value)}`],
+                ['No-shows', num(bk.no_shows.bookings), `${plural(bk.no_shows.rooms, 'room')} · ${fmtIDR(bk.no_shows.value)}`],
+              ]} />
+              <div style={{ fontSize: 11, color: '#6B7280', margin: '-10px 0 16px' }}>
+                Made = by the day the reservation was entered (a group = 1). Cancelled = by the day it was cancelled. No-shows = due in during this period and never arrived. Values are net.
+              </div>
               <TableCard rows={channels}
                 note="Revenue = room + meals in the rate plan for the nights in this period."
                 columns={[
@@ -577,6 +585,17 @@ export default function Reports() {
                 )}
               </div>
 
+              {costs.by_category.length > 0 && (
+                <TableCard title={`Costs — ${fmtIDR(costs.total)}`} rows={costs.by_category}
+                  note="Back Office → Expenses logged in this period, by category."
+                  columns={[
+                    { key: 'label', label: 'Category', render: r => <b>{r.label}</b> },
+                    { key: 'entries', label: 'Entries', align: 'right' },
+                    { key: 'amount', label: 'Amount', align: 'right', render: r => fmtIDR(r.amount) },
+                    { key: 'share', label: 'Share', render: r => <ShareBar pct={r.share} color="#DC2626" /> },
+                  ]}
+                  footer={{ label: 'Total costs', entries: costs.by_category.reduce((s2, r) => s2 + r.entries, 0), amount: fmtIDR(costs.total) }} />
+              )}
               <div className="card">
                 <div className="card-title" style={{ marginBottom: 12 }}>Net income</div>
                 <div className="grid-3">

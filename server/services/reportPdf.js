@@ -28,7 +28,7 @@ function buildReportPdf(report, property) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const { revenue: rev, rooms, channels, money } = report;
+    const { revenue: rev, rooms, channels, money, bookings: bk, costs } = report;
     const total = rev.total || 0;
     const share = n => (total ? (Number(n) / total) * 100 : 0);
     const label = periodLabel(report.from, report.to);
@@ -179,8 +179,15 @@ function buildReportPdf(report, property) {
       { label: 'Nights', w: 0.1, align: 'right', get: r => num(r.nights) }, { label: 'Revenue', w: 0.19, align: 'right', get: r => fmtIDR(r.revenue) },
       { label: 'ADR', w: 0.17, align: 'right', get: r => (r.adr === '' ? '' : fmtIDR(r.adr)) }, { label: 'Share', w: 0.13, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
     ], channels, { total: { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0), revenue: chTotal, adr: '', share: '' } });
+    subheading('Reservations in this period', 'Made = by the day entered (a group = 1 booking). Cancelled = by the day cancelled. No-shows = due in during the period, never arrived. Net values.', 3);
+    table([
+      { label: '', w: 0.3, key: 'k' }, { label: 'Bookings', w: 0.15, align: 'right', get: r => num(r.bookings) },
+      { label: 'Rooms', w: 0.15, align: 'right', get: r => num(r.rooms) }, { label: 'Nights', w: 0.15, align: 'right', get: r => num(r.nights) },
+      { label: 'Value', w: 0.25, align: 'right', get: r => fmtIDR(r.value) },
+    ], [{ k: 'Made', ...bk.made }, { k: 'Cancelled', ...bk.cancelled }, { k: 'No-shows', ...bk.no_shows }]);
 
     // ── Money ──
+    ensure(60 + 6 * 16);   // keep the heading with its first table
     heading('Money');
     const recTotal = money.received.total;
     subheading('Received by payment method', 'Payments received in this period: guests, extras & activities paid at the desk, agents.', money.received.by_method.length + 1);
@@ -222,6 +229,14 @@ function buildReportPdf(report, property) {
       { label: 'Owed', w: 0.16, align: 'right', get: r => fmtIDR(r.outstanding) }, { label: 'Not due yet', w: 0.16, align: 'right', get: r => (r.current === undefined ? '' : fmtIDR(r.current)) },
       { label: 'Overdue', w: 0.16, align: 'right', get: r => fmtIDR(r.overdue) }, { label: 'Over 60 days', w: 0.16, align: 'right', get: r => (r.over_60 === undefined ? '' : fmtIDR(r.over_60)) },
     ], ag.rows, { total: { agent: 'Total', outstanding: ag.total, overdue: ag.overdue }, empty: 'No agent owes anything.' });
+
+    if (costs.by_category.length) {
+      subheading('Costs by category', 'Back Office > Expenses logged in this period.', costs.by_category.length + 1);
+      table([
+        { label: 'Category', w: 0.4, key: 'label' }, { label: 'Entries', w: 0.15, align: 'right', get: r => num(r.entries) },
+        { label: 'Amount', w: 0.25, align: 'right', get: r => fmtIDR(r.amount) }, { label: 'Share', w: 0.2, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
+      ], costs.by_category, { total: { label: 'Total costs', entries: costs.by_category.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: '' } });
+    }
 
     subheading('Net income', null, 3);
     table([{ label: 'Item', w: 0.6, key: 'k' }, { label: 'Amount', w: 0.4, align: 'right', get: r => fmtIDR(r.v) }], [

@@ -72,7 +72,7 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     property: propertyName || 'Property', from: report.from, to: report.to,
     note: 'Amounts in Rupiah, net: after discounts, before service charge and tax. Same figures as the Reports page.',
   };
-  const { revenue: rev, rooms, channels, money } = report;
+  const { revenue: rev, rooms, channels, money, bookings: bk, costs } = report;
   const total = rev.total || 0;
   const share = n => (total ? Math.round((n / total) * 1000) / 10 : 0);
 
@@ -152,6 +152,13 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
   ], channels, { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0),
     revenue: chTotal, share: chTotal ? 100 : 0 },
   'Revenue = room + meals in the rate plan for the nights in this period.');
+  table(ws3, 'Reservations in this period', [
+    { header: '', key: 'k' }, { header: 'Bookings', key: 'bookings', fmt: INT, align: 'right' },
+    { header: 'Rooms', key: 'rooms', fmt: INT, align: 'right' }, { header: 'Nights', key: 'nights', fmt: INT, align: 'right' },
+    { header: 'Value (Rp)', key: 'value', fmt: IDR, align: 'right' },
+  ], [
+    { k: 'Made', ...bk.made }, { k: 'Cancelled', ...bk.cancelled }, { k: 'No-shows', ...bk.no_shows },
+  ], null, 'Made = by the day entered (a group = 1 booking). Cancelled = by the day cancelled. No-shows = due in during the period, never arrived. Net values.');
   widths(ws3, [28, 12, 12, 20, 16, 12]);
 
   // ── Money ──
@@ -186,6 +193,11 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     { header: 'Owed (Rp)', key: 'outstanding', fmt: IDR, align: 'right' }, { header: 'Not due yet (Rp)', key: 'current', fmt: IDR, align: 'right' },
     { header: 'Overdue (Rp)', key: 'overdue', fmt: IDR, align: 'right' }, { header: 'Over 60 days (Rp)', key: 'over_60', fmt: IDR, align: 'right' },
   ], ag.rows, { agent: 'Total', outstanding: ag.total, overdue: ag.overdue });
+  table(ws4, 'Costs by category', [
+    { header: 'Category', key: 'label' }, { header: 'Entries', key: 'entries', fmt: INT, align: 'right' },
+    { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
+  ], costs.by_category, { label: 'Total costs', entries: costs.by_category.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: costs.total ? 100 : 0 },
+  'Back Office → Expenses logged in this period.');
   widths(ws4, [40, 16, 18, 18, 16, 18]);
 
   // ── Daily ──

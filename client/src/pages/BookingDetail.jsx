@@ -568,6 +568,16 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
     }
   }
 
+  async function undoNoShow() {
+    if (!confirm('Put this booking back? Use this when the guest did arrive (or is still coming). The status goes back to Pending / Deposit Paid / Confirmed from its payments.')) return;
+    try {
+      await api.put(`/api/bookings/${id}/undo-no-show`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not undo the no-show');
+    }
+  }
+
   async function callRoomAction() {
     try {
       await callRoom({ id: booking.unit_id, name: booking.unit_name });
@@ -625,6 +635,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
   // buttons instead, and Download earns its own always-visible button since
   // it's a different kind of action (produces a guest-facing document).
   const modifyItems = [
+    booking.status === 'no_show' &&
+      { label: 'Undo No-Show', icon: '↩️', onClick: undoNoShow, hint: 'The guest did arrive — put the booking back' },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&

@@ -9,6 +9,15 @@ Last updated: 2026-09-28
 **Code:** everything below is on `dev` (last commit `21f32ea`), pushed. **Not on `main` / production yet.**
 New since production's last deploy: **migrations 074–078** and a new server dependency **`exceljs`**.
 
+### ➕ Later the same day (2026-09-28, second session)
+- Deployed to the **dev server** by the owner; extra-bed items set up there (dev had no old extra-bed sales, so
+  `resplitMeals.js --extras` found 0 — expected). Production still to do after the release.
+- **Night audit no-shows pending + deposit-paid too** (arrival day only), voids posted nights, logs Edit History;
+  **Undo No-Show** on the booking (⋮ menu, `PUT /api/bookings/:id/undo-no-show`). Owner chose this over marking them
+  arrived (standard practice: the audit never checks a guest in).
+- **Reports:** "Reservations made / cancelled / no-shows" strip (Channels) and **Costs by category** (Money) on the
+  page, Excel and PDF. The "start smaller" report scope is now complete.
+
 ### ⏸ Where we stopped
 Work is done and pushed to `dev`; the owner has not deployed it yet. Order for each server (dev first, then production):
 1. `git pull` → **`cd server && npm install`** (new: `exceljs`) → `cd client && npm run build`

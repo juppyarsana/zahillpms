@@ -280,15 +280,28 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
     return { skipped: true, reason: 'already_run', business_date: businessDate };
   }
 
-  // 2. No-show detection
+  // 2. No-show detection — every booking due in on the business date that
+  // never checked in (pending, deposit paid or confirmed), like the manual
+  // Mark No-Show. Arrival day only: an older one someone put back with Undo
+  // No-Show is never re-flagged. Money received stays recorded; FO can undo
+  // it from the booking (PUT /api/bookings/:id/undo-no-show).
   const { rows: noShows } = await db.query(
     `UPDATE bookings SET status = 'no_show', updated_at = NOW()
-     WHERE status = 'confirmed' AND check_in_date = $1 AND property_id = $2
+     WHERE status IN ('pending', 'deposit_paid', 'confirmed') AND check_in_date = $1 AND property_id = $2
      RETURNING id,
        (SELECT name FROM guests WHERE id = bookings.guest_id) AS guest_name,
        (SELECT name FROM units  WHERE id = bookings.unit_id)  AS unit_name`,
     [businessDate, propertyId]
   );
+  for (const ns of noShows) {
+    try {
+      await roomChargeService.voidAll(db, ns.id, null);
+      await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)',
+        [ns.id, 'Marked no-show by the night audit (never checked in on the arrival day).']);
+    } catch (e) {
+      console.error(`[Night Audit] no-show follow-up failed for ${ns.id}:`, e.message);
+    }
+  }
   if (noShows.length) console.log(`[Night Audit] Flagged ${noShows.length} no-show(s)`);
 
   // 2b. Post the just-closed night's room + F&B folio charges for every

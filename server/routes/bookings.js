@@ -371,7 +371,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
     const lists = { arrivals: [], in_house: [], departures: [] };
     // Today only: bookings that never checked in and whose stay is already
     // over — not arriving any more, just never marked no-show / cancelled
-    // (the night audit only no-shows 'confirmed'). Kept out of the three
+    // (the night audit only no-shows on the arrival day itself). Kept out of the three
     // lists and the counts, listed separately so someone cleans them up.
     const neverArrived = [];
     for (const r of rows) {
@@ -2204,9 +2204,62 @@ router.put('/:id/no-show', auth, async (req, res) => {
       [req.params.id, req.propertyId]
     );
     await roomCharge.voidAll(db, req.params.id, req.user.id);
+    await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [req.params.id, 'Marked no-show.', req.user.id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/:id/undo-no-show — puts a no-show back (e.g. the night
+// audit flagged a guest who did arrive but was never checked in). The status
+// goes back to pending / deposit paid / confirmed from its payments, and the
+// room must still be free for the nights not yet over. Nothing is re-posted
+// here: the nights post as usual once the guest is checked in (checkout
+// catches up nights already past).
+router.put('/:id/undo-no-show', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [b] } = await client.query(
+      `SELECT b.id, b.status, b.unit_id, b.check_in_date, b.check_out_date, u.name AS unit_name
+       FROM bookings b JOIN units u ON u.id = b.unit_id
+       WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`,
+      [req.params.id, req.propertyId]
+    );
+    if (!b) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (b.status !== 'no_show') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Only a no-show can be put back — booking status is ${b.status}` });
+    }
+    const today = roomCharge.todayWITA();
+    const from = b.check_in_date > today ? b.check_in_date : today;
+    if (from < b.check_out_date) {
+      const { rows: conflicts } = await client.query(`
+        SELECT g.name AS guest_name FROM bookings x JOIN guests g ON g.id = x.guest_id
+        WHERE x.unit_id = $1 AND x.property_id = $2 AND x.id != $3
+          AND x.status NOT IN ('cancelled','no_show')
+          AND x.check_in_date < $5 AND ${occupiedUntilSql('x')} > $4
+        LIMIT 1`, [b.unit_id, req.propertyId, b.id, from, b.check_out_date]);
+      if (conflicts.length) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          error: `Room ${b.unit_name} is booked for ${conflicts[0].guest_name} on these dates — change the room or dates of one of them first`,
+        });
+      }
+    }
+    await client.query("UPDATE bookings SET status = 'pending', updated_at = NOW() WHERE id = $1", [b.id]);
+    const status = await recomputeBookingStatus(client, b.id);
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [b.id, `No-show undone — status back to ${status.replace('_', ' ')}.`, req.user.id]);
+    await client.query('COMMIT');
+    res.json({ id: b.id, status });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

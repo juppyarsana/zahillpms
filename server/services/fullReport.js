@@ -12,11 +12,18 @@ const { round2, computeFolioTotals } = require('./folioService');
 //   channels — by booking source
 //   money    — received by method, service charge & tax, discounts, still
 //              owed as of today (guests, agents)
+//   bookings — reservations made / cancelled / no-shows in the period
+//   costs    — Back Office expenses by category (→ net income)
 // All revenue is NET (after discounts, before service charge and tax).
 
 const EXTRA_CATEGORIES = {
   room_addon: 'Room add-ons', transport: 'Transport', laundry: 'Laundry',
   service: 'Services', merchandise: 'Merchandise', other: 'Other',
+};
+
+const EXPENSE_CATEGORIES = {
+  utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
+  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', other: 'Other',
 };
 
 const r2 = n => round2(parseFloat(n) || 0);
@@ -25,6 +32,7 @@ async function buildFullReport(propertyId, from, to) {
   const { getReport, NIGHTS_CTE, ADDON_NIGHTS_SQL, ACTIVITY_SQL } = require('../routes/reports');   // lazy: route file
   const { collected } = require('./dailyClose');
   const { aging } = require('./agentStatementService');
+  const { bookingsMade } = require('./bookingPickup');
   const P = [from, to, propertyId];
   const days = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1;
 
@@ -33,6 +41,7 @@ async function buildFullReport(propertyId, from, to) {
     base, { rows: extraLines }, { rows: addonCats }, { rows: activities }, { rows: settingsRows },
     { rows: typeUnits }, { rows: byType }, { rows: byPlan }, { rows: byNat }, { rows: [arrivals] }, { rows: bySource },
     { rows: [disc] }, received, { rows: owedGuests }, agents,
+    pickup, { rows: [noShow] }, { rows: expenseCats },
   ] = await Promise.all([
     getReport(propertyId, from, to),
     // Hotel extras by category, on the day sold: the item part of every
@@ -110,6 +119,22 @@ async function buildFullReport(propertyId, from, to) {
         AND b.status NOT IN ('cancelled', 'no_show') AND b.folio_status IS NULL
       GROUP BY 1`, [propertyId]),
     aging(propertyId),
+    // Reservations made / cancelled in the period (by the day it happened) —
+    // the Dashboard's and Daily Close's definition.
+    bookingsMade(propertyId, from, to),
+    // No-shows: due in during the period and never arrived (Daily Close rule).
+    db.query(`
+      SELECT COUNT(DISTINCT COALESCE(b.reservation_group_id, b.id)) AS bookings, COUNT(*) AS rooms,
+             COALESCE(SUM(b.nights), 0) AS nights,
+             COALESCE(SUM(COALESCE(b.room_revenue + b.fnb_revenue, b.total_amount - COALESCE(b.discount_amount, 0))), 0) AS value
+      FROM bookings b WHERE b.property_id = $3 AND b.status = 'no_show'
+        AND b.check_in_date BETWEEN $1::date AND $2::date`, P),
+    // Costs by expense category (same rule as the Expenses total).
+    db.query(`
+      SELECT category, COUNT(*) AS entries, SUM(amount) AS amount
+      FROM expenses WHERE property_id = $3 AND is_voided = false
+        AND incurred_on BETWEEN $1::date AND $2::date
+      GROUP BY category`, P),
   ]);
 
   // ── Revenue ──
@@ -237,9 +262,28 @@ async function buildFullReport(propertyId, from, to) {
     },
   };
 
+  // ── Reservations activity ──
+  const pick = x => ({ bookings: x.bookings, rooms: x.rooms, nights: x.nights, value: r2(x.value) });
+  const bookings = {
+    made: pick(pickup.made),
+    cancelled: pick(pickup.cancelled),
+    no_shows: { bookings: parseInt(noShow.bookings), rooms: parseInt(noShow.rooms), nights: parseInt(noShow.nights), value: r2(noShow.value) },
+  };
+
+  // ── Costs (Back Office expenses) ──
+  const expTotal = r2(base.expenses_total);
+  const costs = {
+    total: expTotal,
+    by_category: expenseCats.map(c => ({
+      category: c.category, label: EXPENSE_CATEGORIES[c.category] || c.category,
+      entries: parseInt(c.entries), amount: r2(c.amount),
+      share: expTotal > 0 ? r2(parseFloat(c.amount) / expTotal * 100) : 0,
+    })).sort((a, b) => b.amount - a.amount),
+  };
+
   return {
     from, to, days,
-    revenue, rooms, channels, money,
+    revenue, rooms, channels, money, bookings, costs,
     daily: base.daily_revenue,
     expenses_total: base.expenses_total, net_income: base.net_income,
   };
