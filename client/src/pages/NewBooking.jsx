@@ -539,13 +539,20 @@ export default function NewBooking() {
                 </div>
               </div>
 
-              {nightItems.length > 0 && (
+              {(
                 <div className="form-group">
                   {!room.extra ? (
-                    <button type="button" className="btn btn-sm btn-secondary"
-                      onClick={() => setRoom(i, 'extra', { product_id: nightItems[0].id, quantity: 1, nights: null })}>
-                      + Extra bed
-                    </button>
+                    <>
+                      <button type="button" className="btn btn-sm btn-secondary" disabled={!nightItems.length}
+                        onClick={() => setRoom(i, 'extra', { product_id: nightItems[0].id, quantity: 1, nights: null })}>
+                        + Extra bed
+                      </button>
+                      {!nightItems.length && (
+                        <span className="text-muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                          No per-night item yet — in Sales → Items, edit the Extra Bed and tick "Per night — part of the stay".
+                        </span>
+                      )}
+                    </>
                   ) : (
                     <div style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--cream)' }}>
                       <div className="flex-between" style={{ marginBottom: 8 }}>
