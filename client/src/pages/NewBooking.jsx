@@ -136,6 +136,7 @@ export default function NewBooking() {
   const [units, setUnits] = useState([]);
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
+  const [pickedGuest, setPickedGuest] = useState(null);   // the guest chosen from the search list
   // Pre-fill: from a calendar cell (?unit=&date=, 1 night) or from Check
   // Availability (?check_in=&check_out=&units=a,b&guests=2,2 — 2+ units open
   // as a group booking).
@@ -235,12 +236,14 @@ export default function NewBooking() {
   }, [defaultRatePlanId]);
 
   useEffect(() => {
+    // A guest was just picked: their name is in the box — don't search it again.
+    if (pickedGuest && guestSearch === pickedGuest.name) return;
     if (guestSearch.length >= 2) {
       api.get(`/api/guests?search=${encodeURIComponent(guestSearch)}`).then(r => setGuests(r.data));
     } else {
       setGuests([]);
     }
-  }, [guestSearch]);
+  }, [guestSearch]); // eslint-disable-line react-hooks/exhaustive-deps -- search only when the text changes
 
   const unitIdsKey = rooms.map(r => r.unit_id).join(',');
   const suggestKey = rooms.map(r => `${r.unit_id}:${r.rate_plan_id}:${r.num_guests}`).join(',');
@@ -325,6 +328,7 @@ export default function NewBooking() {
         guestId = r.data.id;
         // If the booking itself fails, a retry reuses this guest (no duplicate).
         setForm(f => ({ ...f, guest_id: guestId }));
+        setPickedGuest({ id: guestId, name: newGuest.name, whatsapp: newGuest.whatsapp, nationality: newGuest.nationality });
         setGuestSearch(newGuest.name);
         setMode('search');
       }
@@ -425,12 +429,28 @@ export default function NewBooking() {
               <div className="form-group">
                 <label className="form-label">Search Guest</label>
                 <input className="form-input" placeholder="Name, phone, or email…" value={guestSearch}
-                  onChange={e => setGuestSearch(e.target.value)} />
+                  onChange={e => {
+                    setGuestSearch(e.target.value);
+                    // Typing something else un-picks the guest.
+                    if (pickedGuest && e.target.value !== pickedGuest.name) { setPickedGuest(null); set('guest_id', ''); }
+                  }} />
               </div>
-              {guests.length > 0 && (
+              {pickedGuest && form.guest_id === pickedGuest.id && (
+                <div className="flex-between" style={{ marginTop: -4, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--green-pale)' }}>
+                  <span style={{ fontSize: 13 }}>
+                    ✓ <b>{pickedGuest.name}</b>
+                    {[pickedGuest.whatsapp, pickedGuest.nationality].filter(Boolean).length > 0 && (
+                      <span className="text-muted"> · {[pickedGuest.whatsapp, pickedGuest.nationality].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </span>
+                  <button type="button" className="btn btn-sm btn-ghost"
+                    onClick={() => { setPickedGuest(null); set('guest_id', ''); setGuestSearch(''); setGuests([]); }}>Change</button>
+                </div>
+              )}
+              {guests.length > 0 && !(pickedGuest && form.guest_id === pickedGuest.id) && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', marginTop: -4 }}>
                   {guests.map(g => (
-                    <div key={g.id} onClick={() => { set('guest_id', g.id); setGuestSearch(g.name); setGuests([]); }}
+                    <div key={g.id} onClick={() => { set('guest_id', g.id); setPickedGuest(g); setGuestSearch(g.name); setGuests([]); }}
                       style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)', background: form.guest_id === g.id ? 'var(--green-pale)' : 'white' }}>
                       <div style={{ fontWeight: 600 }}>{g.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{g.whatsapp} · {g.nationality}</div>
