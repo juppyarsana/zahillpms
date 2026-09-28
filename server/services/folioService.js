@@ -165,7 +165,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, fc.addon_id, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
@@ -290,7 +290,7 @@ async function computeProforma(bookingId, propertyId) {
   const addonCharges = addons.map(a => {
     const amount = round2(parseFloat(a.unit_price) * a.quantity);
     return {
-      type: 'addon', description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
+      type: 'addon', addon_id: a.id, description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
       unit_price: a.unit_price, amount, service_date: ymd(a.service_date),
       paid_at_desk: !!a.line_paid_label || (!!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method)),
       paid_method: a.line_paid_label || (a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method) ? a.payment_method_label : null),

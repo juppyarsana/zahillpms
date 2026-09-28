@@ -16,7 +16,7 @@ import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
-import { lineShown, includesText, shownTotal } from '../lib/priceBasis';
+import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -41,6 +41,113 @@ const COMP_LABEL = { room: 'Room free', room_meals: 'Room + meals free', all: 'E
 function addDaysYmd(ymd, n) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 function nightsBetween(a, b) { const [y1, m1, d1] = a.split('-').map(Number); const [y2, m2, d2] = b.split('-').map(Number); return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000); }
 // '2026-09-25' → '25 Sep' (local date, no UTC shift)
+// ── Folio: what isn't charged yet ────────────────────────────────────────
+// Room / meal nights and per-night extras (extra bed) post one night at a
+// time at night audit, so the ledger only has the nights already posted. The
+// estimate projects the whole stay; the difference is listed as "Not charged
+// yet", one row per item per run of nights at the same rate (like the invoice).
+function stayLabel(b, roomPart, mealPart) {
+  const bf = b?.includes_breakfast, lu = b?.includes_lunch, di = b?.includes_dinner;
+  const meals = bf && lu && di ? 'Full Board' : bf && di ? 'Half Board' : bf && !lu && !di ? 'Breakfast'
+    : (bf || lu || di) ? (b?.rate_plan_name || 'meals') : null;
+  if (roomPart && mealPart) return meals ? `Room with ${meals}` : 'Room with meals';
+  if (roomPart) return 'Room';
+  return meals || 'Meals';
+}
+const ymdNext = d => { const [y, m, dd] = d.split('-').map(Number); const x = new Date(y, m - 1, dd + 1); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+function notChargedRows(folio, estimate, booking) {
+  if (!folio || !estimate || ['cancelled', 'no_show'].includes(booking?.status)) return [];
+  const b = estimate.booking || booking;
+  const postedNights = new Set(folio.charges.filter(c => c.type === 'room' || c.type === 'fnb').map(c => String(c.service_date || '').slice(0, 10)));
+  const postedAddons = new Set(folio.charges.filter(c => c.addon_id).map(c => c.addon_id));
+  const rows = [];
+
+  const nightly = new Map();   // date → { room, meal }
+  for (const c of estimate.charges || []) {
+    if (c.type !== 'room' && c.type !== 'fnb') continue;
+    const d = String(c.service_date).slice(0, 10);
+    if (postedNights.has(d)) continue;
+    const n = nightly.get(d) || { room: 0, meal: 0 };
+    if (c.type === 'room') n.room += parseFloat(c.amount); else n.meal += parseFloat(c.amount);
+    nightly.set(d, n);
+  }
+  for (const d of [...nightly.keys()].sort()) {
+    const n = nightly.get(d);
+    const rate = n.room + n.meal;
+    const label = stayLabel(b, n.room > 0, n.meal > 0);
+    const last = rows[rows.length - 1];
+    // < Rp 1 apart = the same rate (the last night carries the rounding cent).
+    if (last && last.kind === 'room' && last.label === label && Math.abs(last.rate - rate) < 1 && ymdNext(last.to) === d) {
+      last.to = d; last.nights++; last.amount += rate;
+    } else rows.push({ kind: 'room', label, from: d, to: d, nights: 1, rate, qty: 1, amount: rate });
+  }
+
+  const addons = (estimate.charges || [])
+    .filter(c => c.type === 'addon' && c.addon_id && !postedAddons.has(c.addon_id))
+    .map(c => ({ ...c, name: String(c.description).replace(/ — \d{4}-\d{2}-\d{2}$/, ''), d: String(c.service_date).slice(0, 10) }))
+    .sort((x, y) => x.name.localeCompare(y.name) || x.d.localeCompare(y.d));
+  for (const c of addons) {
+    const qty = parseFloat(c.quantity) || 1;
+    const rate = parseFloat(c.amount);
+    const paid = c.paid_method || null, free = !!c.complimentary;
+    const last = rows[rows.length - 1];
+    if (last && last.kind === 'addon' && last.label === c.name && last.qty === qty && Math.abs(last.rate - rate) < 1
+        && last.paid === paid && last.free === free && ymdNext(last.to) === c.d) {
+      last.to = c.d; last.nights++; last.amount += rate;
+    } else rows.push({ kind: 'addon', label: c.name, from: c.d, to: c.d, nights: 1, rate, qty, amount: rate, paid, free });
+  }
+  return rows;
+}
+// What the rows still add to the bill (paid-ahead / free extras left out),
+// with service & tax.
+function notChargedTotal(rows, rates) {
+  return Math.round(rows.filter(r => !r.paid && !r.free).reduce((t, r) => t + r.amount, 0) * priceFactor(rates));
+}
+
+function NotChargedYet({ rows, rates }) {
+  if (!rows.length) return null;
+  const roomNights = rows.filter(r => r.kind === 'room').reduce((t, r) => t + r.nights, 0);
+  const extras = new Map();
+  for (const r of rows.filter(r => r.kind === 'addon')) extras.set(r.label, (extras.get(r.label) || 0) + r.nights);
+  const counts = [
+    roomNights ? `${roomNights} room-night${roomNights > 1 ? 's' : ''}` : null,
+    ...[...extras].map(([name, n]) => `${name} ${n} night${n > 1 ? 's' : ''}`),
+  ].filter(Boolean).join(' · ');
+  const show = v => fmtIDR(shownAmount(v, rates));
+  return (
+    <div>
+      <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
+        <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Not charged yet</div>
+        <span className="text-muted" style={{ fontSize: 11 }}>posts at night audit, one night at a time</span>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="flex-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13, gap: 8 }}>
+          <div>
+            <div>
+              {r.label}
+              {r.paid && <span className="badge badge-green" style={{ marginLeft: 6 }}>Paid · {r.paid}</span>}
+              {r.free && <span className="badge badge-green" style={{ marginLeft: 6 }}>Free</span>}
+            </div>
+            <div className="text-muted" style={{ fontSize: 11 }}>
+              {fmtShortDate(r.from)}{r.nights > 1 ? ` – ${fmtShortDate(r.to)}` : ''} · {r.nights} night{r.nights > 1 ? 's' : ''} × {show(r.rate)}{r.qty > 1 ? ` (${r.qty} per night)` : ''}
+            </div>
+          </div>
+          <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+            {r.paid || r.free ? <s className="text-muted">{show(r.amount)}</s> : show(r.amount)}
+          </span>
+        </div>
+      ))}
+      <div className="flex-between" style={{ fontWeight: 700, paddingTop: 6, gap: 8 }}>
+        <span>Not charged yet <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }}>· {counts}</span></span>
+        <span style={{ whiteSpace: 'nowrap' }}>{fmtIDR(notChargedTotal(rows, rates))}</span>
+      </div>
+      {!rates.prices_include_tax && priceFactor(rates) > 1 && (
+        <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>incl. service &amp; tax</div>
+      )}
+    </div>
+  );
+}
+
 function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 
 export default function BookingDetail() {
@@ -201,6 +308,7 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
+  const notCharged = notChargedRows(folio, estimate, booking);
 
   async function loadActivityBookings() {
     try {
@@ -1036,7 +1144,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                    Projected for the whole stay, including room/meal nights not yet posted below. Use this to know what the guest actually still owes.
+                    Projected for the whole stay: charged + not charged yet − paid. Use this to know what the guest actually still owes.
                   </div>
                   {parseFloat(estimate.balance_due) > 0 && !['cancelled', 'no_show'].includes(booking.status) && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
@@ -1053,6 +1161,10 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   </div>
                 );
               })()}
+              <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 2 }}>
+                <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Charged</div>
+                <span className="text-muted" style={{ fontSize: 11 }}>posted to the folio</span>
+              </div>
               <div style={{ marginBottom: 10 }}>
                 {[
                   ['Accommodation', c => c.type === 'room' || c.type === 'addon'],
@@ -1104,20 +1216,9 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                     </div>
                   );
                 })}
-                {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0' }}>No charges posted yet.</div>}
+                {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>Nothing charged yet.</div>}
               </div>
 
-              {!['cancelled', 'no_show'].includes(booking.status) && (
-                <button className="btn btn-secondary btn-sm mb-3" onClick={() => setAddingItem(true)}
-                  title="Extra bed, transport, laundry… or Other charge for anything not in the list">+ Add item</button>
-              )}
-              {addingItem && (
-                <AddStayItemModal booking={booking} onClose={() => setAddingItem(false)}
-                  onBookActivity={hasModule('activities') ? startBookActivity : null}
-                  onDone={() => { setAddingItem(false); load(); loadFolio(); }} />
-              )}
-
-              <div className="divider" />
               {/* Prices incl. service & tax (migration 079): lines above are all-in, so just the total and what's inside it. */}
               {!folio.prices_include_tax && (parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
                 <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
@@ -1139,13 +1240,27 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   <span className="text-muted">Tax ({folio.tax_rate}%)</span><span>{fmtIDR(folio.tax_amount)}</span>
                 </div>
               )}
-              <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 10 }}>
-                <span>Total</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
+              <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 12 }}>
+                <span>Total charged</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
               </div>
               {folio.prices_include_tax && includesText(folio, fmtIDR) && (
                 <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10, textAlign: 'right' }}>{includesText(folio, fmtIDR)}</div>
               )}
 
+              {!['cancelled', 'no_show'].includes(booking.status) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => setAddingItem(true)}
+                  title="Extra bed, transport, laundry… or Other charge for anything not in the list">+ Add item</button>
+              )}
+              {addingItem && (
+                <AddStayItemModal booking={booking} onClose={() => setAddingItem(false)}
+                  onBookActivity={hasModule('activities') ? startBookActivity : null}
+                  onDone={() => { setAddingItem(false); load(); loadFolio(); }} />
+              )}
+
+              {notCharged.length > 0 && <div className="divider" />}
+              <NotChargedYet rows={notCharged} rates={estimate || folio} />
+
+              <div className="divider" />
               {folio.payments.filter(p => p.status === 'received').length > 0 && (
                 <>
                   <div className="card-title" style={{ fontSize: 13 }}>Payments Received</div>
@@ -1163,41 +1278,30 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                 </>
               )}
 
-              <div className="flex-between mt-3" style={{ fontWeight: 700, fontSize: 16 }}>
-                <span>Posted Balance</span>
-                <span style={{ color: parseFloat(folio.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
-                  {fmtIDR(shownTotal(folio.balance_due, folio))}
-                </span>
-              </div>
               {(() => {
-                // Room/meal nights post one at a time at night audit, so until
-                // then the ledger above is missing them and Posted Balance can
-                // even look like a credit. Say which nights are still to come.
-                if (!estimate || ['cancelled', 'no_show'].includes(booking.status)) return null;
-                const postedDates = new Set(folio.charges
-                  .filter(c => c.type === 'room' || c.type === 'fnb')
-                  .map(c => String(c.service_date || '').slice(0, 10)));
-                const pending = (estimate.charges || []).filter(c =>
-                  (c.type === 'room' || c.type === 'fnb') && !postedDates.has(String(c.service_date || '').slice(0, 10)));
-                if (!pending.length) return null;
-                const net = pending.reduce((s, c) => s + parseFloat(c.amount), 0);
-                const gross = net * (1 + (parseFloat(estimate.service_charge_rate) || 0) / 100) * (1 + (parseFloat(estimate.tax_rate) || 0) / 100);
-                const dates = [...new Set(pending.map(c => String(c.service_date).slice(0, 10)))].sort();
-                const d = new Date();
-                const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                const what = dates.length === 1
-                  ? (dates[0] === today ? 'Tonight’s room charge' : `The room charge for ${fmtShortDate(dates[0])}`)
-                  : `Room charges for ${dates.length} nights (${fmtShortDate(dates[0])} – ${fmtShortDate(dates[dates.length - 1])})`;
+                // Charged − paid, + what isn't charged yet = the whole-stay
+                // balance (the Estimated Balance Due up top).
+                const posted = shownTotal(folio.balance_due, folio);
+                const due = estimate ? shownTotal(estimate.balance_due, estimate) : posted;
+                const color = due > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)';
                 return (
-                  <div style={{ fontSize: 12, marginTop: 6, padding: '6px 10px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                    🌙 {what} — <b>{fmtIDR(Math.round(gross))}</b> — {dates.length === 1 ? 'posts' : 'post'} at night audit, one night at a time.
-                    Estimated Balance Due above already includes {dates.length === 1 ? 'it' : 'them'}.
+                  <div style={{ marginTop: folio.payments.some(p => p.status === 'received') ? 12 : 0 }}>
+                    {notCharged.length > 0 && (
+                      <>
+                        <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                          <span className="text-muted">Charged − paid</span><span>{fmtIDR(posted)}</span>
+                        </div>
+                        <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                          <span className="text-muted">+ Not charged yet</span><span>{fmtIDR(notChargedTotal(notCharged, estimate || folio))}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, borderTop: '2px solid var(--border)', paddingTop: 6 }}>
+                      <span>Balance due</span><span style={{ color }}>{fmtIDR(due)}</span>
+                    </div>
                   </div>
                 );
               })()}
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                Based only on charges already posted to the ledger above — see "Estimated Balance Due" up top for what the guest actually still owes overall.
-              </div>
             </>
           )}
         </div>
