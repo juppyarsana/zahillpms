@@ -145,7 +145,7 @@ function renderRegistrationCard(doc, { property, data }) {
     cells: [
       { label: 'Room Number', value: data.unit_name },
       { label: 'Source of Booking', value: data.source_label },
-      { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? fmtIDR(data.room_rate) : '') : rateHiddenNote) },
+      { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? `${fmtIDR(data.room_rate)}${data.rate_includes ? ` (incl. ${data.rate_includes})` : ''}` : '') : rateHiddenNote) },
     ],
   });
   gridRow(doc, {

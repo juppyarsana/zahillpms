@@ -200,8 +200,9 @@ async function loadRegCardData(where, params) {
     `SELECT
        b.id AS booking_id,
        g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
-       b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.nights, b.deposit_amount, b.complimentary_scope,
+       b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.fnb_revenue, b.nights, b.deposit_amount, b.complimentary_scope,
        u.name AS unit_name, u.type AS room_type_name,
+       rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
        bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate,
        lt.name AS membership,
        pm.label AS payment_method_label,
@@ -212,6 +213,7 @@ async function loadRegCardData(where, params) {
      JOIN guests g ON g.id = b.guest_id
      JOIN units u ON u.id = b.unit_id
      LEFT JOIN property_settings ps ON ps.property_id = b.property_id
+     LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN loyalty_tiers lt ON lt.id = g.loyalty_tier_id
      -- "Checked In By" = whoever actually checked the guest in; blank (to
@@ -226,8 +228,16 @@ async function loadRegCardData(where, params) {
      ${where}`,
     params
   );
-  // NET per night — or all-in when the property's prices include tax (079).
-  for (const d of rows) d.room_rate = d.nights > 0 ? shown(d.room_revenue || 0, basisFrom(d)) / d.nights : null;
+  // What the guest pays per night for the room AND its meal plan (like the
+  // invoice's "Room with Breakfast" line — the breakfast part used to be left
+  // out, so a BB rate printed low). NET per night, or all-in when the
+  // property's prices include tax (079).
+  for (const d of rows) {
+    const meals = parseFloat(d.fnb_revenue || 0) > 0;
+    d.room_rate = d.nights > 0 ? shown(parseFloat(d.room_revenue || 0) + parseFloat(d.fnb_revenue || 0), basisFrom(d)) / d.nights : null;
+    const bf = d.includes_breakfast, lu = d.includes_lunch, di = d.includes_dinner;
+    d.rate_includes = !meals ? null : bf && lu && di ? 'full board' : bf && di ? 'half board' : bf && !lu && !di ? 'breakfast' : 'meals';
+  }
   return rows;
 }
 
