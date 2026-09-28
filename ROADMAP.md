@@ -18,7 +18,7 @@ Everything in the two 2026-09-28 sessions below is **live on production**.
   `bill_service_charge_rate = 0` by hand. Check afterwards: **263 bookings, 0 differ** (bill = guest price for every
   booking at its own rates).
 
-**After the deploy (on `dev`, not yet on production):** migration 082 — **Pay selected** folio lines (guest pays an
+**After the deploy (on `dev`, not yet on production):** migration 082 — Record Payment → **Specific items** (guest pays an
 activity / extras now, the room at checkout; receipt per payment) and the **guest copy** of invoice / pro forma for
 sources with Publish Rate off (room shown "arranged by …" without its rate). See CLAUDE.md.
 
