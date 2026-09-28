@@ -103,71 +103,183 @@ router.get('/:bookingId/estimate', auth, async (req, res) => {
 // pending remainder), so Payment Tracking and the booking status stay
 // right; whatever is left is recorded as an 'incidental' payment (extras
 // paid at the desk, migration 067 — never mistaken for the room's payment).
-// POST /api/folio/:bookingId/pay-lines { charge_ids, method, received_at?, notes? }
-// "Pay selected" (migration 082): the guest pays some lines now — an activity
-// or laundry charged to the room — and the rest later. One received
-// 'incidental' payment of exactly those lines (incl. service + tax at the
-// booking's rates) is recorded and each line points at it, so they read
-// "Paid · Cash", are never billed to an agent and get their own receipt.
-// Room / meal nights stay on Payment Tracking (deposit / balance lines).
-router.post('/:bookingId/pay-lines', auth, async (req, res) => {
-  const ids = [...new Set((Array.isArray(req.body.charge_ids) ? req.body.charge_ids : []).map(String))];
+// ── Taking a payment for chosen things (migrations 082–083) ──────────────────
+// Record Payment lists everything the guest owes: the room's pending deposit /
+// balance lines, and the extras — folio lines not paid yet plus per-night
+// extras still to come (booking_addons not posted yet, e.g. an extra bed
+// booked with the reservation). Front desk ticks what the guest is paying.
+//   room  — the ticked deposit / balance lines are marked received (a smaller
+//           amount splits the line: the paid part received, the rest pending),
+//           exactly like Mark Received / the old Record Payment
+//   items — ONE received 'incidental' payment of exactly those lines (service
+//           + tax on the 'added' ones at the booking's bill rates); each line /
+//           night points at it, so they read "Paid · Cash", are never billed
+//           to an agent and get their own receipt. A prepaid night keeps it
+//           when it's posted (roomChargeService.postAddons).
+
+async function lockPaymentBooking(client, bookingId, propertyId) {
+  const { rows: [booking] } = await client.query(
+    `SELECT b.id, b.status, b.complimentary_scope, b.bill_tax_rate, b.bill_service_charge_rate, ps.tax_rate, ps.service_charge_rate
+     FROM bookings b JOIN property_settings ps ON ps.property_id = b.property_id
+     WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [bookingId, propertyId]);
+  if (!booking) return { status: 404, error: 'Booking not found' };
+  if (['cancelled', 'no_show'].includes(booking.status)) {
+    return { status: 409, error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` };
+  }
+  return { booking };
+}
+
+// Items part: validates and records one payment for the chosen lines / nights.
+async function payItems(client, booking, { chargeIds, addonIds, method, receivedAt, notes, userId }) {
+  const { rows: lines } = chargeIds.length ? await client.query(
+    `SELECT fc.id, fc.type, fc.description, fc.amount, fc.tax_mode, ${PAID_AT_DESK_SQL} AS paid_at_desk
+     FROM folio_charges fc
+     WHERE fc.id = ANY($1::uuid[]) AND fc.booking_id = $2 AND fc.is_voided = false
+     FOR UPDATE OF fc`, [chargeIds, booking.id]) : { rows: [] };
+  if (lines.length !== chargeIds.length) return { status: 400, error: 'Some of the chosen items are not on this folio any more — refresh and try again' };
+  if (lines.some(l => ['room', 'fnb'].includes(l.type))) {
+    return { status: 400, error: 'Room and meal nights are paid on the room lines, not as items', code: 'ROOM_LINE' };
+  }
+  if (lines.some(l => l.paid_at_desk)) return { status: 409, error: 'One of the chosen items is already paid', code: 'ALREADY_PAID' };
+
+  // Nights still to come: active, inside the stay, not posted, not paid, not from a Pay-now sale.
+  const { rows: nights } = addonIds.length ? await client.query(
+    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.paid_payment_id, s.payment_method,
+            EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false) AS posted
+     FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
+     LEFT JOIN sales s ON s.id = a.sale_id
+     WHERE a.id = ANY($1::uuid[]) AND a.booking_id = $2 AND a.status = 'active'
+       AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+     FOR UPDATE OF a`, [addonIds, booking.id]) : { rows: [] };
+  if (nights.length !== addonIds.length || nights.some(n => n.posted)) {
+    return { status: 400, error: 'Some of the chosen nights changed (removed or posted) — refresh and try again' };
+  }
+  if (nights.some(n => n.paid_payment_id || (n.payment_method && !['room_charge', 'unpaid'].includes(n.payment_method)))) {
+    return { status: 409, error: 'One of the chosen nights is already paid', code: 'ALREADY_PAID' };
+  }
+  if (!lines.length && !nights.length) return { payment: null };
+  if (booking.complimentary_scope === 'all') {
+    return { status: 409, error: 'This stay is complimentary for everything — its extras are free', code: 'COMPLIMENTARY' };
+  }
+
+  const rates = billRates(booking, booking);
+  const nightLines = nights.map(n => ({ amount: round2(parseFloat(n.unit_price) * n.quantity), tax_mode: 'added' }));
+  const amount = chargeTotals([...lines, ...nightLines], rates.tax_rate, rates.service_charge_rate).total;
+  if (!(amount > 0)) return { status: 400, error: 'Nothing to pay for these items' };
+
+  const ymdOf = d => String(d instanceof Date ? d.toISOString() : d).slice(0, 10);
+  const what = [...lines.map(l => l.description), ...nights.map(n => `${n.description} — ${ymdOf(n.service_date)}`)].join(', ');
+  const cleanNotes = String(notes || '').trim();
+  const { rows: [payment] } = await client.query(
+    `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+     VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6) RETURNING id`,
+    [booking.id, amount, method, receivedAt, userId, (cleanNotes || `Paid at front desk: ${what}`).slice(0, 250)]);
+  if (lines.length) await client.query('UPDATE folio_charges SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, chargeIds]);
+  if (nights.length) await client.query('UPDATE booking_addons SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, addonIds]);
+  return { payment: { id: payment.id, amount, count: lines.length + nights.length, what } };
+}
+
+// Room part: marks the chosen pending deposit / balance lines received.
+async function payRoomLines(client, booking, parts, { method, receivedAt, notes, userId }) {
+  let total = 0;
+  for (const part of parts) {
+    const { rows: [l] } = await client.query(
+      `SELECT id, type, amount FROM payments
+       WHERE id = $1 AND booking_id = $2 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0 FOR UPDATE`,
+      [part.payment_id, booking.id]);
+    if (!l) return { status: 400, error: 'A room payment line changed — refresh and try again' };
+    const lineAmt = parseFloat(l.amount);
+    const amt = round2(parseFloat(part.amount));
+    if (!(amt > 0) || amt > lineAmt + 0.005) return { status: 400, error: `The ${l.type} amount must be between 1 and ${Math.round(lineAmt).toLocaleString('id-ID')}` };
+    if (amt >= lineAmt - 0.005) {
+      await client.query(
+        `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
+                             received_by = $3, notes = COALESCE($4, notes)
+         WHERE id = $5`, [method, receivedAt, userId, notes || null, l.id]);
+    } else {
+      // Part payment: the rest stays pending on the same line.
+      await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [round2(lineAmt - amt), l.id]);
+      await client.query(
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+         VALUES ($1, $2, $3, 'received', $4, COALESCE($5::timestamptz, NOW()), $6, $7)`,
+        [booking.id, l.type, amt, method, receivedAt, userId, notes || null]);
+    }
+    total = round2(total + amt);
+  }
+  if (parts.length) await recomputeBookingStatus(client, booking.id);
+  return { total };
+}
+
+// POST /api/folio/:bookingId/receive
+//   { room: [{ payment_id, amount }], charge_ids: [], addon_ids: [], method, received_at?, notes? }
+// The Record Payment window: room lines and items in one go, all or nothing.
+router.post('/:bookingId/receive', auth, async (req, res) => {
+  const uniq = v => [...new Set((Array.isArray(v) ? v : []).map(String))];
+  const chargeIds = uniq(req.body.charge_ids), addonIds = uniq(req.body.addon_ids);
+  const room = (Array.isArray(req.body.room) ? req.body.room : []).filter(r => r && r.payment_id);
   const { method, notes } = req.body;
   const receivedAt = req.body.received_at || null;
-  if (!ids.length) return res.status(400).json({ error: 'Choose the lines the guest is paying for' });
+  if (!room.length && !chargeIds.length && !addonIds.length) return res.status(400).json({ error: 'Choose what the guest is paying for' });
+  if (new Set(room.map(r => String(r.payment_id))).size !== room.length) return res.status(400).json({ error: 'A room line is listed twice' });
   if (!method) return res.status(400).json({ error: 'Payment method required' });
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: [booking] } = await client.query(
-      `SELECT b.id, b.status, b.complimentary_scope, b.bill_tax_rate, b.bill_service_charge_rate, ps.tax_rate, ps.service_charge_rate
-       FROM bookings b JOIN property_settings ps ON ps.property_id = b.property_id
-       WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [req.params.bookingId, req.propertyId]);
-    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
-    if (['cancelled', 'no_show'].includes(booking.status)) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` });
-    }
+    const lk = await lockPaymentBooking(client, req.params.bookingId, req.propertyId);
+    if (lk.error) { await client.query('ROLLBACK'); return res.status(lk.status).json({ error: lk.error }); }
+    const { booking } = lk;
     const { rows: [pm] } = await client.query(
       'SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
     if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
-
-    const { rows: lines } = await client.query(
-      `SELECT fc.id, fc.type, fc.description, fc.amount, fc.tax_mode, ${PAID_AT_DESK_SQL} AS paid_at_desk
-       FROM folio_charges fc
-       WHERE fc.id = ANY($1::uuid[]) AND fc.booking_id = $2 AND fc.is_voided = false
-       FOR UPDATE OF fc`, [ids, booking.id]);
-    if (lines.length !== ids.length) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Some of the chosen lines are not on this folio any more — refresh and try again' });
-    }
-    if (lines.some(l => ['room', 'fnb'].includes(l.type))) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Room and meal nights are paid on Payment Tracking, not here', code: 'ROOM_LINE' });
-    }
-    if (lines.some(l => l.paid_at_desk)) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'One of the chosen lines is already paid', code: 'ALREADY_PAID' });
-    }
-    if (booking.complimentary_scope === 'all') {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This stay is complimentary for everything — its extras are free', code: 'COMPLIMENTARY' });
-    }
-    const rates = billRates(booking, booking);
-    const amount = chargeTotals(lines, rates.tax_rate, rates.service_charge_rate).total;
-    if (!(amount > 0)) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to pay for these lines' }); }
-
-    const what = lines.map(l => l.description).join(', ');
     const cleanNotes = String(notes || '').trim();
-    const { rows: [payment] } = await client.query(
-      `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
-       VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6) RETURNING id`,
-      [booking.id, amount, method, receivedAt, req.user.id, (cleanNotes || `Paid at front desk: ${what}`).slice(0, 250)]);
-    await client.query('UPDATE folio_charges SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, ids]);
+    const opts = { method, receivedAt, notes: cleanNotes, userId: req.user.id };
+
+    const rp = await payRoomLines(client, booking, room, opts);
+    if (rp.error) { await client.query('ROLLBACK'); return res.status(rp.status).json({ error: rp.error }); }
+    const it = await payItems(client, booking, { chargeIds, addonIds, ...opts });
+    if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
+
+    const total = round2(rp.total + (it.payment?.amount || 0));
+    const parts = [rp.total ? `room Rp ${Math.round(rp.total).toLocaleString('id-ID')}` : null,
+      it.payment ? `${it.payment.what} Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')}` : null].filter(Boolean);
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
-      booking.id, `Paid now: ${what} — Rp ${Math.round(amount).toLocaleString('id-ID')} (${pm.label})${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
+      booking.id, `Payment received (${pm.label}): ${parts.join(' · ')}${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
     await client.query('COMMIT');
-    res.status(201).json({ payment_id: payment.id, amount, lines: lines.length });
+    res.status(201).json({
+      total, room_amount: rp.total,
+      items_payment_id: it.payment?.id || null, items_amount: it.payment?.amount || 0, items_count: it.payment?.count || 0,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/folio/:bookingId/pay-lines { charge_ids, addon_ids?, method, received_at?, notes? }
+// Items only (same as /receive without room lines).
+router.post('/:bookingId/pay-lines', auth, async (req, res) => {
+  const uniq = v => [...new Set((Array.isArray(v) ? v : []).map(String))];
+  const chargeIds = uniq(req.body.charge_ids), addonIds = uniq(req.body.addon_ids);
+  const { method, notes } = req.body;
+  if (!chargeIds.length && !addonIds.length) return res.status(400).json({ error: 'Choose the lines the guest is paying for' });
+  if (!method) return res.status(400).json({ error: 'Payment method required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lk = await lockPaymentBooking(client, req.params.bookingId, req.propertyId);
+    if (lk.error) { await client.query('ROLLBACK'); return res.status(lk.status).json({ error: lk.error }); }
+    const { rows: [pm] } = await client.query(
+      'SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
+    if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
+    const cleanNotes = String(notes || '').trim();
+    const it = await payItems(client, lk.booking, { chargeIds, addonIds, method, receivedAt: req.body.received_at || null, notes: cleanNotes, userId: req.user.id });
+    if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
+      lk.booking.id, `Paid now: ${it.payment.what} — Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')} (${pm.label})${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
+    await client.query('COMMIT');
+    res.status(201).json({ payment_id: it.payment.id, amount: it.payment.amount, lines: it.payment.count });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
@@ -191,7 +303,15 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'Payment not found' });
     const { rows: lines } = await db.query(
       `SELECT description, quantity, unit_price, amount, tax_mode, service_date FROM folio_charges
-       WHERE paid_payment_id = $1 AND is_voided = false ORDER BY service_date NULLS LAST, posted_at`, [p.id]);
+       WHERE paid_payment_id = $1 AND is_voided = false
+       UNION ALL
+       -- nights prepaid before they were posted (migration 083)
+       SELECT a.description || ' — ' || to_char(a.service_date, 'YYYY-MM-DD'), a.quantity, a.unit_price,
+              ROUND(a.unit_price * a.quantity, 2), 'added', a.service_date
+       FROM booking_addons a
+       WHERE a.paid_payment_id = $1 AND a.status = 'active'
+         AND NOT EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false)
+       ORDER BY service_date NULLS LAST`, [p.id]);
     if (!lines.length) return res.status(404).json({ error: 'No folio lines were paid with this payment' });
     const { rows: [settings] } = await db.query(
       `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address,

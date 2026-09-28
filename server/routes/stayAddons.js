@@ -21,7 +21,7 @@ router.get('/:id/addons', auth, async (req, res) => {
     const { rows } = await db.query(`
       SELECT a.id, a.sale_id, a.product_id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts,
              a.status, a.created_at, a.removed_at, a.removed_reason, cu.name AS created_by_name, ru.name AS removed_by_name,
-             s.payment_method,
+             s.payment_method, a.paid_payment_id,
              EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false) AS posted,
              (a.service_date >= $2::date AND a.service_date < $3::date) AS in_stay
       FROM booking_addons a

@@ -98,9 +98,10 @@ async function postAddons(client, booking, upToDate, actorUserId = null) {
     const amount = round2(parseFloat(a.unit_price) * a.quantity);
     try {
       await client.query(
-        `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, service_date, addon_id, sale_id)
-         VALUES ($1, 'addon', $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [a.booking_id, `${a.description} — ${ymd(a.service_date)}`, a.quantity, a.unit_price, amount, actorUserId, ymd(a.service_date), a.id, a.sale_id]
+        `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, service_date, addon_id, sale_id, paid_payment_id)
+         VALUES ($1, 'addon', $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        // a night prepaid before it was posted (migration 083) stays paid
+        [a.booking_id, `${a.description} — ${ymd(a.service_date)}`, a.quantity, a.unit_price, amount, actorUserId, ymd(a.service_date), a.id, a.sale_id, a.paid_payment_id]
       );
       posted++;
     } catch (err) {

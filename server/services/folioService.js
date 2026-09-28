@@ -135,7 +135,8 @@ const BILL_SC_SQL = 'COALESCE(b.bill_service_charge_rate, ps.service_charge_rate
 // Room deposit / balance payments have none (they're on the invoice).
 const PAYMENTS_WITH_RECEIPT_SQL = `
   SELECT p.*, CASE
-      WHEN EXISTS (SELECT 1 FROM folio_charges x WHERE x.paid_payment_id = p.id AND x.is_voided = false) THEN 'lines'
+      WHEN EXISTS (SELECT 1 FROM folio_charges x WHERE x.paid_payment_id = p.id AND x.is_voided = false)
+        OR EXISTS (SELECT 1 FROM booking_addons y WHERE y.paid_payment_id = p.id AND y.status = 'active') THEN 'lines'
       WHEN p.sale_id IS NOT NULL THEN 'sale'
       WHEN p.activity_booking_id IS NOT NULL THEN 'activity'
     END AS receipt_kind
@@ -258,10 +259,10 @@ async function computeProforma(bookingId, propertyId) {
      LEFT JOIN sales s ON s.id = a.sale_id
      LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
      LEFT JOIN LATERAL (
-       SELECT COALESCE(pm2.label, pp.method) AS label FROM folio_charges fx
-       JOIN payments pp ON pp.id = fx.paid_payment_id
+       SELECT COALESCE(pm2.label, pp.method) AS label FROM payments pp
        LEFT JOIN payment_methods pm2 ON pm2.id = pp.method AND pm2.property_id = b.property_id
-       WHERE fx.addon_id = a.id AND fx.is_voided = false LIMIT 1) lp ON true
+       WHERE pp.id = COALESCE(a.paid_payment_id,
+         (SELECT fx.paid_payment_id FROM folio_charges fx WHERE fx.addon_id = a.id AND fx.is_voided = false LIMIT 1))) lp ON true
      WHERE a.booking_id = $1 AND a.status = 'active'
        AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
      ORDER BY a.service_date`,
