@@ -19,6 +19,44 @@ function fmtDate(s, withYear = false) {
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) });
 }
 
+// The group's history: every room's Edit History together, newest first.
+// One action on several rooms at once (group check-in, a group payment, the
+// same change made to several rooms) — same person, same note, within a few
+// seconds — shows as ONE entry listing the rooms.
+function GroupHistory({ events }) {
+  const [showAll, setShowAll] = useState(false);
+  const entries = [];
+  for (const ev of events) {
+    const last = entries[entries.length - 1];
+    const t = new Date(ev.created_at).getTime();
+    if (last && last.note === ev.note && last.author_name === ev.author_name && Math.abs(last.t - t) < 5000) {
+      if (!last.rooms.includes(ev.unit_name)) last.rooms.push(ev.unit_name);
+    } else {
+      entries.push({ key: ev.id, note: ev.note, author_name: ev.author_name, created_at: ev.created_at, t, rooms: [ev.unit_name] });
+    }
+  }
+  const shown = showAll ? entries : entries.slice(0, 15);
+  return (
+    <div className="card mt-3">
+      <div className="card-title">History</div>
+      {entries.length === 0 ? (
+        <div className="text-muted" style={{ fontSize: 13 }}>No changes logged yet.</div>
+      ) : shown.map(e => (
+        <div key={e.key} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            <b style={{ color: 'var(--text)' }}>{e.rooms.slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true })).join(', ')}</b>
+            {' · '}{e.author_name || 'System'} · {new Date(e.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+          </div>
+          <div style={{ fontSize: 13 }}>{e.note}</div>
+        </div>
+      ))}
+      {!showAll && entries.length > 15 && (
+        <button className="btn btn-sm btn-ghost" style={{ marginTop: 6 }} onClick={() => setShowAll(true)}>Show all ({entries.length})</button>
+      )}
+    </div>
+  );
+}
+
 export default function GroupDetail() {
   const { groupId } = useParams();
   const [data, setData] = useState(null);
@@ -477,6 +515,8 @@ export default function GroupDetail() {
               </div>
             )}
           </div>
+
+          <GroupHistory events={data.events || []} />
         </>
       )}
 

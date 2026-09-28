@@ -871,9 +871,22 @@ router.get('/group/:groupId', auth, async (req, res) => {
     const discountAmount = active.reduce((s, b) => s + parseFloat(b.discount_amount || 0), 0);
     const netAmount = totalAmount - discountAmount;
 
+    // The group's history: every room's Edit History, newest first, with the
+    // room it belongs to (the group page merges one action on several rooms).
+    const { rows: events } = await db.query(`
+      SELECT be.id, be.booking_id, be.note, be.created_at, u.name AS author_name, un.name AS unit_name
+      FROM booking_events be
+      JOIN bookings b ON b.id = be.booking_id
+      JOIN units un ON un.id = b.unit_id
+      LEFT JOIN users u ON u.id = be.created_by
+      WHERE b.reservation_group_id = $1 AND b.property_id = $2
+      ORDER BY be.created_at DESC, un.name
+      LIMIT 500`, [req.params.groupId, req.propertyId]);
+
     res.json({
       group,
       bookings: bookingsWithPayments,
+      events,
       rollup: {
         room_count: active.length,
         cancelled_count: inactive.size,
