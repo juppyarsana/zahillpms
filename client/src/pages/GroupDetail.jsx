@@ -5,8 +5,8 @@ import ActionMenu from '../components/ActionMenu';
 import PageHeader from '../components/PageHeader';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
-import { lineShown, includesText, shownTotal } from '../lib/priceBasis';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
+import MasterFolio from '../components/MasterFolio';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -777,60 +777,7 @@ export default function GroupDetail() {
         <div className="card mt-3">
           <div className="card-title">Master Folio</div>
           {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
-            <>
-              {folio.rooms.map(room => (
-                <div key={room.booking_id} style={{ marginBottom: 14 }}>
-                  <div className="flex-between" style={{ fontWeight: 600, marginBottom: 4 }}>
-                    <Link to={`/reservations/${room.booking_id}`}>{room.unit_name}{room.complimentary_scope ? ' 🎁' : ''}</Link>
-                    <span>{fmtIDR(room.total)}</span>
-                  </div>
-                  {room.charges.length === 0 ? (
-                    <div className="text-muted" style={{ fontSize: 12 }}>No charges posted</div>
-                  ) : room.charges.map(c => (
-                    <div key={c.id} className="flex-between" style={{ fontSize: 12, padding: '3px 0', color: 'var(--text-muted)' }}>
-                      <span>{c.description}{c.paid_method && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>Paid · {c.paid_method}</span>}</span>
-                      <span>{c.complimentary ? 'Free' : fmtIDR(lineShown(c.amount, c, folio))}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              <div className="divider" />
-              {folio.by_type && (folio.by_type.room + folio.by_type.fnb) > 0 && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
-                  Net revenue — Room {fmtIDR(folio.by_type.room)} · F&amp;B {fmtIDR(folio.by_type.fnb)}
-                </div>
-              )}
-              {!folio.prices_include_tax && (parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) && (
-                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                  <span className="text-muted">Subtotal</span><span>{fmtIDR(folio.subtotal)}</span>
-                </div>
-              )}
-              {!folio.prices_include_tax && parseFloat(folio.service_charge_rate) > 0 && (
-                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                  <span className="text-muted">Service Charge</span><span>{fmtIDR(folio.service_charge_amount)}</span>
-                </div>
-              )}
-              {!folio.prices_include_tax && parseFloat(folio.tax_rate) > 0 && (
-                <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                  <span className="text-muted">Tax</span><span>{fmtIDR(folio.tax_amount)}</span>
-                </div>
-              )}
-              <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 10 }}>
-                <span>Total</span><span>{fmtIDR(shownTotal(folio.total, folio))}</span>
-              </div>
-              {folio.prices_include_tax && includesText(folio, fmtIDR) && (
-                <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10, textAlign: 'right' }}>{includesText(folio, fmtIDR)}</div>
-              )}
-              <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
-                <span>Balance Due</span>
-                <span style={{ color: parseFloat(folio.balance_due) > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
-                  {fmtIDR(shownTotal(folio.balance_due, folio))}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-                To post a new charge, open the individual room's Folio tab.
-              </div>
-            </>
+            <MasterFolio folio={folio} onRecordGroupPayment={pendingLines().length > 0 ? openGroupPayment : null} />
           )}
         </div>
       )}

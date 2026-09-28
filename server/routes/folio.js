@@ -28,7 +28,10 @@ router.get('/group/:groupId', auth, async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Group not found' });
 
     const { rows: bookingRows } = await db.query(
-      'SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2',
+      `SELECT b.id, b.status, to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in, to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out,
+              b.nights, b.num_guests, u.name AS unit_name
+       FROM bookings b JOIN units u ON u.id = b.unit_id
+       WHERE b.reservation_group_id = $1 AND b.property_id = $2 ORDER BY u.name`,
       [req.params.groupId, req.propertyId]
     );
     const folios = await Promise.all(bookingRows.map(b => loadFolio(b.id, req.propertyId)));
@@ -36,7 +39,46 @@ router.get('/group/:groupId', auth, async (req, res) => {
     const byType = type => round2(folios.reduce((s, f) =>
       s + f.charges.filter(c => c.type === type).reduce((cs, c) => cs + parseFloat(c.amount), 0), 0));
 
+    // Whole-stay estimate per room (same as a single booking's Estimated
+    // Balance Due — computeProforma: every night, posted or not, + extras −
+    // payments). Room nights only post at night audit, so the posted ledger
+    // alone reads Rp 0 (and a negative balance) before arrival. Cancelled /
+    // no-show rooms aren't billed. Each line says whether it's posted yet.
+    const active = bookingRows.filter(b => !['cancelled', 'no_show'].includes(b.status));
+    const estimates = await Promise.all(active.map(b => computeProforma(b.id, req.propertyId)));
+    const estRooms = active.map((b, i) => {
+      const est = estimates[i];
+      const f = folios[bookingRows.indexOf(b)];
+      const ymdOf = d => String(d instanceof Date ? d.toISOString() : d || '').slice(0, 10);
+      const postedNights = new Set(f.charges.filter(c => ['room', 'fnb'].includes(c.type)).map(c => `${c.type}:${ymdOf(c.service_date)}`));
+      const postedAddons = new Set(f.charges.filter(c => c.type === 'addon').map(c => c.description));
+      return {
+        booking_id: b.id, unit_name: b.unit_name, status: b.status, check_in: b.check_in, check_out: b.check_out,
+        nights: b.nights, num_guests: b.num_guests,
+        guest_name: est.booking.guest_name, complimentary_scope: est.booking.complimentary_scope || null,
+        rate_plan_name: est.booking.rate_plan_name, includes_breakfast: est.booking.includes_breakfast,
+        includes_lunch: est.booking.includes_lunch, includes_dinner: est.booking.includes_dinner,
+        charges: est.charges.map(c => ({
+          ...c,
+          posted: c.id ? true
+            : ['room', 'fnb'].includes(c.type) ? postedNights.has(`${c.type}:${ymdOf(c.service_date)}`)
+            : c.type === 'addon' ? postedAddons.has(c.description) : false,
+        })),
+        payments: est.payments.filter(p => p.status === 'received'),
+        subtotal: est.subtotal, service_charge_amount: est.service_charge_amount, tax_amount: est.tax_amount,
+        total: est.total, balance_due: est.balance_due, tax_rate: est.tax_rate, service_charge_rate: est.service_charge_rate,
+      };
+    });
+    const eSum = key => round2(estRooms.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0));
+    const estimate = {
+      rooms: estRooms,
+      subtotal: eSum('subtotal'), service_charge_amount: eSum('service_charge_amount'), tax_amount: eSum('tax_amount'),
+      total: eSum('total'), balance_due: eSum('balance_due'),
+      received: round2(estRooms.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + parseFloat(p.amount), 0), 0)),
+    };
+
     res.json({
+      estimate,
       group_id: group.id,
       rooms: folios.map(f => ({
         booking_id: f.booking.id, unit_name: f.booking.unit_name,
