@@ -558,8 +558,10 @@ export default function NewBooking() {
           </div>
           {agentFieldShown && (
             <div>
-              <BookingAgentFields value={agentVal} onChange={setAgentVal}
-                hint={!agentVal.agent ? 'Travel agent, company, wholesaler — or a guide / driver who sent the guest. Their billing and commission come from Agent Billing.' : null} />
+              <BookingAgentFields value={agentVal} onChange={setAgentVal} sourceType={srcObj?.source_type}
+                hint={agentVal.agent ? null
+                  : srcObj?.source_type === 'company' ? 'The company this stay is for. How it pays (e.g. invoiced later) is set in Agent Billing.'
+                  : 'Travel agent, company, wholesaler — or a guide / driver who sent the guest. Their billing and commission come from Agent Billing.'} />
               <AgentBillingNote value={agentVal} />
               <CreditLimitNote check={creditCheck} />
             </div>

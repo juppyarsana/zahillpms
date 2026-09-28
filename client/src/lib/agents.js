@@ -31,6 +31,20 @@ export const HAS_COMMISSION = ['commission', 'commission_and_city_ledger'];
 // shows by itself for these (it can still be picked with any source).
 export const AGENT_SOURCE_TYPES = ['travel_agent', 'company', 'wholesaler'];
 
+// The wording + default type of the agent field, following the booking's
+// source type: Corporate → "Company", Wholesaler → "Wholesaler", else "Agent".
+// It's one list (Agent Billing) either way; the type just tells them apart.
+export function agentKindForSource(sourceType) {
+  if (sourceType === 'company') return { type: 'company', label: 'Company', noun: 'company' };
+  if (sourceType === 'wholesaler') return { type: 'wholesaler', label: 'Wholesaler', noun: 'wholesaler' };
+  if (sourceType === 'travel_agent') return { type: 'travel_agent', label: 'Agent', noun: 'agent' };
+  return { type: 'travel_agent', label: 'Agent / company', noun: 'agent / company' };
+}
+// "Agent" / "Company" / "Wholesaler" for a saved agent's type (booking page).
+export function agentRoleLabel(agentType) {
+  return agentType === 'company' ? 'Company' : agentType === 'wholesaler' ? 'Wholesaler' : 'Agent';
+}
+
 const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 
 // "10%" / "Rp 150.000" / '' for a { commission_type, commission_value }.

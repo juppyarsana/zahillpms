@@ -7,13 +7,13 @@ import { AGENT_TYPES, PAYMENT_MODES, HAS_COMMISSION } from '../lib/agents';
 // from a booking) with its name and contacts; how the agent pays, credit and
 // the default commission are the owner's — shown read-only to others.
 // agent = existing row to edit, or null to add (initialName pre-fills it).
-export default function AgentFormModal({ agent, initialName = '', onClose, onSaved }) {
+export default function AgentFormModal({ agent, initialName = '', initialType = null, onClose, onSaved }) {
   const { user } = useAuth();
   const canBill = user?.role === 'owner';
   const editing = !!agent;
   const [form, setForm] = useState(() => ({
     name: agent?.name || initialName,
-    agent_type: agent?.agent_type || 'travel_agent',
+    agent_type: agent?.agent_type || initialType || 'travel_agent',
     contact_name: agent?.contact_name || '',
     contact_phone: agent?.contact_phone || '',
     contact_email: agent?.contact_email || '',
@@ -58,14 +58,14 @@ export default function AgentFormModal({ agent, initialName = '', onClose, onSav
     <div className="modal-backdrop" style={{ zIndex: 1100 }}>
       <div className="modal" style={{ maxWidth: 560 }}>
         <div className="modal-header">
-          <div className="modal-title">{editing ? `Edit ${agent.name}` : 'New agent / company'}</div>
+          <div className="modal-title">{editing ? `Edit ${agent.name}` : initialType === 'company' ? 'New company' : initialType === 'wholesaler' ? 'New wholesaler' : 'New agent / company'}</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div className="form-row">
             <div className="form-group" style={{ flex: 2 }}>
               <label className="form-label">Name *</label>
-              <input className="form-input" autoFocus value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. PT Bali Tours" />
+              <input className="form-input" autoFocus value={form.name} onChange={e => set('name', e.target.value)} placeholder={initialType === 'company' ? 'e.g. PT Maju Bersama' : 'e.g. PT Bali Tours'} />
             </div>
             <div className="form-group">
               <label className="form-label">Type</label>

@@ -1,19 +1,23 @@
 import AgentPicker from './AgentPicker';
-import { HAS_COMMISSION, commissionText, EMPTY_AGENT_VALUE } from '../lib/agents';
+import { HAS_COMMISSION, commissionText, EMPTY_AGENT_VALUE, agentKindForSource } from '../lib/agents';
 
 // "Agent" + "Commission for this booking" (migration 084) — New Booking and
 // Edit Details. The commission starts at the agent's default and can be set
 // for this booking only; it only shows for an agent that earns commission.
 //   value = { agent: row | null, own: bool, type: 'percent'|'amount', amount: string }
-export default function BookingAgentFields({ value, onChange, hint }) {
+// sourceType = the booking source's type — sets the wording (Agent / Company /
+// Wholesaler) and the type a new entry starts with.
+export default function BookingAgentFields({ value, onChange, hint, sourceType }) {
   const { agent } = value;
+  const kind = agentKindForSource(sourceType);
   const withCommission = agent && HAS_COMMISSION.includes(agent.payment_status);
   const def = agent ? commissionText(agent.commission_type, agent.commission_value) : '';
   return (
     <div>
       <div className="form-group">
-        <label className="form-label">Agent / company <span className="text-muted" style={{ fontWeight: 400 }}>(optional)</span></label>
-        <AgentPicker value={agent} onChange={a => onChange({ ...EMPTY_AGENT_VALUE, agent: a })} />
+        <label className="form-label">{kind.label} <span className="text-muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+        <AgentPicker value={agent} onChange={a => onChange({ ...EMPTY_AGENT_VALUE, agent: a })}
+          preferType={sourceType ? kind.type : null} noun={kind.noun} placeholder={`Search ${kind.noun}…`} />
         {hint && <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{hint}</div>}
       </div>
       {withCommission && (

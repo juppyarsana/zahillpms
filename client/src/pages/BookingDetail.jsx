@@ -16,7 +16,7 @@ import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
 import BookingAgentFields from '../components/BookingAgentFields';
-import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentBody, agentValueFromBooking } from '../lib/agents';
+import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentBody, agentValueFromBooking, agentRoleLabel } from '../lib/agents';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
@@ -940,7 +940,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
           </div>
           {booking.agent_id && (
             <div className="flex-between" style={{ marginBottom: 6, gap: 8, alignItems: 'flex-start' }}>
-              <span className="text-muted">Agent</span>
+              <span className="text-muted">{agentRoleLabel(booking.agent_type)}</span>
               <span style={{ textAlign: 'right' }}>
                 {isOwner ? <Link to={`/agents/${booking.agent_id}`} style={{ fontWeight: 600 }}>{booking.agent_name}</Link> : <b>{booking.agent_name}</b>}
                 {bookingCommission && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Commission {bookingCommission}</div>}
@@ -1523,7 +1523,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               </div>
               {editAgent && (booking.folio_status
                 ? <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Agent: <b>{booking.agent_name || '—'}</b> — already billed to the agent, so it can't be changed here.</div>
-                : <BookingAgentFields value={editAgent} onChange={setEditAgent}
+                : <BookingAgentFields value={editAgent} onChange={setEditAgent} sourceType={sources.find(s => s.id === editDetailsForm.source)?.source_type}
                     hint={AGENT_SOURCE_TYPES.includes(sources.find(s => s.id === editDetailsForm.source)?.source_type) && !editAgent.agent ? 'This source usually comes with an agent — pick one so it shows in Agent Billing.' : null} />)}
               <div className="form-row">
                 <div className="form-group">

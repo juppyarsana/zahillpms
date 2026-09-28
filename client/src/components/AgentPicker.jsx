@@ -6,7 +6,9 @@ import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT } from '../lib/agents';
 // Pick the agent / company of a booking (migration 084): search the list, or
 // add a new one on the spot (name is enough — the rest can follow in Agent
 // Billing). value = the picked agent row or null; onChange(agent | null).
-export default function AgentPicker({ value, onChange, placeholder = 'Search agent or company…' }) {
+// preferType: entries of this type are listed first (e.g. companies for a
+// Corporate booking); noun: the wording of the "+ New …" button / form.
+export default function AgentPicker({ value, onChange, placeholder = 'Search agent or company…', preferType = null, noun = 'agent' }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -18,12 +20,12 @@ export default function AgentPicker({ value, onChange, placeholder = 'Search age
     const t = setTimeout(() => {
       setSearching(true);
       api.get('/api/agent-directory', { params: { q: query.trim() || undefined, active: 'true' } })
-        .then(r => setResults(r.data.slice(0, 10)))
+        .then(r => setResults((preferType ? [...r.data].sort((a, b) => (a.agent_type === preferType ? 0 : 1) - (b.agent_type === preferType ? 0 : 1)) : r.data).slice(0, 10)))
         .catch(() => setResults([]))
         .finally(() => setSearching(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [query, open]);
+  }, [query, open, preferType]);
 
   function pick(agent) {
     onChange(agent);
@@ -70,12 +72,12 @@ export default function AgentPicker({ value, onChange, placeholder = 'Search age
           )}
           <div style={{ padding: '6px 10px', cursor: 'pointer', color: 'var(--green-dark)', fontWeight: 600, fontSize: 13 }}
             onMouseDown={e => { e.preventDefault(); setOpen(false); setAdding(true); }}>
-            + New agent{q ? ` “${q}”` : ''}
+            + New {noun}{q ? ` “${q}”` : ''}
           </div>
         </div>
       )}
       {adding && (
-        <AgentFormModal initialName={q} onClose={() => setAdding(false)}
+        <AgentFormModal initialName={q} initialType={preferType} onClose={() => setAdding(false)}
           onSaved={a => { setAdding(false); pick(a); }} />
       )}
     </div>
