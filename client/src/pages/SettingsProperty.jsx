@@ -237,7 +237,9 @@ function TaxCard() {
               {check.rates_change && check.agent_invoiced > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>{check.agent_invoiced} stay{check.agent_invoiced === 1 ? ' is' : 's are'} already on an agent invoice — left as invoiced.</div>
               )}
-              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>Checked-out stays keep their bill as it was. New bookings use the new setting.</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                {check.rates_change && check.checked_out_kept > 0 ? `${check.checked_out_kept} checked-out stay${check.checked_out_kept === 1 ? '' : 's'} keep` : 'Checked-out stays keep'} their bill at the old rates. New bookings use the new setting.
+              </div>
             </div>
             </div>
             <div className="modal-footer">

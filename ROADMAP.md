@@ -24,6 +24,9 @@ New since production's last deploy: **migrations 074–078** and a new server de
   Service charge & tax: set the real rates (e.g. 10% / 11%) with "Including service & tax" → check the confirm window
   (N open bookings re-split, prices unchanged) → Confirm. Migration 080 adds a tick box *Show the service charge &
   tax inside the total* (off by default = invoices show just the total; on = "Includes service … and tax …").
+  Migration 081: each booking's bill keeps its rates (stamped at checkout / when the rates change) — without it a
+  rate change re-priced old checked-out bills. **Dev server:** set the rates back to 0% BEFORE deploying 081, then
+  switch to 10%/11% again so old test bills get stamped at 0%.
 
 ### ⏸ Where we stopped
 Work is done and pushed to `dev`; the owner has not deployed it yet. Order for each server (dev first, then production):
@@ -1782,7 +1785,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 081
+## Next migration number: 082
 
 ---
 

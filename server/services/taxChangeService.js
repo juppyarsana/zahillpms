@@ -30,6 +30,7 @@ async function openBookings(client, propertyId, { lock = false } = {}) {
   const { rows } = await client.query(
     `SELECT * FROM bookings WHERE property_id = $1 AND status = ANY($2)
        AND COALESCE(folio_status, '') NOT IN ('invoiced', 'paid')
+       AND bill_tax_rate IS NULL   -- a stamped bill keeps its own rates (081)
      ORDER BY check_in_date ${lock ? 'FOR UPDATE' : ''}`,
     [propertyId, OPEN_STATUSES]
   );
@@ -43,24 +44,26 @@ async function preview(propertyId, next) {
   const oldF = factor(cur?.tax_rate, cur?.service_charge_rate);
   const newF = factor(next.tax_rate ?? cur?.tax_rate, next.service_charge_rate ?? cur?.service_charge_rate);
   const ratesChange = Math.abs(oldF - newF) > 1e-9;
-  let bookings = 0, extras = 0, activities = 0, agentInvoiced = 0;
+  let bookings = 0, extras = 0, activities = 0, agentInvoiced = 0, kept = 0;
   if (ratesChange) {
     const open = await openBookings(db, propertyId);
     bookings = open.length;
     const ids = open.map(b => b.id);
-    const [{ rows: [e] }, { rows: [a] }, { rows: [ag] }] = await Promise.all([
+    const [{ rows: [e] }, { rows: [a] }, { rows: [ag] }, { rows: [kp] }] = await Promise.all([
       db.query(`SELECT COUNT(*) AS n FROM sales WHERE booking_id = ANY($1) AND confirmation_status IS DISTINCT FROM 'rejected'`, [ids]),
       db.query(`SELECT COUNT(*) AS n FROM activity_bookings WHERE booking_id = ANY($1) AND COALESCE(tax_mode, 'added') = 'added'
                   AND status NOT IN ('cancelled', 'no_show')`, [ids]),
       db.query(`SELECT COUNT(*) AS n FROM bookings WHERE property_id = $1 AND status = ANY($2) AND folio_status IN ('invoiced', 'paid')`,
         [propertyId, OPEN_STATUSES]),
+      // checked-out stays whose bill gets the old rates stamped (081)
+      db.query(`SELECT COUNT(*) AS n FROM bookings WHERE property_id = $1 AND status = 'checked_out' AND bill_tax_rate IS NULL`, [propertyId]),
     ]);
-    extras = parseInt(e.n); activities = parseInt(a.n); agentInvoiced = parseInt(ag.n);
+    extras = parseInt(e.n); activities = parseInt(a.n); agentInvoiced = parseInt(ag.n); kept = parseInt(kp.n);
   }
   return {
     current: { tax_rate: parseFloat(cur?.tax_rate) || 0, service_charge_rate: parseFloat(cur?.service_charge_rate) || 0, prices_include_tax: !!cur?.prices_include_tax },
     rates_change: ratesChange,
-    bookings, extras, activities, agent_invoiced: agentInvoiced,
+    bookings, extras, activities, agent_invoiced: agentInvoiced, checked_out_kept: kept,
   };
 }
 
@@ -101,6 +104,14 @@ async function apply(propertyId, next, userId) {
     const newF = factor(newRates.tax_rate, newRates.service_charge_rate);
     const result = { bookings: 0, extras: 0, activities: 0 };
     if (Math.abs(oldF - newF) > 1e-9) {
+      // Every bill that isn't re-split below keeps the old rates (081):
+      // checked out, cancelled / no-show, on an agent invoice.
+      const { rowCount: stamped } = await client.query(
+        `UPDATE bookings SET bill_tax_rate = $1, bill_service_charge_rate = $2
+         WHERE property_id = $3 AND bill_tax_rate IS NULL
+           AND (status <> ALL($4) OR COALESCE(folio_status, '') IN ('invoiced', 'paid'))`,
+        [oldRates.tax_rate, oldRates.service_charge_rate, propertyId, OPEN_STATUSES]);
+      result.kept = stamped;
       const k = oldF / newF;
       const scaled = v => (v == null ? v : round2(parseFloat(v) * k));
       const note = `Service charge / tax changed from ${pct(oldRates.service_charge_rate)} / ${pct(oldRates.tax_rate)} to ${pct(newRates.service_charge_rate)} / ${pct(newRates.tax_rate)} — the guest's price stays the same; the amounts inside it were re-split at the new rates.`;

@@ -204,7 +204,8 @@ async function loadRegCardData(where, params) {
        lt.name AS membership,
        pm.label AS payment_method_label,
        cu.name AS checked_in_by,
-       ps.tax_rate, ps.service_charge_rate, ps.prices_include_tax
+       COALESCE(b.bill_tax_rate, ps.tax_rate) AS tax_rate,
+       COALESCE(b.bill_service_charge_rate, ps.service_charge_rate) AS service_charge_rate, ps.prices_include_tax
      FROM bookings b
      JOIN guests g ON g.id = b.guest_id
      JOIN units u ON u.id = b.unit_id
@@ -419,7 +420,14 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     });
     if (settlement.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: settlement.error }); }
 
-    await client.query("UPDATE bookings SET status = 'checked_out', updated_at = NOW() WHERE id = $1 AND property_id = $2", [req.params.bookingId, req.propertyId]);
+    // The bill keeps today's service / tax rates from here on (migration 081).
+    await client.query(
+      `UPDATE bookings b SET status = 'checked_out', updated_at = NOW(),
+              bill_tax_rate = COALESCE(b.bill_tax_rate, ps.tax_rate),
+              bill_service_charge_rate = COALESCE(b.bill_service_charge_rate, ps.service_charge_rate)
+       FROM property_settings ps
+       WHERE b.id = $1 AND b.property_id = $2 AND ps.property_id = b.property_id`,
+      [req.params.bookingId, req.propertyId]);
     // Vacate the room AND flag it dirty — front desk sees a "to clean" room
     // distinct from a ready one; housekeeping clears it from the room tablet.
     await client.query(

@@ -1,5 +1,5 @@
 const db = require('../db');
-const { round2, computeFolioTotals, PAID_AT_DESK_SQL } = require('./folioService');
+const { round2, computeFolioTotals, PAID_AT_DESK_SQL, billRates } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice C.
 //
@@ -35,7 +35,7 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
 
   const { rows: items } = await db.query(
     `SELECT b.id AS booking_id, b.source AS source_id, b.check_in_date, b.check_out_date,
-            b.folio_status, b.agent_invoice_id,
+            b.folio_status, b.agent_invoice_id, b.bill_tax_rate, b.bill_service_charge_rate,
             g.name AS guest_name, u.name AS unit_name,
             bs.label AS source_label,
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
@@ -61,8 +61,9 @@ async function bookingLedger(propertyId, { sourceId } = {}) {
   );
 
   return items.map(r => {
+    const rates = billRates(r, settings);   // the booking's own bill rates (081)
     const folio_total = round2(computeFolioTotals(
-      parseFloat(r.charge_subtotal), settings?.tax_rate, settings?.service_charge_rate
+      parseFloat(r.charge_subtotal), rates.tax_rate, rates.service_charge_rate
     ).total + parseFloat(r.untaxed_subtotal));
     const allocated = round2(parseFloat(r.allocated));
     const balance = round2(folio_total - allocated);
@@ -202,7 +203,7 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
   );
   for (const id of ids) {
     const { rows: [b] } = await client.query(
-      'SELECT id, agent_invoice_id, folio_status FROM bookings WHERE id = $1 AND property_id = $2',
+      'SELECT id, agent_invoice_id, folio_status, bill_tax_rate, bill_service_charge_rate FROM bookings WHERE id = $1 AND property_id = $2',
       [id, propertyId]
     );
     if (!b || !['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status)) continue;
@@ -217,7 +218,8 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
       'SELECT COALESCE(SUM(amount), 0) AS allocated FROM agent_payment_allocations WHERE booking_id = $1',
       [id]
     );
-    const total = round2(computeFolioTotals(parseFloat(subtotal), settings?.tax_rate, settings?.service_charge_rate).total + parseFloat(untaxed));
+    const rates = billRates(b, settings);
+    const total = round2(computeFolioTotals(parseFloat(subtotal), rates.tax_rate, rates.service_charge_rate).total + parseFloat(untaxed));
     const covered = parseFloat(allocated) + 0.005 >= total && total > 0;
     const next = covered ? 'paid' : (b.agent_invoice_id ? 'invoiced' : 'pending_agent_invoice');
     if (next !== b.folio_status) {
@@ -465,6 +467,7 @@ async function invoicePayload(propertyId, invoiceId) {
   );
   const { rows: bookings } = await db.query(
     `SELECT b.id AS booking_id, b.check_in_date, b.check_out_date, g.name AS guest_name, u.name AS unit_name,
+            b.bill_tax_rate, b.bill_service_charge_rate,
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
             -- activity lines priced with tax included / no tax (migration 078): no service/tax added
@@ -478,7 +481,8 @@ async function invoicePayload(propertyId, invoiceId) {
   );
 
   const lines = bookings.map(b => {
-    const total = round2(computeFolioTotals(parseFloat(b.charge_subtotal), property?.tax_rate, property?.service_charge_rate).total + parseFloat(b.untaxed_subtotal));
+    const rates = billRates(b, property);
+    const total = round2(computeFolioTotals(parseFloat(b.charge_subtotal), rates.tax_rate, rates.service_charge_rate).total + parseFloat(b.untaxed_subtotal));
     return {
       booking_id: b.booking_id,
       guest_name: b.guest_name, unit_name: b.unit_name,

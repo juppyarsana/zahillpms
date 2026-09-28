@@ -92,8 +92,9 @@ async function getSourceOutstanding(propertyId, sourceId) {
     `SELECT COALESCE(SUM(GREATEST(0,
        ROUND(
          (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false AND tax_mode = 'added')
-         * (1 + COALESCE(ps.service_charge_rate, 0) / 100.0)
-         * (1 + COALESCE(ps.tax_rate, 0) / 100.0)
+         -- the booking's own bill rates when stamped (migration 081)
+         * (1 + COALESCE(b.bill_service_charge_rate, ps.service_charge_rate, 0) / 100.0)
+         * (1 + COALESCE(b.bill_tax_rate, ps.tax_rate, 0) / 100.0)
          -- activity lines priced tax-included / no tax (migration 078) aren't grossed up
          + (SELECT COALESCE(SUM(amount), 0) FROM folio_charges WHERE booking_id = b.id AND is_voided = false AND tax_mode <> 'added')
        , 2)

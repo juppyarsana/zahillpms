@@ -110,9 +110,22 @@ function markComplimentary(booking, charges) {
   return round2(value);
 }
 
+// The service charge / tax rates a booking is billed at: the ones stamped on
+// it at checkout or when the rates changed (migration 081), else the
+// property's current rates (a booking not billed yet).
+function billRates(booking, settings) {
+  return booking?.bill_tax_rate != null
+    ? { tax_rate: booking.bill_tax_rate, service_charge_rate: booking.bill_service_charge_rate ?? 0 }
+    : { tax_rate: settings?.tax_rate, service_charge_rate: settings?.service_charge_rate };
+}
+// Same rule in SQL (b = bookings, ps = property_settings).
+const BILL_TAX_SQL = 'COALESCE(b.bill_tax_rate, ps.tax_rate)';
+const BILL_SC_SQL = 'COALESCE(b.bill_service_charge_rate, ps.service_charge_rate)';
+
 async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
+            b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             bs.payment_status as source_payment_status, bs.label as source_label,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
@@ -153,16 +166,17 @@ async function loadFolio(bookingId, propertyId) {
 
   if (!booking) return null;
 
+  const rates = billRates(booking, settings);
   const complimentary_extras = markComplimentary(booking, charges);
   const billable = charges.filter(c => !c.complimentary);
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
-    chargeTotals(billable, settings?.tax_rate, settings?.service_charge_rate);
+    chargeTotals(billable, rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
   const agent_billable_total = chargeTotals(
-    billable.filter(c => !c.paid_at_desk), settings?.tax_rate, settings?.service_charge_rate
+    billable.filter(c => !c.paid_at_desk), rates.tax_rate, rates.service_charge_rate
   ).total;
 
   return {
@@ -190,6 +204,7 @@ async function computeProforma(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.total_amount, b.discount_amount,
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
+            b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
@@ -260,8 +275,9 @@ async function computeProforma(bookingId, propertyId) {
   const charges = [...projectedCharges, ...addonCharges, ...extraCharges];
   const complimentary_extras = markComplimentary(booking, charges);
 
+  const rates = billRates(booking, settings);
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
-    chargeTotals(charges.filter(c => !c.complimentary), settings?.tax_rate, settings?.service_charge_rate);
+    chargeTotals(charges.filter(c => !c.complimentary), rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
   const balance_due = round2(total - receivedTotal);
 
@@ -276,4 +292,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
