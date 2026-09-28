@@ -1044,6 +1044,17 @@ router.post('/', auth, async (req, res) => {
 // POST /api/bookings/group — multi-room reservation under one guest + shared dates.
 // Single-room bookings keep using POST / above unchanged; this endpoint only
 // exists once there are 2+ rooms (rooms.length < 2 is rejected below).
+// A group's dates are the span of its rooms (first arrival → last departure),
+// since each room can have its own dates. Cancelled / no-show rooms don't
+// count (unless every room is — then the dates stay as they were).
+async function syncGroupSpan(client, groupId) {
+  await client.query(`
+    UPDATE reservation_groups rg SET check_in_date = s.ci, check_out_date = s.co, updated_at = NOW()
+    FROM (SELECT MIN(check_in_date) AS ci, MAX(check_out_date) AS co FROM bookings
+          WHERE reservation_group_id = $1 AND status NOT IN ('cancelled', 'no_show')) s
+    WHERE rg.id = $1 AND s.ci IS NOT NULL`, [groupId]);
+}
+
 router.post('/group', auth, async (req, res) => {
   const {
     guest_id, check_in_date, check_out_date, source, status,
@@ -1059,6 +1070,16 @@ router.post('/group', auth, async (req, res) => {
   if (unitIds.some(id => !id) || new Set(unitIds).size !== unitIds.length) {
     return res.status(400).json({ error: 'Each room needs a unit_id, and units must not repeat' });
   }
+  // Each room can have its own dates (check_in_date / check_out_date on the
+  // room); without them it takes the group's.
+  const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+  for (const r of rooms) {
+    r.ci = r.check_in_date || check_in_date;
+    r.co = r.check_out_date || check_out_date;
+    if (!ymdRe.test(String(r.ci)) || !ymdRe.test(String(r.co)) || r.co <= r.ci) {
+      return res.status(400).json({ error: 'Every room needs a check-out date after its check-in date' });
+    }
+  }
 
   const client = await db.pool.connect();
   try {
@@ -1070,17 +1091,17 @@ router.post('/group', auth, async (req, res) => {
     const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
     if (unitRows.length !== unitIds.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'One or more units not found' }); }
 
-    for (const unitId of unitIds) {
+    for (const r of rooms) {
       const conflict = await client.query(`
         SELECT id FROM bookings
         WHERE unit_id = $1 AND property_id = $4
           AND status NOT IN ('cancelled','no_show')
           AND check_in_date < $3 AND ${occupiedUntilSql('')} > $2
-      `, [unitId, check_in_date, check_out_date, req.propertyId]);
+      `, [r.unit_id, r.ci, r.co, req.propertyId]);
       if (conflict.rows.length > 0) {
         await client.query('ROLLBACK');
-        const unitName = unitRows.find(u => u.id === unitId)?.name || unitId;
-        return res.status(409).json({ error: `Room ${unitName} is not available for the selected dates` });
+        const unitName = unitRows.find(u => u.id === r.unit_id)?.name || r.unit_id;
+        return res.status(409).json({ error: `Room ${unitName} is not available for ${r.ci} to ${r.co}` });
       }
     }
 
@@ -1089,7 +1110,9 @@ router.post('/group', auth, async (req, res) => {
       return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
     }
 
-    const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
+    const nightsOf = r => Math.max(1, Math.round((new Date(r.co) - new Date(r.ci)) / 86400000));
+    const spanIn = rooms.reduce((m, r) => (r.ci < m ? r.ci : m), rooms[0].ci);
+    const spanOut = rooms.reduce((m, r) => (r.co > m ? r.co : m), rooms[0].co);
     const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
 
     const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
@@ -1124,7 +1147,7 @@ router.post('/group', auth, async (req, res) => {
     const { rows: [group] } = await client.query(
       `INSERT INTO reservation_groups (property_id, primary_guest_id, check_in_date, check_out_date, group_discount_type, group_discount_value, group_discount_amount, group_deposit_amount, special_requests, internal_notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.propertyId, guest_id, check_in_date, check_out_date, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id]
+      [req.propertyId, guest_id, spanIn, spanOut, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id]
     );
 
     const bookings = [];
@@ -1136,7 +1159,7 @@ router.post('/group', auth, async (req, res) => {
       // isolation, which is intentional, not a bug to "fix" later.
       const roomGuests = Math.max(1, parseInt(s.room.num_guests, 10) || 1);
       const roomPlan = await ratePlanService.resolveForBooking(req.propertyId, s.room.rate_plan_id || null);
-      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests, divisor) * nights);
+      const mealNet = round2(ratePlanService.mealNetPerNight(roomPlan, roomGuests, divisor) * nightsOf(s.room));
       let roomRevNet = round2(s.roomNet / F) - mealNet;
       if (roomRevNet < 0) roomRevNet = 0;
       const roomStoredTotal = round2(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total + s.discountShare);
@@ -1144,7 +1167,7 @@ router.post('/group', auth, async (req, res) => {
       const { rows: [booking] } = await client.query(
         `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
-        [guest_id, s.room.unit_id, check_in_date, check_out_date, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet]
+        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet]
       );
       if (s.depositShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
@@ -1403,10 +1426,8 @@ router.put('/:id/dates', auth, async (req, res) => {
     const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
 
-    if (booking.reservation_group_id) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This room is part of a group — change the dates for the whole group on the group page (Amend Dates)', code: 'GROUP_BOOKING' });
-    }
+    // A group room can have its own dates (the group page's Amend Dates moves
+    // every room together); the group's dates follow as the span of its rooms.
 
     const amendable = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
     if (!amendable.includes(booking.status)) {
@@ -1445,6 +1466,7 @@ router.put('/:id/dates', auth, async (req, res) => {
       checkIn: check_in_date, checkOut: check_out_date, quote, amount, charge, reason,
     });
     if (done.error) { await client.query('ROLLBACK'); return res.status(done.status).json(done.error); }
+    if (booking.reservation_group_id) await syncGroupSpan(client, booking.reservation_group_id);
 
     await client.query('COMMIT');
     if (amount !== 0 && booking.folio_status === 'pending_agent_invoice') {
@@ -1569,6 +1591,9 @@ router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
 router.post('/group/:groupId/rooms', auth, async (req, res) => {
   const { unit_id, num_guests, rate_plan_id, bed_preference, total_amount, deposit_amount, reason } = req.body;
   if (!unit_id) return res.status(400).json({ error: 'unit_id required' });
+  if ((req.body.check_in_date || req.body.check_out_date) && !(req.body.check_in_date && req.body.check_out_date && req.body.check_out_date > req.body.check_in_date)) {
+    return res.status(400).json({ error: 'Give both dates, check-out after check-in' });
+  }
   if (bed_preference && !BED_PREFS.includes(bed_preference)) {
     return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
   }
@@ -1584,9 +1609,11 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     if (group.status === 'cancelled') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This group is cancelled' }); }
 
     const today = roomCharge.todayWITA();
-    const checkIn = group.ci < today ? today : group.ci;
-    const checkOut = group.co;
-    if (checkIn >= checkOut) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This group has already checked out' }); }
+    // Its own dates if given, else the group's — never before today.
+    const wantIn = req.body.check_in_date || group.ci;
+    const checkIn = wantIn < today ? today : wantIn;
+    const checkOut = req.body.check_out_date || group.co;
+    if (checkIn >= checkOut) { await client.query('ROLLBACK'); return res.status(409).json({ error: req.body.check_out_date ? 'Those dates are already past' : 'This group has already checked out' }); }
 
     const { rows: [unit] } = await client.query('SELECT id, name FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
     if (!unit) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Room not found' }); }
@@ -1596,7 +1623,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
         AND status NOT IN ('cancelled','no_show')
         AND check_in_date < $3 AND ${occupiedUntilSql('')} > $2
     `, [unit_id, checkIn, checkOut, req.propertyId]);
-    if (conflict.length > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Room ${unit.name} is not available for the group's dates` }); }
+    if (conflict.length > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Room ${unit.name} is not available for ${checkIn} to ${checkOut}` }); }
 
     // Source / special requests follow the group's existing rooms.
     const { rows: [sibling] } = await client.query(
@@ -1636,7 +1663,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     const why = String(reason || '').trim();
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
       [booking.id, `Added to group booking: room ${unit.name}, ${fmtIDR(payable)}${why ? `. Reason: ${why}` : ''}`.slice(0, 1000), req.user.id]);
-    await client.query('UPDATE reservation_groups SET updated_at = NOW() WHERE id = $1', [group.id]);
+    await syncGroupSpan(client, group.id);
     await client.query('COMMIT');
 
     telegramService.sendAlert(req.propertyId, 'alert_new_booking',
@@ -1853,7 +1880,7 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
     if (parseFloat(paid) > 0) note += ` ${fmtIDR(paid)} already received on it — refund or move it by hand.`;
     note += ` Reason: ${reason}`;
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id, note.slice(0, 1000), req.user.id]);
-    await client.query('UPDATE reservation_groups SET updated_at = NOW() WHERE id = $1', [req.params.groupId]);
+    await syncGroupSpan(client, req.params.groupId);   // the group's dates = its remaining rooms
     await client.query('COMMIT');
     res.json({ ok: true, paid_on_room: parseFloat(paid) });
   } catch (err) {

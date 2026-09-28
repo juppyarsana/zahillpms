@@ -118,7 +118,10 @@ function priceWarning(total, normal, nights) {
 // extra: an extra bed (any per-night Sales item) booked with the room —
 // { product_id, quantity, nights: ['YYYY-MM-DD', …] | null } or null —
 // nights null = every night of the stay (follows the dates).
-const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null };
+// own_dates (group rooms): this room has its own check-in / check-out
+// (check_in_date / check_out_date) instead of the booking's dates.
+const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null,
+  own_dates: false, check_in_date: '', check_out_date: '' };
 // Sources whose guests pay extras at the hotel, outside the OTA / agent's
 // money: the extra bed isn't part of the deposit asked.
 const AGENT_SOURCE_TYPES = ['ota', 'travel_agent', 'wholesaler', 'company'];
@@ -171,7 +174,7 @@ export default function NewBooking() {
   const [nights, setNights] = useState(preIn && preOut && preOut > preIn ? String(nightsBetween(preIn, preOut)) : '');
   // Every unit's availability for the chosen dates (booked / free), so the
   // Unit dropdown can grey out rooms that are taken.
-  const [unitAvail, setUnitAvail] = useState({});
+  const [availByRange, setAvailByRange] = useState({});   // 'in|out' → { unitId: availability }
   const [nightItems, setNightItems] = useState([]);   // per-night Sales items (extra bed)
 
   const isGroup = rooms.length > 1;
@@ -179,6 +182,16 @@ export default function NewBooking() {
   const [review, setReview] = useState(false);
   const stayNights = form.check_in_date && form.check_out_date && form.check_out_date > form.check_in_date
     ? nightsBetween(form.check_in_date, form.check_out_date) : 0;
+  // A room's own dates (group rooms with "Different dates"), else the booking's.
+  const roomIn = r => (isGroup && r.own_dates && r.check_in_date) || form.check_in_date;
+  const roomOut = r => (isGroup && r.own_dates && r.check_out_date) || form.check_out_date;
+  const roomNights = r => (roomIn(r) && roomOut(r) && roomOut(r) > roomIn(r) ? nightsBetween(roomIn(r), roomOut(r)) : 0);
+  const roomDates = r => {
+    const out = [];
+    for (let d = roomIn(r); d && roomOut(r) && d < roomOut(r); d = addDaysYmd(d, 1)) out.push(d);
+    return out;
+  };
+  const anyOwnDates = isGroup && rooms.some(r => r.own_dates);
 
   function onCheckIn(v) {
     const n = parseInt(nights, 10) || 1;
@@ -194,18 +207,40 @@ export default function NewBooking() {
     setForm(f => ({ ...f, check_out_date: v }));
     if (v && form.check_in_date && v > form.check_in_date) setNights(String(nightsBetween(form.check_in_date, v)));
   }
+  // The same for a group room with its own dates: moving check-in keeps its
+  // nights, nights moves check-out, check-out sets the nights.
+  function roomCheckIn(i, v) {
+    setRooms(rs => rs.map((r, idx) => {
+      if (idx !== i) return r;
+      const n = r.check_in_date && r.check_out_date > r.check_in_date ? nightsBetween(r.check_in_date, r.check_out_date) : 1;
+      return { ...r, check_in_date: v, check_out_date: v ? addDaysYmd(v, n) : r.check_out_date };
+    }));
+  }
+  function roomNightsInput(i, v) {
+    const n = parseInt(v, 10);
+    if (!(n >= 1)) return;
+    setRooms(rs => rs.map((r, idx) => (idx === i && r.check_in_date ? { ...r, check_out_date: addDaysYmd(r.check_in_date, n) } : r)));
+  }
 
+  // Every unit's availability for each set of dates in use (a room with its
+  // own dates gets its own), so the Unit dropdown greys out rooms that are
+  // taken for THAT room's dates.
+  const rangeKey = r => (roomNights(r) ? `${roomIn(r)}|${roomOut(r)}` : '');
+  const rangesKey = [...new Set(rooms.map(rangeKey).filter(Boolean))].sort().join(',');
   useEffect(() => {
-    if (!form.check_in_date || !form.check_out_date || form.check_out_date <= form.check_in_date) { setUnitAvail({}); return; }
-    api.get('/api/bookings/transfer-availability', { params: { check_in: form.check_in_date, check_out: form.check_out_date } })
-      .then(r => setUnitAvail(Object.fromEntries(r.data.map(u => [u.id, u]))))
-      .catch(() => setUnitAvail({}));
-  }, [form.check_in_date, form.check_out_date]);
+    for (const key of rangesKey ? rangesKey.split(',') : []) {
+      if (availByRange[key]) continue;
+      const [ci, co] = key.split('|');
+      api.get('/api/bookings/transfer-availability', { params: { check_in: ci, check_out: co } })
+        .then(r => setAvailByRange(m => ({ ...m, [key]: Object.fromEntries(r.data.map(u => [u.id, u])) })))
+        .catch(() => {});
+    }
+  }, [rangesKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Dropdown label + whether it can be picked for room row `i`.
   function unitOption(u, i) {
     const otherRow = rooms.findIndex((r, j) => j !== i && r.unit_id === u.id);
-    const a = unitAvail[u.id];
+    const a = (availByRange[rangeKey(rooms[i])] || {})[u.id];
     let note = '';
     let blocked = false;
     if (otherRow !== -1) { note = ` — already in this group (Room ${otherRow + 1})`; blocked = true; }
@@ -245,13 +280,13 @@ export default function NewBooking() {
     }
   }, [guestSearch]); // eslint-disable-line react-hooks/exhaustive-deps -- search only when the text changes
 
-  const unitIdsKey = rooms.map(r => r.unit_id).join(',');
-  const suggestKey = rooms.map(r => `${r.unit_id}:${r.rate_plan_id}:${r.num_guests}`).join(',');
+  const unitIdsKey = rooms.map(r => `${r.unit_id}:${roomIn(r)}:${roomOut(r)}`).join(',');
+  const suggestKey = rooms.map(r => `${r.unit_id}:${r.rate_plan_id}:${r.num_guests}:${roomIn(r)}:${roomOut(r)}`).join(',');
 
   useEffect(() => {
     if (!form.check_in_date || !form.check_out_date) { setPriceSuggestions([]); return; }
-    Promise.all(rooms.map(r => r.unit_id
-      ? api.get(`/api/pricing/suggest?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}&rate_plan_id=${r.rate_plan_id || ''}&num_guests=${r.num_guests || 1}`).then(res => res.data).catch(() => null)
+    Promise.all(rooms.map(r => r.unit_id && roomNights(r)
+      ? api.get(`/api/pricing/suggest?unit_id=${r.unit_id}&check_in=${roomIn(r)}&check_out=${roomOut(r)}&rate_plan_id=${r.rate_plan_id || ''}&num_guests=${r.num_guests || 1}`).then(res => res.data).catch(() => null)
       : Promise.resolve(null)
     )).then(setPriceSuggestions);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -260,8 +295,8 @@ export default function NewBooking() {
   useEffect(() => {
     if (!form.check_in_date || !form.check_out_date || form.check_out_date <= form.check_in_date) { setAvailabilities([]); return; }
     setAvailabilityLoading(true);
-    Promise.all(rooms.map(r => r.unit_id
-      ? api.get(`/api/bookings/availability?unit_id=${r.unit_id}&check_in=${form.check_in_date}&check_out=${form.check_out_date}`).then(res => res.data).catch(() => null)
+    Promise.all(rooms.map(r => r.unit_id && roomNights(r)
+      ? api.get(`/api/bookings/availability?unit_id=${r.unit_id}&check_in=${roomIn(r)}&check_out=${roomOut(r)}`).then(res => res.data).catch(() => null)
       : Promise.resolve(null)
     )).then(setAvailabilities).finally(() => setAvailabilityLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,9 +305,11 @@ export default function NewBooking() {
   // Extra bed per room: every night of the stay by default (kept in step
   // with the dates), priced from the Sales item — incl. service & tax like
   // the room total (prices before tax get them added).
-  const stayDates = [];
-  for (let d = form.check_in_date; d && form.check_out_date && d < form.check_out_date; d = addDaysYmd(d, 1)) stayDates.push(d);
-  const extraNights = r => (r.extra ? (r.extra.nights ?? stayDates).filter(d => stayDates.includes(d)) : []);
+  const extraNights = r => {
+    if (!r.extra) return [];
+    const dates = roomDates(r);
+    return (r.extra.nights ?? dates).filter(d => dates.includes(d));
+  };
   const taxF = branding?.prices_include_tax ? 1
     : (1 + (parseFloat(branding?.service_charge_rate) || 0) / 100) * (1 + (parseFloat(branding?.tax_rate) || 0) / 100);
   function extraTotal(r) {
@@ -314,6 +351,7 @@ export default function NewBooking() {
     if (mode === 'new' ? !newGuest.name.trim() : !form.guest_id) { setError('Select or create a guest'); return; }
     if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); return; }
     if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); return; }
+    if (isGroup && rooms.some(r => r.own_dates && !roomNights(r))) { setError('A room with its own dates needs a check-out after its check-in'); return; }
     if (comp.on && !isGroup && !comp.reason.trim()) { setError('Give a reason for the complimentary stay'); return; }
     setReview(true);
   }
@@ -368,7 +406,8 @@ export default function NewBooking() {
           group_discount_type: form.discount_type || null,
           group_discount_value: dValue,
           group_deposit_amount: deposit_amount,
-          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null })),
+          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null,
+            check_in_date: roomIn(r), check_out_date: roomOut(r) })),
         });
         const byUnit = Object.fromEntries((res.data.bookings || []).map(b => [b.unit_id, b.id]));
         await addExtras(rooms.map(room => ({ booking_id: byUnit[room.unit_id], room })));
@@ -528,7 +567,7 @@ export default function NewBooking() {
                 <div className="form-group">
                   <label className="form-label">Unit *</label>
                   <select className="form-select" value={room.unit_id} onChange={e => setRoom(i, 'unit_id', e.target.value)} required>
-                    <option value="">{Object.keys(unitAvail).length ? 'Select unit…' : 'Select unit… (pick dates first to see what\'s free)'}</option>
+                    <option value="">{availByRange[rangeKey(room)] ? 'Select unit…' : 'Select unit… (pick dates first to see what\'s free)'}</option>
                     {units.map(u => { const o = unitOption(u, i); return <option key={u.id} value={u.id} disabled={o.disabled}>{o.label}</option>; })}
                   </select>
                 </div>
@@ -537,6 +576,38 @@ export default function NewBooking() {
                   <input className="form-input" type="number" min={1} max={10} value={room.num_guests} onChange={e => setRoom(i, 'num_guests', parseInt(e.target.value) || 1)} />
                 </div>
               </div>
+
+              {isGroup && (
+                <div className="form-group">
+                  <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={room.own_dates}
+                      onChange={e => setRooms(rs => rs.map((r, idx) => idx !== i ? r : {
+                        ...r, own_dates: e.target.checked,
+                        check_in_date: r.check_in_date || form.check_in_date, check_out_date: r.check_out_date || form.check_out_date,
+                      }))} />
+                    Different dates for this room
+                  </label>
+                  {room.own_dates && (
+                    <div className="form-row form-row-dates" style={{ marginTop: 6 }}>
+                      <div className="form-group">
+                        <label className="form-label">Check-in</label>
+                        <input className="form-input" type="date" value={room.check_in_date} onChange={e => roomCheckIn(i, e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Nights</label>
+                        <input className="form-input" type="number" min={1} max={365} inputMode="numeric"
+                          value={roomNights(room) || ''} onChange={e => roomNightsInput(i, e.target.value)} placeholder="1" />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Check-out</label>
+                        <input className="form-input" type="date" value={room.check_out_date}
+                          min={room.check_in_date ? addDaysYmd(room.check_in_date, 1) : undefined}
+                          onChange={e => setRoom(i, 'check_out_date', e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-row">
                 <div className="form-group">
@@ -590,8 +661,8 @@ export default function NewBooking() {
                             onChange={e => setRoom(i, 'extra', { ...room.extra, quantity: e.target.value })} />
                         </div>
                       </div>
-                      {stayDates.length > 0 ? (
-                        <StayNightsPicker booking={{ check_in_date: form.check_in_date, check_out_date: form.check_out_date }}
+                      {roomDates(room).length > 0 ? (
+                        <StayNightsPicker booking={{ check_in_date: roomIn(room), check_out_date: roomOut(room) }}
                           value={extraNights(room)} onChange={v => setRoom(i, 'extra', { ...room.extra, nights: v })} />
                       ) : <div className="text-muted" style={{ fontSize: 12 }}>Pick the dates first.</div>}
                       {extraTotal(room) > 0 && (
@@ -638,17 +709,17 @@ export default function NewBooking() {
 
               <div className="form-group">
                 <label className="form-label">
-                  Total for the whole stay{stayNights ? ` (${stayNights} night${stayNights > 1 ? 's' : ''})` : ''} — IDR, incl. tax &amp; service
+                  Total for the whole stay{roomNights(room) ? ` (${roomNights(room)} night${roomNights(room) > 1 ? 's' : ''})` : ''} — IDR, incl. tax &amp; service
                 </label>
                 <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
                   onChange={e => setRoom(i, 'total_amount', e.target.value)} />
-                {parseFloat(room.total_amount) > 0 && stayNights > 0 && (
+                {parseFloat(room.total_amount) > 0 && roomNights(room) > 0 && (
                   <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)' }}>
-                    = <strong style={{ color: 'var(--text)' }}>{idr(room.total_amount / stayNights)} per night</strong> × {stayNights} night{stayNights > 1 ? 's' : ''}
+                    = <strong style={{ color: 'var(--text)' }}>{idr(room.total_amount / roomNights(room))} per night</strong> × {roomNights(room)} night{roomNights(room) > 1 ? 's' : ''}
                   </div>
                 )}
                 {(() => {
-                  const w = priceWarning(room.total_amount, suggestedTotal, stayNights);
+                  const w = priceWarning(room.total_amount, suggestedTotal, roomNights(room));
                   return w && <div className="alert alert-warn" style={{ marginTop: 6, marginBottom: 0, fontSize: 12 }}><div>⚠️ {w}</div></div>;
                 })()}
                 {priceSuggestion && suggestedTotal > 0 && (
@@ -859,7 +930,7 @@ export default function NewBooking() {
             unit: units.find(u => u.id === r.unit_id),
             plan: ratePlans.find(p => p.id === r.rate_plan_id),
             total: parseFloat(r.total_amount) || 0,
-            warning: priceWarning(r.total_amount, normal, stayNights),
+            warning: priceWarning(r.total_amount, normal, roomNights(r)),
           };
         });
         const warned = lines.filter(l => l.warning).length;
@@ -879,7 +950,8 @@ export default function NewBooking() {
                 )}
                 <div style={{ fontSize: 14, marginBottom: 12, lineHeight: 1.6 }}>
                   <div><span className="text-muted">Guest:</span> <strong>{guestName || '—'}</strong>{mode === 'new' && <span className="text-muted"> (new guest)</span>}</div>
-                  <div><span className="text-muted">Stay:</span> <strong>{form.check_in_date} → {form.check_out_date}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}</div>
+                  <div><span className="text-muted">Stay:</span> <strong>{form.check_in_date} → {form.check_out_date}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}
+                    {anyOwnDates && <span className="text-muted"> — some rooms have their own dates (below)</span>}</div>
                   <div><span className="text-muted">Source:</span> {sourceLabel}</div>
                 </div>
                 <div className="table-wrap">
@@ -888,7 +960,7 @@ export default function NewBooking() {
                       <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
                         <th style={td}>Room</th>
                         <th style={{ ...td, textAlign: 'right' }}>Per night</th>
-                        <th style={{ ...td, textAlign: 'right' }}>Total ({stayNights} night{stayNights > 1 ? 's' : ''})</th>
+                        <th style={{ ...td, textAlign: 'right' }}>{anyOwnDates ? 'Total for its stay' : `Total (${stayNights} night${stayNights > 1 ? 's' : ''})`}</th>
                         <th style={{ ...td, textAlign: 'right' }}>Normal price</th>
                       </tr>
                     </thead>
@@ -899,10 +971,11 @@ export default function NewBooking() {
                             <strong>{l.unit?.name || '—'}</strong>{l.unit?.type ? ` · ${l.unit.type}` : ''}
                             <div className="text-muted" style={{ fontSize: 11 }}>
                               {l.r.num_guests} guest{l.r.num_guests > 1 ? 's' : ''}{l.plan ? ` · ${l.plan.code}` : ''}
+                              {anyOwnDates && <> · {roomIn(l.r)} → {roomOut(l.r)} ({roomNights(l.r)} night{roomNights(l.r) > 1 ? 's' : ''})</>}
                             </div>
                             {l.warning && <div style={{ fontSize: 11, color: 'var(--danger, #B91C1C)', marginTop: 2 }}>⚠️ {l.warning}</div>}
                           </td>
-                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{stayNights ? idr(l.total / stayNights) : '—'}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{roomNights(l.r) ? idr(l.total / roomNights(l.r)) : '—'}</td>
                           <td style={{ ...td, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{idr(l.total)}</td>
                           <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">{l.normal ? idr(l.normal) : '—'}</td>
                         </tr>

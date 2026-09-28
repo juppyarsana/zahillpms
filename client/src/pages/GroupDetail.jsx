@@ -169,30 +169,44 @@ export default function GroupDetail() {
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState('');
 
-  function addDates() {
+  // The added room's dates: its own (the form), defaulting to the group's —
+  // never before today.
+  function groupAddDates() {
     if (!data) return null;
     const ci = data.group.check_in_date?.slice(0, 10);
     const co = data.group.check_out_date?.slice(0, 10);
     return { check_in: ci < todayStr ? todayStr : ci, check_out: co };
   }
+  function addDates() {
+    if (addForm?.check_in && addForm?.check_out && addForm.check_out > addForm.check_in) return { check_in: addForm.check_in, check_out: addForm.check_out };
+    return groupAddDates();
+  }
 
   function openAddRoom() {
-    const d = addDates();
+    const d = groupAddDates();
     setAddForm({
       unit_id: '', num_guests: 2, bed_preference: '', total_amount: '', deposit_pct: '50', reason: '',
       rate_plan_id: (ratePlans.find(p => p.is_default) || ratePlans[0])?.id || '',
+      check_in: d.check_in, check_out: d.check_out,
     });
     setAddSuggest(null); setAddError(''); setAdding(true);
-    api.get('/api/bookings/transfer-availability', { params: d })
-      .then(r => setAddUnits(r.data)).catch(() => setAddUnits([]));
   }
 
+  // Free rooms for the added room's dates (re-checked when they change).
   useEffect(() => {
-    if (!adding || !addForm?.unit_id) { setAddSuggest(null); return; }
+    if (!adding) return;
+    const d = addDates();
+    if (!d?.check_in || !d?.check_out) return;
+    api.get('/api/bookings/transfer-availability', { params: d })
+      .then(r => setAddUnits(r.data)).catch(() => setAddUnits([]));
+  }, [adding, addForm?.check_in, addForm?.check_out]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!adding || !addForm?.unit_id) return;
     const d = addDates();
     api.get('/api/pricing/suggest', { params: { unit_id: addForm.unit_id, ...d, rate_plan_id: addForm.rate_plan_id || '', num_guests: addForm.num_guests || 1 } })
       .then(r => setAddSuggest(r.data)).catch(() => setAddSuggest(null));
-  }, [adding, addForm?.unit_id, addForm?.rate_plan_id, addForm?.num_guests]);
+  }, [adding, addForm?.unit_id, addForm?.rate_plan_id, addForm?.num_guests, addForm?.check_in, addForm?.check_out]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function saveAddRoom() {
     setAddSaving(true); setAddError('');
@@ -204,6 +218,7 @@ export default function GroupDetail() {
         rate_plan_id: addForm.rate_plan_id || null,
         bed_preference: addForm.bed_preference || null,
         total_amount: addForm.total_amount !== '' ? addForm.total_amount : undefined,
+        check_in_date: addDates().check_in, check_out_date: addDates().check_out,
         deposit_amount: Math.round(price * (parseFloat(addForm.deposit_pct) || 0) / 100),
         reason: addForm.reason,
       });
@@ -318,6 +333,9 @@ export default function GroupDetail() {
   const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
   const canAddRoom = group.status !== 'cancelled' && group.check_out_date?.slice(0, 10) > todayStr;
   const amendableRooms = bookings.filter(b => ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status));
+  // Rooms with their own dates (not all the same) — shown per room.
+  const mixedDates = new Set(bookings.filter(b => !['cancelled', 'no_show'].includes(b.status))
+    .map(b => `${String(b.check_in_date).slice(0, 10)}|${String(b.check_out_date).slice(0, 10)}`)).size > 1;
   const activeRoomCount = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status)).length;
   const activeRooms = bookings.filter(b => !['cancelled', 'no_show'].includes(b.status));
   const groupNights = Math.max(0, Math.round((new Date(group.check_out_date?.slice(0, 10)) - new Date(group.check_in_date?.slice(0, 10))) / 86400000));
@@ -445,7 +463,10 @@ export default function GroupDetail() {
                     {b.guest_name}
                     {b.guest_id === group.primary_guest_id && <span className="text-muted" style={{ fontSize: 11 }}> (booker)</span>}
                   </span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{b.num_guests} guest{b.num_guests !== 1 ? 's' : ''} · {fmtIDR(b.total_amount)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {mixedDates && <><b style={{ color: 'var(--text)' }}>{fmtDate(b.check_in_date)} → {fmtDate(b.check_out_date, true)}</b> · </>}
+                    {b.num_guests} guest{b.num_guests !== 1 ? 's' : ''} · {fmtIDR(b.total_amount)}
+                  </div>
                 </div>
                 <div className="flex gap-2" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {(() => {
@@ -605,6 +626,12 @@ export default function GroupDetail() {
                 <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
                   Changes every room in the group at once. Cancelled and checked-out rooms are left as they are; a checked-in room can only change its check-out date.
                 </div>
+                {mixedDates && (
+                  <div className="alert alert-warn" style={{ marginBottom: 12, fontSize: 13 }}><div>
+                    ⚠️ The rooms in this group have <b>different dates</b> — saving here gives every room the dates below.
+                    To change just one room, open that room and use <b>Amend Dates</b> there.
+                  </div></div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', gap: 12 }}>
                   <div className="form-group">
                     <label className="form-label">Check-in</label>
@@ -751,8 +778,25 @@ export default function GroupDetail() {
                 <button className="btn btn-icon" onClick={() => setAdding(false)}>✕</button>
               </div>
               <div className="modal-body">
-                <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
-                  {d.check_in} → {d.check_out} · {nights} night{nights === 1 ? '' : 's'} (the group's dates). The room is booked under {group.guest_name} — use Assign Guests for the real guest. The group discount isn't applied to an added room.
+                <div className="form-row form-row-dates">
+                  <div className="form-group">
+                    <label className="form-label">Check-in</label>
+                    <input className="form-input" type="date" value={addForm.check_in} min={todayStr}
+                      onChange={e => { const v = e.target.value; setAddForm(f => ({ ...f, check_in: v, check_out: v ? addDaysYmd(v, nights) : f.check_out, unit_id: '' })); }} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Nights</label>
+                    <input className="form-input" type="number" min={1} max={365} value={nights}
+                      onChange={e => { const n = parseInt(e.target.value, 10); if (n >= 1) setAddForm(f => ({ ...f, check_out: addDaysYmd(f.check_in, n), unit_id: '' })); }} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Check-out</label>
+                    <input className="form-input" type="date" value={addForm.check_out} min={addForm.check_in ? addDaysYmd(addForm.check_in, 1) : undefined}
+                      onChange={e => { const v = e.target.value; setAddForm(f => ({ ...f, check_out: v, unit_id: '' })); }} />
+                  </div>
+                </div>
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+                  The group's dates by default — change them if this room stays differently. Booked under {group.guest_name} (use Assign Guests for the real guest). The group discount isn't applied to an added room.
                 </div>
                 <div className="form-group">
                   <label className="form-label">Room</label>

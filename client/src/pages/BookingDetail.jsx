@@ -626,7 +626,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
   const modifyItems = [
     booking.status === 'no_show' &&
       { label: 'Undo No-Show', icon: '↩️', onClick: undoNoShow, hint: 'The guest did arrive — put the booking back' },
-    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.group &&
+    // A group room can have its own dates too (the group page moves them all).
+    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Room', icon: '🔀', onClick: openTransfer },

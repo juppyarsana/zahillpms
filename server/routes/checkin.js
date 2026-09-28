@@ -114,8 +114,10 @@ router.post('/group/:groupId/start', auth, async (req, res) => {
       JOIN reservation_groups g ON g.id = b.reservation_group_id
       WHERE g.id = $1 AND g.property_id = $2
         AND b.status NOT IN ('cancelled','no_show','checked_in','checked_out')
+        -- rooms arriving later (own dates) wait for their own arrival day
+        AND b.check_in_date <= (NOW() AT TIME ZONE 'Asia/Makassar')::date
     `, [req.params.groupId, req.propertyId]);
-    if (bookings.length === 0) return res.status(404).json({ error: 'Group not found or no eligible rooms' });
+    if (bookings.length === 0) return res.status(404).json({ error: 'No rooms of this group are due to check in today' });
     // Optional: let the group's unpaid rooms in too (pay later), same rule as a single room.
     const payLaterReason = String(req.body?.pay_later_reason || '').trim() || null;
 
