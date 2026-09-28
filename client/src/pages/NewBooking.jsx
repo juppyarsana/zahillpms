@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../services/api';
+import StayNightsPicker from '../components/StayNightsPicker';
 import { useSettings } from '../context/SettingsContext';
 import CountrySelect from '../components/CountrySelect';
 import { useAuth } from '../context/AuthContext';
@@ -114,7 +115,13 @@ function priceWarning(total, normal, nights) {
   return null;
 }
 
-const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '' };
+// extra: an extra bed (any per-night Sales item) booked with the room —
+// { product_id, quantity, nights: ['YYYY-MM-DD', …] | null } or null —
+// nights null = every night of the stay (follows the dates).
+const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null };
+// Sources whose guests pay extras at the hotel, outside the OTA / agent's
+// money: the extra bed isn't part of the deposit asked.
+const AGENT_SOURCE_TYPES = ['ota', 'travel_agent', 'wholesaler', 'company'];
 
 const BED_PREFS = [
   ['', 'No preference'],
@@ -125,7 +132,7 @@ const BED_PREFS = [
 export default function NewBooking() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
-  const { sources, ratePlans } = useSettings();
+  const { sources, ratePlans, branding } = useSettings();
   const [units, setUnits] = useState([]);
   const [guests, setGuests] = useState([]);
   const [guestSearch, setGuestSearch] = useState('');
@@ -164,6 +171,7 @@ export default function NewBooking() {
   // Every unit's availability for the chosen dates (booked / free), so the
   // Unit dropdown can grey out rooms that are taken.
   const [unitAvail, setUnitAvail] = useState({});
+  const [nightItems, setNightItems] = useState([]);   // per-night Sales items (extra bed)
 
   const isGroup = rooms.length > 1;
   // Review step: "Create Booking" first shows a summary to confirm.
@@ -214,6 +222,9 @@ export default function NewBooking() {
 
   useEffect(() => {
     api.get('/api/units').then(r => setUnits(r.data));
+    // Per-night Sales items (extra bed…) that can be booked with a room.
+    api.get('/api/products').then(r => setNightItems(r.data.filter(p => p.per_night && p.is_available !== false
+      && !['food', 'drinks'].includes(p.category)))).catch(() => {});
   }, []);
 
   // Default every room's rate plan to the property default once plans load.
@@ -253,12 +264,33 @@ export default function NewBooking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitIdsKey, form.check_in_date, form.check_out_date]);
 
+  // Extra bed per room: every night of the stay by default (kept in step
+  // with the dates), priced from the Sales item — incl. service & tax like
+  // the room total (prices before tax get them added).
+  const stayDates = [];
+  for (let d = form.check_in_date; d && form.check_out_date && d < form.check_out_date; d = addDaysYmd(d, 1)) stayDates.push(d);
+  const extraNights = r => (r.extra ? (r.extra.nights ?? stayDates).filter(d => stayDates.includes(d)) : []);
+  const taxF = branding?.prices_include_tax ? 1
+    : (1 + (parseFloat(branding?.service_charge_rate) || 0) / 100) * (1 + (parseFloat(branding?.tax_rate) || 0) / 100);
+  function extraTotal(r) {
+    if (!r.extra?.product_id) return 0;
+    const item = nightItems.find(p => p.id === r.extra.product_id);
+    if (!item) return 0;
+    return Math.round(parseFloat(item.price) * (parseInt(r.extra.quantity, 10) || 1) * extraNights(r).length * taxF);
+  }
+  const extrasTotal = rooms.reduce((s, r) => s + extraTotal(r), 0);
+  const srcObj = sources.find(s => s.id === form.source);
+  const extrasInDeposit = !(srcObj?.is_ota || AGENT_SOURCE_TYPES.includes(srcObj?.source_type));
+
   const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
   const dValue     = parseFloat(form.discount_value || 0);
   const discountAmt = !form.discount_type || !dValue ? 0
     : form.discount_type === 'fixed' ? Math.min(dValue, groupTotal)
     : Math.round(groupTotal * dValue / 100);
   const netAmt = groupTotal - discountAmt;
+  // The deposit asked covers room + extra bed (direct guests); it's held on
+  // the room's deposit line, never more than the room itself.
+  const depositFor = pct => Math.min(netAmt, Math.round((netAmt + (extrasInDeposit ? extrasTotal : 0)) * pct / 100));
 
   useEffect(() => {
     const src = sources.find(s => s.id === form.source);
@@ -297,7 +329,7 @@ export default function NewBooking() {
         setMode('search');
       }
       const compOn = comp.on && !isGroup;
-      const deposit_amount = compOn ? 0 : Math.round(netAmt * (form.deposit_pct / 100));
+      const deposit_amount = compOn ? 0 : depositFor(form.deposit_pct);
 
       if (!isGroup) {
         // Single-room booking — same endpoint and payload shape as before
@@ -319,6 +351,7 @@ export default function NewBooking() {
           rate_plan_id: room.rate_plan_id || null,
           bed_preference: room.bed_preference || null,
         });
+        await addExtras([{ booking_id: res.data.id, room }]);
         nav(`/reservations/${res.data.id}`, compOn ? { state: { complimentary: { scope: comp.scope, reason: comp.reason.trim() } } } : undefined);
       } else {
         const res = await api.post('/api/bookings/group', {
@@ -333,6 +366,8 @@ export default function NewBooking() {
           group_deposit_amount: deposit_amount,
           rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null })),
         });
+        const byUnit = Object.fromEntries((res.data.bookings || []).map(b => [b.unit_id, b.id]));
+        await addExtras(rooms.map(room => ({ booking_id: byUnit[room.unit_id], room })));
         nav(`/reservations/group/${res.data.group.id}`);
       }
     } catch (err) {
@@ -341,6 +376,24 @@ export default function NewBooking() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Each room's extra bed goes on its booking exactly as "Extras for this
+  // stay" would add it (a room-charge Sales sale for those nights). The
+  // booking already exists if this fails — say so, it can be added there.
+  async function addExtras(list) {
+    const failed = [];
+    for (const { booking_id, room } of list) {
+      const nightsFor = extraNights(room);
+      if (!booking_id || !room.extra?.product_id || !nightsFor.length) continue;
+      try {
+        await api.post('/api/sales', { booking_id, payment_method: 'room_charge',
+          items: [{ product_id: room.extra.product_id, quantity: parseInt(room.extra.quantity, 10) || 1, nights: nightsFor }] });
+      } catch (err) {
+        failed.push(err.response?.data?.error || 'error');
+      }
+    }
+    if (failed.length) alert(`The booking was created, but the extra bed could not be added (${failed.join('; ')}). Add it from "Extras for this stay" on the booking.`);
   }
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
@@ -485,6 +538,44 @@ export default function NewBooking() {
                   )}
                 </div>
               </div>
+
+              {nightItems.length > 0 && (
+                <div className="form-group">
+                  {!room.extra ? (
+                    <button type="button" className="btn btn-sm btn-secondary"
+                      onClick={() => setRoom(i, 'extra', { product_id: nightItems[0].id, quantity: 1, nights: null })}>
+                      + Extra bed
+                    </button>
+                  ) : (
+                    <div style={{ padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--cream)' }}>
+                      <div className="flex-between" style={{ marginBottom: 8 }}>
+                        <label className="form-label" style={{ margin: 0 }}>Extra bed</label>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => setRoom(i, 'extra', null)}>Remove</button>
+                      </div>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <select className="form-select" value={room.extra.product_id} onChange={e => setRoom(i, 'extra', { ...room.extra, product_id: e.target.value })}>
+                            {nightItems.map(p => <option key={p.id} value={p.id}>{p.name} — {idr(p.price)} / night</option>)}
+                          </select>
+                        </div>
+                        <div className="form-group" style={{ maxWidth: 110 }}>
+                          <input className="form-input" type="number" min={1} max={10} value={room.extra.quantity} title="How many"
+                            onChange={e => setRoom(i, 'extra', { ...room.extra, quantity: e.target.value })} />
+                        </div>
+                      </div>
+                      {stayDates.length > 0 ? (
+                        <StayNightsPicker booking={{ check_in_date: form.check_in_date, check_out_date: form.check_out_date }}
+                          value={extraNights(room)} onChange={v => setRoom(i, 'extra', { ...room.extra, nights: v })} />
+                      ) : <div className="text-muted" style={{ fontSize: 12 }}>Pick the dates first.</div>}
+                      {extraTotal(room) > 0 && (
+                        <div style={{ fontSize: 12, marginTop: 6 }}>
+                          = <b>{idr(extraTotal(room))}</b> for {extraNights(room).length} night{extraNights(room).length === 1 ? '' : 's'}{taxF !== 1 ? ' incl. service & tax' : ''} — charged to the room with each night, on top of the room price.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {availabilityLoading && (
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>Checking availability…</div>
@@ -681,8 +772,10 @@ export default function NewBooking() {
             </div>
             {netAmt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                Deposit: Rp {Math.round(netAmt * form.deposit_pct / 100).toLocaleString('id-ID')}
-                {' · '}Balance: Rp {Math.round(netAmt * (1 - form.deposit_pct / 100)).toLocaleString('id-ID')}
+                Deposit: Rp {depositFor(form.deposit_pct).toLocaleString('id-ID')}
+                {extrasTotal > 0 && (extrasInDeposit ? ' (on room + extra bed)' : ' (room only — the guest pays the extra bed at the hotel)')}
+                {' · '}Balance: Rp {(netAmt - depositFor(form.deposit_pct)).toLocaleString('id-ID')}
+                {extrasTotal > 0 && <> · Extra bed: Rp {extrasTotal.toLocaleString('id-ID')}</>}
               </div>
             )}
           </div>
@@ -731,7 +824,7 @@ export default function NewBooking() {
         const guestName = mode === 'new' ? newGuest.name : guestSearch;
         const sourceLabel = sources.find(s => s.id === form.source)?.label || form.source;
         const compOn = comp.on && !isGroup;
-        const deposit = compOn ? 0 : Math.round(netAmt * form.deposit_pct / 100);
+        const deposit = compOn ? 0 : depositFor(form.deposit_pct);
         const lines = rooms.map((r, i) => {
           const normal = priceSuggestions[i]?.grand_total || 0;
           return {
@@ -786,7 +879,22 @@ export default function NewBooking() {
                           <td style={{ ...td, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{idr(l.total)}</td>
                           <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">{l.normal ? idr(l.normal) : '—'}</td>
                         </tr>
-                      ))}
+                      )).flatMap((row, i) => {
+                        const r = lines[i].r;
+                        const ex = extraTotal(r);
+                        if (!ex) return [row];
+                        const item = nightItems.find(p => p.id === r.extra.product_id);
+                        return [row, (
+                          <tr key={`x${i}`}>
+                            <td style={td}>+ {item?.name}{parseInt(r.extra.quantity, 10) > 1 ? ` × ${r.extra.quantity}` : ''}
+                              <div className="text-muted" style={{ fontSize: 11 }}>{extraNights(r).length} night{extraNights(r).length === 1 ? '' : 's'} · charged to the room</div>
+                            </td>
+                            <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{idr(ex / extraNights(r).length)}</td>
+                            <td style={{ ...td, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{idr(ex)}</td>
+                            <td style={td} />
+                          </tr>
+                        )];
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -794,12 +902,19 @@ export default function NewBooking() {
                   {discountAmt > 0 && (
                     <div className="flex-between"><span className="text-muted">Discount{form.discount_type === 'percentage' ? ` (${dValue}%)` : ''}</span><span>− {idr(discountAmt)}</span></div>
                   )}
-                  <div className="flex-between" style={{ fontWeight: 700 }}><span>{isGroup ? `Total for ${rooms.length} rooms` : 'Total'}</span><span>{idr(netAmt)}</span></div>
+                  {extrasTotal > 0 ? (<>
+                    <div className="flex-between"><span className="text-muted">{isGroup ? `Rooms (${rooms.length})` : 'Room'}</span><span>{idr(netAmt)}</span></div>
+                    <div className="flex-between"><span className="text-muted">Extra bed</span><span>{idr(extrasTotal)}</span></div>
+                    <div className="flex-between" style={{ fontWeight: 700 }}><span>Total</span><span>{idr(netAmt + extrasTotal)}</span></div>
+                  </>) : (
+                    <div className="flex-between" style={{ fontWeight: 700 }}><span>{isGroup ? `Total for ${rooms.length} rooms` : 'Total'}</span><span>{idr(netAmt)}</span></div>
+                  )}
                   {compOn ? (
                     <div className="text-muted" style={{ fontSize: 12 }}>🎁 Will be made complimentary ({comp.scope === 'room' ? 'room only' : comp.scope === 'room_meals' ? 'room + meals' : 'everything'}) — the price above is recorded as the value given.</div>
                   ) : (
                     <div className="flex-between text-muted" style={{ fontSize: 13 }}>
-                      <span>Deposit {form.deposit_pct}%</span><span>{idr(deposit)} · balance {idr(netAmt - deposit)}</span>
+                      <span>Deposit {form.deposit_pct}%{extrasTotal > 0 ? (extrasInDeposit ? ' (room + extra bed)' : ' (room only — extra bed paid at the hotel)') : ''}</span>
+                      <span>{idr(deposit)} · then {idr(netAmt + extrasTotal - deposit)}</span>
                     </div>
                   )}
                 </div>
