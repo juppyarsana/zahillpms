@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
 import { lineShown, includesText, shownTotal } from '../lib/priceBasis';
+import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -231,69 +232,16 @@ export default function GroupDetail() {
     setAddSaving(false);
   }
 
-  // ── Amend Dates for the whole group ──
+  // ── Amend Dates, room by room (components/GroupAmendDatesModal.jsx) ──
   const [amending, setAmending] = useState(false);
-  const [amendForm, setAmendForm] = useState(null);
-  const [amendQuote, setAmendQuote] = useState(null);
-  const [amendQuoteError, setAmendQuoteError] = useState('');
-  const [amendSaving, setAmendSaving] = useState(false);
-  const [amendError, setAmendError] = useState('');
 
   function addDaysYmd(ymd, n) {
     const [y, m, d] = ymd.split('-').map(Number);
     const dt = new Date(y, m - 1, d + n);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
   }
-  function nightsBetween(a, b) {
-    const [y1, m1, d1] = a.split('-').map(Number); const [y2, m2, d2] = b.split('-').map(Number);
-    return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
-  }
 
-  function openAmendGroup() {
-    const ci = data.group.check_in_date?.slice(0, 10);
-    const co = data.group.check_out_date?.slice(0, 10);
-    setAmendForm({ check_in: ci, check_out: co, charge: 'difference', amount: '', reason: '' });
-    setAmendQuote(null); setAmendQuoteError(''); setAmendError(''); setAmending(true);
-  }
-
-  useEffect(() => {
-    if (!amending || !amendForm?.check_in || !amendForm?.check_out || amendForm.check_out <= amendForm.check_in) { setAmendQuote(null); return; }
-    let live = true;
-    api.get(`/api/bookings/group/${groupId}/dates/quote`, { params: { check_in: amendForm.check_in, check_out: amendForm.check_out } })
-      .then(r => {
-        if (!live) return;
-        setAmendQuote(r.data); setAmendQuoteError('');
-        const moving = r.data.rooms.filter(x => !x.unchanged);
-        setAmendForm(f => ({ ...f, charge: 'difference', amount: String(Math.round(moving.reduce((sum, x) => sum + x.new.total, 0))) }));
-      })
-      .catch(e => { if (live) { setAmendQuote(null); setAmendQuoteError(e.response?.data?.error || 'Could not price the new dates'); } });
-    return () => { live = false; };
-  }, [amending, amendForm?.check_in, amendForm?.check_out]);
-
-  // Totals over the rooms whose dates change: what they cost now, and the
-  // suggested price for the new dates (each room's booked nightly price).
-  function amendMoving() { return amendQuote ? amendQuote.rooms.filter(r => !r.unchanged) : []; }
-  function amendCurrent() { return amendMoving().reduce((sum, r) => sum + r.old.total, 0); }
-  function amendSuggested() { return amendMoving().reduce((sum, r) => sum + r.new.total, 0); }
-
-  async function saveAmendGroup() {
-    setAmendSaving(true); setAmendError('');
-    try {
-      await api.put(`/api/bookings/group/${groupId}/dates`, {
-        check_in_date: amendForm.check_in, check_out_date: amendForm.check_out,
-        ...(amendForm.charge === 'complimentary' ? { charge: 'complimentary' }
-          : Math.abs(parseFloat(amendForm.amount) - amendSuggested()) < 1 ? { charge: 'difference' }
-          : { charge: 'custom', amount: Math.round((parseFloat(amendForm.amount) - amendCurrent()) * 100) / 100 }),
-        reason: amendForm.reason,
-      });
-      setAmending(false);
-      await load();
-      if (folio) loadFolio();
-    } catch (e) {
-      setAmendError(e.response?.data?.error || 'Could not change the dates');
-    }
-    setAmendSaving(false);
-  }
+  function openAmendGroup() { setAmending(true); }
 
   // ── Remove one room from the group ──
   const [removing, setRemoving] = useState(null); // booking row
@@ -598,133 +546,11 @@ export default function GroupDetail() {
         );
       })()}
 
-      {amending && amendForm && (() => {
-        const nights = amendForm.check_in && amendForm.check_out ? nightsBetween(amendForm.check_in, amendForm.check_out) : 0;
-        const set = (k, v) => setAmendForm(f => ({ ...f, [k]: v }));
-        const setCheckIn = v => setAmendForm(f => ({ ...f, check_in: v, check_out: v && nights > 0 ? addDaysYmd(v, nights) : f.check_out }));
-        const setNights = n => { const k = parseInt(n, 10); if (k >= 1 && amendForm.check_in) set('check_out', addDaysYmd(amendForm.check_in, k)); };
-        const q = amendQuote;
-        const moving = q ? q.rooms.filter(r => !r.unchanged) : [];
-        const current = moving.reduce((sum, r) => sum + r.old.total, 0);
-        const suggested = moving.reduce((sum, r) => sum + r.new.total, 0);
-        const normal = moving.reduce((sum, r) => sum + (r.new.normal_total || 0), 0);
-        const typed = parseFloat(amendForm.amount);
-        const priceOk = Number.isFinite(typed) && typed >= 0;
-        const diff = priceOk ? Math.round((typed - current) * 100) / 100 : 0;
-        const edited = priceOk && Math.abs(typed - suggested) >= 1;
-        const chargeTotal = amendForm.charge === 'complimentary' ? 0 : diff;
-        const canSave = q && q.ok && moving.length > 0 && amendForm.reason.trim()
-          && (amendForm.charge === 'complimentary' || priceOk);
-        return (
-          <div className="modal-backdrop">
-            <div className="modal" style={{ maxWidth: 600, width: '100%' }}>
-              <div className="modal-header">
-                <div className="modal-title">Amend Dates — {group.guest_name}'s group</div>
-                <button className="btn btn-icon" onClick={() => setAmending(false)}>✕</button>
-              </div>
-              <div className="modal-body">
-                <div className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
-                  Changes every room in the group at once. Cancelled and checked-out rooms are left as they are; a checked-in room can only change its check-out date.
-                </div>
-                {mixedDates && (
-                  <div className="alert alert-warn" style={{ marginBottom: 12, fontSize: 13 }}><div>
-                    ⚠️ The rooms in this group have <b>different dates</b> — saving here gives every room the dates below.
-                    To change just one room, open that room and use <b>Amend Dates</b> there.
-                  </div></div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Check-in</label>
-                    <input className="form-input" type="date" value={amendForm.check_in} onChange={e => setCheckIn(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Nights</label>
-                    <input className="form-input" type="number" min="1" value={nights > 0 ? nights : ''} onChange={e => setNights(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Check-out</label>
-                    <input className="form-input" type="date" value={amendForm.check_out} min={amendForm.check_in} onChange={e => set('check_out', e.target.value)} />
-                  </div>
-                </div>
-
-                {amendQuoteError && <div className="alert alert-error" style={{ fontSize: 13 }}>{amendQuoteError}</div>}
-                {q && (
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
-                    {q.rooms.map(r => (
-                      <div key={r.booking_id} className="flex-between" style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', gap: 8 }}>
-                        <div>
-                          <b>{r.unit_name}</b>
-                          <span className="text-muted"> · {r.old.nights} → {r.new.nights} night{r.new.nights === 1 ? '' : 's'}</span>
-                          {r.problem && <div style={{ color: 'var(--color-danger, #dc2626)', fontSize: 12 }}>✕ {r.problem}</div>}
-                          {!r.problem && r.unchanged && <div className="text-muted" style={{ fontSize: 12 }}>No change</div>}
-                        </div>
-                        <span style={{ whiteSpace: 'nowrap', color: r.difference < 0 ? 'var(--color-success, #16a34a)' : undefined }}>
-                          {r.difference === 0 ? '—' : `${r.difference > 0 ? '+' : '−'}${fmtIDR(Math.abs(r.difference))}`}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="flex-between" style={{ padding: '6px 10px', fontWeight: 700 }}>
-                      <span>Suggested difference</span>
-                      <span>{q.total_difference === 0 ? fmtIDR(0) : `${q.total_difference > 0 ? '+' : '−'}${fmtIDR(Math.abs(q.total_difference))}`}</span>
-                    </div>
-                  </div>
-                )}
-
-                {q && q.ok && moving.length > 0 && (
-                  <>
-                    <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                      Each room's new dates are suggested at its booked nightly price (meals included), incl. service &amp; tax.
-                    </div>
-                    <div className="flex-between" style={{ fontSize: 13 }}>
-                      <span>Current price · {moving.length} room{moving.length === 1 ? '' : 's'}</span><span>{fmtIDR(current)}</span>
-                    </div>
-                    <div className="flex-between" style={{ fontSize: 13, alignItems: 'center', gap: 8, marginTop: 4 }}>
-                      <span>New price for these rooms</span>
-                      <input className="form-input" type="number" min="0" value={amendForm.amount} disabled={amendForm.charge === 'complimentary'}
-                        onChange={e => set('amount', e.target.value)} style={{ maxWidth: 170, padding: '4px 8px', textAlign: 'right' }}
-                        aria-label="New price for the group" />
-                    </div>
-                    <div className="text-muted" style={{ fontSize: 11, textAlign: 'right', marginBottom: 8 }}>
-                      {edited
-                        ? <>Suggested {fmtIDR(suggested)} · <a href="#" onClick={e => { e.preventDefault(); set('amount', String(Math.round(suggested))); }}>use suggested</a></>
-                        : 'Suggested'}
-                      {normal > 0 && <> · normal rate would be {fmtIDR(normal)}</>}
-                      {edited && <><br />Spread over the rooms by each room's share of the new price.</>}
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Price</label>
-                      {[
-                        ['difference', diff > 0 ? `Charge the difference (+${fmtIDR(diff)})` : diff < 0 ? `Give the difference back as credit (−${fmtIDR(-diff)})` : 'No price change'],
-                        ['complimentary', 'No charge — keep the current price'],
-                      ].map(([v, l]) => (
-                        <label key={v} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, padding: '3px 0' }}>
-                          <input type="radio" name="group-charge" checked={amendForm.charge === v} onChange={() => set('charge', v)} /> {l}
-                        </label>
-                      ))}
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Reason</label>
-                      <input className="form-input" value={amendForm.reason} placeholder="e.g. Group extended by one night"
-                        onChange={e => set('reason', e.target.value)} />
-                    </div>
-                    <div className="flex-between" style={{ fontSize: 14, fontWeight: 700 }}>
-                      <span>{moving.length} room{moving.length === 1 ? '' : 's'} change · {chargeTotal < 0 ? 'credit' : 'added to the bill'}</span>
-                      <span>{fmtIDR(Math.abs(chargeTotal))}</span>
-                    </div>
-                  </>
-                )}
-                {amendError && <div className="alert alert-error" style={{ marginTop: 10 }}>{amendError}</div>}
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setAmending(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveAmendGroup} disabled={amendSaving || !canSave}>
-                  {amendSaving ? 'Saving…' : 'Change Dates'}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {amending && (
+        <GroupAmendDatesModal groupId={groupId} groupName={group.guest_name} rooms={amendableRooms}
+          onClose={() => setAmending(false)}
+          onDone={async () => { setAmending(false); await load(); if (folio) loadFolio(); }} />
+      )}
 
       {removing && (() => {
         const paid = (removing.payments || [])

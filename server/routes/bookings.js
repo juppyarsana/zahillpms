@@ -1686,7 +1686,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
 // check-out date. All-or-nothing: one unavailable room stops the whole change.
 const GROUP_AMENDABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
 
-async function groupDatesPlan(client, { propertyId, groupId, checkIn, checkOut, lock = false }) {
+async function groupDatesPlan(client, { propertyId, groupId, checkIn, checkOut, perRoom = null, lock = false }) {
   const { rows: [group] } = await client.query(
     `SELECT *, to_char(check_in_date, 'YYYY-MM-DD') AS ci, to_char(check_out_date, 'YYYY-MM-DD') AS co
      FROM reservation_groups WHERE id = $1 AND property_id = $2${lock ? ' FOR UPDATE' : ''}`,
@@ -1699,9 +1699,16 @@ async function groupDatesPlan(client, { propertyId, groupId, checkIn, checkOut, 
      ORDER BY u.name${lock ? ' FOR UPDATE OF b' : ''}`,
     [groupId, propertyId, GROUP_AMENDABLE]);
   if (rooms.length === 0) return { status: 409, error: 'No rooms left to change in this group' };
+  // Per room (each room its own new dates): only the rooms asked for.
+  if (perRoom) {
+    const known = new Set(rooms.map(b => b.id));
+    const missing = [...perRoom.keys()].filter(id => !known.has(id));
+    if (missing.length) return { status: 400, error: 'A room is not in this group or can no longer be changed — refresh and try again' };
+  }
 
   const plan = [];
-  for (const b of rooms) {
+  for (const b of perRoom ? rooms.filter(x => perRoom.has(x.id)) : rooms) {
+    if (perRoom) ({ checkIn, checkOut } = perRoom.get(b.id));
     const oldCi = String(b.check_in_date).slice(0, 10);
     const oldCo = String(b.check_out_date).slice(0, 10);
     const row = { booking_id: b.id, unit_name: b.unit_name, status: b.status, booking: b, problem: null };
@@ -1722,6 +1729,7 @@ async function groupDatesPlan(client, { propertyId, groupId, checkIn, checkOut, 
     }
     row.quote = await datesQuote(client, { propertyId, booking: b, checkIn, checkOut });
     row.unchanged = oldCi === checkIn && oldCo === checkOut;
+    row.checkIn = checkIn; row.checkOut = checkOut;
     plan.push(row);
   }
   const totalDifference = round2(plan.reduce((sum, r) => sum + r.quote.difference, 0));
@@ -1813,9 +1821,7 @@ router.put('/group/:groupId/dates', auth, async (req, res) => {
       if (done.error) { await client.query('ROLLBACK'); return res.status(done.status).json(done.error); }
       credit = round2(credit + (done.priced?.credit || 0));
     }
-    await client.query(
-      'UPDATE reservation_groups SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3',
-      [check_in_date, check_out_date, p.group.id]);
+    await syncGroupSpan(client, p.group.id);   // = the new dates, unless some rooms keep their own
     await client.query('COMMIT');
 
     for (const r of moving) {
@@ -1839,6 +1845,111 @@ router.put('/group/:groupId/dates', auth, async (req, res) => {
     res.json({ rooms: moving.length, charged, normal_difference: normal, credit });
   } catch (err) {
     await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── Amend Dates per room (each ticked room gets its own new dates) ──
+// rooms: [{ booking_id, check_in_date, check_out_date, new_total? }]
+function perRoomDates(list) {
+  if (!Array.isArray(list) || !list.length) return { error: 'Choose at least one room' };
+  const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+  const map = new Map();
+  for (const r of list) {
+    const ci = r.check_in_date || r.check_in, co = r.check_out_date || r.check_out;
+    if (!r.booking_id || !ymdRe.test(String(ci)) || !ymdRe.test(String(co)) || co <= ci) return { error: 'Every room needs a check-out after its check-in' };
+    if (map.has(String(r.booking_id))) return { error: 'A room is listed twice' };
+    map.set(String(r.booking_id), { checkIn: ci, checkOut: co });
+  }
+  return { map };
+}
+
+// POST /api/bookings/group/:groupId/dates/quote-rooms { rooms } — availability,
+// problems and prices for each room's new dates (nothing is saved).
+router.post('/group/:groupId/dates/quote-rooms', auth, async (req, res) => {
+  const pr = perRoomDates(req.body.rooms);
+  if (pr.error) return res.status(400).json({ error: pr.error });
+  try {
+    const p = await groupDatesPlan(db, { propertyId: req.propertyId, groupId: req.params.groupId, perRoom: pr.map });
+    if (p.error) return res.status(p.status).json({ error: p.error });
+    res.json(planJson(p));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/group/:groupId/dates/rooms { rooms: [{ booking_id,
+// check_in_date, check_out_date, new_total? }], complimentary?, reason }
+// Each room moves to its own dates (same pricing as a single room's Amend
+// Dates: the difference, the price typed for its new dates, or no charge
+// with complimentary). All or nothing; the group's span follows.
+router.put('/group/:groupId/dates/rooms', auth, async (req, res) => {
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  const pr = perRoomDates(req.body.rooms);
+  if (pr.error) return res.status(400).json({ error: pr.error });
+  const typed = new Map((req.body.rooms || []).filter(r => r.new_total !== undefined && r.new_total !== null && r.new_total !== '')
+    .map(r => [String(r.booking_id), parseFloat(r.new_total)]));
+  if ([...typed.values()].some(v => !Number.isFinite(v) || v < 0)) return res.status(400).json({ error: 'A new price must be 0 or more' });
+  const complimentary = req.body.complimentary === true;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const p = await groupDatesPlan(client, { propertyId: req.propertyId, groupId: req.params.groupId, perRoom: pr.map, lock: true });
+    if (p.error) { await client.query('ROLLBACK'); return res.status(p.status).json({ error: p.error }); }
+    const blocked = p.plan.filter(r => r.problem);
+    if (blocked.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Can't change the dates: ${blocked.map(r => `Room ${r.unit_name} — ${r.problem}`).join('; ')}`, ...planJson(p) });
+    }
+    const moving = p.plan.filter(r => !r.unchanged);
+    if (!moving.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The new dates are the same as the current ones' }); }
+
+    const amounts = new Map();
+    for (const r of moving) {
+      const t = typed.get(r.booking_id);
+      amounts.set(r.booking_id, complimentary ? 0 : t !== undefined ? round2(t - r.quote.old.total) : r.quote.difference);
+    }
+    const invoiced = moving.filter(r => amounts.get(r.booking_id) !== 0 && ['invoiced', 'paid'].includes(r.booking.folio_status));
+    if (invoiced.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing` });
+    }
+    let credit = 0;
+    for (const r of moving) {
+      const amount = amounts.get(r.booking_id);
+      const charge = complimentary ? 'complimentary' : Math.abs(amount - r.quote.difference) < 0.5 ? 'difference' : 'custom';
+      const done = await applyNewDates(client, {
+        propertyId: req.propertyId, booking: r.booking, userId: req.user.id,
+        checkIn: r.checkIn, checkOut: r.checkOut, quote: r.quote, amount, charge, reason, notePrefix: 'Group ',
+      });
+      if (done.error) { await client.query('ROLLBACK'); return res.status(done.status).json(done.error); }
+      credit = round2(credit + (done.priced?.credit || 0));
+    }
+    await syncGroupSpan(client, p.group.id);
+    await client.query('COMMIT');
+
+    for (const r of moving) {
+      if (amounts.get(r.booking_id) !== 0 && r.booking.folio_status === 'pending_agent_invoice') {
+        await agentBilling.recomputeCommission(req.propertyId, r.booking_id).catch(err => console.error('Commission recompute failed:', err));
+      }
+    }
+    const charged = round2([...amounts.values()].reduce((sum, a) => sum + a, 0));
+    const normal = round2(moving.reduce((sum, r) => sum + r.quote.difference, 0));
+    if (normal > 0 && charged < normal) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: moving.map(r => r.booking_id), userId: req.user.id, reason,
+        headline: charged <= 0
+          ? `🎁 Free group stay change (${moving.length} room${moving.length === 1 ? '' : 's'}): ${moving.map(r => `${r.unit_name} ${datesSpan(r.quote.new)}`).join(', ')}, no charge`
+          : `🏷 Discounted group stay change (${moving.length} room${moving.length === 1 ? '' : 's'}), charged ${fmtIDR(charged)}`,
+        details: [`Normal price ${fmtIDR(normal)} — given away ${fmtIDR(normal - Math.max(0, charged))}`],
+      });
+    }
+    res.json({ rooms: moving.length, charged, normal_difference: normal, credit });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
