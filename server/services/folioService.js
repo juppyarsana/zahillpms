@@ -280,9 +280,20 @@ async function computeProforma(bookingId, propertyId) {
     [propertyId]
   );
   const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [bookingId]);
+  // Activities booked for this stay as "Not paid yet" (no payment method):
+  // not on the folio until front desk picks Charge to room / Paid now, but
+  // the guest owes them — projected so the balance and checkout see them.
+  const unpaidActivitiesQ = db.query(
+    `SELECT ab.id, ab.scheduled_date, ab.num_participants, ab.unit_price, ab.total_amount, ab.tax_mode, a.name
+     FROM activity_bookings ab JOIN activities a ON a.id = ab.activity_id
+     WHERE ab.booking_id = $1 AND ab.property_id = $2 AND ab.payment_method IS NULL
+       AND ab.folio_charge_id IS NULL AND ab.status IN ('confirmed', 'completed')
+     ORDER BY ab.scheduled_date, ab.created_at`,
+    [bookingId, propertyId]
+  );
 
-  const [{ rows: [booking] }, { rows: extraCharges }, { rows: [settings] }, { rows: payments }, { rows: addons }] =
-    await Promise.all([bookingQ, extraChargesQ, settingsQ, paymentsQ, addonsQ]);
+  const [{ rows: [booking] }, { rows: extraCharges }, { rows: [settings] }, { rows: payments }, { rows: addons }, { rows: unpaidActivities }] =
+    await Promise.all([bookingQ, extraChargesQ, settingsQ, paymentsQ, addonsQ, unpaidActivitiesQ]);
 
   if (!booking) return null;
 
@@ -306,7 +317,13 @@ async function computeProforma(bookingId, propertyId) {
     if (roomAmt > 0) projectedCharges.push({ type: 'room', description: `Room — ${nights[i]}`, quantity: 1, unit_price: roomAmt, amount: roomAmt, service_date: nights[i] });
     if (mealAmt > 0) projectedCharges.push({ type: 'fnb', description: `Meal plan (${ratePlanCode}) — ${nights[i]}`, quantity: 1, unit_price: mealAmt, amount: mealAmt, service_date: nights[i] });
   }
-  const charges = [...projectedCharges, ...addonCharges, ...extraCharges];
+  const activityCharges = unpaidActivities.map(a => ({
+    type: 'activity', activity_booking_id: a.id, not_paid: true,
+    description: `${a.name} — ${ymd(a.scheduled_date)}`, name: a.name,
+    quantity: a.num_participants, unit_price: a.unit_price, amount: round2(parseFloat(a.total_amount)),
+    service_date: ymd(a.scheduled_date), tax_mode: a.tax_mode || 'added',
+  }));
+  const charges = [...projectedCharges, ...addonCharges, ...extraCharges, ...activityCharges];
   const complimentary_extras = markComplimentary(booking, charges);
 
   const rates = billRates(booking, settings);

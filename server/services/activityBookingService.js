@@ -212,4 +212,49 @@ async function setStatus(propertyId, id, newStatus, actorUserId) {
   }
 }
 
-module.exports = { createBooking, setStatus, activityTaxes, amountPaid };
+// Takes payment for an activity booked as "Not paid yet": sets the method
+// (room_charge, or a real payment method = paid now), works out service + tax
+// like at booking, and — when it's confirmed / completed and linked to a stay
+// — puts it on the folio exactly like a booking made with that method.
+async function setPayment(propertyId, id, paymentMethod, actorUserId) {
+  if (!paymentMethod) return { error: 'Choose how it is paid', code: 'PAYMENT_METHOD_REQUIRED' };
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [current] } = await client.query(
+      'SELECT * FROM activity_bookings WHERE id = $1 AND property_id = $2 FOR UPDATE',
+      [id, propertyId]
+    );
+    if (!current) { await client.query('ROLLBACK'); return { error: 'Booking not found', code: 'NOT_FOUND' }; }
+    if (current.payment_method) { await client.query('ROLLBACK'); return { error: 'This activity already has a payment', code: 'ALREADY_PAID' }; }
+    if (['cancelled', 'no_show'].includes(current.status)) { await client.query('ROLLBACK'); return { error: 'This activity is cancelled', code: 'CANCELLED' }; }
+    if (paymentMethod === 'room_charge') {
+      if (!current.booking_id) { await client.query('ROLLBACK'); return { error: 'Room Charge requires a linked reservation', code: 'ROOM_CHARGE_REQUIRES_BOOKING' }; }
+    } else {
+      const { rows: [pm] } = await client.query(
+        'SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true',
+        [paymentMethod, propertyId]
+      );
+      if (!pm) { await client.query('ROLLBACK'); return { error: 'Invalid payment method', code: 'INVALID_PAYMENT_METHOD' }; }
+    }
+    const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]);
+    const taxes = activityTaxes(current.tax_mode || 'added', parseFloat(current.total_amount), ps, paidDirectly(paymentMethod));
+    let { rows: [updated] } = await client.query(
+      `UPDATE activity_bookings SET payment_method = $1, service_charge_amount = $2, tax_amount = $3, updated_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [paymentMethod, taxes.sc, taxes.tax, id]
+    );
+    if (['confirmed', 'completed'].includes(updated.status) && updated.booking_id && !updated.folio_charge_id) {
+      updated = await postFolioCharge(client, updated, actorUserId);
+    }
+    await client.query('COMMIT');
+    return { booking: updated };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { createBooking, setStatus, setPayment, activityTaxes, amountPaid };

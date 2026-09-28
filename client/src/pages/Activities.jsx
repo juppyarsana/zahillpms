@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
+import ActivityPaymentModal from '../components/ActivityPaymentModal';
 
 const CATEGORIES = ['tour', 'transport', 'wellness', 'other'];
 const CAT_ICONS = { tour: '🥾', transport: '🚐', wellness: '🧘', other: '📦' };
@@ -23,6 +24,7 @@ export default function Activities() {
   const [tab, setTab] = useState('bookings');
   const [activities, setActivities] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [payingActivity, setPayingActivity] = useState(null);
   const [summary, setSummary] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -166,6 +168,9 @@ export default function Activities() {
                           {b.status === 'confirmed' && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'completed')}>Complete</button>}
                           {b.status === 'confirmed' && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'no_show')}>No-show</button>}
                           {['requested', 'confirmed'].includes(b.status) && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'cancelled')}>Cancel</button>}
+                          {!b.payment_method && !['cancelled', 'no_show'].includes(b.status) && (
+                            <button className="btn btn-sm btn-primary" onClick={() => setPayingActivity(b)} title="Booked as not paid yet — charge it to the room or record it paid">Take payment</button>
+                          )}
                           {b.payment_method && b.payment_method !== 'room_charge' && !['cancelled', 'no_show'].includes(b.status) && (
                             <button className="btn btn-sm btn-secondary" onClick={() => downloadReceipt(b)} title="Paid directly — print a receipt separate from the room invoice">🖨 Receipt</button>
                           )}
@@ -260,6 +265,10 @@ export default function Activities() {
         </div>
       )}
 
+      {payingActivity && (
+        <ActivityPaymentModal activityBooking={payingActivity} onClose={() => setPayingActivity(null)}
+          onDone={() => { setPayingActivity(null); loadBookings(); loadSummary(); }} />
+      )}
       {bookingModal && (
         <ActivityBookingModal onClose={() => setBookingModal(false)}
           onDone={() => { setBookingModal(false); loadBookings(); loadSummary(); }} />

@@ -62,7 +62,7 @@ function extraLines(room, rates) {
   for (const c of room.charges.filter(x => !['room', 'fnb'].includes(x.type) && !(x.type === 'addon' && x.service_date))) {
     out.push({ run: false, name: String(c.description).replace(/ — \d{4}-\d{2}-\d{2}$/, ''), date: c.service_date || c.posted_at,
       qty: parseFloat(c.quantity), unit: lineShown(c.unit_price, c, rates), sum: c.complimentary ? null : lineShown(c.amount, c, rates),
-      posted: c.posted, paid: c.paid_method || null });
+      posted: c.posted, paid: c.paid_method || null, notPaid: !!c.not_paid });
   }
   return out;
 }
@@ -144,7 +144,8 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
                       <td style={cell}>
                         {x.name}
                         <span className="text-muted"> · {x.run ? `${shortDate(x.from)} – ${shortDate(nextDay(x.to))}` : shortDate(x.date)}</span>
-                        {!x.posted && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>upcoming</span>}
+                        {x.notPaid ? <span className="badge badge-yellow" style={{ marginLeft: 6, fontSize: 10 }}>not paid yet</span>
+                          : !x.posted && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>upcoming</span>}
                         {x.paid && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>Paid · {x.paid}</span>}
                       </td>
                       <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">

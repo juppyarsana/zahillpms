@@ -14,6 +14,7 @@ import ComplimentaryModal from '../components/ComplimentaryModal';
 import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
+import ActivityPaymentModal from '../components/ActivityPaymentModal';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
@@ -96,12 +97,20 @@ function notChargedRows(folio, estimate, booking) {
       last.to = c.d; last.nights++; last.amount += rate;
     } else rows.push({ kind: 'addon', label: c.name, from: c.d, to: c.d, nights: 1, rate, qty, amount: rate, paid, free });
   }
+
+  // Activities booked "Not paid yet" — on the folio once a payment is chosen.
+  for (const c of (estimate.charges || []).filter(c => c.type === 'activity' && c.not_paid)) {
+    const d = String(c.service_date).slice(0, 10);
+    rows.push({ kind: 'activity', label: c.name, from: d, to: d, qty: parseFloat(c.quantity) || 1,
+      rate: parseFloat(c.unit_price), amount: parseFloat(c.amount), tax_mode: c.tax_mode, free: !!c.complimentary });
+  }
   return rows;
 }
 // What the rows still add to the bill (paid-ahead / free extras left out),
-// with service & tax.
+// with service & tax — not on activities priced tax-included / without tax.
 function notChargedTotal(rows, rates) {
-  return Math.round(rows.filter(r => !r.paid && !r.free).reduce((t, r) => t + r.amount, 0) * priceFactor(rates));
+  return Math.round(rows.filter(r => !r.paid && !r.free)
+    .reduce((t, r) => t + r.amount * (r.tax_mode && r.tax_mode !== 'added' ? 1 : priceFactor(rates)), 0));
 }
 
 function NotChargedYet({ rows, rates }) {
@@ -112,13 +121,16 @@ function NotChargedYet({ rows, rates }) {
   const counts = [
     roomNights ? `${roomNights} room-night${roomNights > 1 ? 's' : ''}` : null,
     ...[...extras].map(([name, n]) => `${name} ${n} night${n > 1 ? 's' : ''}`),
+    (() => { const n = rows.filter(r => r.kind === 'activity').length; return n ? `${n} activit${n > 1 ? 'ies' : 'y'} not paid yet` : null; })(),
   ].filter(Boolean).join(' · ');
-  const show = v => fmtIDR(shownAmount(v, rates));
+  const show = (v, r) => fmtIDR(r?.tax_mode && r.tax_mode !== 'added' ? parseFloat(v) || 0 : shownAmount(v, rates));
   return (
     <div>
       <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 4, gap: 8, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Not charged yet</div>
-        <span className="text-muted" style={{ fontSize: 11 }}>posts at night audit, one night at a time</span>
+        <span className="text-muted" style={{ fontSize: 11 }}>
+          {rows.some(r => r.kind !== 'activity') ? 'nights post at night audit, one at a time' : 'charged once a payment is chosen'}
+        </span>
       </div>
       {rows.map((r, i) => (
         <div key={i} className="flex-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13, gap: 8 }}>
@@ -127,13 +139,16 @@ function NotChargedYet({ rows, rates }) {
               {r.label}
               {r.paid && <span className="badge badge-green" style={{ marginLeft: 6 }}>Paid · {r.paid}</span>}
               {r.free && <span className="badge badge-green" style={{ marginLeft: 6 }}>Free</span>}
+              {r.kind === 'activity' && <span className="badge badge-yellow" style={{ marginLeft: 6 }}>activity · not paid yet</span>}
             </div>
             <div className="text-muted" style={{ fontSize: 11 }}>
-              {fmtShortDate(r.from)}{r.nights > 1 ? ` – ${fmtShortDate(r.to)}` : ''} · {r.nights} night{r.nights > 1 ? 's' : ''} × {show(r.rate)}{r.qty > 1 ? ` (${r.qty} per night)` : ''}
+              {r.kind === 'activity'
+                ? <>{fmtShortDate(r.from)} · {r.qty} pax × {show(r.rate, r)}{r.tax_mode === 'included' ? ' · tax incl.' : r.tax_mode === 'none' ? ' · no tax' : ''} — choose Charge to room or Paid now on the Activities tab</>
+                : <>{fmtShortDate(r.from)}{r.nights > 1 ? ` – ${fmtShortDate(r.to)}` : ''} · {r.nights} night{r.nights > 1 ? 's' : ''} × {show(r.rate)}{r.qty > 1 ? ` (${r.qty} per night)` : ''}</>}
             </div>
           </div>
           <span style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
-            {r.paid || r.free ? <s className="text-muted">{show(r.amount)}</s> : show(r.amount)}
+            {r.paid || r.free ? <s className="text-muted">{show(r.amount, r)}</s> : show(r.amount, r)}
           </span>
         </div>
       ))}
@@ -218,6 +233,7 @@ export default function BookingDetail() {
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
   const [estimate, setEstimate] = useState(null);
+  const [payingActivity, setPayingActivity] = useState(null);
   // Folio "+ Add item" — the same window as "Extras for this stay" (Sales items
   // charged to the room; no free-text folio charges since migration 077).
   const [addingItem, setAddingItem] = useState(false);
@@ -1328,6 +1344,9 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
+                  {!ab.payment_method && !['cancelled', 'no_show'].includes(ab.status) && (
+                    <button className="btn btn-sm btn-primary" onClick={() => setPayingActivity({ ...ab, booking_id: ab.booking_id || booking.id })}>Take payment</button>
+                  )}
                   <span style={{ fontWeight: 600 }}>{fmtIDR(activityPaidTotal(ab))}</span>
                   <span className={`badge badge-${ACTIVITY_STATUS_BADGE[ab.status]}`}>{ab.status}</span>
                 </div>
@@ -1335,6 +1354,11 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
             ))
           )}
         </div>
+      )}
+
+      {payingActivity && (
+        <ActivityPaymentModal activityBooking={payingActivity} onClose={() => setPayingActivity(null)}
+          onDone={() => { setPayingActivity(null); loadActivityBookings(); loadFolio(); load(); }} />
       )}
 
       {bookingActivity && (

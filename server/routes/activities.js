@@ -181,6 +181,18 @@ router.get('/bookings/:id/receipt', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/activities/bookings/:id/payment { payment_method } — an activity
+// booked "Not paid yet": charge it to the room or record it paid now.
+router.patch('/bookings/:id/payment', auth, async (req, res) => {
+  try {
+    const result = await activityBookingService.setPayment(req.propertyId, req.params.id, req.body.payment_method, req.user.id);
+    if (result.error) return res.status(result.code === 'NOT_FOUND' ? 404 : result.code === 'ALREADY_PAID' ? 409 : 400).json(result);
+    res.json(result.booking);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/activities/bookings/:id/status
 router.patch('/bookings/:id/status', auth, async (req, res) => {
   const { status } = req.body;
