@@ -164,6 +164,49 @@ export default function BookingDetail() {
     setRecording(true);
   }
 
+  // "Pay selected" (migration 082): the guest pays some folio lines now —
+  // an activity or laundry charged to the room — and the rest at checkout.
+  const [paySel, setPaySel] = useState(() => new Set());
+  const [payLines, setPayLines] = useState(null);   // { method, notes, saving, error, done: { payment_id, amount } }
+  const canPayLine = c => !['room', 'fnb'].includes(c.type) && !c.paid_method && !c.complimentary
+    && !['cancelled', 'no_show'].includes(booking?.status) && booking?.complimentary_scope !== 'all';
+  function togglePaySel(cid) {
+    setPaySel(prev => { const n = new Set(prev); if (n.has(cid)) n.delete(cid); else n.add(cid); return n; });
+  }
+  // What the ticked lines cost the guest: service + tax on the lines they're
+  // added to, at this booking's rates — the same sum the server charges.
+  function selectedTotal() {
+    if (!folio) return 0;
+    const r2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+    let taxable = 0, untaxed = 0;
+    for (const c of folio.charges) {
+      if (!paySel.has(c.id)) continue;
+      if (c.tax_mode && c.tax_mode !== 'added') untaxed += parseFloat(c.amount); else taxable += parseFloat(c.amount);
+    }
+    const sub = r2(taxable);
+    const sc = r2(sub * (parseFloat(folio.service_charge_rate) || 0) / 100);
+    const tax = r2((sub + sc) * (parseFloat(folio.tax_rate) || 0) / 100);
+    return r2(sub + sc + tax + untaxed);
+  }
+  function openPayLines() {
+    const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
+    setPayLines({ method: methods.find(m => m.id === 'cash')?.id || methods[0]?.id || '', notes: '', saving: false, error: '', done: null });
+  }
+  async function savePayLines() {
+    setPayLines(p => ({ ...p, saving: true, error: '' }));
+    try {
+      const r = await api.post(`/api/folio/${id}/pay-lines`, { charge_ids: [...paySel], method: payLines.method, notes: payLines.notes });
+      setPayLines(p => ({ ...p, saving: false, done: r.data }));
+      setPaySel(new Set());
+      loadFolio(); load();
+    } catch (err) {
+      setPayLines(p => ({ ...p, saving: false, error: err.response?.data?.error || 'Could not take the payment' }));
+    }
+  }
+  async function downloadLinesReceipt(paymentId) {
+    await downloadPdf(`/api/folio/payment/${paymentId}/receipt`, `receipt-${String(paymentId).slice(0, 8)}.pdf`);
+  }
+
   async function saveRecordPayment() {
     setRecSaving(true);
     setRecError('');
@@ -263,12 +306,12 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
     }
   }
 
-  async function downloadInvoice() {
-    await downloadPdf(`/api/folio/${id}/invoice`, `invoice-${id}.pdf`);
+  async function downloadInvoice(copy) {
+    await downloadPdf(`/api/folio/${id}/invoice${copy ? '?copy=guest' : ''}`, `invoice-${copy ? 'guest-' : ''}${id}.pdf`);
   }
 
-  async function downloadProforma() {
-    await downloadPdf(`/api/folio/${id}/proforma`, `proforma-${id}.pdf`);
+  async function downloadProforma(copy) {
+    await downloadPdf(`/api/folio/${id}/proforma${copy ? '?copy=guest' : ''}`, `proforma-${copy ? 'guest-' : ''}${id}.pdf`);
   }
 
   async function markPaid(payment) {
@@ -714,9 +757,19 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               items={[
                 { label: 'Registration Card', icon: '📝', hint: 'Printable check-in form for the guest to sign', onClick: () => setShowRegCard(true) },
                 { divider: true },
-                { label: 'Invoice', icon: '🧾', hint: 'What has actually been charged so far', onClick: downloadInvoice },
-                { divider: true },
-                { label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total for the whole stay', onClick: downloadProforma },
+                // OTA / agent stay (source Publish Rate off): an accounting copy
+                // with everything, and a guest copy without the room rate.
+                ...(booking.source_publish_rate === false ? [
+                  { label: 'Invoice — accounting', icon: '🧾', hint: 'Everything, incl. the room rate — for accounting / the agent', onClick: () => downloadInvoice(false) },
+                  { label: 'Invoice — guest copy', icon: '🧾', hint: `Room shown as arranged by ${booking.source_label || 'the agent'}, without its rate; the guest's own charges and payments`, onClick: () => downloadInvoice(true) },
+                  { divider: true },
+                  { label: 'Pro Forma — accounting', icon: '📋', hint: 'Estimate for the whole stay, incl. the room rate', onClick: () => downloadProforma(false) },
+                  { label: 'Pro Forma — guest copy', icon: '📋', hint: 'Estimate of the guest\'s own charges, room rate hidden', onClick: () => downloadProforma(true) },
+                ] : [
+                  { label: 'Invoice', icon: '🧾', hint: 'What has actually been charged so far', onClick: () => downloadInvoice(false) },
+                  { divider: true },
+                  { label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total for the whole stay', onClick: () => downloadProforma(false) },
+                ]),
               ]}
             />
           </div>
@@ -1061,6 +1114,11 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                       )}
                       {lines.map(c => (
                         <div key={c.id} className="flex-between" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                          <div className="flex gap-2" style={{ alignItems: 'flex-start' }}>
+                            {canPayLine(c) && (
+                              <input type="checkbox" checked={paySel.has(c.id)} onChange={() => togglePaySel(c.id)}
+                                title="Tick to let the guest pay this now" style={{ marginTop: 4 }} />
+                            )}
                           <div>
                             <div style={{ fontWeight: 600 }}>{c.description}</div>
                             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -1069,6 +1127,7 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                               {c.tax_mode === 'none' && ' · no tax or service'}
                               {c.posted_by_name && ` · ${c.posted_by_name}`}
                             </div>
+                          </div>
                           </div>
                           <div className="flex gap-2 items-center">
                             {c.complimentary
@@ -1079,6 +1138,9 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                                 Paid · {c.paid_method}
                               </span>
                             )}
+                            {c.paid_payment_id && (
+                              <button className="btn btn-icon btn-sm" title="Receipt for this payment" onClick={() => downloadLinesReceipt(c.paid_payment_id)}>🖨</button>
+                            )}
                             <button className="btn btn-icon btn-sm" title="Void charge" onClick={() => voidCharge(c)}>🗑️</button>
                           </div>
                         </div>
@@ -1087,6 +1149,18 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   );
                 })}
                 {folio.charges.length === 0 && <div className="text-muted" style={{ padding: '10px 0' }}>No charges posted yet.</div>}
+                {folio.charges.some(canPayLine) && paySel.size === 0 && (
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: 6 }}>Tick lines the guest wants to pay now (e.g. an activity) — the rest stays for checkout.</div>
+                )}
+                {paySel.size > 0 && (
+                  <div className="flex-between" style={{ position: 'sticky', bottom: 0, marginTop: 8, padding: '10px 12px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <span style={{ fontSize: 13 }}><b>{paySel.size}</b> selected · <b>{fmtIDR(shownTotal(selectedTotal(), folio))}</b></span>
+                    <span className="flex gap-2">
+                      <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set())}>Clear</button>
+                      <button className="btn btn-sm btn-primary" onClick={openPayLines}>💳 Pay selected</button>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {!['cancelled', 'no_show'].includes(booking.status) && (
@@ -1529,6 +1603,64 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               <button className="btn btn-primary" onClick={doChangeGuest} disabled={guestSaving || !changingGuest}>
                 {guestSaving ? 'Saving…' : 'Save Guest'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {payLines && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">{payLines.done ? 'Paid' : `Pay selected — ${booking.guest_name}`}</div>
+              <button className="btn btn-icon" onClick={() => setPayLines(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {payLines.done ? (
+                <>
+                  <div style={{ fontSize: 14, marginBottom: 12 }}>
+                    ✓ <b>{fmtIDR(shownTotal(payLines.done.amount, folio))}</b> received for {payLines.done.lines} line{payLines.done.lines === 1 ? '' : 's'}. The rest of the stay stays for checkout.
+                  </div>
+                  <button className="btn btn-secondary" onClick={() => downloadLinesReceipt(payLines.done.payment_id)}>🖨 Print receipt</button>
+                </>
+              ) : (
+                <>
+                  {folio.charges.filter(c => paySel.has(c.id)).map(c => (
+                    <div key={c.id} className="flex-between" style={{ fontSize: 13, padding: '3px 0' }}>
+                      <span>{c.description}</span><span>{fmtIDR(lineShown(c.amount, c, folio))}</span>
+                    </div>
+                  ))}
+                  <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, margin: '6px 0 12px' }}>
+                    <span>To pay now{!folio.prices_include_tax && (parseFloat(folio.service_charge_rate) > 0 || parseFloat(folio.tax_rate) > 0) ? ' (incl. service & tax)' : ''}</span>
+                    <span>{fmtIDR(shownTotal(selectedTotal(), folio))}</span>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Method</label>
+                      <select className="form-select" value={payLines.method} onChange={e => setPayLines(p => ({ ...p, method: e.target.value }))}>
+                        {paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed').map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Notes</label>
+                      <input className="form-input" value={payLines.notes} placeholder="optional" onChange={e => setPayLines(p => ({ ...p, notes: e.target.value }))} />
+                    </div>
+                  </div>
+                  {payLines.error && <div className="alert alert-error"><div>{payLines.error}</div></div>}
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              {payLines.done ? (
+                <button className="btn btn-primary" onClick={() => setPayLines(null)}>Done</button>
+              ) : (
+                <>
+                  <button className="btn btn-secondary" onClick={() => setPayLines(null)} disabled={payLines.saving}>Cancel</button>
+                  <button className="btn btn-primary" onClick={savePayLines} disabled={payLines.saving || !payLines.method}>
+                    {payLines.saving ? 'Saving…' : `Receive ${fmtIDR(shownTotal(selectedTotal(), folio))}`}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

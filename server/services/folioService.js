@@ -82,12 +82,18 @@ function chargeTotals(charges, taxRate, serviceChargeRate) {
 // agent (statement, consolidated invoice, commission base). A room_charge
 // sale (incl. a resto tab settled to the room) is still agent-billable.
 // An activity paid directly (migration 078) is the same: its folio line is
-// offset by its own 'incidental' payment.
-const PAID_AT_DESK_SQL = `(EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))
+// offset by its own 'incidental' payment. So is a line paid on its own from
+// the Folio tab ("Pay selected", migration 082 — fc.paid_payment_id).
+const PAID_AT_DESK_SQL = `(fc.paid_payment_id IS NOT NULL
+    OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))
     OR EXISTS (SELECT 1 FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id AND ab.payment_method <> 'room_charge'))`;
 // How a paid-at-desk line was paid ("Cash", "QRIS"…), NULL when charged to
 // the room — shown on the Folio tab and the invoice so it doesn't read as owed.
 const PAID_METHOD_SQL = `COALESCE(
+  (SELECT COALESCE(pm.label, p.method) FROM payments p
+     JOIN bookings pb ON pb.id = p.booking_id
+     LEFT JOIN payment_methods pm ON pm.id = p.method AND pm.property_id = pb.property_id
+    WHERE p.id = fc.paid_payment_id),
   (SELECT COALESCE(pm.label, s.payment_method) FROM sales s
      LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
     WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid')),
@@ -128,6 +134,7 @@ async function loadFolio(bookingId, propertyId) {
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             bs.payment_status as source_payment_status, bs.label as source_label,
+            COALESCE(bs.publish_rate, true) AS publish_rate,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
@@ -138,7 +145,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
@@ -206,16 +213,18 @@ async function computeProforma(bookingId, propertyId) {
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
-            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
+            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
+            bs.label AS source_label, COALESCE(bs.publish_rate, true) AS publish_rate
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+     LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
   const extraChargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, u.name as posted_by_name,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
@@ -230,11 +239,16 @@ async function computeProforma(bookingId, propertyId) {
   // the stay, posted or not — projected like the room nights.
   const addonsQ = db.query(
     `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price, a.meal_price, a.breakfasts, s.payment_method,
-            COALESCE(pm.label, s.payment_method) AS payment_method_label
+            COALESCE(pm.label, s.payment_method) AS payment_method_label, lp.label AS line_paid_label
      FROM booking_addons a
      JOIN bookings b ON b.id = a.booking_id
      LEFT JOIN sales s ON s.id = a.sale_id
      LEFT JOIN payment_methods pm ON pm.id = s.payment_method AND pm.property_id = s.property_id
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(pm2.label, pp.method) AS label FROM folio_charges fx
+       JOIN payments pp ON pp.id = fx.paid_payment_id
+       LEFT JOIN payment_methods pm2 ON pm2.id = pp.method AND pm2.property_id = b.property_id
+       WHERE fx.addon_id = a.id AND fx.is_voided = false LIMIT 1) lp ON true
      WHERE a.booking_id = $1 AND a.status = 'active'
        AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
      ORDER BY a.service_date`,
@@ -258,8 +272,8 @@ async function computeProforma(bookingId, propertyId) {
     return {
       type: 'addon', description: `${a.description} — ${ymd(a.service_date)}`, quantity: a.quantity,
       unit_price: a.unit_price, amount, service_date: ymd(a.service_date),
-      paid_at_desk: !!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method),
-      paid_method: a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method) ? a.payment_method_label : null,
+      paid_at_desk: !!a.line_paid_label || (!!a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method)),
+      paid_method: a.line_paid_label || (a.payment_method && !['room_charge', 'unpaid'].includes(a.payment_method) ? a.payment_method_label : null),
       addon_meal: a.breakfasts > 0,
     };
   });

@@ -18,6 +18,10 @@ Everything in the two 2026-09-28 sessions below is **live on production**.
   `bill_service_charge_rate = 0` by hand. Check afterwards: **263 bookings, 0 differ** (bill = guest price for every
   booking at its own rates).
 
+**After the deploy (on `dev`, not yet on production):** migration 082 — **Pay selected** folio lines (guest pays an
+activity / extras now, the room at checkout; receipt per payment) and the **guest copy** of invoice / pro forma for
+sources with Publish Rate off (room shown "arranged by …" without its rate). See CLAUDE.md.
+
 **Still open:** guest emails not sending (pm2 log: pre-arrival 0/7, post-checkout 0/27 — predates this release,
 cause not found yet); room 801 above; vendor tours' tax setting in Activities → Catalog; front desk told about the new
 night-audit no-show rule (pending / deposit-paid arrivals not checked in by midnight → no-show, Undo on the booking)
@@ -1806,7 +1810,7 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
-## Next migration number: 082
+## Next migration number: 083
 
 ---
 

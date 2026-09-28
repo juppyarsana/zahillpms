@@ -913,7 +913,10 @@ router.get('/:id', auth, async (req, res) => {
                WHERE apa.booking_id = b.id) AS agent_paid_amount,
              (SELECT name FROM users cu WHERE cu.id = b.complimentary_by) AS complimentary_by_name,
              EXISTS (SELECT 1 FROM complimentary_requests cr WHERE cr.booking_id = b.id
-                       AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending
+                       AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending,
+             -- Publish Rate off (OTA / agent, migration 065): invoices get a guest copy without the room rate
+             (SELECT COALESCE(bs.publish_rate, true) FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_publish_rate,
+             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label
       FROM bookings b JOIN guests g ON b.guest_id = g.id JOIN units u ON b.unit_id = u.id
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id AND ai.property_id = b.property_id

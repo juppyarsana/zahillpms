@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
-const { loadFolio, computeProforma, round2 } = require('../services/folioService');
+const { loadFolio, computeProforma, round2, chargeTotals, billRates, PAID_AT_DESK_SQL } = require('../services/folioService');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
@@ -103,6 +103,165 @@ router.get('/:bookingId/estimate', auth, async (req, res) => {
 // pending remainder), so Payment Tracking and the booking status stay
 // right; whatever is left is recorded as an 'incidental' payment (extras
 // paid at the desk, migration 067 — never mistaken for the room's payment).
+// POST /api/folio/:bookingId/pay-lines { charge_ids, method, received_at?, notes? }
+// "Pay selected" (migration 082): the guest pays some lines now — an activity
+// or laundry charged to the room — and the rest later. One received
+// 'incidental' payment of exactly those lines (incl. service + tax at the
+// booking's rates) is recorded and each line points at it, so they read
+// "Paid · Cash", are never billed to an agent and get their own receipt.
+// Room / meal nights stay on Payment Tracking (deposit / balance lines).
+router.post('/:bookingId/pay-lines', auth, async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body.charge_ids) ? req.body.charge_ids : []).map(String))];
+  const { method, notes } = req.body;
+  const receivedAt = req.body.received_at || null;
+  if (!ids.length) return res.status(400).json({ error: 'Choose the lines the guest is paying for' });
+  if (!method) return res.status(400).json({ error: 'Payment method required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [booking] } = await client.query(
+      `SELECT b.id, b.status, b.complimentary_scope, b.bill_tax_rate, b.bill_service_charge_rate, ps.tax_rate, ps.service_charge_rate
+       FROM bookings b JOIN property_settings ps ON ps.property_id = b.property_id
+       WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [req.params.bookingId, req.propertyId]);
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (['cancelled', 'no_show'].includes(booking.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` });
+    }
+    const { rows: [pm] } = await client.query(
+      'SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
+    if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
+
+    const { rows: lines } = await client.query(
+      `SELECT fc.id, fc.type, fc.description, fc.amount, fc.tax_mode, ${PAID_AT_DESK_SQL} AS paid_at_desk
+       FROM folio_charges fc
+       WHERE fc.id = ANY($1::uuid[]) AND fc.booking_id = $2 AND fc.is_voided = false
+       FOR UPDATE OF fc`, [ids, booking.id]);
+    if (lines.length !== ids.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Some of the chosen lines are not on this folio any more — refresh and try again' });
+    }
+    if (lines.some(l => ['room', 'fnb'].includes(l.type))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Room and meal nights are paid on Payment Tracking, not here', code: 'ROOM_LINE' });
+    }
+    if (lines.some(l => l.paid_at_desk)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'One of the chosen lines is already paid', code: 'ALREADY_PAID' });
+    }
+    if (booking.complimentary_scope === 'all') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is complimentary for everything — its extras are free', code: 'COMPLIMENTARY' });
+    }
+    const rates = billRates(booking, booking);
+    const amount = chargeTotals(lines, rates.tax_rate, rates.service_charge_rate).total;
+    if (!(amount > 0)) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Nothing to pay for these lines' }); }
+
+    const what = lines.map(l => l.description).join(', ');
+    const cleanNotes = String(notes || '').trim();
+    const { rows: [payment] } = await client.query(
+      `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+       VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6) RETURNING id`,
+      [booking.id, amount, method, receivedAt, req.user.id, (cleanNotes || `Paid at front desk: ${what}`).slice(0, 250)]);
+    await client.query('UPDATE folio_charges SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, ids]);
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
+      booking.id, `Paid now: ${what} — Rp ${Math.round(amount).toLocaleString('id-ID')} (${pm.label})${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
+    await client.query('COMMIT');
+    res.status(201).json({ payment_id: payment.id, amount, lines: lines.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/folio/payment/:paymentId/receipt — PDF receipt of a "Pay selected"
+// payment: exactly the lines it paid, what was paid and how.
+router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
+  try {
+    const { rows: [p] } = await db.query(
+      `SELECT p.*, COALESCE(pm.label, p.method) AS method_label, u.name AS received_by_name,
+              b.id AS booking_id, b.bill_tax_rate, b.bill_service_charge_rate, g.name AS guest_name, un.name AS unit_name
+       FROM payments p JOIN bookings b ON b.id = p.booking_id
+       JOIN guests g ON g.id = b.guest_id JOIN units un ON un.id = b.unit_id
+       LEFT JOIN payment_methods pm ON pm.id = p.method AND pm.property_id = b.property_id
+       LEFT JOIN users u ON u.id = p.received_by
+       WHERE p.id = $1 AND b.property_id = $2`, [req.params.paymentId, req.propertyId]);
+    if (!p) return res.status(404).json({ error: 'Payment not found' });
+    const { rows: lines } = await db.query(
+      `SELECT description, quantity, unit_price, amount, tax_mode, service_date FROM folio_charges
+       WHERE paid_payment_id = $1 AND is_voided = false ORDER BY service_date NULLS LAST, posted_at`, [p.id]);
+    if (!lines.length) return res.status(404).json({ error: 'No folio lines were paid with this payment' });
+    const { rows: [settings] } = await db.query(
+      `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address,
+              property_phone, property_email, logo_url FROM property_settings WHERE property_id = $1`, [req.propertyId]);
+    const rates = billRates(p, settings);
+    const t = chargeTotals(lines, rates.tax_rate, rates.service_charge_rate);
+    const nett = !!settings?.prices_include_tax;
+    const shownLines = nett ? allInCharges(lines, rates.tax_rate, rates.service_charge_rate) : lines;
+    const money = nett ? n => fmtIDR(Math.round(parseFloat(n) || 0)) : fmtIDR;
+
+    const ref = String(p.id).slice(0, 8).toUpperCase();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-${ref.toLowerCase()}.pdf"`);
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    doc.pipe(res);
+    drawDocumentHeader(doc, settings || {}, { title: 'Receipt', refLine: `Booking #${String(p.booking_id).slice(0, 8).toUpperCase()} · Payment #${ref}` });
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#000').text('Guest');
+    doc.font('Helvetica').text(`${p.guest_name}  ·  Room ${p.unit_name}`);
+    doc.moveDown(1.2);
+
+    const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
+    let y = doc.y;
+    doc.font('Helvetica-Bold').fontSize(10);
+    doc.text('Description', colX.desc, y); doc.text('Qty', colX.qty, y, { width: 50, align: 'right' });
+    doc.text('Unit Price', colX.price, y, { width: 90, align: 'right' }); doc.text('Amount', colX.amount, y, { width: 90, align: 'right' });
+    doc.moveTo(50, y + 15).lineTo(550, y + 15).strokeColor('#ccc').stroke();
+    y += 22;
+    doc.font('Helvetica').fontSize(10);
+    for (const l of shownLines) {
+      const desc = `${l.description}${!nett && l.tax_mode === 'included' ? ' (tax incl.)' : l.tax_mode === 'none' ? ' (no tax)' : ''}`;
+      const h = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
+      doc.text(desc, colX.desc, y, { width: 240 });
+      doc.text(String(parseFloat(l.quantity)), colX.qty, y, { width: 50, align: 'right' });
+      doc.text(money(l.unit_price), colX.price, y, { width: 90, align: 'right' });
+      doc.text(money(l.amount), colX.amount, y, { width: 90, align: 'right' });
+      y += h;
+    }
+    doc.moveTo(50, y + 4).lineTo(550, y + 4).strokeColor('#ccc').stroke();
+    y += 14;
+    const line = (label, value, bold) => {
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 10);
+      doc.text(label, colX.price - 150, y, { width: 150, align: 'right' });
+      doc.text(value, colX.amount, y, { width: 90, align: 'right' });
+      y += bold ? 20 : 16;
+    };
+    const hasSc = parseFloat(rates.service_charge_rate) > 0, hasTax = parseFloat(rates.tax_rate) > 0;
+    if (!nett && (hasSc || hasTax)) {
+      line('Subtotal', money(t.subtotal));
+      if (hasSc) line(`Service Charge (${parseFloat(rates.service_charge_rate)}%)`, money(t.service_charge_amount));
+      if (hasTax) line(`Tax (${parseFloat(rates.tax_rate)}%)`, money(t.tax_amount));
+    }
+    line('Total Paid', money(p.amount), true);
+    if (nett && settings?.show_tax_breakdown) {
+      const inc = includesNote({ service_charge_rate: rates.service_charge_rate, service_charge_amount: t.service_charge_amount, tax_rate: rates.tax_rate, tax_amount: t.tax_amount }, money);
+      if (inc) { doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, y - 4, { width: 500, align: 'right' }); doc.fillColor('#000'); y += 10; }
+    }
+    y += 8;
+    doc.font('Helvetica-Bold').fontSize(10).text('Payment Received', colX.desc, y);
+    y += 16;
+    const when = p.received_at ? new Date(p.received_at).toLocaleString('en-GB', { timeZone: 'Asia/Makassar', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    doc.font('Helvetica').text(`${p.method_label}  ·  ${when}`, colX.desc, y, { width: 240 });
+    doc.text(money(p.amount), colX.amount, y, { width: 90, align: 'right' });
+    y += 30;
+    doc.fontSize(8).fillColor('#888').text(`Received by ${p.received_by_name || 'staff'} · the rest of the stay is settled at checkout`, 50, y, { width: 500, align: 'center' });
+    doc.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/:bookingId/payment', auth, async (req, res) => {
   const amount = round2(parseFloat(req.body.amount));
   const { method, notes } = req.body;
@@ -268,6 +427,7 @@ function mergeStayLines(charges, booking) {
   }
   return runs.map(r => ({
     type: 'stay',
+    isRoom: true,   // room / meal-plan nights (a guest copy hides their rate)
     description: `${r.label} · ${shortDay(r.from)} – ${shortDay(nextDay(r.to))}`,
     quantity: r.nights, unit_price: Math.round((r.sum / r.nights) * 100) / 100,
     amount: Math.round(r.sum * 100) / 100,
@@ -298,7 +458,7 @@ function includesNote({ service_charge_rate, service_charge_amount, tax_rate, ta
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
-function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, show_tax_breakdown, showBalance = true }) {
+function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, show_tax_breakdown, hideStayFor = null, showBalance = true }) {
   // Prices entered incl. service & tax (migration 079): every line the folio
   // adds service + tax to is shown all-in, and the totals say what's inside.
   const rawCharges = prices_include_tax ? allInCharges(netCharges, tax_rate, service_charge_rate) : netCharges;
@@ -345,6 +505,14 @@ function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal
     // service/tax added below — say so on its line.
     const taxNote = prices_include_tax ? (c.tax_mode === 'none' ? ' (no tax)' : '')
       : c.tax_mode === 'included' ? ' (tax incl.)' : c.tax_mode === 'none' ? ' (no tax)' : '';
+    // Guest copy of an OTA / agent stay: the room line without its rate.
+    if (hideStayFor && c.isRoom) {
+      const d = `${c.description}${c.quantity > 1 ? ` · ${c.quantity} nights` : ''} — arranged by ${hideStayFor}`;
+      const h = Math.max(16, doc.heightOfString(d, { width: 400 }) + 4);
+      doc.text(d, colX.desc, y, { width: 400 });
+      y += h;
+      return;
+    }
     const desc = c.complimentary ? `${c.description} (complimentary)`
       : c.paid_method ? `${c.description}${taxNote} (paid · ${c.paid_method})` : `${c.description}${taxNote}`;
     const rowH = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
@@ -452,8 +620,30 @@ function complimentaryNote(scope) {
   return null;
 }
 
+// Guest copy of an OTA / agent stay (source Publish Rate off, migration 065 —
+// same switch as the Registration Card): the room is on the bill without its
+// rate ("arranged by Booking.com"), and the totals, payments and balance are
+// the guest's own — the extras and what they paid for them. Room payments
+// (from the OTA / agent) aren't shown. Other stays: the folio as it is.
+function guestCopyOf(folio) {
+  if (folio.booking.publish_rate !== false) return null;
+  const own = folio.charges.filter(c => !['room', 'fnb'].includes(c.type));
+  const t = chargeTotals(own.filter(c => !c.complimentary), folio.tax_rate, folio.service_charge_rate);
+  const payments = folio.payments.filter(p => p.type === 'incidental');
+  const received = payments.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
+  return {
+    ...folio, payments,
+    subtotal: t.subtotal, untaxed_subtotal: t.untaxed_subtotal, service_charge_amount: t.service_charge_amount,
+    tax_amount: t.tax_amount, total: t.total, balance_due: round2(t.total - received),
+    hideStayFor: folio.booking.source_label || 'the agent',
+  };
+}
+
 // Renders the single-booking invoice/pro-forma PDF straight to the response.
-function renderBookingInvoicePdf(res, folio, { title, filenamePrefix, note }) {
+function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, guestCopy = false }) {
+  const copy = guestCopy ? guestCopyOf(folioIn) : null;
+  const folio = copy || folioIn;
+  if (copy) filenamePrefix = `${filenamePrefix}-guest`;
   const { booking, property } = folio;
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -478,6 +668,12 @@ function renderBookingInvoicePdf(res, folio, { title, filenamePrefix, note }) {
   if (note) {
     doc.moveDown(0.5);
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e').text(note, { width: 500 });
+    doc.fillColor('#000');
+  }
+  if (copy) {
+    doc.moveDown(0.5);
+    doc.fontSize(9).font('Helvetica').fillColor('#555')
+      .text(`Your room is arranged by ${copy.hideStayFor} — this bill shows your own charges.`, { width: 500 });
     doc.fillColor('#000');
   }
   const compNote = complimentaryNote(booking.complimentary_scope);
@@ -505,7 +701,7 @@ router.get('/:bookingId/invoice', auth, async (req, res) => {
   try {
     const folio = await loadFolio(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
-    renderBookingInvoicePdf(res, folio, { title: 'Invoice', filenamePrefix: 'invoice' });
+    renderBookingInvoicePdf(res, folio, { title: 'Invoice', filenamePrefix: 'invoice', guestCopy: req.query.copy === 'guest' });
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
@@ -518,7 +714,7 @@ router.get('/:bookingId/proforma', auth, async (req, res) => {
   try {
     const folio = await computeProforma(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
-    renderBookingInvoicePdf(res, folio, { title: 'Pro Forma Invoice', filenamePrefix: 'proforma', note: PROFORMA_NOTE });
+    renderBookingInvoicePdf(res, folio, { title: 'Pro Forma Invoice', filenamePrefix: 'proforma', note: PROFORMA_NOTE, guestCopy: req.query.copy === 'guest' });
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
