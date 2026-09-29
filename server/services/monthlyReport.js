@@ -175,26 +175,36 @@ const arrowTxt = (pct, suffix = '%') => pct == null ? '' : pct === 0 ? ' (same)'
 function monthlyTelegram(b) {
   const e = telegram.escapeHtml;
   const c = b.month;
-  const L = [];
-  L.push(`🗓 <b>${e(b.property_name)}</b> · ${e(c.label)}`);
-  L.push('<i>Monthly Report</i>');
-  L.push('');
-  const vs = [
-    b.change.vs_prev != null && `${arrowTxt(b.change.vs_prev).trim()} vs ${b.prev.label.split(' ')[0]}`,
-    b.change.vs_last_year != null && `${arrowTxt(b.change.vs_last_year).trim()} vs last year`,
-  ].filter(Boolean).join(' · ');
-  L.push(`💰 Revenue: <b>${e(fmtIDR(c.total))}</b>${vs ? ` ${e(vs)}` : ''}`);
-  L.push(`     Room ${e(fmtIDR(c.room))}${c.fnb ? ` · F&amp;B ${e(fmtIDR(c.fnb))}` : ''}${c.extras ? ` · Extras ${e(fmtIDR(c.extras))}` : ''}${c.activities ? ` · Activities ${e(fmtIDR(c.activities))}` : ''}`);
-  if (b.has_expenses) L.push(`🧾 Expenses ${e(fmtIDR(c.expenses))} · Net income <b>${e(fmtIDR(c.net_income))}</b>`);
-  L.push(`🛏 Occupancy: <b>${c.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${c.rooms_sold} room-nights`);
-  L.push(`💵 ADR ${e(fmtIDR(c.adr))} · RevPAR ${e(fmtIDR(c.revpar))}`);
-  if (c.comp_nights > 0 || c.comp_value > 0) L.push(`🎁 Complimentary: ${c.comp_nights} night${c.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(c.comp_value))}`);
-  L.push(`💳 Money received: <b>${e(fmtIDR(b.collected.total))}</b>`);
-  if (c.best_day) L.push(`⭐ Best day: ${e(new Date(c.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${e(fmtIDR(c.best_day.total))}`);
-  if (b.agents.total > 0) L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
-  L.push('');
-  L.push('📎 Full report (PDF) and CSV files for the accountant are in the email version.');
-  return L.join('\n');
+  // Sections separated by a blank line, one fact per line.
+  const sections = [];
+  const add = (...lines) => { const l = lines.filter(Boolean); if (l.length) sections.push(l.join('\n')); };
+
+  add(`🗓 <b>${e(b.property_name)}</b> · ${e(c.label)}`, '<i>Monthly Report</i>');
+
+  add(`💰 <b>Revenue ${e(fmtIDR(c.total))}</b>`,
+      b.change.vs_prev != null ? `<i>${e(`${arrowTxt(b.change.vs_prev).trim()} vs ${b.prev.label.split(' ')[0]}`)}</i>` : '',
+      b.change.vs_last_year != null ? `<i>${e(`${arrowTxt(b.change.vs_last_year).trim()} vs last year`)}</i>` : '',
+      `• Room: ${e(fmtIDR(c.room))}`,
+      c.fnb ? `• F&amp;B: ${e(fmtIDR(c.fnb))}` : '',
+      c.extras ? `• Extras: ${e(fmtIDR(c.extras))}` : '',
+      c.activities ? `• Activities: ${e(fmtIDR(c.activities))}` : '');
+
+  if (b.has_expenses) {
+    add(`🧾 <b>Net income ${e(fmtIDR(c.net_income))}</b>`, `• Expenses: ${e(fmtIDR(c.expenses))}`);
+  }
+
+  add(`🛏 <b>Occupancy ${c.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')}`,
+      `• ${c.rooms_sold} room-nights`,
+      `• ADR: ${e(fmtIDR(c.adr))}`,
+      `• RevPAR: ${e(fmtIDR(c.revpar))}`,
+      (c.comp_nights > 0 || c.comp_value > 0) ? `• 🎁 Complimentary: ${c.comp_nights} night${c.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(c.comp_value))}` : '');
+
+  add(`💳 <b>Money received ${e(fmtIDR(b.collected.total))}</b>`,
+      c.best_day ? `• ⭐ Best day: ${e(new Date(c.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))} · ${e(fmtIDR(c.best_day.total))}` : '',
+      b.agents.total > 0 ? `• 🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}` : '');
+
+  add('📎 <i>Full report (PDF) and CSV files for the accountant are in the email version.</i>');
+  return sections.join('\n\n');
 }
 
 function monthlyEmail(b) {

@@ -148,35 +148,47 @@ const arrowTxt = (pct, suffix = '%') => pct == null ? '' : pct === 0 ? ' (same)'
 function weeklyOwnerTelegram(b) {
   const e = telegram.escapeHtml;
   const w = b.week;
-  const L = [];
-  L.push(`📈 <b>${e(b.property_name)}</b> · week ${e(fmtDay(b.from))}–${e(fmtDay(b.to))}`);
-  L.push('<i>Weekly Owner Report</i> · vs the week before');
-  L.push('');
-  L.push(`💰 Revenue: <b>${e(fmtIDR(w.total))}</b>${arrowTxt(b.change.total)}`);
-  L.push(`🛏 Occupancy: <b>${w.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${w.rooms_sold} room-nights`);
-  L.push(`💵 ADR ${e(fmtIDR(w.adr))}${arrowTxt(b.change.adr)} · RevPAR ${e(fmtIDR(w.revpar))}${arrowTxt(b.change.revpar)}`);
-  if (w.comp_nights > 0 || w.comp_value > 0) L.push(`🎁 Complimentary: ${w.comp_nights} night${w.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(w.comp_value))}`);
-  if (b.has_expenses) L.push(`🧾 Expenses ${e(fmtIDR(w.expenses))} · Net income <b>${e(fmtIDR(w.net_income))}</b>`);
-  L.push('');
-  L.push(`🔮 <b>Already booked</b>`);
-  L.push(`     Next 14 days: <b>${b.books.next14.occupancy}%</b> · ${e(fmtIDR(b.books.next14.revenue))}`);
-  L.push(`     Next 30 days: <b>${b.books.next30.occupancy}%</b> · ${e(fmtIDR(b.books.next30.revenue))}`);
+  // Sections separated by a blank line, one fact per line.
+  const sections = [];
+  const add = (...lines) => { const l = lines.filter(Boolean); if (l.length) sections.push(l.join('\n')); };
+
+  add(`📈 <b>${e(b.property_name)}</b> · week ${e(fmtDay(b.from))} – ${e(fmtDay(b.to))}`,
+      '<i>Weekly Owner Report · vs the week before</i>');
+
+  add(`💰 <b>Revenue ${e(fmtIDR(w.total))}</b>${arrowTxt(b.change.total)}`,
+      `• Occupancy: <b>${w.occupancy}%</b>${arrowTxt(b.change.occupancy_pts, ' pts')} · ${w.rooms_sold} room-nights`,
+      `• ADR: ${e(fmtIDR(w.adr))}${arrowTxt(b.change.adr)}`,
+      `• RevPAR: ${e(fmtIDR(w.revpar))}${arrowTxt(b.change.revpar)}`,
+      (w.comp_nights > 0 || w.comp_value > 0) ? `• 🎁 Complimentary: ${w.comp_nights} night${w.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(w.comp_value))}` : '',
+      b.has_expenses ? `• Expenses: ${e(fmtIDR(w.expenses))}` : '',
+      b.has_expenses ? `• Net income: <b>${e(fmtIDR(w.net_income))}</b>` : '');
+
+  let weak = '';
   if (b.books.weak_nights.length) {
     const list = b.books.weak_nights.slice(0, 7).map(n => `${fmtDay(n.night, { weekday: 'short', day: 'numeric' })} ${n.occupancy}%`).join(', ');
-    L.push(b.books.weak_nights.length > 7
-      ? `     ⚠️ ${b.books.weak_nights.length} of the next 14 nights under 30% booked`
-      : `     ⚠️ Weak nights (under 30%): ${e(list)}`);
+    weak = b.books.weak_nights.length > 7
+      ? `⚠️ ${b.books.weak_nights.length} of the next 14 nights under 30% booked`
+      : `⚠️ Weak nights (under 30%): ${e(list)}`;
   }
-  L.push('');
-  L.push(`📅 New bookings: <b>${b.pace.made}</b> · ${b.pace.made_rooms} rooms · ${b.pace.made_nights} nights · ${e(fmtIDR(b.pace.made_value))}${arrowTxt(b.change.made)}`);
-  if (b.pace.cancelled) L.push(`❌ Cancelled: ${b.pace.cancelled} · ${e(fmtIDR(b.pace.cancelled_value))}`);
+  add('🔮 <b>Already booked</b>',
+      `• Next 14 days: <b>${b.books.next14.occupancy}%</b> · ${e(fmtIDR(b.books.next14.revenue))}`,
+      `• Next 30 days: <b>${b.books.next30.occupancy}%</b> · ${e(fmtIDR(b.books.next30.revenue))}`,
+      weak);
+
   const top = w.by_source.filter(s => s.revenue > 0).slice(0, 3);
   const stayRevenue = w.room + w.fnb_rate_plan;   // by_source covers stays only (room + rate-plan meals)
-  if (top.length && stayRevenue > 0) L.push(`🔗 Top sources: ${e(top.map(s => `${s.source} ${Math.round((s.revenue / stayRevenue) * 100)}%`).join(' · '))}`);
-  if (b.agents.total > 0) {
-    L.push(`🧾 Agents owe: <b>${e(fmtIDR(b.agents.total))}</b>${b.agents.overdue > 0 ? ` · ${e(fmtIDR(b.agents.overdue))} overdue` : ''}`);
+  add(`📅 <b>New bookings</b>: ${b.pace.made}${arrowTxt(b.change.made)}`,
+      `• ${b.pace.made_rooms} rooms · ${b.pace.made_nights} nights · ${e(fmtIDR(b.pace.made_value))}`,
+      b.pace.cancelled ? `• ❌ Cancelled: ${b.pace.cancelled} · ${e(fmtIDR(b.pace.cancelled_value))}` : '');
+
+  if (top.length && stayRevenue > 0) {
+    add('🔗 <b>Top sources</b>', ...top.map(s => `• ${e(s.source)}: ${Math.round((s.revenue / stayRevenue) * 100)}%`));
   }
-  return L.join('\n');
+  if (b.agents.total > 0) {
+    add(`🧾 <b>Agents owe</b>: ${e(fmtIDR(b.agents.total))}`,
+        b.agents.overdue > 0 ? `• Overdue: ${e(fmtIDR(b.agents.overdue))}` : '');
+  }
+  return sections.join('\n\n');
 }
 
 function weeklyOwnerEmail(b) {

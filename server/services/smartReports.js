@@ -249,12 +249,14 @@ function morningBriefTelegram(b) {
   L.push(`☀️ <b>${e(b.property_name)}</b> · ${e(fmtDateShort(b.date))}`);
   L.push('<i>Morning Brief</i>');
   L.push('');
-  L.push(`🛬 Arriving: <b>${rooms(b.arrivals.rooms)}</b> · ${b.arrivals.pax} pax`);
-  L.push(`🛏 In-house: <b>${rooms(b.in_house.rooms)}</b> · ${b.in_house.pax} pax`);
-  L.push(`🛫 Departing: <b>${rooms(b.departures.rooms)}</b> · ${b.departures.pax} pax`);
-  L.push(`📊 Tonight: <b>${b.tonight.rooms}/${b.tonight.sellable}</b> rooms (${b.tonight.pct}%)`);
-  if (b.breakfast_pax > 0) L.push(`🍳 Breakfast: <b>${b.breakfast_pax}</b> pax`);
-  if (b.to_collect.amount > 0) L.push(`💰 To collect: <b>${e(fmtIDR(b.to_collect.amount))}</b> from ${rooms(b.to_collect.rooms)} leaving`);
+  L.push('🏨 <b>Today</b>');
+  L.push(`• 🛬 Arriving: <b>${rooms(b.arrivals.rooms)}</b> · ${b.arrivals.pax} pax`);
+  L.push(`• 🛏 In-house: <b>${rooms(b.in_house.rooms)}</b> · ${b.in_house.pax} pax`);
+  L.push(`• 🛫 Departing: <b>${rooms(b.departures.rooms)}</b> · ${b.departures.pax} pax`);
+  L.push('');
+  L.push(`📊 <b>Tonight</b>: ${b.tonight.rooms} of ${b.tonight.sellable} rooms (${b.tonight.pct}%)`);
+  if (b.breakfast_pax > 0) L.push(`🍳 <b>Breakfast</b>: ${b.breakfast_pax} pax`);
+  if (b.to_collect.amount > 0) L.push(`💰 <b>To collect</b>: ${e(fmtIDR(b.to_collect.amount))} from ${rooms(b.to_collect.rooms)} leaving`);
 
   const items = [];
   if (a.dirty_for_arrival.length) items.push(`🧹 Not clean, guest arriving: ${e(a.dirty_for_arrival.join(', '))}`);

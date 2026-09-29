@@ -29,15 +29,17 @@ async function sendControlAlert(propertyId, { bookingIds, userId, headline, deta
       db.query('SELECT name, role FROM users WHERE id = $1', [userId]),
       db.query('SELECT property_name FROM property_settings WHERE property_id = $1', [propertyId]),
     ]);
-    const lines = [`👁 Owner alert — ${ps?.property_name || 'your hotel'}`, headline];
-    for (const d of details) lines.push(d);
-    for (const s of stays.slice(0, 10)) {
-      lines.push(`🛏 ${s.unit_name} · ${s.guest_name} · ${fmtShort(s.check_in_date)}–${fmtShort(s.check_out_date)}`);
-    }
-    if (stays.length > 10) lines.push(`…and ${stays.length - 10} more rooms`);
-    lines.push(`👤 By: ${user?.name || 'unknown'}${user?.role ? ` (${user.role.replace(/-[0-9a-f-]{36}$/, '').replace(/_/g, ' ')})` : ''}`);
-    if (reason) lines.push(`📝 Reason: ${reason}`);
-    await telegram.sendAlert(propertyId, 'alert_owner_control', lines.join('\n'));
+    // Sections separated by a blank line, one fact per line (Telegram HTML).
+    const h = telegram.escapeHtml;
+    const sections = [
+      [`👁 <b>Owner alert</b> — ${h(ps?.property_name || 'your hotel')}`, `<b>${h(headline)}</b>`],
+      details.map(d => `• ${h(d)}`),
+      [...stays.slice(0, 10).map(s => `🛏 <b>${h(s.unit_name)}</b> · ${h(s.guest_name)} · ${fmtShort(s.check_in_date)} – ${fmtShort(s.check_out_date)}`),
+       stays.length > 10 ? `…and ${stays.length - 10} more rooms` : ''],
+      [`👤 <b>By</b>: ${h(user?.name || 'unknown')}${user?.role ? ` <i>(${h(user.role.replace(/-[0-9a-f-]{36}$/, '').replace(/_/g, ' '))})</i>` : ''}`,
+       reason ? `📝 <b>Reason</b>: ${h(reason)}` : ''],
+    ].map(s => s.filter(Boolean)).filter(s => s.length);
+    await telegram.sendAlert(propertyId, 'alert_owner_control', sections.map(s => s.join('\n')).join('\n\n'), { html: true });
   } catch (err) {
     console.error('Owner alert failed:', err.message);
   }

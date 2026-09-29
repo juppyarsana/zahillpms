@@ -44,17 +44,17 @@ router.post('/alerts', gate, async (req, res) => {
     const { sendAlert, escapeHtml: h } = require('../services/telegramService');
     const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
     const items = (Array.isArray(a.items) ? a.items : []).slice(0, 15)
-      .map(i => `${parseInt(i.qty, 10) || 1}× ${h(String(i.name || '').slice(0, 60))}`).join(', ');
+      .map(i => `• ${parseInt(i.qty, 10) || 1}× ${h(String(i.name || '').slice(0, 60))}`);
     const at = a.at ? new Date(a.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' }) : '';
+    // Same layout as the session alert: sections separated by a blank line.
     const msg = [
-      `🎁 <b>Restaurant complimentary — ${h(String(a.department || '').slice(0, 40))}</b>`,
-      `${rp(a.value)} menu value · cost ${rp(a.cost)}`,
-      `For: ${h(String(a.for || '').slice(0, 120))}`,
-      `Reason: ${h(String(a.reason || '').slice(0, 300))}`,
-      items ? `Items: ${items}` : '',
-      `${a.table ? `${h(String(a.table).slice(0, 40))} · ` : ''}by ${h(String(a.cashier || 'Staff').slice(0, 60))}${at ? ` at ${at}` : ''}`,
-    ].filter(Boolean).join('\n');
-    await sendAlert(req.propertyId, 'alert_restaurant_complimentary', msg);
+      [`🎁 <b>Restaurant complimentary — ${h(String(a.department || '').slice(0, 40))}</b>`,
+       `<i>${a.table ? `${h(String(a.table).slice(0, 40))} · ` : ''}by ${h(String(a.cashier || 'Staff').slice(0, 60))}${at ? ` at ${at}` : ''}</i>`],
+      [`💰 <b>${rp(a.value)}</b> menu value`, `• Cost: ${rp(a.cost)}`],
+      [`👤 <b>For</b>: ${h(String(a.for || '').slice(0, 120))}`, `📝 <b>Reason</b>: ${h(String(a.reason || '').slice(0, 300))}`],
+      items.length ? ['🍽 <b>Items</b>', ...items] : [],
+    ].filter(s => s.length).map(s => s.join('\n')).join('\n\n');
+    await sendAlert(req.propertyId, 'alert_restaurant_complimentary', msg, { html: true });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -92,7 +92,7 @@ router.post('/sessions', gate, async (req, res) => {
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     // Telegram to whoever has "Restaurant sessions" ticked (Reports & Alerts).
     require('../services/telegramService')
-      .sendAlert(req.propertyId, 'alert_restaurant_session', pos.sessionAlertText(req.body, result)).catch(() => {});
+      .sendAlert(req.propertyId, 'alert_restaurant_session', pos.sessionAlertText(req.body, result), { html: true }).catch(() => {});
     const { changes, ...reply } = result;
     res.status(result.replaced ? 200 : 201).json(reply);
   } catch (err) {

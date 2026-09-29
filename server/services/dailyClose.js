@@ -215,29 +215,48 @@ function arrow(pct, suffix = '%') {
 function dailyCloseTelegram(b) {
   const e = telegram.escapeHtml;
   const t = b.today;
-  const L = [];
-  L.push(`🌙 <b>${e(b.property_name)}</b> · ${e(fmtDay(b.date))}`);
-  L.push('<i>Daily Close</i>');
-  L.push('');
-  L.push(`💰 Revenue: <b>${e(fmtIDR(t.total))}</b>${b.change.total != null ? ` (${arrow(b.change.total)})` : ''}`);
-  L.push(`     Room ${e(fmtIDR(t.room))}${t.fnb ? ` · F&amp;B ${e(fmtIDR(t.fnb))}` : ''}${t.extras ? ` · Extras ${e(fmtIDR(t.extras))}` : ''}${t.activities ? ` · Activities ${e(fmtIDR(t.activities))}` : ''}`);
-  L.push(`🛏 Occupancy: <b>${t.occupancy}%</b> (${t.rooms_sold}/${b.sellable})${b.change.occupancy_pts ? ` ${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts` : ''}`);
-  if (t.rooms_sold > 0) L.push(`     ADR ${e(fmtIDR(t.adr))} · RevPAR ${e(fmtIDR(t.revpar))}`);
-  if (t.comp_nights > 0 || t.comp_value > 0) L.push(`🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(t.comp_value))}`);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // Sections separated by a blank line, one fact per line.
+  const sections = [];
+  const add = (...lines) => { const l = lines.filter(Boolean); if (l.length) sections.push(l.join('\n')); };
+
+  add(`🌙 <b>${e(b.property_name)}</b> · ${e(fmtDay(b.date))}`, '<i>Daily Close</i>');
+
+  add(`💰 <b>Revenue ${e(fmtIDR(t.total))}</b>${b.change.total != null ? ` <i>(${arrow(b.change.total)})</i>` : ''}`,
+      `• Room: ${e(fmtIDR(t.room))}`,
+      t.fnb ? `• F&amp;B: ${e(fmtIDR(t.fnb))}` : '',
+      t.extras ? `• Extras: ${e(fmtIDR(t.extras))}` : '',
+      t.activities ? `• Activities: ${e(fmtIDR(t.activities))}` : '');
+
+  add(`🛏 <b>Occupancy ${t.occupancy}%</b> · ${t.rooms_sold} of ${b.sellable} rooms${b.change.occupancy_pts ? ` <i>(${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts)</i>` : ''}`,
+      t.rooms_sold > 0 ? `• ADR: ${e(fmtIDR(t.adr))}` : '',
+      t.rooms_sold > 0 ? `• RevPAR: ${e(fmtIDR(t.revpar))}` : '');
+
+  if (t.comp_nights > 0 || t.comp_value > 0) {
+    add(`🎁 <b>Complimentary stays</b>: ${plural(t.comp_nights, 'night')} · value ${e(fmtIDR(t.comp_value))}`);
+  }
   const fc = b.fnb_complimentary;
-  if (fc && fc.bills) L.push(`🍽 Restaurant complimentary: ${fc.bills} bill${fc.bills === 1 ? '' : 's'} · ${e(fmtIDR(fc.value))} (cost ${e(fmtIDR(fc.cost))})\n     ${e(fc.by_department.map(d => `${d.department} ${fmtIDR(d.value)}`).join(' · '))}`);
-  L.push(`💳 Collected: <b>${e(fmtIDR(b.collected.total))}</b>`);
-  if (b.collected.by_method.length) L.push(`     ${e(b.collected.by_method.map(m => `${m.method} ${fmtIDR(m.amount)}`).join(' · '))}`);
-  L.push('');
-  L.push(`📅 New bookings: <b>${b.made.bookings}</b>${b.made.rooms ? ` · ${b.made.rooms} room${b.made.rooms !== 1 ? 's' : ''} · ${b.made.nights} nights · ${e(fmtIDR(b.made.value))}` : ''}`);
-  if (b.cancelled.length) L.push(`❌ Cancelled: <b>${b.cancelled_summary.bookings}</b> · ${b.cancelled.length} room${b.cancelled.length !== 1 ? 's' : ''} · ${e(fmtIDR(b.cancelled_value))}`);
-  if (b.no_shows.length) L.push(`🚫 No-shows: <b>${b.no_shows.length}</b> — ${e(b.no_shows.map(n => n.unit_name).join(', '))}`);
-  L.push('');
+  if (fc && fc.bills) {
+    add(`🍽 <b>Restaurant complimentary</b>: ${plural(fc.bills, 'bill')} · ${e(fmtIDR(fc.value))}`,
+        ...fc.by_department.map(d => `• ${e(d.department)}: ${e(fmtIDR(d.value))}`),
+        `<i>Cost ${e(fmtIDR(fc.cost))}</i>`);
+  }
+
+  add(`💳 <b>Collected ${e(fmtIDR(b.collected.total))}</b>`,
+      ...b.collected.by_method.map(m => `• ${e(m.method)}: ${e(fmtIDR(m.amount))}`));
+
+  add(`📅 <b>New bookings</b>: ${b.made.bookings}`,
+      b.made.rooms ? `• ${plural(b.made.rooms, 'room')} · ${b.made.nights} nights · ${e(fmtIDR(b.made.value))}` : '',
+      b.cancelled.length ? `❌ <b>Cancelled</b>: ${b.cancelled_summary.bookings} · ${plural(b.cancelled.length, 'room')} · ${e(fmtIDR(b.cancelled_value))}` : '',
+      b.no_shows.length ? `🚫 <b>No-shows</b>: ${b.no_shows.length} — ${e(b.no_shows.map(n => n.unit_name).join(', '))}` : '');
+
   const n = b.next_day;
-  L.push(`☀️ ${e(fmtDay(n.date, { weekday: 'long' }))}: ${n.arrivals.rooms} arriving · ${n.departures.rooms} departing`);
-  if (n.to_collect.amount > 0) L.push(`💰 To collect from guests leaving: <b>${e(fmtIDR(n.to_collect.amount))}</b> (${n.to_collect.rows.length} room${n.to_collect.rows.length === 1 ? '' : 's'})`);
-  if (n.overdue.length) L.push(`⏰ Still checked in past check-out: <b>${n.overdue.length}</b> — ${e(n.overdue.map(o => o.unit_name).join(', '))}`);
-  return L.join('\n');
+  add(`☀️ <b>${e(fmtDay(n.date, { weekday: 'long' }))}</b>`,
+      `• Arriving: ${plural(n.arrivals.rooms, 'room')}`,
+      `• Departing: ${plural(n.departures.rooms, 'room')}`,
+      n.to_collect.amount > 0 ? `• To collect from guests leaving: <b>${e(fmtIDR(n.to_collect.amount))}</b> (${plural(n.to_collect.rows.length, 'room')})` : '',
+      n.overdue.length ? `• ⏰ Still checked in past check-out: <b>${n.overdue.length}</b> — ${e(n.overdue.map(o => o.unit_name).join(', '))}` : '');
+  return sections.join('\n\n');
 }
 
 function dailyCloseEmail(b) {

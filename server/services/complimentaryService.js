@@ -237,18 +237,20 @@ async function requestApproval({ propertyId, bookingId, scope, reason, user }) {
       { text: '❌ Decline', callback_data: `cmp:d:${request.id}` },
     ]],
   };
+  // Sections separated by a blank line, one fact per line (Telegram HTML).
+  const h = telegram.escapeHtml;
   const results = await Promise.all(codes.map(({ approver, code }) => telegram.sendToChat(token, approver.address, [
-    `🎁 Complimentary request — ${ps?.property_name || 'your hotel'}`,
-    `From: ${who}`,
-    `🛏 ${booking.unit_name} · ${booking.guest_name} · ${fmtShort(booking.check_in_date)}–${fmtShort(booking.check_out_date)} (${q.nights} night${q.nights === 1 ? '' : 's'})`,
-    `Free: ${SCOPES[scope].short}`,
-    `Price ${fmtIDR(q.current_total)} → ${fmtIDR(s.new_total)} (value ${fmtIDR(s.value_gross)})`,
-    `📝 Reason: ${reason}`,
-    '',
-    'Tap Approve or Decline below.',
-    `If the buttons don't work, give front desk this code instead: ${pretty(code)}`,
-    `Valid ${CODE_TTL_MIN} minutes, for this request only.`,
-  ].join('\n'), { replyMarkup: buttons })));
+    [`🎁 <b>Complimentary request</b> — ${h(ps?.property_name || 'your hotel')}`, `<i>From ${h(who)}</i>`],
+    [`🛏 <b>${h(booking.unit_name)}</b> · ${h(booking.guest_name)}`,
+     `• ${fmtShort(booking.check_in_date)} – ${fmtShort(booking.check_out_date)} · ${q.nights} night${q.nights === 1 ? '' : 's'}`],
+    [`🎁 <b>Free</b>: ${h(SCOPES[scope].short)}`,
+     `• Price: ${fmtIDR(q.current_total)} → ${fmtIDR(s.new_total)}`,
+     `• Value given: ${fmtIDR(s.value_gross)}`],
+    [`📝 <b>Reason</b>: ${h(reason)}`],
+    ['Tap <b>Approve</b> or <b>Decline</b> below.',
+     `If the buttons don't work, give front desk this code: <b>${pretty(code)}</b>`,
+     `<i>Valid ${CODE_TTL_MIN} minutes, for this request only.</i>`],
+  ].map(s => s.join('\n')).join('\n\n'), { html: true, replyMarkup: buttons })));
   await Promise.all(codes.map((c, i) => (results[i].ok && results[i].message_id
     ? db.query('UPDATE complimentary_request_codes SET message_id = $1 WHERE request_id = $2 AND code_hash = $3',
         [results[i].message_id, request.id, c.hash])

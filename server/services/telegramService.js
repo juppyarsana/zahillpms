@@ -92,7 +92,9 @@ function escapeHtml(s) {
 // see services/smartReports.js REPORTS) — only Telegram recipients (Settings →
 // Reports & Alerts) who have it ticked get it. Free for every property.
 // Fire-and-forget: never throws, one bad chat doesn't stop the others.
-async function sendAlert(propertyId, alertKey, message) {
+// html: the message uses Telegram HTML (<b>, <i>) — escape anything typed by
+// staff / guests with escapeHtml before building it.
+async function sendAlert(propertyId, alertKey, message, { html = false } = {}) {
   try {
     const token = await botTokenFor(propertyId);
     if (!token) return;
@@ -105,7 +107,7 @@ async function sendAlert(propertyId, alertKey, message) {
          AND address IS NOT NULL AND $2 = ANY(reports)`,
       [propertyId, alertKey]
     );
-    await Promise.all(chats.map(({ address }) => sendToChat(token, address, message)));
+    await Promise.all(chats.map(({ address }) => sendToChat(token, address, message, { html })));
   } catch (err) {
     console.error('Telegram alert failed:', err.message);
   }

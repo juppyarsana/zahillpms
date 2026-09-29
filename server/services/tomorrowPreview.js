@@ -84,13 +84,22 @@ function tomorrowPreviewTelegram(b) {
   L.push(`🌆 <b>${e(b.property_name)}</b> · ${e(fmtDay(b.date, { weekday: 'long', day: 'numeric', month: 'short' }))}`);
   L.push('<i>Tomorrow Preview</i>');
   L.push('');
-  L.push(`🛬 Arriving: <b>${rooms(b.arrivals.rooms)}</b> · ${b.arrivals.pax} pax${b.group_arrivals ? ` · 👥 ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`);
-  L.push(`🛫 Departing: <b>${rooms(b.departures.rooms)}</b> · ${b.departures.pax} pax`);
-  L.push(`🛏 Staying over: <b>${rooms(b.in_house.rooms)}</b> · ${b.in_house.pax} pax`);
-  L.push(`📊 ${e(day)} night: <b>${b.occupancy.rooms}/${b.occupancy.sellable}</b> rooms (${b.occupancy.pct}%) = ${b.arrivals.rooms} arriving + ${b.in_house.rooms} staying over`);
-  L.push(`🍳 Breakfast ${e(day)} morning: <b>${b.breakfast_pax}</b> pax <i>(guests sleeping here tonight)</i>`);
-  if (b.dinner_pax) L.push(`🍽 Dinner ${e(day)} night: <b>${b.dinner_pax}</b> pax`);
-  if (b.to_collect.amount > 0) L.push(`💰 To collect: <b>${e(fmtIDR(b.to_collect.amount))}</b> from ${b.to_collect.rows.length} of ${rooms(b.departures.rooms)} checking out ${e(day)} <i>(staying guests not included)</i>`);
+  L.push('🏨 <b>Guests</b>');
+  L.push(`• 🛬 Arriving: <b>${rooms(b.arrivals.rooms)}</b> · ${b.arrivals.pax} pax${b.group_arrivals ? ` · 👥 ${b.group_arrivals} group${b.group_arrivals === 1 ? '' : 's'}` : ''}`);
+  L.push(`• 🛫 Departing: <b>${rooms(b.departures.rooms)}</b> · ${b.departures.pax} pax`);
+  L.push(`• 🛏 Staying over: <b>${rooms(b.in_house.rooms)}</b> · ${b.in_house.pax} pax`);
+  L.push('');
+  L.push(`📊 <b>${e(day)} night</b>: ${b.occupancy.rooms} of ${b.occupancy.sellable} rooms (${b.occupancy.pct}%)`);
+  L.push(`<i>${b.arrivals.rooms} arriving + ${b.in_house.rooms} staying over</i>`);
+  L.push('');
+  L.push('🍳 <b>Kitchen</b>');
+  L.push(`• Breakfast ${e(day)} morning: <b>${b.breakfast_pax}</b> pax`);
+  if (b.dinner_pax) L.push(`• Dinner ${e(day)} night: <b>${b.dinner_pax}</b> pax`);
+  if (b.to_collect.amount > 0) {
+    L.push('');
+    L.push(`💰 <b>To collect</b>: ${e(fmtIDR(b.to_collect.amount))}`);
+    L.push(`<i>From ${b.to_collect.rows.length} of ${rooms(b.departures.rooms)} checking out ${e(day)} — staying guests not included</i>`);
+  }
 
   if (b.prepare.length) {
     L.push('');

@@ -51,6 +51,22 @@ const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.age
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
+// Telegram "new booking" alert (Reports & Alerts → New bookings): sections
+// separated by a blank line, one fact per line (Telegram HTML).
+function newBookingAlert({ title, guest, rooms, checkIn, checkOut, guests, total, by }) {
+  const h = telegramService.escapeHtml;
+  const d = v => { const [y, m, dd] = String(v).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  const nights = Math.round((Date.parse(String(checkOut).slice(0, 10)) - Date.parse(String(checkIn).slice(0, 10))) / 86400000);
+  return [
+    [`📅 <b>${h(title)}</b>`, guest ? `<b>${h(guest)}</b>` : ''],
+    [`🛏 ${h((rooms || []).join(', '))}`,
+     `• ${d(checkIn)} – ${d(checkOut)} · ${nights} night${nights === 1 ? '' : 's'}`,
+     guests ? `• ${guests} guest${Number(guests) === 1 ? '' : 's'}` : '',
+     total != null && Number.isFinite(Number(total)) ? `• ${h(fmtIDR(Math.round(total)))}` : ''],
+    by ? [`<i>By ${h(by)}</i>`] : [],
+  ].map(s => s.filter(Boolean)).filter(s => s.length).map(s => s.join('\n')).join('\n\n');
+}
+
 // Adds guest_balance_due (what the guest still owes — checkoutBalance rule:
 // whole stay, 0 for a stay billed to its agent, extras only for an OTA) to
 // checked-in booking rows, for the Check-in / out and Quick Check-in lists.
@@ -1130,7 +1146,10 @@ router.post('/', auth, async (req, res) => {
     sendBookingEmail(req.propertyId, booking.id, 'booking_confirmed')
       .catch(err => console.error('Email trigger failed:', err));
     telegramService.sendAlert(req.propertyId, 'alert_new_booking',
-      `📅 New booking: ${guestRows[0].name} — ${unitRows[0].name}, ${check_in_date} to ${check_out_date}`
+      newBookingAlert({ title: 'New booking', guest: guestRows[0].name, rooms: [unitRows[0].name],
+        checkIn: check_in_date, checkOut: check_out_date, guests: booking.num_guests,
+        total: parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0), by: req.user?.name }),
+      { html: true }
     ).catch(() => {});
 
     res.status(201).json(booking);
@@ -1775,7 +1794,9 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     await client.query('COMMIT');
 
     telegramService.sendAlert(req.propertyId, 'alert_new_booking',
-      `📅 Room added to a group booking: ${unit.name}, ${checkIn} to ${checkOut}`
+      newBookingAlert({ title: 'Room added to a group booking', rooms: [unit.name], checkIn, checkOut,
+        guests: booking.num_guests, total: payable, by: req.user?.name }),
+      { html: true }
     ).catch(() => {});
     res.status(201).json(booking);
   } catch (err) {

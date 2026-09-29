@@ -373,7 +373,9 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
          VALUES ($1, 'guest_request', 'medium', $2, $3) RETURNING id`,
         [`Please clean room — ${unit.name}`, unit.id, req.propertyId]
       );
-      telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🧹 Clean Room requested — ${unit.name}`).catch(() => {});
+      telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🧹 <b>Clean Room requested</b>
+
+🛏 ${telegramService.escapeHtml(unit.name)}`, { html: true }).catch(() => {});
       return res.status(201).json({ ok: true, task_id: rows[0].id });
     }
 
@@ -393,7 +395,9 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
        VALUES ($1, 'guest_request', 'high', $2, $3) RETURNING id`,
       [`Do Not Disturb — ${unit.name}`, unit.id, req.propertyId]
     );
-    telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🔕 Do Not Disturb — ${unit.name}`).catch(() => {});
+    telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🔕 <b>Do Not Disturb</b>
+
+🛏 ${telegramService.escapeHtml(unit.name)}`, { html: true }).catch(() => {});
     res.status(201).json({ ok: true, task_id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
