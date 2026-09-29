@@ -32,6 +32,35 @@ router.get('/rooms/:room', gate, async (req, res) => {
   }
 });
 
+// POST /api/pos/alerts — an instant alert from the POS, sent on Telegram to
+// whoever has it ticked in Reports & Alerts. Today: { type: 'complimentary',
+// ref, department, for, reason, value, cost, table, cashier, at, items:[{name,qty}] }
+// — a restaurant bill given away and charged to a department (no approval in
+// the POS; the manager is told afterwards).
+router.post('/alerts', gate, async (req, res) => {
+  const a = req.body || {};
+  if (a.type !== 'complimentary') return res.status(400).json({ error: 'Unknown alert type' });
+  try {
+    const { sendAlert, escapeHtml: h } = require('../services/telegramService');
+    const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+    const items = (Array.isArray(a.items) ? a.items : []).slice(0, 15)
+      .map(i => `${parseInt(i.qty, 10) || 1}× ${h(String(i.name || '').slice(0, 60))}`).join(', ');
+    const at = a.at ? new Date(a.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' }) : '';
+    const msg = [
+      `🎁 <b>Restaurant complimentary — ${h(String(a.department || '').slice(0, 40))}</b>`,
+      `${rp(a.value)} menu value · cost ${rp(a.cost)}`,
+      `For: ${h(String(a.for || '').slice(0, 120))}`,
+      `Reason: ${h(String(a.reason || '').slice(0, 300))}`,
+      items ? `Items: ${items}` : '',
+      `${a.table ? `${h(String(a.table).slice(0, 40))} · ` : ''}by ${h(String(a.cashier || 'Staff').slice(0, 60))}${at ? ` at ${at}` : ''}`,
+    ].filter(Boolean).join('\n');
+    await sendAlert(req.propertyId, 'alert_restaurant_complimentary', msg);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/pos/transactions — charge a bill to a room.
 // Body: { room | booking_id, amount (NET: after discount, before service/tax)
 //         OR gross_amount (all-in: what the guest pays — the PMS takes its own

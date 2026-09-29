@@ -47,6 +47,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: true,
   },
+  alert_restaurant_complimentary: {
+    type: 'alert',
+    label: 'Restaurant complimentary',
+    when: 'Instantly',
+    description: 'A restaurant bill given away in the POS and charged to a department (FO, Sales, HK, Owner…): value, cost, for whom and why, who did it.',
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram'],
+    paid: false,
+  },
   approve_complimentary: {
     type: 'alert',
     label: 'Approve complimentary stays',

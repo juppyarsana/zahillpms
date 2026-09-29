@@ -136,6 +136,27 @@ async function bookingActivity(propertyId, date) {
 
 // date: the day to close (default yesterday, WITA — the day the 00:05 night
 // audit just closed).
+// Restaurant bills given away in the POS (complimentary, charged to a
+// department) on a business day — from the sessions the POS sent
+// (pos_sessions.summary.complimentary). Not revenue: value = menu price,
+// cost = ingredient cost.
+async function restaurantComplimentary(propertyId, day) {
+  const { rows } = await db.query(
+    `SELECT summary->'complimentary' AS c FROM pos_sessions WHERE property_id = $1 AND business_date = $2`, [propertyId, day]);
+  const byDept = new Map();
+  let bills = 0, value = 0, cost = 0;
+  for (const { c } of rows) {
+    if (!c) continue;
+    bills += c.bills || 0; value += Number(c.value) || 0; cost += Number(c.cost) || 0;
+    for (const d of c.by_department || []) {
+      const x = byDept.get(d.department) || { department: d.department, bills: 0, value: 0, cost: 0 };
+      x.bills += d.bills || 0; x.value += Number(d.value) || 0; x.cost += Number(d.cost) || 0;
+      byDept.set(d.department, x);
+    }
+  }
+  return { bills, value, cost, by_department: [...byDept.values()].sort((a, b) => b.value - a.value) };
+}
+
 async function buildDailyClose(propertyId, { date } = {}) {
   const day = date || addDays(todayWITA(), -1);
   const { loadGuestLists, loadBalanceDue } = require('../routes/bookings');
@@ -144,13 +165,14 @@ async function buildDailyClose(propertyId, { date } = {}) {
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
   ]);
   const sellable = parseInt(u.sellable, 10) || 0;
-  const [today, lastWeek, money, activity, next, due] = await Promise.all([
+  const [today, lastWeek, money, activity, next, due, fnbComp] = await Promise.all([
     dayFigures(propertyId, day, sellable),
     dayFigures(propertyId, addDays(day, -7), sellable),
     collected(propertyId, day),
     bookingActivity(propertyId, day),
     loadGuestLists(propertyId, addDays(day, 1)),
     loadBalanceDue(propertyId, addDays(day, 1)),
+    restaurantComplimentary(propertyId, day),
   ]);
   // Same whole-stay figure as the Balance Due page; agent-billed stays aren't collected at the desk.
   const collectRows = [...due.departing, ...due.overdue].filter(r => !r.agent_billed);
@@ -166,6 +188,7 @@ async function buildDailyClose(propertyId, { date } = {}) {
       adr: change(today.adr, lastWeek.adr),
     },
     collected: money,
+    fnb_complimentary: fnbComp,
     ...activity,
     next_day: {
       date: addDays(day, 1),
@@ -201,6 +224,8 @@ function dailyCloseTelegram(b) {
   L.push(`🛏 Occupancy: <b>${t.occupancy}%</b> (${t.rooms_sold}/${b.sellable})${b.change.occupancy_pts ? ` ${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts` : ''}`);
   if (t.rooms_sold > 0) L.push(`     ADR ${e(fmtIDR(t.adr))} · RevPAR ${e(fmtIDR(t.revpar))}`);
   if (t.comp_nights > 0 || t.comp_value > 0) L.push(`🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${e(fmtIDR(t.comp_value))}`);
+  const fc = b.fnb_complimentary;
+  if (fc && fc.bills) L.push(`🍽 Restaurant complimentary: ${fc.bills} bill${fc.bills === 1 ? '' : 's'} · ${e(fmtIDR(fc.value))} (cost ${e(fmtIDR(fc.cost))})\n     ${e(fc.by_department.map(d => `${d.department} ${fmtIDR(d.value)}`).join(' · '))}`);
   L.push(`💳 Collected: <b>${e(fmtIDR(b.collected.total))}</b>`);
   if (b.collected.by_method.length) L.push(`     ${e(b.collected.by_method.map(m => `${m.method} ${fmtIDR(m.amount)}`).join(' · '))}`);
   L.push('');
@@ -261,6 +286,10 @@ function dailyCloseEmail(b) {
     ${t.comp_nights > 0 || t.comp_value > 0 ? `<div style="font-size:13px;color:#047857;margin:10px 0 0;">🎁 Complimentary: ${t.comp_nights} night${t.comp_nights === 1 ? '' : 's'} · value ${esc(fmtIDR(t.comp_value))} before tax (left out of ADR)</div>` : ''}
 
     ${section('Revenue', table([{ label: '' }, { label: 'This day', right: true }, { label: 'Last week', right: true }], revRows, ''))}
+    ${b.fnb_complimentary && b.fnb_complimentary.bills ? section('F&amp;B — restaurant complimentary', table([{ label: 'Charged to' }, { label: 'Bills', right: true }, { label: 'Menu value', right: true }, { label: 'Cost', right: true }],
+      [...b.fnb_complimentary.by_department.map(d => [esc(d.department), d.bills, esc(fmtIDR(d.value)), esc(fmtIDR(d.cost))]),
+       ['<b>Total</b>', `<b>${b.fnb_complimentary.bills}</b>`, `<b>${esc(fmtIDR(b.fnb_complimentary.value))}</b>`, `<b>${esc(fmtIDR(b.fnb_complimentary.cost))}</b>`]], '')
+      + '<div style="font-size:12px;color:#6b7280;margin-top:6px;">Given away in the restaurant and charged to these departments — not in revenue. Menu value at menu price; cost = ingredients.</div>') : ''}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],
       b.collected.by_method.map(m => [esc(m.method), esc(fmtIDR(m.amount))]), 'No payments received.'))}
     ${section('New bookings made', table([{ label: 'Guest' }, { label: 'Room' }, { label: 'Arrives' }, { label: 'Value', right: true }],
