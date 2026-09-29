@@ -1812,6 +1812,18 @@ owner's guests) instead of typing Rp 0 — with a reason, who approved it, and h
 
 ---
 
+## Old F&B stack in the PMS — retire (decided 2026-09-29)
+
+The property's POS (zahillpos, branch `pms-integration`) now covers restaurant ordering. Production check 2026-09-29:
+`sales` by source — staff till (PMS Sales page = hotel extras, **stays**) 13, last used that day; `resto_staff` (Resto
+app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none yet (POS still on staging).
+1. **Now (owner, no code):** superadmin → switch `resto_ordering` off for Zahill.
+2. **After 2–4 quiet weeks (one pass, full backup first):** remove `resto-display/`, `kitchen-display/`, `routes/resto.js`,
+   `restoGuest.js`, `kitchen.js`, `tables.js`, table sessions, the `resto_ordering` module and the `resto.` / `kitchen.`
+   sub-domains; old sales stay in the reports.
+3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
+   food menu and the room-service confirm queue go too.
+
 ## Next migration number: 088
 
 ---
