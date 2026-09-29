@@ -383,7 +383,7 @@ export default function Reports() {
           { item: 'Food & beverage', detail: '', amount: rev.fnb.total, ...group },
           { item: 'Meals in the rate plan', detail: 'breakfast / half / full board', amount: rev.fnb.rate_plan, ...sub },
           { item: 'Breakfast in extras', detail: 'e.g. extra bed with breakfast', amount: rev.fnb.extras, ...sub },
-          { item: 'Restaurant & POS', detail: 'resto app, room dining, external POS', amount: rev.fnb.outlets, ...sub },
+          { item: 'Restaurant & POS', detail: 'charged to rooms + paid at the restaurant (POS sessions)', amount: rev.fnb.outlets, ...sub },
           { item: 'Extras', detail: 'Sales items', amount: rev.extras.total, ...group },
           ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, ...sub })),
           { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, ...group },

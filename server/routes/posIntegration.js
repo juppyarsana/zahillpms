@@ -50,6 +50,23 @@ router.post('/transactions', gate, async (req, res) => {
   }
 });
 
+// POST /api/pos/sessions — a restaurant session's summary (Breakfast / Lunch /
+// Dinner) sent from the POS Transactions page. Stored per business day +
+// session; sending again replaces it. Body: { business_date, session, label,
+// started_at, ended_at, bills, outlet: { bills, net, service, tax, total },
+// room_charges: { bills, total, list }, by_method, categories, discounts,
+// open_bills, breakfast: { rooms_expected, pax_expected, rooms_came, pax_came,
+// not_came } | null, sent_by }. outlet.net → F&B revenue in the reports.
+router.post('/sessions', gate, async (req, res) => {
+  try {
+    const result = await pos.saveSession(req.propertyId, req.body);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(result.replaced ? 200 : 201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/pos/breakfast?date=YYYY-MM-DD (default today, WITA) — the rooms
 // having breakfast that morning, for the POS waiter tablet. Same data and rule
 // as Guest Lists → Kitchen (bookings.loadKitchen): guests who slept here the

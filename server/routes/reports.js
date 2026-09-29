@@ -190,6 +190,15 @@ async function getReport(propertyId, from, to) {
     FROM x WHERE NOT comp
     GROUP BY 1
   `, [from, to, propertyId]);
+  // Restaurant sessions sent by the POS (migration 086): bills paid at the
+  // restaurant, NET, on the session's business day → F&B outlets. Room
+  // charges aren't in it (they're sales above), nor package breakfasts.
+  const posSessionsQ = db.query(`
+    SELECT business_date AS date, COALESCE(SUM(outlet_net), 0) AS net, COUNT(*) AS sessions
+    FROM pos_sessions
+    WHERE property_id = $3 AND business_date BETWEEN $1::date AND $2::date
+    GROUP BY 1
+  `, [from, to, propertyId]);
   const expensesDailyQ = db.query(`
     SELECT incurred_on AS date, COALESCE(SUM(amount), 0) AS amount
     FROM expenses
@@ -227,19 +236,21 @@ async function getReport(propertyId, from, to) {
 
   const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }, { rows: [expenses] }, { rows: [addon] }, { rows: [activity] }] =
     await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ, expensesQ, addonQ, activityQ]);
-  const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }, { rows: actDaily }] =
-    await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ, activityDailyQ]);
+  const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }, { rows: actDaily }, { rows: posDaily }] =
+    await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ, activityDailyQ, posSessionsQ]);
   const dayKey = d => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   const ancByDay = new Map(ancDaily.map(r => [dayKey(r.date), r]));
   const addonByDay = new Map(addonDaily.map(r => [dayKey(r.date), r]));
   const expByDay = new Map(expDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
   const actByDay = new Map(actDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
+  const posByDay = new Map(posDaily.map(r => [dayKey(r.date), parseFloat(r.net)]));
+  const posSessionsNet = posDaily.reduce((sum, r) => sum + parseFloat(r.net), 0);
   for (const d of daily) {
     const sa = ancByDay.get(dayKey(d.date));
     const ad = addonByDay.get(dayKey(d.date));
     d.fnb_rate_plan = parseFloat(d.fnb_revenue);
     d.fnb_extras = (sa ? parseFloat(sa.meal) : 0) + (ad ? parseFloat(ad.meal) : 0);
-    d.fnb_outlets = sa ? parseFloat(sa.outlet) : 0;
+    d.fnb_outlets = (sa ? parseFloat(sa.outlet) : 0) + (posByDay.get(dayKey(d.date)) || 0);
     d.fnb_revenue = d.fnb_rate_plan + d.fnb_extras + d.fnb_outlets;
     d.ancillary_revenue = (sa ? parseFloat(sa.amount) : 0) + (ad ? parseFloat(ad.extra) : 0);
     d.activity_revenue = actByDay.get(dayKey(d.date)) || 0;
@@ -252,7 +263,7 @@ async function getReport(propertyId, from, to) {
   // (extra bed nights, items with a breakfast part) + restaurant / POS sales.
   const fnbRatePlan = parseFloat(room.fnb_revenue);
   const fnbExtras = parseFloat(ancillary.sales_meal_revenue) + parseFloat(addon.meal);
-  const fnbOutlets = parseFloat(ancillary.outlet_revenue);
+  const fnbOutlets = parseFloat(ancillary.outlet_revenue) + posSessionsNet;
   const fnbRev = fnbRatePlan + fnbExtras + fnbOutlets;
   const ancRev = parseFloat(ancillary.ancillary_revenue) + parseFloat(addon.extra);
   const activityRev = parseFloat(activity.revenue);
@@ -262,7 +273,10 @@ async function getReport(propertyId, from, to) {
     from, to,
     room_revenue: roomRev,
     fnb_revenue: fnbRev,
-    fnb_breakdown: { rate_plan: round2(fnbRatePlan), extras: round2(fnbExtras), outlets: round2(fnbOutlets) },
+    // outlets = restaurant / POS: bills charged to rooms (sales) + bills paid at
+    // the restaurant (POS sessions, `outlets_paid_at_outlet`).
+    fnb_breakdown: { rate_plan: round2(fnbRatePlan), extras: round2(fnbExtras), outlets: round2(fnbOutlets),
+                     outlets_paid_at_outlet: round2(posSessionsNet) },
     // ancillary_revenue = hotel extras (Sales items, extra bed nights) only;
     // activities are their own line.
     ancillary_revenue: ancRev,

@@ -148,4 +148,49 @@ async function postTransaction(propertyId, { bookingId, room, amount, grossAmoun
   }
 }
 
-module.exports = { listInHouseRooms, lookupRoom, postTransaction };
+
+// POS restaurant session (Breakfast / Lunch / Dinner) — POST /api/pos/sessions.
+// Stored as sent, keyed by business day + session: sending again replaces it.
+// outlet.net (bills paid at the restaurant, before service & tax) is what the
+// reports add to F&B; room charges already reached the folio one by one.
+const SESSION_KEYS = ['breakfast', 'lunch', 'dinner'];
+async function saveSession(propertyId, body) {
+  const b = body || {};
+  const date = String(b.business_date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return { error: 'business_date must be YYYY-MM-DD', status: 400 };
+  if (!SESSION_KEYS.includes(b.session)) return { error: 'session must be breakfast, lunch or dinner', status: 400 };
+  const o = b.outlet || {};
+  const money = v => { const n = Number(v ?? 0); return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN; };
+  const outlet = { bills: parseInt(o.bills, 10) || 0, net: money(o.net), service: money(o.service), tax: money(o.tax), total: money(o.total) };
+  if ([outlet.net, outlet.service, outlet.tax, outlet.total].some(n => !Number.isFinite(n) || n < 0)) {
+    return { error: 'outlet amounts must be numbers ≥ 0', status: 400 };
+  }
+  const roomTotal = money(b.room_charges?.total);
+  const bf = b.breakfast || null;
+  const time = v => (v && !isNaN(Date.parse(v)) ? v : null);
+  const { rows: [row] } = await db.query(
+    `INSERT INTO pos_sessions (property_id, business_date, session_key, label, started_at, ended_at,
+        bills, outlet_bills, outlet_net, outlet_service, outlet_tax, outlet_total, room_charge_total,
+        breakfast_pax_expected, breakfast_pax_came, summary, sent_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     ON CONFLICT (property_id, business_date, session_key) DO UPDATE SET
+        label = EXCLUDED.label, started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at,
+        bills = EXCLUDED.bills, outlet_bills = EXCLUDED.outlet_bills, outlet_net = EXCLUDED.outlet_net,
+        outlet_service = EXCLUDED.outlet_service, outlet_tax = EXCLUDED.outlet_tax, outlet_total = EXCLUDED.outlet_total,
+        room_charge_total = EXCLUDED.room_charge_total,
+        breakfast_pax_expected = EXCLUDED.breakfast_pax_expected, breakfast_pax_came = EXCLUDED.breakfast_pax_came,
+        summary = EXCLUDED.summary, sent_by = EXCLUDED.sent_by,
+        sent_at = NOW(), send_count = pos_sessions.send_count + 1
+     RETURNING id, business_date, session_key, outlet_net, send_count, first_sent_at, sent_at`,
+    [propertyId, date, b.session, String(b.label || '').slice(0, 30) || null, time(b.started_at), time(b.ended_at),
+     parseInt(b.bills, 10) || 0, outlet.bills, outlet.net, outlet.service, outlet.tax, outlet.total,
+     Number.isFinite(roomTotal) ? roomTotal : 0,
+     bf ? parseInt(bf.pax_expected, 10) || 0 : null, bf ? parseInt(bf.pax_came, 10) || 0 : null,
+     JSON.stringify(b), String(b.sent_by || '').slice(0, 100) || null]);
+  return {
+    id: row.id, business_date: date, session: row.session_key, outlet_net: parseFloat(row.outlet_net),
+    replaced: row.send_count > 1, send_count: row.send_count,
+  };
+}
+
+module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession };

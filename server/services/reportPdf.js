@@ -116,7 +116,7 @@ function buildReportPdf(report, property) {
       { item: 'Food & beverage', detail: '', amount: rev.fnb.total, _group: true },
       { item: 'Meals in the rate plan', detail: 'breakfast / half / full board', amount: rev.fnb.rate_plan, _indent: true },
       { item: 'Breakfast in extras', detail: 'e.g. extra bed with breakfast', amount: rev.fnb.extras, _indent: true },
-      { item: 'Restaurant & POS', detail: 'resto app, room dining, external POS', amount: rev.fnb.outlets, _indent: true },
+      { item: 'Restaurant & POS', detail: 'charged to rooms + paid at the restaurant (POS sessions)', amount: rev.fnb.outlets, _indent: true },
       { item: 'Extras', detail: 'Sales items', amount: rev.extras.total, _group: true },
       ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, _indent: true })),
       { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, _group: true },
