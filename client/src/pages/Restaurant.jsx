@@ -146,6 +146,11 @@ function TodayTab({ date, onOpenSession, onTab }) {
             : bf.came > bf.expected ? <>More than the hotel's breakfast list — check the POS is linked to this hotel</>
             : <>{pct(bf.came, bf.expected)}% of guests with breakfast{bf.mode ? ` · ${bf.mode === 'alacarte' ? 'à la carte' : 'buffet'}` : ''}
               {bf.value != null && <div>Value {fmtIDR(bf.value)} (net)</div>}</>} />
+        {(d.complimentary?.day.bills > 0 || d.complimentary?.month.bills > 0) && (
+          <Stat label="Complimentary" value={fmtIDR(d.complimentary.day.value)}
+            sub={<>{d.complimentary.day.bills ? `${plural(d.complimentary.day.bills, 'bill')} · ${d.complimentary.day.by_department.map(x => x.department).join(', ')}` : 'none this day'}
+              <div>This month {fmtIDR(d.complimentary.month.value)} · cost {fmtIDR(d.complimentary.month.cost)}</div></>} />
+        )}
         {d.fnb_share && <Stat label="F&B share this month" value={`${d.fnb_share.share}%`} sub={`${fmtIDR(d.fnb_share.fnb)} of ${fmtIDR(d.fnb_share.total)} hotel revenue`} />}
       </div>
 
@@ -221,7 +226,8 @@ function SessionsTab({ selected, onOpen, onClose }) {
                   <td style={{ textAlign: 'right' }}>{s.bills}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(s.outlet_total)}<div className="text-muted" style={{ fontSize: 11 }}>{fmtIDR(s.outlet_net)} before tax</div></td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(s.room_charge_total)}</td>
-                  <td>{s.session === 'breakfast' && s.breakfast_pax_expected != null ? `${s.breakfast_pax_came} / ${s.breakfast_pax_expected} came` : ''}</td>
+                  <td>{s.session === 'breakfast' && s.breakfast_pax_expected != null ? `${s.breakfast_pax_came} / ${s.breakfast_pax_expected} came` : ''}
+                    {s.comp_bills > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)' }}>🎁 {s.comp_bills} complimentary · {fmtIDR(s.comp_value)}</div>}</td>
                   <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtWhen(s.sent_at)}{s.sent_by ? ` · ${s.sent_by}` : ''}
                     {s.send_count > 1 && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{s.send_count} sends</span>}</td>
                 </tr>
@@ -275,6 +281,29 @@ function SessionDetail({ id, onClose }) {
               <div className="card mb-3">
                 <div className="card-title">By payment method</div>
                 {s.by_method.map(m => <div key={m.method} className="flex-between" style={{ fontSize: 13, padding: '3px 0' }}><span>{m.method} · {m.bills}</span><span>{fmtIDR(m.total)}</span></div>)}
+              </div>
+            )}
+
+            {s.complimentary?.bills > 0 && (
+              <div className="card mb-3" style={{ padding: 0 }}>
+                <div className="card-title" style={{ padding: '14px 16px 0' }}>
+                  🎁 Complimentary — {fmtIDR(s.complimentary.value)} menu value · cost {fmtIDR(s.complimentary.cost)}
+                </div>
+                <div className="text-muted" style={{ fontSize: 12, padding: '0 16px 8px' }}>Given away and charged to departments — not in the bills below or in revenue. {s.complimentary.by_department.map(d => `${d.department} ${fmtIDR(d.value)}`).join(' · ')}</div>
+                <div className="table-wrap"><table>
+                  <thead><tr><th>Time</th><th>Charged to</th><th>For</th><th>Reason</th><th>Items</th><th style={{ textAlign: 'right' }}>Value</th><th style={{ textAlign: 'right' }}>Cost</th></tr></thead>
+                  <tbody>{s.complimentary.list.map(c => (
+                    <tr key={c.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmtTime(c.paid_at)}</td>
+                      <td><b>{c.department}</b></td>
+                      <td>{c.for}{c.table ? <div className="text-muted" style={{ fontSize: 11 }}>{c.table} · {c.cashier}</div> : <div className="text-muted" style={{ fontSize: 11 }}>{c.cashier}</div>}</td>
+                      <td style={{ fontSize: 12 }}>{c.reason}</td>
+                      <td style={{ fontSize: 12 }}>{(c.items || []).map(i => `${i.qty}× ${i.name}`).join(', ')}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(c.value)}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(c.cost)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>
               </div>
             )}
 

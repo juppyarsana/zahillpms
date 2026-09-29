@@ -38,7 +38,30 @@ const sessionRow = s => ({
   outlet_total: r2(s.outlet_total), room_charge_total: r2(s.room_charge_total),
   breakfast_pax_expected: s.breakfast_pax_expected, breakfast_pax_came: s.breakfast_pax_came,
   sent_by: s.sent_by, sent_at: s.sent_at, first_sent_at: s.first_sent_at, send_count: s.send_count,
+  comp_bills: s.summary?.complimentary?.bills || 0, comp_value: r2(s.summary?.complimentary?.value || 0),
 });
+
+// Restaurant complimentary (bills given away in the POS, charged to a
+// department) over a period, from the sessions the POS sent: menu value + cost
+// per department. Never revenue.
+async function complimentary(propertyId, from, to) {
+  const { rows } = await db.query(
+    `SELECT summary->'complimentary' AS c FROM pos_sessions
+      WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [propertyId, from, to]);
+  const byDept = new Map();
+  let bills = 0, value = 0, cost = 0;
+  for (const { c } of rows) {
+    if (!c) continue;
+    bills += c.bills || 0; value += Number(c.value) || 0; cost += Number(c.cost) || 0;
+    for (const d of c.by_department || []) {
+      const x = byDept.get(d.department) || { department: d.department, bills: 0, value: 0, cost: 0 };
+      x.bills += d.bills || 0; x.value += Number(d.value) || 0; x.cost += Number(d.cost) || 0;
+      byDept.set(d.department, x);
+    }
+  }
+  return { bills, value: r2(value), cost: r2(cost),
+    by_department: [...byDept.values()].map(d => ({ ...d, value: r2(d.value), cost: r2(d.cost) })).sort((a, b) => b.value - a.value) };
+}
 
 // Room charges from the POS, NET (what the reports count) and as the guest saw
 // it (gross), by WITA day.
@@ -145,6 +168,7 @@ router.get('/overview', gate, async (req, res) => {
       month_from: monthStart, prev_month_from: prevMonthStart, prev_month_to: prevSameDay,
       breakfast, breakfast_trend: trend.map(t => ({ date: ymd(t.business_date), expected: t.expected, came: t.came })),
       missing, top_items: topItems, fnb_share: fnbShare,
+      complimentary: { day: await complimentary(pid, date, date), month: await complimentary(pid, monthStart, date) },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -178,7 +202,7 @@ router.get('/sessions/:id', gate, async (req, res) => {
     res.json({
       ...sessionRow(s),
       by_method: sum.by_method || [], categories: sum.categories || [], discounts: sum.discounts || 0,
-      open_bills: sum.open_bills || null, breakfast: sum.breakfast || null,
+      open_bills: sum.open_bills || null, breakfast: sum.breakfast || null, complimentary: sum.complimentary || null,
       room_charges: sum.room_charges?.list || [], bill_list: sum.bill_list || null,
       versions: versions.map(v => ({ version: v.version, sent_by: v.sent_by, sent_at: v.sent_at, changes: v.changes,
         outlet_total: r2(v.outlet_total), bills: v.bills })),
