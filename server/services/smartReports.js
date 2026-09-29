@@ -47,6 +47,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: true,
   },
+  alert_restaurant_session: {
+    type: 'alert',
+    label: 'Restaurant sessions',
+    when: 'When the POS sends a session',
+    description: 'Breakfast / Lunch / Dinner as the restaurant sends it from the POS: bills, takings paid at the restaurant and charged to rooms, payment methods, breakfast came, complimentary — and what changed when a session is sent again.',
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_restaurant_complimentary: {
     type: 'alert',
     label: 'Restaurant complimentary',

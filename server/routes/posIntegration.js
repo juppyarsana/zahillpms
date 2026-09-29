@@ -90,7 +90,11 @@ router.post('/sessions', gate, async (req, res) => {
   try {
     const result = await pos.saveSession(req.propertyId, req.body);
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
-    res.status(result.replaced ? 200 : 201).json(result);
+    // Telegram to whoever has "Restaurant sessions" ticked (Reports & Alerts).
+    require('../services/telegramService')
+      .sendAlert(req.propertyId, 'alert_restaurant_session', pos.sessionAlertText(req.body, result)).catch(() => {});
+    const { changes, ...reply } = result;
+    res.status(result.replaced ? 200 : 201).json(reply);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

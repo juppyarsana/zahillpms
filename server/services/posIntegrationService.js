@@ -238,7 +238,7 @@ async function saveSession(propertyId, body) {
     await client.query('COMMIT');
     return {
       id: row.id, business_date: date, session: row.session_key, outlet_net: parseFloat(row.outlet_net),
-      replaced: row.send_count > 1, send_count: row.send_count,
+      replaced: row.send_count > 1, send_count: row.send_count, changes,
     };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -246,4 +246,43 @@ async function saveSession(propertyId, body) {
   } finally { client.release(); }
 }
 
-module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession, sessionChanges };
+// Telegram text for a session the POS just sent (alert 'alert_restaurant_session'):
+// takings, how it was paid, breakfast, complimentary, and — when it's sent
+// again — what changed since the last send.
+function sessionAlertText(b, result) {
+  const { escapeHtml: h } = require('./telegramService');
+  const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+  const day = new Date(b.business_date + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const label = String(b.label || b.session || '').slice(0, 30);
+  const o = b.outlet || {};
+  const rc = b.room_charges || {};
+  const L = [];
+  L.push(`🍽 <b>${h(label)} — ${h(day)}</b>${result.send_count > 1 ? ` · sent again (${result.send_count}×)` : ''}`);
+  L.push(`${parseInt(b.bills, 10) || 0} bill${parseInt(b.bills, 10) === 1 ? '' : 's'} · <b>${rp((Number(o.total) || 0) + (Number(rc.total) || 0))}</b>`);
+  L.push(`Paid at the restaurant ${rp(o.total)} (${rp(o.net)} before service &amp; tax)`);
+  if (Number(rc.total)) L.push(`Charged to rooms ${rp(rc.total)} (${rc.bills || 0})`);
+  const methods = (b.by_method || []).filter(m => Number(m.total) && m.method !== 'Room Charge');
+  if (methods.length) L.push(h(methods.map(m => `${m.method} ${rp(m.total)}`).join(' · ')));
+  if (b.breakfast) {
+    const bf = b.breakfast;
+    L.push(`☀️ Breakfast came ${bf.pax_came || 0} / ${bf.pax_expected || 0}${bf.mode ? ` · ${bf.mode === 'alacarte' ? 'à la carte' : 'buffet'}` : ''}${bf.value != null ? ` · value ${rp(bf.value)}` : ''}`);
+  }
+  const c = b.complimentary;
+  if (c && c.bills) L.push(`🎁 Complimentary ${c.bills} · ${rp(c.value)}${(c.by_department || []).length ? ` (${h(c.by_department.map(d => `${d.department} ${rp(d.value)}`).join(', '))})` : ''}`);
+  if (b.open_bills && b.open_bills.bills) L.push(`⚠️ Still open: ${b.open_bills.bills} bill${b.open_bills.bills === 1 ? '' : 's'} · ${rp(b.open_bills.total)}`);
+  const ch = result.changes;
+  if (ch) {
+    const bits = [];
+    if ((ch.bills_added || []).length) bits.push(`+${ch.bills_added.length} bill${ch.bills_added.length === 1 ? '' : 's'}`);
+    if ((ch.bills_removed || []).length) bits.push(`−${ch.bills_removed.length} bill${ch.bills_removed.length === 1 ? '' : 's'}`);
+    if ((ch.bills_changed || []).length) bits.push(`${ch.bills_changed.length} changed`);
+    const money = t => !['Bills', 'Breakfast came'].includes(t.label);
+    const val = (t, v) => (v == null ? '—' : money(t) ? rp(v) : v);
+    for (const t of (ch.totals || []).slice(0, 3)) bits.push(`${t.label} ${val(t, t.from)} → ${val(t, t.to)}`);
+    if (bits.length) L.push(`Changes since last send: ${h(bits.join(' · '))}`);
+  }
+  if (b.sent_by) L.push(`Sent by ${h(String(b.sent_by).slice(0, 60))}`);
+  return L.join('\n');
+}
+
+module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession, sessionChanges, sessionAlertText };
