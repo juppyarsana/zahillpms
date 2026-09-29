@@ -118,7 +118,8 @@ function TodayTab({ date, onOpenSession, onTab }) {
         </div>
       )}
 
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      {/* auto-fit: the cards stretch to fill the row (auto-fill left empty columns) */}
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         {d.sessions.map(s => (
           <div key={s.session} className="stat-card" onClick={s.id ? () => onOpenSession(s.id) : undefined} style={{ cursor: s.id ? 'pointer' : 'default' }}>
             <div className="stat-label">{s.label}</div>
@@ -132,7 +133,7 @@ function TodayTab({ date, onOpenSession, onTab }) {
         ))}
       </div>
 
-      <div className="stat-grid">
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <Stat label={`F&B takings · ${date === d.today ? 'today' : fmtShort(date)}`} value={fmtIDR(d.day.gross)}
           sub={<>{fmtIDR(d.day.outlet.gross)} paid here · {fmtIDR(d.day.rooms.gross)} to rooms</>} />
         <Stat label="Bills" value={d.day.bills ? plural(d.day.bills, 'bill') : '—'}
@@ -142,6 +143,7 @@ function TodayTab({ date, onOpenSession, onTab }) {
           sub={<>vs same days last month {vs(d.month.gross, d.prev_month.gross) || '—'}</>} />
         <Stat label="Breakfast came" value={bf.came == null ? `— / ${bf.expected}` : `${bf.came} / ${bf.expected}`}
           sub={!bf.expected ? 'No guests with breakfast' : bf.came == null ? 'Breakfast not sent from the POS yet'
+            : bf.came > bf.expected ? <>More than the hotel's breakfast list — check the POS is linked to this hotel</>
             : <>{pct(bf.came, bf.expected)}% of guests with breakfast{bf.mode ? ` · ${bf.mode === 'alacarte' ? 'à la carte' : 'buffet'}` : ''}
               {bf.value != null && <div>Value {fmtIDR(bf.value)} (net)</div>}</>} />
         {d.fnb_share && <Stat label="F&B share this month" value={`${d.fnb_share.share}%`} sub={`${fmtIDR(d.fnb_share.fnb)} of ${fmtIDR(d.fnb_share.total)} hotel revenue`} />}
