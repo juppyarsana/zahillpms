@@ -21,6 +21,7 @@ export const MENU_DEFS = [
   { key: 'activities',       label: 'Activities',           group: 'Guest Experience' },
   { key: 'guest_board',      label: 'Guest Board',          group: 'Guest Experience' },
   { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
+  { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Operations' },
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },

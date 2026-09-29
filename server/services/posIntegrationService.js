@@ -150,15 +150,51 @@ async function postTransaction(propertyId, { bookingId, room, amount, grossAmoun
 
 
 // POS restaurant session (Breakfast / Lunch / Dinner) — POST /api/pos/sessions.
-// Stored as sent, keyed by business day + session: sending again replaces it.
-// outlet.net (bills paid at the restaurant, before service & tax) is what the
-// reports add to F&B; room charges already reached the folio one by one.
+// pos_sessions holds the latest copy (keyed by business day + session); every
+// send is also kept in pos_session_versions with what it changed (migration
+// 087). outlet.net (bills paid at the restaurant, before service & tax) is what
+// the reports add to F&B; room charges already reached the folio one by one.
 const SESSION_KEYS = ['breakfast', 'lunch', 'dinner'];
+const money2 = v => Math.round((Number(v) || 0) * 100) / 100;
+
+// What a send changed against the previous one. Bills are matched by their POS
+// id (bill_list — older POS builds didn't send it, then only totals compare).
+function sessionChanges(prev, next) {
+  if (!prev) return null;
+  const out = { bills_added: [], bills_removed: [], bills_changed: [], totals: [] };
+  const P = new Map((prev.bill_list || []).map(b => [b.id, b]));
+  const N = new Map((next.bill_list || []).map(b => [b.id, b]));
+  const brief = b => ({ id: b.id, total: money2(b.total), method: b.method, where: b.room ? `Room ${b.room}` : b.table || null });
+  if (prev.bill_list && next.bill_list) {
+    for (const [id, b] of N) if (!P.has(id)) out.bills_added.push(brief(b));
+    for (const [id, b] of P) if (!N.has(id)) out.bills_removed.push(brief(b));
+    for (const [id, b] of N) {
+      const a = P.get(id);
+      if (!a) continue;
+      const what = [];
+      if (money2(a.total) !== money2(b.total)) what.push({ field: 'total', from: money2(a.total), to: money2(b.total) });
+      if (a.method !== b.method) what.push({ field: 'method', from: a.method, to: b.method });
+      const items = x => (x.items || []).map(i => `${i.qty}× ${i.name}`).join(', ');
+      if (items(a) !== items(b)) what.push({ field: 'items', from: items(a), to: items(b) });
+      if (what.length) out.bills_changed.push({ ...brief(b), what });
+    }
+  }
+  const tot = [['Bills', x => x.bills], ['Paid at the restaurant', x => money2(x.outlet?.total)],
+    ['Before service & tax', x => money2(x.outlet?.net)], ['Charged to rooms', x => money2(x.room_charges?.total)],
+    ['Breakfast came', x => (x.breakfast ? x.breakfast.pax_came : null)]];
+  for (const [label, f] of tot) {
+    const a = f(prev), b = f(next);
+    if (a !== b && !(a == null && b == null)) out.totals.push({ label, from: a, to: b });
+  }
+  return out;
+}
+
 async function saveSession(propertyId, body) {
   const b = body || {};
   const date = String(b.business_date || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return { error: 'business_date must be YYYY-MM-DD', status: 400 };
   if (!SESSION_KEYS.includes(b.session)) return { error: 'session must be breakfast, lunch or dinner', status: 400 };
+  if (b.bill_list != null && !Array.isArray(b.bill_list)) return { error: 'bill_list must be a list', status: 400 };
   const o = b.outlet || {};
   const money = v => { const n = Number(v ?? 0); return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN; };
   const outlet = { bills: parseInt(o.bills, 10) || 0, net: money(o.net), service: money(o.service), tax: money(o.tax), total: money(o.total) };
@@ -168,29 +204,46 @@ async function saveSession(propertyId, body) {
   const roomTotal = money(b.room_charges?.total);
   const bf = b.breakfast || null;
   const time = v => (v && !isNaN(Date.parse(v)) ? v : null);
-  const { rows: [row] } = await db.query(
-    `INSERT INTO pos_sessions (property_id, business_date, session_key, label, started_at, ended_at,
-        bills, outlet_bills, outlet_net, outlet_service, outlet_tax, outlet_total, room_charge_total,
-        breakfast_pax_expected, breakfast_pax_came, summary, sent_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-     ON CONFLICT (property_id, business_date, session_key) DO UPDATE SET
-        label = EXCLUDED.label, started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at,
-        bills = EXCLUDED.bills, outlet_bills = EXCLUDED.outlet_bills, outlet_net = EXCLUDED.outlet_net,
-        outlet_service = EXCLUDED.outlet_service, outlet_tax = EXCLUDED.outlet_tax, outlet_total = EXCLUDED.outlet_total,
-        room_charge_total = EXCLUDED.room_charge_total,
-        breakfast_pax_expected = EXCLUDED.breakfast_pax_expected, breakfast_pax_came = EXCLUDED.breakfast_pax_came,
-        summary = EXCLUDED.summary, sent_by = EXCLUDED.sent_by,
-        sent_at = NOW(), send_count = pos_sessions.send_count + 1
-     RETURNING id, business_date, session_key, outlet_net, send_count, first_sent_at, sent_at`,
-    [propertyId, date, b.session, String(b.label || '').slice(0, 30) || null, time(b.started_at), time(b.ended_at),
-     parseInt(b.bills, 10) || 0, outlet.bills, outlet.net, outlet.service, outlet.tax, outlet.total,
-     Number.isFinite(roomTotal) ? roomTotal : 0,
-     bf ? parseInt(bf.pax_expected, 10) || 0 : null, bf ? parseInt(bf.pax_came, 10) || 0 : null,
-     JSON.stringify(b), String(b.sent_by || '').slice(0, 100) || null]);
-  return {
-    id: row.id, business_date: date, session: row.session_key, outlet_net: parseFloat(row.outlet_net),
-    replaced: row.send_count > 1, send_count: row.send_count,
-  };
+  const sentBy = String(b.sent_by || '').slice(0, 100) || null;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [prev] } = await client.query(
+      `SELECT summary FROM pos_sessions WHERE property_id = $1 AND business_date = $2 AND session_key = $3 FOR UPDATE`,
+      [propertyId, date, b.session]);
+    const { rows: [row] } = await client.query(
+      `INSERT INTO pos_sessions (property_id, business_date, session_key, label, started_at, ended_at,
+          bills, outlet_bills, outlet_net, outlet_service, outlet_tax, outlet_total, room_charge_total,
+          breakfast_pax_expected, breakfast_pax_came, summary, sent_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (property_id, business_date, session_key) DO UPDATE SET
+          label = EXCLUDED.label, started_at = EXCLUDED.started_at, ended_at = EXCLUDED.ended_at,
+          bills = EXCLUDED.bills, outlet_bills = EXCLUDED.outlet_bills, outlet_net = EXCLUDED.outlet_net,
+          outlet_service = EXCLUDED.outlet_service, outlet_tax = EXCLUDED.outlet_tax, outlet_total = EXCLUDED.outlet_total,
+          room_charge_total = EXCLUDED.room_charge_total,
+          breakfast_pax_expected = EXCLUDED.breakfast_pax_expected, breakfast_pax_came = EXCLUDED.breakfast_pax_came,
+          summary = EXCLUDED.summary, sent_by = EXCLUDED.sent_by,
+          sent_at = NOW(), send_count = pos_sessions.send_count + 1
+       RETURNING id, business_date, session_key, outlet_net, send_count, first_sent_at, sent_at`,
+      [propertyId, date, b.session, String(b.label || '').slice(0, 30) || null, time(b.started_at), time(b.ended_at),
+       parseInt(b.bills, 10) || 0, outlet.bills, outlet.net, outlet.service, outlet.tax, outlet.total,
+       Number.isFinite(roomTotal) ? roomTotal : 0,
+       bf ? parseInt(bf.pax_expected, 10) || 0 : null, bf ? parseInt(bf.pax_came, 10) || 0 : null,
+       JSON.stringify(b), sentBy]);
+    const changes = sessionChanges(prev?.summary, b);
+    await client.query(
+      `INSERT INTO pos_session_versions (session_id, property_id, version, summary, changes, sent_by)
+       VALUES ($1, $2, COALESCE((SELECT MAX(version) FROM pos_session_versions WHERE session_id = $1), 0) + 1, $3, $4, $5)`,
+      [row.id, propertyId, JSON.stringify(b), changes ? JSON.stringify(changes) : null, sentBy]);
+    await client.query('COMMIT');
+    return {
+      id: row.id, business_date: date, session: row.session_key, outlet_net: parseFloat(row.outlet_net),
+      replaced: row.send_count > 1, send_count: row.send_count,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally { client.release(); }
 }
 
-module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession };
+module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession, sessionChanges };

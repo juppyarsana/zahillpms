@@ -227,7 +227,10 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
 
 export default function GuestLists() {
   const nav = useNavigate();
-  const { can } = useAuth();
+  const { can, hasModule } = useAuth();
+  // With the POS linked, Kitchen lives under Restaurant (with who came to
+  // breakfast); without it, it stays here.
+  const kitchenMoved = hasModule('pos_integration');
   // ?date=YYYY-MM-DD (e.g. from the Dashboard's Tomorrow line); default today
   // at the property (Bali), not the viewer's own date.
   const [params] = useSearchParams();
@@ -329,7 +332,12 @@ export default function GuestLists() {
         {canSeeBalances && (
           <button className={`tab-bar-item${tab === 'balance' ? ' active' : ''}`} onClick={() => setTab('balance')}>💰 Balance Due</button>
         )}
-        <button className={`tab-bar-item${tab === 'kitchen' ? ' active' : ''}`} onClick={() => setTab('kitchen')}>🍳 Kitchen</button>
+        {!kitchenMoved && (
+          <button className={`tab-bar-item${tab === 'kitchen' ? ' active' : ''}`} onClick={() => setTab('kitchen')}>🍳 Kitchen</button>
+        )}
+        {kitchenMoved && can('restaurant') && (
+          <Link to="/restaurant?tab=kitchen" className="tab-bar-item" style={{ marginLeft: 'auto', fontSize: 12 }}>🍳 Kitchen is now under Restaurant →</Link>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

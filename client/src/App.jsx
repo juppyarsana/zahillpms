@@ -16,6 +16,7 @@ import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
+import Restaurant from './pages/Restaurant';
 import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
 import GuestProfile from './pages/GuestProfile';
@@ -77,6 +78,7 @@ function BottomNav() {
     ]},
     { label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
+      can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
       isOwner && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
     ]},
     { label: 'Revenue & Billing', items: [
@@ -276,6 +278,7 @@ export default function App() {
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />
                   <Route path="/operations"       element={<RequireMenu menuKey="operations"><RequireModule moduleName="operations"><Operations /></RequireModule></RequireMenu>} />
+                  <Route path="/restaurant"       element={<RequireMenu menuKey="restaurant"><RequireModule moduleName="pos_integration"><Restaurant /></RequireModule></RequireMenu>} />
                   <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><RequireModule moduleName="reservations"><Allotment /></RequireModule></RequireMenu>} />
                   <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><RequireModule moduleName="guest_crm"><Loyalty /></RequireModule></RequireMenu>} />
                   <Route path="/sales"            element={<RequireMenu menuKey="sales"><RequireModule moduleName="sales"><Sales /></RequireModule></RequireMenu>} />

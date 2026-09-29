@@ -129,6 +129,9 @@ app.use('/api/resto', require('./routes/resto'));
 // /api/pos — external POS integration (charge-to-room). authPos (per-property
 // pos_api_key) + moduleGuard('pos_integration') applied per-route inside.
 app.use('/api/pos', require('./routes/posIntegration'));
+// /api/restaurant — the Restaurant page (POS sessions, kitchen, room charges).
+// auth + moduleGuard('pos_integration') + Restaurant permission, inside.
+app.use('/api/restaurant', require('./routes/restaurant'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
