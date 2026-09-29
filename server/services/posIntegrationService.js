@@ -252,37 +252,57 @@ async function saveSession(propertyId, body) {
 function sessionAlertText(b, result) {
   const { escapeHtml: h } = require('./telegramService');
   const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const day = new Date(b.business_date + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
   const label = String(b.label || b.session || '').slice(0, 30);
   const o = b.outlet || {};
   const rc = b.room_charges || {};
-  const L = [];
-  L.push(`🍽 <b>${h(label)} — ${h(day)}</b>${result.send_count > 1 ? ` · sent again (${result.send_count}×)` : ''}`);
-  L.push(`${parseInt(b.bills, 10) || 0} bill${parseInt(b.bills, 10) === 1 ? '' : 's'} · <b>${rp((Number(o.total) || 0) + (Number(rc.total) || 0))}</b>`);
-  L.push(`Paid at the restaurant ${rp(o.total)} (${rp(o.net)} before service &amp; tax)`);
-  if (Number(rc.total)) L.push(`Charged to rooms ${rp(rc.total)} (${rc.bills || 0})`);
+  const bills = parseInt(b.bills, 10) || 0;
+  // Sections separated by a blank line; one fact per line.
+  const sections = [];
+  const add = (...lines) => { const l = lines.filter(Boolean); if (l.length) sections.push(l.join('\n')); };
+
+  add(`🍽 <b>${h(label)} — ${h(day)}</b>`,
+      result.send_count > 1 ? `<i>Sent again (${result.send_count}×)${b.sent_by ? ` by ${h(String(b.sent_by).slice(0, 60))}` : ''}</i>`
+        : b.sent_by ? `<i>Sent by ${h(String(b.sent_by).slice(0, 60))}</i>` : '');
+
+  add(`💰 <b>Total ${rp((Number(o.total) || 0) + (Number(rc.total) || 0))}</b> · ${plural(bills, 'bill')}`,
+      `• Paid at the restaurant: ${rp(o.total)}`,
+      `   <i>${rp(o.net)} before service &amp; tax</i>`,
+      Number(rc.total) ? `• Charged to rooms: ${rp(rc.total)} · ${plural(rc.bills || 0, 'bill')}` : '');
+
   const methods = (b.by_method || []).filter(m => Number(m.total) && m.method !== 'Room Charge');
-  if (methods.length) L.push(h(methods.map(m => `${m.method} ${rp(m.total)}`).join(' · ')));
+  if (methods.length) add('💳 <b>Payment</b>', ...methods.map(m => `• ${h(m.method)}: ${rp(m.total)}`));
+
   if (b.breakfast) {
     const bf = b.breakfast;
-    L.push(`☀️ Breakfast came ${bf.pax_came || 0} / ${bf.pax_expected || 0}${bf.mode ? ` · ${bf.mode === 'alacarte' ? 'à la carte' : 'buffet'}` : ''}${bf.value != null ? ` · value ${rp(bf.value)}` : ''}`);
+    add('☀️ <b>Breakfast</b>',
+        `• Came: ${bf.pax_came || 0} of ${bf.pax_expected || 0} guests`,
+        bf.mode ? `• ${bf.mode === 'alacarte' ? 'À la carte' : 'Buffet'}${bf.value != null ? ` · value ${rp(bf.value)}` : ''}` : '');
   }
+
   const c = b.complimentary;
-  if (c && c.bills) L.push(`🎁 Complimentary ${c.bills} · ${rp(c.value)}${(c.by_department || []).length ? ` (${h(c.by_department.map(d => `${d.department} ${rp(d.value)}`).join(', '))})` : ''}`);
-  if (b.open_bills && b.open_bills.bills) L.push(`⚠️ Still open: ${b.open_bills.bills} bill${b.open_bills.bills === 1 ? '' : 's'} · ${rp(b.open_bills.total)}`);
+  if (c && c.bills) {
+    add(`🎁 <b>Complimentary</b> · ${plural(c.bills, 'bill')} · ${rp(c.value)}`,
+        ...(c.by_department || []).map(d => `• ${h(d.department)}: ${rp(d.value)}`));
+  }
+
+  if (b.open_bills && b.open_bills.bills) add(`⚠️ <b>Still open</b>: ${plural(b.open_bills.bills, 'bill')} · ${rp(b.open_bills.total)}`);
+
   const ch = result.changes;
   if (ch) {
-    const bits = [];
-    if ((ch.bills_added || []).length) bits.push(`+${ch.bills_added.length} bill${ch.bills_added.length === 1 ? '' : 's'}`);
-    if ((ch.bills_removed || []).length) bits.push(`−${ch.bills_removed.length} bill${ch.bills_removed.length === 1 ? '' : 's'}`);
-    if ((ch.bills_changed || []).length) bits.push(`${ch.bills_changed.length} changed`);
+    const lines = [];
+    const counts = [];
+    if ((ch.bills_added || []).length) counts.push(`+${plural(ch.bills_added.length, 'bill')}`);
+    if ((ch.bills_removed || []).length) counts.push(`−${plural(ch.bills_removed.length, 'bill')}`);
+    if ((ch.bills_changed || []).length) counts.push(`${ch.bills_changed.length} changed`);
+    if (counts.length) lines.push(`• ${counts.join(', ')}`);
     const money = t => !['Bills', 'Breakfast came'].includes(t.label);
     const val = (t, v) => (v == null ? '—' : money(t) ? rp(v) : v);
-    for (const t of (ch.totals || []).slice(0, 3)) bits.push(`${t.label} ${val(t, t.from)} → ${val(t, t.to)}`);
-    if (bits.length) L.push(`Changes since last send: ${h(bits.join(' · '))}`);
+    for (const t of (ch.totals || []).slice(0, 4)) lines.push(`• ${h(t.label)}: ${val(t, t.from)} → ${val(t, t.to)}`);
+    if (lines.length) add('🔄 <b>Changes since last send</b>', ...lines);
   }
-  if (b.sent_by) L.push(`Sent by ${h(String(b.sent_by).slice(0, 60))}`);
-  return L.join('\n');
+  return sections.join('\n\n');
 }
 
 module.exports = { listInHouseRooms, lookupRoom, postTransaction, saveSession, sessionChanges, sessionAlertText };
