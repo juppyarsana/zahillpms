@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings, SourceBadge } from '../context/SettingsContext';
@@ -184,6 +185,10 @@ export default function BookingDetail() {
   const [newAmount, setNewAmount] = useState('');
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutNotes, setCheckoutNotes] = useState('');
+  // What the guest still owes at checkout (null = not known yet) + the reason
+  // to check out anyway — the server refuses checkout without it (BALANCE_DUE).
+  const [coOwed, setCoOwed] = useState(null);
+  const [unpaidReason, setUnpaidReason] = useState('');
   const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [billToAgent, setBillToAgent] = useState(false);
@@ -426,17 +431,27 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
     }
   }
 
+  useEffect(() => {
+    if (!checkingOut) return;
+    setCoOwed(null);
+    api.get(`/api/checkin/checkout/${id}/balance?bill_to_agent=${!!billToAgent}`)
+      .then(r => setCoOwed(r.data.owed)).catch(() => setCoOwed(0));
+  }, [checkingOut, billToAgent, id]);
+
   async function doCheckout() {
     setCheckoutLoading(true);
     try {
       await api.put(`/api/checkin/checkout/${id}/complete`, {
         condition_notes: checkoutNotes, bill_to_agent: billToAgent,
         ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+        ...(unpaidReason.trim() ? { unpaid_reason: unpaidReason.trim() } : {}),
       });
       setCheckingOut(false);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Checkout failed');
+      const data = err.response?.data;
+      if (data?.code === 'BALANCE_DUE') setCoOwed(data.amount);
+      else alert(data?.error || 'Checkout failed');
     } finally {
       setCheckoutLoading(false);
     }
@@ -1907,11 +1922,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
                   </label>
                 </div>
               )}
-              {!cityLedgerSource && pendingBalance > 0 && (
-                <div className="alert alert-error" style={{ marginBottom: 12 }}>
-                  ⚠ Balance of <strong>{fmtIDR(pendingBalance)}</strong> not received. Collect before completing check-out.
-                </div>
-              )}
+              <CheckoutBalanceBlock booking={{ ...booking, guest_balance_due: coOwed, agent_billed: cityLedgerSource && billToAgent }}
+                reason={unpaidReason} setReason={setUnpaidReason} onRecordPayment={() => setCheckingOut(false)} />
               {checkoutCredit && checkoutCredit.would_exceed && (
                 <div style={{ marginBottom: 12, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>
                   ⚠ {checkoutCredit.label} is over its credit limit — {fmtIDR(checkoutCredit.current_outstanding)} outstanding vs {fmtIDR(checkoutCredit.credit_limit)} limit.
@@ -1933,8 +1945,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setCheckingOut(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={doCheckout} disabled={checkoutLoading || !earlyCo.valid}>
-                {checkoutLoading ? 'Processing…' : 'Complete Check-out ✓'}
+              <button className="btn btn-primary" onClick={doCheckout} disabled={checkoutLoading || !earlyCo.valid || coOwed == null || checkoutBlocked({ guest_balance_due: coOwed }, unpaidReason)}>
+                {checkoutLoading ? 'Processing…' : checkoutBlocked({ guest_balance_due: coOwed }, unpaidReason) ? 'Take the payment first' : 'Complete Check-out ✓'}
               </button>
             </div>
           </div>

@@ -15,6 +15,7 @@ function todayWITA() {
 const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { sendControlAlert } = require('../services/ownerAlerts');
+const { guestBalance } = require('../services/checkoutBalance');
 const { renderRegistrationCard } = require('../services/registrationCardPdf');
 const { saveIdDocument } = require('../services/idDocument');
 const { basisFrom, shown } = require('../services/priceBasis');
@@ -315,6 +316,19 @@ router.get('/registration-cards', auth, async (req, res) => {
   }
 });
 
+// GET /api/checkin/checkout/:bookingId/balance?bill_to_agent=true|false —
+// what the guest still owes at checkout (services/checkoutBalance.js).
+router.get('/checkout/:bookingId/balance', auth, async (req, res) => {
+  try {
+    const q = req.query.bill_to_agent;
+    const bal = await guestBalance(req.params.bookingId, req.propertyId, { billToAgent: q === undefined ? undefined : q === 'true' });
+    if (!bal) return res.status(404).json({ error: 'Booking not found' });
+    res.json(bal);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/checkout/:bookingId/complete
 router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
   const { condition_notes, bill_to_agent } = req.body;
@@ -354,6 +368,9 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       const dayMs = d => Date.parse(d + 'T00:00:00Z');
       const bookedNights = Math.round((dayMs(co) - dayMs(ci)) / 86400000);
       const stayedNights = Math.max(1, Math.round((dayMs(today) - dayMs(ci)) / 86400000));
+      // Already shortened to the nights used (a retry after the balance
+      // check below): nothing left to change.
+      if (bookedNights > stayedNights) {
       const ed = req.body.early_departure || {};
       const reason = String(ed.reason || '').trim();
       if (!['stayed', 'full', 'custom'].includes(ed.charge) || !reason) {
@@ -411,7 +428,28 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       } finally {
         c.release();
       }
+      }
     }
+  }
+
+  // ── Unpaid balance ──────────────────────────────────────────────────
+  // The guest must settle what they owe (whole stay: nights, meals, extras,
+  // service & tax − payments; nothing for a stay billed to its agent, only
+  // extras for an OTA stay) before checking out. When they really can't (e.g.
+  // the company pays later, the EDC is down) front desk gives a reason: the
+  // amount stays owed on the folio / Balance Due, it's written to Edit History
+  // and the owner gets a control alert — same rule as checking in without
+  // full payment.
+  const unpaidReason = String(req.body.unpaid_reason || '').trim().slice(0, 300);
+  const balance = await guestBalance(req.params.bookingId, req.propertyId, {
+    billToAgent: bill_to_agent === undefined || bill_to_agent === null ? undefined : !!bill_to_agent,
+  });
+  const unpaidAtCheckout = balance && balance.owed >= 1 ? balance.owed : 0;
+  if (unpaidAtCheckout && !unpaidReason) {
+    return res.status(409).json({
+      error: `The guest still owes ${fmtRp(unpaidAtCheckout)} — take the payment first (Record Payment), or give a reason to check out anyway`,
+      code: 'BALANCE_DUE', amount: unpaidAtCheckout,
+    });
   }
 
   // Folio catch-up must be committed BEFORE the checkout transaction opens,
@@ -485,7 +523,18 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     // Recalculate guest loyalty tier
     await recalcGuestTier(client, booking.guest_id, req.propertyId);
 
+    if (unpaidAtCheckout) {
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [booking.id,
+        `Checked out with ${fmtRp(unpaidAtCheckout)} still owed. Reason: ${unpaidReason}`.slice(0, 1000), req.user.id]);
+    }
+
     await client.query('COMMIT');
+    if (unpaidAtCheckout) {
+      sendControlAlert(req.propertyId, {
+        bookingIds: req.params.bookingId, userId: req.user.id, reason: unpaidReason,
+        headline: `⚠️ Checked out with ${fmtRp(unpaidAtCheckout)} unpaid`,
+      });
+    }
     res.json({
       message: 'Check-out complete',
       booking_id: req.params.bookingId,

@@ -50,6 +50,18 @@ const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.age
                        AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')) AS agent_billed`;
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+
+// Adds guest_balance_due (what the guest still owes — checkoutBalance rule:
+// whole stay, 0 for a stay billed to its agent, extras only for an OTA) to
+// checked-in booking rows, for the Check-in / out and Quick Check-in lists.
+async function withGuestBalance(rows, propertyId) {
+  const { guestBalance } = require('../services/checkoutBalance');
+  for (const r of rows) {
+    const g = await guestBalance(r.id, propertyId);
+    r.guest_balance_due = g ? g.owed : null;
+  }
+  return rows;
+}
 // A booking's own commission for Edit History — "10%", "Rp 150.000" or "agent's default".
 function commissionLabel(b) {
   if (!b.commission_type || b.commission_value == null) return 'agent\'s default';
@@ -267,7 +279,7 @@ router.get('/today/departures', auth, async (req, res) => {
         AND b.status = 'checked_in'
       ORDER BY g.name
     `, [req.propertyId]);
-    res.json(rows);
+    res.json(await withGuestBalance(rows, req.propertyId));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -293,7 +305,7 @@ router.get('/in-house', auth, async (req, res) => {
         AND b.status = 'checked_in'
       ORDER BY b.check_out_date, g.name
     `, [req.propertyId]);
-    res.json(rows);
+    res.json(await withGuestBalance(rows, req.propertyId));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

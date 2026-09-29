@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BalanceLine, CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
@@ -72,6 +73,7 @@ export default function CheckIn() {
   const [checklist, setChecklist]   = useState({});
   const [idFile, setIdFile]         = useState(null);
   const [conditionNotes, setConditionNotes] = useState('');
+  const [unpaidReason, setUnpaidReason] = useState('');
   const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [step, setStep]             = useState(1);
   const [loading, setLoading]       = useState(false);
@@ -149,6 +151,7 @@ export default function CheckIn() {
     setSelected(b);
     setMode('checkout');
     setConditionNotes('');
+    setUnpaidReason('');
     setEarlyCo({ early: false, valid: true, early_departure: null });
     setMsg('');
   }
@@ -189,12 +192,16 @@ export default function CheckIn() {
       await api.put(`/api/checkin/checkout/${selected.id}/complete`, {
         condition_notes: conditionNotes,
         ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+        ...(unpaidReason.trim() ? { unpaid_reason: unpaidReason.trim() } : {}),
       });
       setMsg('success');
       load();
       setTimeout(() => { setSelected(null); setMode(null); setMsg(''); }, 2000);
     } catch (err) {
-      setMsg(err.response?.data?.error || 'Error');
+      const data = err.response?.data;
+      // The list was out of date (e.g. an extra was just charged): show what's owed now.
+      if (data?.code === 'BALANCE_DUE') setSelected(s => ({ ...s, guest_balance_due: data.amount }));
+      else setMsg(data?.error || 'Error');
     } finally {
       setLoading(false);
     }
@@ -354,7 +361,6 @@ export default function CheckIn() {
           <div className="card-title">Departing Today ({departures.length})</div>
           {departures.length === 0 && <p className="text-muted">No departures today</p>}
           {departures.map(b => {
-            const balanceOk = b.balance_paid || isOTA(b) || parseFloat(b.balance_amount || 0) === 0;
             return (
               <div
                 key={b.id}
@@ -376,15 +382,7 @@ export default function CheckIn() {
                   >
                     Check Out →
                   </span>
-                  <div style={{ fontSize: 11, marginTop: 4, color: balanceOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
-                    {isOTA(b)
-                      ? (b.agent_billed ? `🧾 Billed to ${b.agent_name}` : '🏷 OTA managed')
-                      : b.balance_paid
-                        ? '✓ Balance paid'
-                        : parseFloat(b.balance_amount || 0) === 0
-                          ? '✓ No balance due'
-                          : `⚠ Balance pending ${fmtIDR(b.balance_amount)}`}
-                  </div>
+                  <BalanceLine b={b} />
                 </div>
               </div>
             );
@@ -397,7 +395,6 @@ export default function CheckIn() {
         <div className="card mb-3">
           <div className="card-title">Currently In-House ({inHouse.length})</div>
           {inHouse.map(b => {
-            const balanceOk = b.balance_paid || isOTA(b) || parseFloat(b.balance_amount || 0) === 0;
             return (
               <div
                 key={b.id}
@@ -423,15 +420,7 @@ export default function CheckIn() {
                   >
                     Check Out →
                   </span>
-                  <div style={{ fontSize: 11, marginTop: 4, color: balanceOk ? 'var(--green)' : '#DC2626', fontWeight: 600 }}>
-                    {isOTA(b)
-                      ? (b.agent_billed ? `🧾 Billed to ${b.agent_name}` : '🏷 OTA managed')
-                      : b.balance_paid
-                        ? '✓ Balance paid'
-                        : parseFloat(b.balance_amount || 0) === 0
-                          ? '✓ No balance due'
-                          : `⚠ Balance pending ${fmtIDR(b.balance_amount)}`}
-                  </div>
+                  <BalanceLine b={b} />
                 </div>
               </div>
             );
@@ -650,24 +639,10 @@ export default function CheckIn() {
                     <strong>{selected.unit_name}</strong> · Check-out {selected.check_out_date?.slice(0, 10)}
                   </div>
 
-                  {/* Balance status */}
-                  {isOTA(selected) ? (
-                    <div className="alert alert-success" style={{ marginTop: 0, marginBottom: 12 }}>
-                      {selected.agent_billed ? `🧾 Billed to ${selected.agent_name} — the agent pays the hotel` : `🏷 OTA managed — payment handled by ${selected.source.replace('_', '.')}`}
-                    </div>
-                  ) : selected.balance_paid || parseFloat(selected.balance_amount || 0) === 0 ? (
-                    <div className="alert alert-success" style={{ marginTop: 0, marginBottom: 12 }}>
-                      ✓ Balance {parseFloat(selected.balance_amount || 0) === 0 ? 'not required (fully prepaid)' : `received — ${fmtIDR(selected.balance_amount)}`}
-                    </div>
-                  ) : (
-                    <div className="alert alert-error" style={{ marginTop: 0, marginBottom: 12 }}>
-                      ⚠ Balance of <strong>{fmtIDR(selected.balance_amount)}</strong> has not been received.
-                      {' '}Please collect payment before or after completing check-out.
-                      {' '}<Link to={`/reservations/${selected.id}`} onClick={() => setSelected(null)} style={{ fontWeight: 700 }}>
-                        Record payment →
-                      </Link>
-                    </div>
-                  )}
+                  {/* What the guest still owes (whole stay) — checkout is refused
+                      until it's paid, unless a reason is given. */}
+                  <CheckoutBalanceBlock booking={selected} reason={unpaidReason} setReason={setUnpaidReason}
+                    onRecordPayment={() => setSelected(null)} />
 
                   <EarlyDepartureOption booking={selected} onChange={setEarlyCo} />
                   <div className="form-group">
@@ -688,8 +663,8 @@ export default function CheckIn() {
             {!msg && (
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setSelected(null)}>Cancel</button>
-                <button className="btn btn-primary" onClick={doCheckout} disabled={loading || !earlyCo.valid}>
-                  {loading ? 'Processing…' : 'Complete Check-out ✓'}
+                <button className="btn btn-primary" onClick={doCheckout} disabled={loading || !earlyCo.valid || checkoutBlocked(selected, unpaidReason)}>
+                  {loading ? 'Processing…' : checkoutBlocked(selected, unpaidReason) ? 'Take the payment first' : unpaidReason.trim() && selected.guest_balance_due > 0 ? 'Check out with balance due' : 'Complete Check-out ✓'}
                 </button>
               </div>
             )}

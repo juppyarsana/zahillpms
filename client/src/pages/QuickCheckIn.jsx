@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
+import { CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import { useSettings } from '../context/SettingsContext';
 
@@ -98,6 +99,7 @@ export default function QuickCheckIn() {
   const [departures, setDepartures]   = useState([]);
   const [inHouse, setInHouse]         = useState([]);
   const [coSelected, setCoSelected]   = useState(null);
+  const [unpaidReason, setUnpaidReason] = useState('');
   const [conditionNotes, setConditionNotes] = useState('');
   const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [coLoading, setCoLoading]     = useState(false);
@@ -176,6 +178,7 @@ export default function QuickCheckIn() {
   function openCheckout(b) {
     setCoSelected(b);
     setConditionNotes('');
+    setUnpaidReason('');
     setCoMsg('');
     setEarlyCo({ early: false, valid: true, early_departure: null });
   }
@@ -188,12 +191,15 @@ export default function QuickCheckIn() {
       await api.put(`/api/checkin/checkout/${coSelected.id}/complete`, {
         condition_notes: conditionNotes,
         ...(earlyCo.early ? { early_departure: earlyCo.early_departure } : {}),
+        ...(unpaidReason.trim() ? { unpaid_reason: unpaidReason.trim() } : {}),
       });
       setCoMsg('success');
       load();
       setTimeout(closeCoModal, 2500);
     } catch (err) {
-      setCoMsg(err.response?.data?.error || 'Something went wrong');
+      const data = err.response?.data;
+      if (data?.code === 'BALANCE_DUE') setCoSelected(s => ({ ...s, guest_balance_due: data.amount }));
+      else setCoMsg(data?.error || 'Something went wrong');
     } finally {
       setCoLoading(false);
     }
@@ -321,14 +327,13 @@ export default function QuickCheckIn() {
               </div>
             )}
             {overdueInHouse.map(b => {
-              const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
-              const balanceOk = b.balance_paid || isOTA || parseFloat(b.balance_amount || 0) === 0;
+              const balanceOk = !(b.guest_balance_due > 0);
               return (
                 <GuestCard
                   key={b.id}
                   booking={b}
                   borderColor='#FECACA'
-                  rightLabel={balanceOk ? 'Lunas ✓' : `⚠ ${fmtIDR(b.balance_amount)}`}
+                  rightLabel={balanceOk ? 'Lunas ✓' : `⚠ ${fmtIDR(b.guest_balance_due)}`}
                   rightColor={balanceOk ? '#16A34A' : '#DC2626'}
                   onClick={() => openCheckout(b)}
                 />
@@ -341,14 +346,13 @@ export default function QuickCheckIn() {
               </div>
             )}
             {departures.map(b => {
-              const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
-              const balanceOk = b.balance_paid || isOTA || parseFloat(b.balance_amount || 0) === 0;
+              const balanceOk = !(b.guest_balance_due > 0);
               return (
                 <GuestCard
                   key={b.id}
                   booking={b}
                   borderColor={balanceOk ? '#BBF7D0' : '#FED7AA'}
-                  rightLabel={balanceOk ? 'Lunas ✓' : `⚠ ${fmtIDR(b.balance_amount)}`}
+                  rightLabel={balanceOk ? 'Lunas ✓' : `⚠ ${fmtIDR(b.guest_balance_due)}`}
                   rightColor={balanceOk ? '#16A34A' : '#D97706'}
                   onClick={() => openCheckout(b)}
                 />
@@ -484,22 +488,9 @@ export default function QuickCheckIn() {
                 <div className="alert alert-error">{coMsg}</div>
               ) : (
                 <>
-                  {/* Balance warning */}
-                  {(() => {
-                    const isOTA = otaSources.includes(coSelected.source) || !!coSelected.agent_billed;
-                    const balanceOk = coSelected.balance_paid || isOTA || parseFloat(coSelected.balance_amount || 0) === 0;
-                    if (!balanceOk) return (
-                      <div className="alert alert-error" style={{ marginBottom: 16 }}>
-                        <strong>⚠ Sisa pembayaran belum diterima: {fmtIDR(coSelected.balance_amount)}</strong><br />
-                        Tagih pembayaran sebelum atau sesudah checkout.
-                      </div>
-                    );
-                    return (
-                      <div className="alert alert-success" style={{ marginBottom: 16 }}>
-                        ✓ {isOTA ? (coSelected.agent_billed ? `Ditagih ke ${coSelected.agent_name}` : `OTA managed — ${coSelected.source.replace('_', '.')}`) : 'Pembayaran lunas'}
-                      </div>
-                    );
-                  })()}
+                  {/* Sisa tagihan tamu — checkout ditolak sampai dibayar, kecuali ada alasan */}
+                  <CheckoutBalanceBlock booking={coSelected} lang="id" reason={unpaidReason} setReason={setUnpaidReason}
+                    onRecordPayment={closeCoModal} />
 
                   <EarlyDepartureOption booking={coSelected} onChange={setEarlyCo} lang="id" />
 
@@ -525,7 +516,7 @@ export default function QuickCheckIn() {
             {!coMsg && (
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={closeCoModal}>Batal</button>
-                <button className="btn btn-primary" onClick={doCheckout} disabled={coLoading || !earlyCo.valid}
+                <button className="btn btn-primary" onClick={doCheckout} disabled={coLoading || !earlyCo.valid || checkoutBlocked(coSelected, unpaidReason)}
                   style={{ flex: 1, justifyContent: 'center', fontSize: 15, padding: '12px 20px', background: '#D97706', borderColor: '#D97706' }}>
                   {coLoading ? 'Memproses…' : '🏁 Check Out'}
                 </button>
