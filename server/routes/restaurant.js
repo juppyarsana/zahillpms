@@ -92,7 +92,10 @@ router.get('/overview', gate, async (req, res) => {
     const kitchen = await loadKitchen(pid, date);
     const bf = sess.find(x => x.session_key === 'breakfast');
     const breakfast = { expected: kitchen.breakfast.pax, rooms: kitchen.breakfast.rooms,
-      came: bf ? bf.breakfast_pax_came : null, not_came: bf?.summary?.breakfast?.not_came || [] };
+      came: bf ? bf.breakfast_pax_came : null, not_came: bf?.summary?.breakfast?.not_came || [],
+      // Sent by the POS since its breakfast recap: buffet / à la carte and the
+      // NET value of the included breakfasts eaten.
+      mode: bf?.summary?.breakfast?.mode || null, value: bf?.summary?.breakfast?.value ?? null };
 
     // Breakfast take-up, last 14 days (only days the POS sent breakfast).
     const { rows: trend } = await db.query(
@@ -122,6 +125,7 @@ router.get('/overview', gate, async (req, res) => {
         WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [pid, addDays(date, -6), date]);
     const items = new Map();
     for (const r of recent) for (const b of (r.bills || [])) for (const i of (b.items || [])) {
+      if (i.included) continue;   // included breakfast (Rp 0) — not a sale
       const it = items.get(i.name) || { name: i.name, qty: 0, amount: 0 };
       it.qty += parseInt(i.qty, 10) || 0; it.amount += parseFloat(i.amount) || 0;
       items.set(i.name, it);

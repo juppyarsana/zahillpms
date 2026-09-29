@@ -12,6 +12,7 @@ const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL }
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
 const { nightlyRoomRates } = require('../services/pricingService');
+const { priceBasis } = require('../services/priceBasis');
 const { searchAvailability } = require('../services/availabilityService');
 const roomCharge = require('../services/roomChargeService');
 const guestMessageService = require('../services/guestMessageService');
@@ -340,6 +341,32 @@ async function extraBreakfasts(propertyId, date) {
   return new Map(rows.map(r => [r.booking_id, r.qty]));
 }
 
+// NET value of the breakfasts a room has on `date` (for the POS breakfast
+// recap): plan guests × the rate plan's meal price (split over the meals the
+// plan includes, prices-incl.-tax taken out) + extra-bed breakfasts at their
+// own NET breakfast price. booking_id → total.
+async function breakfastValues(propertyId, date, rows) {
+  const { divisor } = await priceBasis(propertyId);
+  const { rows: extra } = await db.query(`
+    SELECT a.booking_id, SUM(a.breakfasts * COALESCE(a.meal_price, 0)) AS value
+    FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
+    WHERE a.property_id = $1 AND a.status = 'active' AND a.breakfasts > 0
+      AND a.service_date = $2::date - 1
+      AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+    GROUP BY a.booking_id`, [propertyId, date]);
+  const extraValue = new Map(extra.map(r => [r.booking_id, parseFloat(r.value) || 0]));
+  const out = new Map();
+  for (const r of rows) {
+    let v = extraValue.get(r.id) || 0;
+    if (r.includes_breakfast) {
+      const meals = [r.includes_breakfast, r.includes_lunch, r.includes_dinner].filter(Boolean).length || 1;
+      v += (parseFloat(r.rate_plan_meal_price) || 0) / (divisor || 1) / meals * (parseInt(r.num_guests, 10) || 0);
+    }
+    out.set(r.id, Math.round(v * 100) / 100);
+  }
+  return out;
+}
+
 // GET /api/bookings/guest-lists?date=YYYY-MM-DD (default today, WITA)
 // Morning briefing for one date — every live booking lands in exactly one list:
 //   arrivals   — check-in on the date (expected, or already arrived)
@@ -505,7 +532,8 @@ async function loadKitchen(propertyId, requestedDate) {
   const { rows } = await db.query(`
     SELECT b.id, b.check_in_date, b.check_out_date, b.num_guests, b.status, b.special_requests,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
-           rp.code AS rate_plan_code,
+           rp.code AS rate_plan_code, rp.meal_price AS rate_plan_meal_price,
+           COALESCE(rp.includes_lunch, false) AS includes_lunch,
            COALESCE(rp.includes_breakfast, false) AS includes_breakfast,
            COALESCE(rp.includes_dinner, false) AS includes_dinner,
            ${MEAL_FLAGS_SQL}
@@ -2638,5 +2666,6 @@ module.exports = router;
 module.exports.loadGuestLists = loadGuestLists;
 module.exports.loadBalanceDue = loadBalanceDue;
 module.exports.loadKitchen = loadKitchen;
+module.exports.breakfastValues = breakfastValues;
 module.exports.occupiedUntilSql = occupiedUntilSql;
 module.exports.TODAY_WITA_SQL = TODAY_WITA_SQL;

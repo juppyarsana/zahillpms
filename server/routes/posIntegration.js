@@ -73,9 +73,10 @@ router.post('/sessions', gate, async (req, res) => {
 // night before, on a rate plan that includes breakfast.
 router.get('/breakfast', gate, async (req, res) => {
   try {
-    const { loadKitchen } = require('./bookings');
+    const { loadKitchen, breakfastValues } = require('./bookings');
     const data = await loadKitchen(req.propertyId, req.query.date);
     if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const values = await breakfastValues(req.propertyId, data.date, data.breakfast.rows);
     const ymd = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
     res.json({
       date: data.date,
@@ -87,7 +88,10 @@ router.get('/breakfast', gate, async (req, res) => {
         room: r.unit_name,
         room_type: r.unit_type,
         guest_name: r.guest_name,
-        pax: parseInt(r.num_guests, 10) || 0,
+        pax: r.meal_pax,                     // guests with breakfast incl. extra beds
+        // NET value of this room's included breakfasts (all pax), before
+        // service & tax — for the POS breakfast recap.
+        breakfast_value: values.get(r.id) || 0,
         rate_plan: r.rate_plan_code,
         status: r.status,
         checking_out: ymd(r.check_out_date) === data.date,

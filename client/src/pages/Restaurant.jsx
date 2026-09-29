@@ -141,7 +141,9 @@ function TodayTab({ date, onOpenSession, onTab }) {
         <Stat label="This month so far" value={fmtIDR(d.month.gross)}
           sub={<>vs same days last month {vs(d.month.gross, d.prev_month.gross) || '—'}</>} />
         <Stat label="Breakfast came" value={bf.came == null ? `— / ${bf.expected}` : `${bf.came} / ${bf.expected}`}
-          sub={!bf.expected ? 'No guests with breakfast' : bf.came == null ? 'Breakfast not sent from the POS yet' : `${pct(bf.came, bf.expected)}% of guests with breakfast`} />
+          sub={!bf.expected ? 'No guests with breakfast' : bf.came == null ? 'Breakfast not sent from the POS yet'
+            : <>{pct(bf.came, bf.expected)}% of guests with breakfast{bf.mode ? ` · ${bf.mode === 'alacarte' ? 'à la carte' : 'buffet'}` : ''}
+              {bf.value != null && <div>Value {fmtIDR(bf.value)} (net)</div>}</>} />
         {d.fnb_share && <Stat label="F&B share this month" value={`${d.fnb_share.share}%`} sub={`${fmtIDR(d.fnb_share.fnb)} of ${fmtIDR(d.fnb_share.total)} hotel revenue`} />}
       </div>
 
@@ -261,8 +263,9 @@ function SessionDetail({ id, onClose }) {
               <Stat label="Paid at the restaurant" value={fmtIDR(s.outlet_total)} sub={`${fmtIDR(s.outlet_net)} before service & tax → F&B`} />
               <Stat label="Charged to rooms" value={fmtIDR(s.room_charge_total)} sub="Already on the folios" />
               {s.breakfast && <Stat label="Breakfast came" value={`${s.breakfast.pax_came} / ${s.breakfast.pax_expected}`}
-                sub={!s.breakfast.pax_expected ? 'No guests with breakfast'
-                  : s.breakfast.not_came?.length ? `Didn't come: ${s.breakfast.not_came.map(r => r.room).join(', ')}` : 'Everyone came'} />}
+                sub={<>{!s.breakfast.pax_expected ? 'No guests with breakfast'
+                  : s.breakfast.not_came?.length ? `Didn't come: ${s.breakfast.not_came.map(r => r.room).join(', ')}` : 'Everyone came'}
+                  {s.breakfast.value != null && <div>{s.breakfast.mode === 'alacarte' ? 'À la carte' : 'Buffet'} · value {fmtIDR(s.breakfast.value)} (net)</div>}</>} />}
               {s.discounts > 0 && <Stat label="Discounts" value={fmtIDR(s.discounts)} />}
             </div>
 
@@ -293,7 +296,7 @@ function SessionDetail({ id, onClose }) {
                         {open === b.id && (
                           <tr><td colSpan={6} style={{ background: 'var(--surface-2, #faf7f2)', fontSize: 13 }}>
                             {b.items.map((i, n) => (
-                              <div key={n} className="flex-between"><span>{i.qty}× {i.name}{i.addons?.length ? ` + ${i.addons.join(', ')}` : ''}{i.note ? <span className="text-muted"> — {i.note}</span> : null}</span><span>{fmtIDR(i.amount)}</span></div>
+                              <div key={n} className="flex-between"><span>{i.qty}× {i.name}{i.addons?.length ? ` + ${i.addons.join(', ')}` : ''}{i.note ? <span className="text-muted"> — {i.note}</span> : null}</span><span>{i.included ? 'Included' : fmtIDR(i.amount)}</span></div>
                             ))}
                             {b.discount > 0 && <div className="flex-between text-muted"><span>Discount</span><span>−{fmtIDR(b.discount)}</span></div>}
                             {!b.tax_included && b.service > 0 && <div className="flex-between text-muted"><span>Service</span><span>{fmtIDR(b.service)}</span></div>}
