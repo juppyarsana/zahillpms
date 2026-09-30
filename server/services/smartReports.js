@@ -65,6 +65,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_restaurant_request: {
+    type: 'alert',
+    label: 'Restaurant requests from front desk',
+    when: 'Instantly',
+    description: 'Front desk adds, changes or cancels a request for the restaurant on a reservation — a breakfast box (which morning, ready by when, how many) or any other request.',
+    defaultRoles: ['owner', 'manager', 'kitchen'],
+    channels: ['telegram'],
+    paid: false,
+  },
   approve_complimentary: {
     type: 'alert',
     label: 'Approve complimentary stays',

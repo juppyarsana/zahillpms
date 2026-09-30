@@ -13,6 +13,7 @@ import GuestIdDocument from '../components/GuestIdDocument';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
 import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
+import RestaurantRequestsCard from '../components/RestaurantRequests';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
@@ -1100,6 +1101,8 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
       <StayExtrasCard booking={booking} openAdd={openAddItem}
         onBookActivity={hasModule('activities') ? startBookActivity : null}
         onChanged={() => { load(); if (folio) loadFolio(); }} />
+
+      {hasModule('pos_integration') && <RestaurantRequestsCard booking={booking} />}
 
       {booking.special_requests && (
         <div className="card mt-3">

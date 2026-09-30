@@ -50,7 +50,8 @@ function drawMeal(doc, y, { title, meal, empty, withoutLabel }) {
       guest: r.guest_name + (r.status !== 'checked_in' && r.status !== 'checked_out' ? '\n(not checked in yet)' : ''),
       pax: `${r.meal_pax ?? r.num_guests ?? ''}${r.extra_breakfast ? ` (+${r.extra_breakfast} extra bed)` : ''}`,
       plan: r.rate_plan_code || '—',
-      note: r.special_requests || '—',
+      note: [r.box && `BREAKFAST BOX: ${r.box.quantity} ready ${r.box.ready_time}${r.box.note ? ` (${r.box.note})` : ''}`,
+        r.special_requests].filter(Boolean).join(' · ') || '—',
       tick: '',
     };
     doc.font('Helvetica').fontSize(8.5);

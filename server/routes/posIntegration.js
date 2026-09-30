@@ -110,6 +110,7 @@ router.get('/breakfast', gate, async (req, res) => {
     const data = await loadKitchen(req.propertyId, req.query.date);
     if (!data) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     const values = await breakfastValues(req.propertyId, data.date, data.breakfast.rows);
+    const boxes = await require('../services/restaurantRequests').boxesForDate(req.propertyId, data.date);
     const ymd = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d || '').slice(0, 10));
     res.json({
       date: data.date,
@@ -122,6 +123,7 @@ router.get('/breakfast', gate, async (req, res) => {
         room_type: r.unit_type,
         guest_name: r.guest_name,
         pax: r.meal_pax,                     // guests with breakfast incl. extra beds
+        extra_bed_pax: r.extra_breakfast || 0,   // of which, from an extra bed (for the POS's "incl. N extra bed" note)
         // NET value of this room's included breakfasts (all pax), before
         // service & tax — for the POS breakfast recap.
         breakfast_value: values.get(r.id) || 0,
@@ -129,6 +131,9 @@ router.get('/breakfast', gate, async (req, res) => {
         status: r.status,
         checking_out: ymd(r.check_out_date) === data.date,
         special_requests: r.special_requests || '',
+        // Breakfast box asked for at the front desk (restaurant_requests):
+        // { id, quantity, ready_time, note, status, done_by, done_at } | null
+        box: boxes.get(r.id) || null,
       })),
     });
   } catch (err) {
@@ -136,7 +141,36 @@ router.get('/breakfast', gate, async (req, res) => {
   }
 });
 
-// GET /api/pos/branding — the property's name, contact details, brand colour
+// GET /api/pos/requests?from=&to= (default today WITA, max 31 days) — the
+// restaurant requests front desk took on reservations (migration 088):
+// breakfast boxes and other requests, not cancelled.
+router.get('/requests', gate, async (req, res) => {
+  try {
+    const { todayWITA } = require('../services/roomChargeService');
+    const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+    const from = ok(req.query.from) ? req.query.from : todayWITA();
+    const to = ok(req.query.to) ? req.query.to : from;
+    if (to < from || (Date.parse(to) - Date.parse(from)) / 864e5 > 31) return res.status(400).json({ error: 'from/to: up to 31 days' });
+    res.json(await require('../services/restaurantRequests').listForDates(req.propertyId, from, to));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pos/requests/:id/status { status: 'done'|'open', by } — the POS
+// sent the box to the kitchen / handled the request (or undid it).
+router.post('/requests/:id/status', gate, async (req, res) => {
+  const rr = require('../services/restaurantRequests');
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: 'Request not found' });
+    res.json(await rr.setStatusFromPos(req.propertyId, req.params.id, req.body?.status, req.body?.by));
+  } catch (err) {
+    if (err instanceof rr.RequestError) return res.status(err.status).json({ error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pos/branding —the property's name, contact details, brand colour
 // and logo, so the POS can copy them (Setup → Branding → "Copy from hotel
 // PMS"). The logo is sent inline (base64) rather than as a URL: the POS
 // server then doesn't depend on how /property-logos is proxied here.

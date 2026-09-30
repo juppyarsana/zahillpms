@@ -580,13 +580,15 @@ async function loadKitchen(propertyId, requestedDate) {
   const mealPaxOf = list => list.reduce((s, r) => s + r.meal_pax, 0);
   // Extra beds with breakfast (the night before) add to that room's breakfast.
   const extra = await extraBreakfasts(propertyId, date);
+  // Breakfast boxes front desk asked for that morning (restaurant_requests).
+  const boxes = await require('../services/restaurantRequests').boxesForDate(propertyId, date);
   for (const r of rows) {
     r.extra_breakfast = r.breakfast_here ? (extra.get(r.id) || 0) : 0;
     r.breakfast_pax = (r.includes_breakfast ? (parseInt(r.num_guests, 10) || 0) : 0) + r.extra_breakfast;
   }
   const breakfastIn = rows.filter(r => r.breakfast_here);
   const dinnerIn = rows.filter(r => r.dinner_here);
-  const breakfast = breakfastIn.filter(r => r.includes_breakfast || r.extra_breakfast > 0).map(r => ({ ...r, meal_pax: r.breakfast_pax }));
+  const breakfast = breakfastIn.filter(r => r.includes_breakfast || r.extra_breakfast > 0).map(r => ({ ...r, meal_pax: r.breakfast_pax, box: boxes.get(r.id) || null }));
   const dinner = dinnerIn.filter(r => r.includes_dinner).map(r => ({ ...r, meal_pax: parseInt(r.num_guests, 10) || 0 }));
   const breakfastPlanIds = new Set(breakfastIn.filter(r => r.includes_breakfast).map(r => r.id));
   const without = (all, withMeal) => ({ rooms: all.length - withMeal.length, pax: pax(all) - pax(withMeal) });

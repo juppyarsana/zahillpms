@@ -1824,7 +1824,7 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
    food menu and the room-service confirm queue go too.
 
-## Next migration number: 088
+## Next migration number: 089
 
 ---
 

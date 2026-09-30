@@ -382,7 +382,16 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
               <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 15 }}>{r.meal_pax ?? r.num_guests}
                 {r.extra_breakfast > 0 && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>incl. {r.extra_breakfast} extra bed</div>}</td>
               <td>{r.rate_plan_code || '—'}</td>
-              <td style={{ fontSize: 12, maxWidth: 280 }}>{r.special_requests || <span className="text-muted">—</span>}</td>
+              <td style={{ fontSize: 12, maxWidth: 280 }}>
+                {r.box && (
+                  <div style={{ fontWeight: 700, color: '#b45309', marginBottom: r.special_requests ? 3 : 0 }}>
+                    🥡 {r.box.quantity} breakfast box{r.box.quantity === 1 ? '' : 'es'} · ready {r.box.ready_time}
+                    {r.box.status === 'done' && <span style={{ fontWeight: 400, color: '#15803d' }}> · sent to kitchen</span>}
+                    {r.box.note && <div style={{ fontWeight: 400, color: 'inherit' }}>{r.box.note}</div>}
+                  </div>
+                )}
+                {r.special_requests || (!r.box && <span className="text-muted">—</span>)}
+              </td>
             </tr>
           ))}</tbody>
         </table></div>
