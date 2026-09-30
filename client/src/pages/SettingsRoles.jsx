@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 // Groups mirror the sidebar's nav grouping so the two stay in sync.
-// rate_plans / night_audit / agents aren't listed — they're owner-only
+// rate_plans / agents aren't listed — they're owner-only
 // (RequireOwner), not delegatable menu keys.
 export const MENU_DEFS = [
   { key: 'dashboard',        label: 'Dashboard',            group: 'Front Desk' },
@@ -22,6 +22,8 @@ export const MENU_DEFS = [
   { key: 'guest_board',      label: 'Guest Board',          group: 'Guest Experience' },
   { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
   { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Operations' },
+  // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
+  { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Operations' },
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import NightAuditDetailModal from '../components/NightAuditDetailModal';
 
 function fmtIDR(n) {
   const num = Number(n || 0);
@@ -22,56 +24,14 @@ function fmtDateTime(str) {
   });
 }
 
-function ExpandedRow({ run }) {
-  const noShows = run.no_shows || [];
-  const pendingBalances = run.pending_balances || [];
-
-  return (
-    <tr>
-      <td colSpan={8} style={{ padding: '0 16px 16px', background: '#F9FAFB' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, paddingTop: 12 }}>
-
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-              No-shows ({noShows.length})
-            </div>
-            {noShows.length === 0
-              ? <p style={{ fontSize: 13, color: '#9CA3AF' }}>None</p>
-              : noShows.map((ns, i) => (
-                <div key={i} style={{ fontSize: 13, padding: '6px 0', borderBottom: '1px solid #E5E7EB' }}>
-                  <strong>{ns.guest_name}</strong>
-                  <span style={{ color: '#6B7280' }}> — {ns.unit_name}</span>
-                </div>
-              ))
-            }
-          </div>
-
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-              To collect from guests leaving ({pendingBalances.length})
-            </div>
-            {pendingBalances.length === 0
-              ? <p style={{ fontSize: 13, color: '#9CA3AF' }}>None</p>
-              : pendingBalances.map((pb, i) => (
-                <div key={i} style={{ fontSize: 13, padding: '6px 0', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between' }}>
-                  <span><strong>{pb.guest_name}</strong><span style={{ color: '#6B7280' }}> — {pb.unit_name}</span></span>
-                  <span style={{ fontWeight: 700, color: '#D97706' }}>{fmtIDR(pb.amount)}</span>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
 export default function NightAudit() {
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
   const [history, setHistory]   = useState([]);
   const [latest, setLatest]     = useState(null);
   const [loading, setLoading]   = useState(true);
   const [running, setRunning]   = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [openDate, setOpenDate] = useState(null);
   const [toast, setToast]       = useState(null);
 
   function showToast(msg, type = 'success') {
@@ -113,9 +73,6 @@ export default function NightAudit() {
     setRunning(false);
   }
 
-  function toggleExpand(id) {
-    setExpanded(prev => prev === id ? null : id);
-  }
 
   return (
     <div>
@@ -129,15 +86,13 @@ export default function NightAudit() {
       <div className="page-header">
         <div>
           <div className="page-title">Night Audit</div>
-          <div className="page-subtitle">End-of-day audit history · Owner only</div>
+          <div className="page-subtitle">End-of-day audit history · click a day for its full report</div>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleRunNow}
-          disabled={running}
-        >
-          {running ? 'Running…' : '▶ Run Audit Now'}
-        </button>
+        {isOwner && (
+          <button className="btn btn-primary" onClick={handleRunNow} disabled={running}>
+            {running ? 'Running…' : '▶ Run Audit Now'}
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -161,20 +116,16 @@ export default function NightAudit() {
             </thead>
             <tbody>
               {history.map((run, i) => {
-                const isExp = expanded === run.id;
                 const noShowCount = (run.no_shows || []).length;
                 const pendingCount = (run.pending_balances || []).length;
-                return [
+                return (
                   <tr
                     key={run.id}
-                    onClick={() => toggleExpand(run.id)}
-                    style={{
-                      borderBottom: isExp ? 'none' : '1px solid #E5E7EB',
-                      cursor: 'pointer',
-                      background: isExp ? '#F9FAFB' : i % 2 === 0 ? 'white' : '#FAFAFA',
-                    }}
-                    onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = '#F3F4F6'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = isExp ? '#F9FAFB' : i % 2 === 0 ? 'white' : '#FAFAFA'; }}
+                    onClick={() => setOpenDate(String(run.business_date).slice(0, 10))}
+                    title="Open the full audit report"
+                    style={{ borderBottom: '1px solid #E5E7EB', cursor: 'pointer', background: i % 2 === 0 ? 'white' : '#FAFAFA' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#F3F4F6'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? 'white' : '#FAFAFA'; }}
                   >
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>
                       {fmtDate(run.business_date)}
@@ -201,14 +152,14 @@ export default function NightAudit() {
                         : <span style={{ color: '#9CA3AF', fontSize: 13 }}>—</span>
                       }
                     </td>
-                  </tr>,
-                  isExp && <ExpandedRow key={`${run.id}-exp`} run={run} />,
-                ];
+                  </tr>
+                );
               })}
             </tbody>
           </table></div>
         </div>
       )}
+      {openDate && <NightAuditDetailModal date={openDate} onClose={() => setOpenDate(null)} />}
     </div>
   );
 }

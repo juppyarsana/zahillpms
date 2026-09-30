@@ -76,7 +76,7 @@ export default function Sidebar() {
   const operationsItems = [
     can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
     can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
-    isOwner && hasModule('financial')            && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
+    can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
   ].filter(Boolean);
 
   const revenueItems = [

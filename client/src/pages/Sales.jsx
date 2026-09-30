@@ -586,28 +586,30 @@ export default function Sales() {
                     <div className="form-group"><label className="form-label">Price (IDR) *</label><input className="form-input" type="number" value={prodForm.price} onChange={e=>setProdForm(f=>({...f,price:e.target.value}))} /><PriceBasisHint /></div>
                   </div>
                   <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={prodForm.description} onChange={e=>setProdForm(f=>({...f,description:e.target.value}))} /></div>
-                  {!prodForm.per_night && (
-                    <div className="form-group">
-                      <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>
-                        <input type="checkbox" checked={prodForm.open_price} onChange={e=>setProdForm(f=>({...f,open_price:e.target.checked}))} />
-                        Price typed at sale (e.g. Other charge, damage fee)
-                      </label>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                        Front desk types what it is and the price each time. The price above is only a suggestion (0 = none).
-                      </div>
+                  <div className="form-group" style={prodForm.per_night ? { opacity: 0.5 } : undefined}>
+                    <label className="form-label flex gap-2 flex-center" style={{ cursor: prodForm.per_night ? 'not-allowed' : 'pointer' }}>
+                      <input type="checkbox" checked={prodForm.open_price} disabled={prodForm.per_night}
+                        onChange={e=>setProdForm(f=>({...f,open_price:e.target.checked}))} />
+                      Price typed at sale (e.g. Other charge, damage fee)
+                    </label>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {prodForm.per_night
+                        ? <>Not with a per-night item — untick <b>Per night</b> first. A per-night item's price can already be changed on each sale.</>
+                        : 'Front desk types what it is and the price each time. The price above is only a suggestion (0 = none).'}
                     </div>
-                  )}
-                  {!prodForm.open_price && (
-                  <div className="form-group">
-                    <label className="form-label flex gap-2 flex-center" style={{ cursor: 'pointer' }}>
-                      <input type="checkbox" checked={prodForm.per_night} onChange={e=>setProdForm(f=>({...f,per_night:e.target.checked}))} />
+                  </div>
+                  <div className="form-group" style={prodForm.open_price ? { opacity: 0.5 } : undefined}>
+                    <label className="form-label flex gap-2 flex-center" style={{ cursor: prodForm.open_price ? 'not-allowed' : 'pointer' }}>
+                      <input type="checkbox" checked={prodForm.per_night} disabled={prodForm.open_price}
+                        onChange={e=>setProdForm(f=>({...f,per_night:e.target.checked}))} />
                       Per night — part of the stay (e.g. extra bed)
                     </label>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      Sold for chosen nights of a guest's stay and charged night by night with the room (from Sales or the reservation). The price is per night.
+                      {prodForm.open_price
+                        ? <>Not with a typed price — untick <b>Price typed at sale</b> first. A per-night item's price can still be lowered on each sale.</>
+                        : 'Sold for chosen nights of a guest\'s stay and charged night by night with the room (from Sales or the reservation). The price is per night and can be changed on each sale.'}
                     </div>
                   </div>
-                  )}
                   <div className="form-row">
                     <div className="form-group">
                       <label className="form-label">Breakfasts included {prodForm.per_night ? 'per unit per night' : 'per unit'}</label>

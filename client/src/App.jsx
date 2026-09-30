@@ -79,7 +79,7 @@ function BottomNav() {
     { label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
       can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
-      isOwner && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
+      can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
     ]},
     { label: 'Revenue & Billing', items: [
       can('pricing') && hasModule('reservations') && { to: '/pricing', icon: '💰', label: 'Pricing' },
@@ -294,7 +294,7 @@ export default function App() {
                   <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
-                  <Route path="/night-audit"      element={<RequireOwner><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireOwner>} />
+                  <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
                   <Route path="/agents"          element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/agents/:agentId" element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />

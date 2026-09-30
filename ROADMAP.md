@@ -1824,7 +1824,14 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
    food menu and the room-service confirm queue go too.
 
-## Next migration number: 089
+## Night audit detail (2026-10-01, migration 089) — ✅ built
+
+Each Night Audit row opens the full audit report for that business date (charges posted room by room, no-shows /
+past check-out / not posted / never arrived, the day's figures, money received, next day) with a PDF; saved when the
+audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
+owner-only. Details in `CLAUDE.md`.
+
+## Next migration number: 090
 
 ---
 

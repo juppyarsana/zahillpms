@@ -429,22 +429,35 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   const folioNote = inHouse.length ? ` · ${folioPosted} folio night(s) posted${folioFailed ? ` (${folioFailed} failed)` : ''}` : '';
   const summary = `${unitsOccupied} unit(s) occupied · ${noShows.length} no-show(s) · Rp ${(roomRevenue + fnbRevenue + ancillaryRevenue).toLocaleString('id-ID')} total revenue · ${arrivingToday.length} arriving today · ${pendingBalances.length} balance(s) to collect from guests leaving today${overdueCheckouts.length ? ` · ${overdueCheckouts.length} still checked in past check-out` : ''}${folioNote}`;
 
-  // 10. Write audit log
+  // 10. The full audit report (charges posted room by room, what the audit
+  // did, the day's figures, money received) — saved with the run so a
+  // reprint later shows the day as it was closed. Never fails the audit.
+  let detail = null;
+  try {
+    detail = await require('../services/nightAuditDetail').buildAuditDetail(propertyId, businessDate, {
+      no_shows: noShows, overdue: overdueCheckouts, tasks_created: tasksCreated, folio_failed: folioFailed,
+    });
+  } catch (err) {
+    console.error('[Night Audit] Detail report failed (audit still complete):', err.message);
+  }
+
+  // 11. Write audit log
   await db.query(
     `INSERT INTO night_audit_runs
        (id, business_date, triggered_by, units_occupied, no_shows,
-        room_revenue, fnb_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary, property_id)
-     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        room_revenue, fnb_revenue, ancillary_revenue, pending_balances, arriving_today, tasks_created, summary, property_id, detail)
+     VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       businessDate, triggeredBy, unitsOccupied,
       JSON.stringify(noShows), roomRevenue, fnbRevenue, ancillaryRevenue,
       JSON.stringify(pendingBalances), JSON.stringify(arrivingToday), tasksCreated, summary, propertyId,
+      detail ? JSON.stringify(detail) : null,
     ]
   );
 
   console.log(`[Night Audit] Done for ${businessDate}: ${summary}`);
 
-  // 11. Owner email — best-effort, never blocks or fails the audit. Skipped
+  // 12. Owner email — best-effort, never blocks or fails the audit. Skipped
   // when the property gets the Daily Close (Reports & Alerts), which carries
   // the same content at 00:30.
   try {
