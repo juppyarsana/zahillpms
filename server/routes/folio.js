@@ -108,7 +108,16 @@ router.get('/:bookingId', auth, async (req, res) => {
     const folio = await loadFolio(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
     const { booking, property, ...rest } = folio;
-    res.json({ booking_id: booking.id, complimentary_scope: booking.complimentary_scope || null, ...rest });
+    // Lines staff voided by hand, so a mistaken void can be restored (nights
+    // and per-night extras are voided by the system and left out).
+    const { rows: voided_charges } = await db.query(
+      `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.tax_mode, fc.voided_at, u.name AS voided_by_name
+         FROM folio_charges fc LEFT JOIN users u ON u.id = fc.voided_by
+        WHERE fc.booking_id = $1 AND fc.is_voided = true AND fc.type NOT IN ('room', 'fnb', 'addon')
+        ORDER BY fc.voided_at DESC`,
+      [booking.id]
+    );
+    res.json({ booking_id: booking.id, complimentary_scope: booking.complimentary_scope || null, ...rest, voided_charges });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -514,9 +523,60 @@ router.delete('/charge/:id', auth, async (req, res) => {
       [req.user.id, req.params.id, req.propertyId]
     );
     if (!charge) return res.status(404).json({ error: 'Charge not found' });
+    await db.query(
+      'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [charge.booking_id, `Folio line voided: ${charge.description}`.slice(0, 1000), req.user.id]
+    );
     res.json(charge);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/folio/charge/:id/restore — undo a void made by mistake. Only
+// lines staff void by hand: room / meal / per-night extra lines are posted
+// and voided by the system (dates, extras card), and a line whose activity
+// was cancelled or whose order was declined must stay off the bill.
+router.post('/charge/:id/restore', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [charge] } = await client.query(
+      `SELECT fc.*, b.status AS booking_status, b.folio_status,
+              (SELECT s.confirmation_status FROM sales s WHERE s.id = fc.sale_id) AS sale_confirmation,
+              (SELECT ab.status FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id LIMIT 1) AS activity_status
+         FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id
+        WHERE fc.id = $1 AND b.property_id = $2
+        FOR UPDATE OF fc`,
+      [req.params.id, req.propertyId]
+    );
+    const refuse = (status, error, code) => client.query('ROLLBACK').then(() => res.status(status).json({ error, code }));
+    if (!charge) return refuse(404, 'Charge not found');
+    if (!charge.is_voided) return refuse(409, 'This line is already on the folio', 'NOT_VOIDED');
+    if (['room', 'fnb', 'addon'].includes(charge.type)) {
+      return refuse(409, 'Room, meal and per-night extra lines are posted by the system — change the dates or the stay\'s extras instead', 'SYSTEM_LINE');
+    }
+    if (['cancelled', 'no_show'].includes(charge.booking_status)) return refuse(409, 'This booking is cancelled', 'BOOKING_CANCELLED');
+    if (['invoiced', 'paid'].includes(charge.folio_status)) {
+      return refuse(409, 'This stay is already on an agent invoice — its bill can no longer change', 'AGENT_INVOICED');
+    }
+    if (charge.sale_confirmation === 'rejected') return refuse(409, 'This order was declined — it can\'t go back on the bill', 'ORDER_REJECTED');
+    if (['cancelled', 'no_show'].includes(charge.activity_status)) {
+      return refuse(409, 'This activity was cancelled — it can\'t go back on the bill', 'ACTIVITY_CANCELLED');
+    }
+    await client.query(
+      'UPDATE folio_charges SET is_voided = false, voided_by = NULL, voided_at = NULL WHERE id = $1', [charge.id]);
+    await client.query(
+      'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [charge.booking_id, `Voided folio line restored: ${charge.description}`.slice(0, 1000), req.user.id]
+    );
+    await client.query('COMMIT');
+    res.json({ id: charge.id, booking_id: charge.booking_id });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -358,13 +358,27 @@ export default function BookingDetail() {
       ? `Void this charge?
 
 It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.`
-      : 'Void this charge?';
+      : `Void "${charge.description}"?
+
+It comes off the guest's bill. It can be put back from "Voided lines" below.`;
     if (!confirm(msg)) return;
     try {
       await api.delete(`/api/folio/charge/${chargeId}`);
       loadFolio();
+      load();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to void charge');
+    }
+  }
+
+  async function restoreCharge(charge) {
+    if (!confirm(`Put "${charge.description}" back on the bill?`)) return;
+    try {
+      await api.post(`/api/folio/charge/${charge.id}/restore`);
+      loadFolio();
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to restore the charge');
     }
   }
 
@@ -1296,6 +1310,29 @@ It was already paid at the desk (${charge.paid_method}). The payment stays on th
               </div>
               {folio.prices_include_tax && includesText(folio, fmtIDR) && (
                 <div className="text-muted" style={{ fontSize: 11, marginTop: -6, marginBottom: 10, textAlign: 'right' }}>{includesText(folio, fmtIDR)}</div>
+              )}
+
+              {folio.voided_charges?.length > 0 && (
+                <details style={{ marginBottom: 12 }}>
+                  <summary className="text-muted" style={{ fontSize: 12, cursor: 'pointer' }}>
+                    Voided lines ({folio.voided_charges.length}) — not on the bill
+                  </summary>
+                  {folio.voided_charges.map(c => (
+                    <div key={c.id} className="flex-between" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div>
+                        <div><s>{c.description}</s></div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          voided{c.voided_at ? ` ${new Date(c.voided_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+                          {c.voided_by_name && ` · ${c.voided_by_name}`}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <s className="text-muted">{fmtIDR(lineShown(c.amount, c, folio))}</s>
+                        <button className="btn btn-secondary btn-sm" onClick={() => restoreCharge(c)}>↩ Restore</button>
+                      </div>
+                    </div>
+                  ))}
+                </details>
               )}
 
               {!['cancelled', 'no_show'].includes(booking.status) && (
