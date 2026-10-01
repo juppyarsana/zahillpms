@@ -2668,6 +2668,16 @@ router.put('/:id', auth, async (req, res) => {
         return res.status(409).json({ error: 'This stay is already billed to its agent — the agent can\'t be changed now', code: 'AGENT_BILLED' });
       }
     }
+    // Meal plan change re-splits room / meals: not on a free stay (its split
+    // is the value given) nor one already on an agent invoice.
+    if (rate_plan_id && rate_plan_id !== before.rate_plan_id) {
+      if (before.complimentary_scope || ['invoiced', 'paid'].includes(before.folio_status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: before.complimentary_scope ? 'The meal plan cannot be changed on a complimentary stay' : 'This stay is already on an agent invoice — the meal plan cannot be changed now', code: 'PLAN_LOCKED' });
+      }
+      const { rows: [planRow] } = await client.query('SELECT 1 FROM rate_plans WHERE id = $1 AND property_id = $2', [rate_plan_id, req.propertyId]);
+      if (!planRow) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Unknown meal plan' }); }
+    }
     const commissionVals = agentId ? commission.values : { commission_type: null, commission_value: null };
     const commissionChanged = 'commission_type' in commissionVals || agentId !== before.agent_id;
 

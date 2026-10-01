@@ -174,7 +174,7 @@ export default function BookingDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const location = useLocation();
-  const { paymentMethods, sources, branding } = useSettings();
+  const { paymentMethods, sources, branding, ratePlans = [] } = useSettings();
   const { hasModule, user, can } = useAuth();
   const isOwner = user?.role === 'owner';
   const canEditPrice = isOwner || can('edit_price');
@@ -637,6 +637,7 @@ Type the reason to void it:`;
       special_requests: booking.special_requests || '',
       internal_notes: booking.internal_notes || '',
       bed_preference: booking.bed_preference || '',
+      rate_plan_id: booking.rate_plan_id || '',
     });
     setEditAgent(agentValueFromBooking(booking));
     setEditingDetails(true);
@@ -645,7 +646,10 @@ Type the reason to void it:`;
   async function doEditDetails() {
     setEditDetailsLoading(true);
     try {
-      await api.put(`/api/bookings/${id}`, { ...editDetailsForm, ...agentBody(editAgent) });
+      // The meal plan is only sent when it changed (the server then re-splits room / meals).
+      const { rate_plan_id, ...fields } = editDetailsForm;
+      const planChanged = rate_plan_id && rate_plan_id !== booking.rate_plan_id;
+      await api.put(`/api/bookings/${id}`, { ...fields, ...(planChanged ? { rate_plan_id } : {}), ...agentBody(editAgent) });
       setEditingDetails(false);
       load();
     } catch (err) {
@@ -1634,6 +1638,26 @@ Type the reason to void it:`;
                 ? <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Agent: <b>{booking.agent_name || '—'}</b> — already billed to the agent, so it can't be changed here.</div>
                 : <BookingAgentFields value={editAgent} onChange={setEditAgent} sourceType={sources.find(s => s.id === editDetailsForm.source)?.source_type}
                     hint={AGENT_SOURCE_TYPES.includes(sources.find(s => s.id === editDetailsForm.source)?.source_type) && !editAgent.agent ? 'This source usually comes with an agent — pick one so it shows in Agent Billing.' : null} />)}
+              {ratePlans.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label">Meal plan</label>
+                  {booking.complimentary_scope || ['invoiced', 'paid'].includes(booking.folio_status) ? (
+                    <div className="text-muted" style={{ fontSize: 12 }}>
+                      <b>{booking.rate_plan_code || 'Room only'}</b> — can't be changed on a {booking.complimentary_scope ? 'complimentary stay' : 'stay already on an agent invoice'}.
+                    </div>
+                  ) : (<>
+                    <select className="form-select" value={editDetailsForm.rate_plan_id || ''} onChange={e => setEditDetailsForm(f => ({ ...f, rate_plan_id: e.target.value }))}>
+                      {!booking.rate_plan_id && <option value="">—</option>}
+                      {ratePlans.filter(p => p.is_active !== false || p.id === booking.rate_plan_id).map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+                    </select>
+                    {editDetailsForm.rate_plan_id && editDetailsForm.rate_plan_id !== booking.rate_plan_id && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        The price stays Rp {Math.round(parseFloat(booking.total_amount) || 0).toLocaleString('id-ID')} — only how it is shared between room and meals changes. If the guest pays more or less for the new plan, change it in Edit Price afterwards.
+                      </div>
+                    )}
+                  </>)}
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Bed Preference</label>
