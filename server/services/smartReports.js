@@ -65,6 +65,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_room_check: {
+    type: 'alert',
+    label: 'Room checks (minibar)',
+    when: 'Instantly',
+    description: 'Front desk asks housekeeping to check the minibar of a room (with a link to answer from a phone), and the answer from housekeeping — what was taken, or nothing.',
+    defaultRoles: ['manager', 'front_desk', 'housekeeping'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_restaurant_request: {
     type: 'alert',
     label: 'Restaurant requests from front desk',
@@ -129,7 +138,7 @@ const REPORTS = {
     paid: true,
   },
 };
-const ROLES = ['owner', 'manager', 'front_desk', 'kitchen', 'other'];
+const ROLES = ['owner', 'manager', 'front_desk', 'kitchen', 'housekeeping', 'other'];
 
 // Can this recipient get this report? { ok } or { error }.
 function reportAllowed(key, { channel, moduleEnabled }) {

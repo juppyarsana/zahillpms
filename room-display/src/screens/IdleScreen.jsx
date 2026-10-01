@@ -5,8 +5,9 @@ import RGBPicker from '../components/RGBPicker';
 import IRControls from '../components/IRControls';
 import CallButton from '../components/CallButton';
 import KioskChip from '../components/KioskChip';
+import { HousekeepingEntry } from '../components/RoomCheckOverlay';
 
-export default function IdleScreen({ unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, operationsEnabled, housekeepingStatus, onMarkClean, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
+export default function IdleScreen({ roomCheck, onOpenRoomCheck, unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, operationsEnabled, housekeepingStatus, onMarkClean, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
   const [localRelays, setLocalRelays] = useState(relays);
 
@@ -76,6 +77,8 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
         </nav>
         <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
           {callingEnabled && <CallButton onClick={onCallFrontDesk} disabled={callActive} />}
+          {/* staff only: minibar check, behind a PIN */}
+          <HousekeepingEntry roomCheck={roomCheck} onOpen={onOpenRoomCheck} />
           <KioskChip />
           <p className="text-ghost text-xs font-mono">{__APP_COMMIT__}</p>
         </div>

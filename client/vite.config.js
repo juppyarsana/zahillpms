@@ -35,7 +35,8 @@ export default defineConfig({
             // receipts, report PDFs / Excel / CSV) are always made fresh: the
             // NetworkFirst rule below hands back the LAST copy when the server
             // takes over 10 s, which printed a document from before an edit.
-            urlPattern: ({ url }) => /\/(invoice|proforma|receipt|registration-cards?|pdf|xlsx|export|id-document)$/.test(url.pathname),
+            urlPattern: ({ url }) => /\/(invoice|proforma|receipt|registration-cards?|pdf|xlsx|export|id-document)$/.test(url.pathname)
+              || url.pathname.includes('/room-check'),   // housekeeping's answers and links: never a stale copy
             handler: 'NetworkOnly',
           },
           {

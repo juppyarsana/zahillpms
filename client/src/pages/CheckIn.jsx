@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BalanceLine, CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
+import RoomCheckPanel from '../components/RoomCheck';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
@@ -641,6 +642,10 @@ export default function CheckIn() {
 
                   {/* What the guest still owes (whole stay) — checkout is refused
                       until it's paid, unless a reason is given. */}
+                  {/* Minibar check by housekeeping — only a warning, never blocks */}
+                  <RoomCheckPanel bookingId={selected.id} onCharged={() => {
+                    api.get(`/api/checkin/checkout/${selected.id}/balance`).then(r => setSelected(s => (s ? { ...s, guest_balance_due: r.data.owed } : s))).catch(() => {});
+                  }} />
                   <CheckoutBalanceBlock booking={selected} reason={unpaidReason} setReason={setUnpaidReason}
                     onRecordPayment={() => setSelected(null)} />
 

@@ -111,8 +111,49 @@ export default function SettingsProperty() {
         )}
       </div>
 
+      {hasModule('sales') && <HousekeepingPinCard />}
       {hasModule('pos_integration') && <PosIntegrationCard />}
       {hasModule('insights') && <MarketInsightsCard />}
+    </div>
+  );
+}
+
+// Room check / minibar (migration 091): the PIN housekeeping types on the room
+// tablet to open the room check. Empty = the tablet's Housekeeping entry is off.
+function HousekeepingPinCard() {
+  const [pin, setPin] = useState('');
+  const [saved, setSaved] = useState(null);
+  const [items, setItems] = useState(0);
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get('/api/room-checks/settings').then(r => { setPin(r.data.pin || ''); setSaved(r.data.pin || ''); setItems(r.data.minibar_items); }).catch(() => {});
+  }, []);
+  async function save() {
+    setMsg(''); setError('');
+    try {
+      const r = await api.put('/api/room-checks/settings', { pin });
+      setSaved(r.data.pin || ''); setPin(r.data.pin || '');
+      setMsg(r.data.pin ? 'Saved' : 'Switched off');
+    } catch (err) { setError(err.response?.data?.error || 'Could not save'); }
+  }
+  if (saved === null) return null;
+  return (
+    <div className="card mt-3">
+      <div className="card-title">Room check (minibar)</div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+        Housekeeping opens <b>Housekeeping</b> on the room tablet with this PIN and ticks what was taken from the minibar;
+        front desk then adds it to the guest's bill. The list is the Sales items in the <b>Minibar</b> category
+        ({items} now). Front desk can also ask for a check from the reservation or the check-out window — the request goes to
+        Telegram (Reports &amp; Alerts → Room checks) with a link to answer from a phone. Leave the PIN empty to switch the tablet entry off.
+      </p>
+      <div className="flex gap-2 items-center">
+        <input className="form-input" inputMode="numeric" maxLength={6} placeholder="4–6 digits" value={pin}
+          onChange={e => setPin(e.target.value.replace(/\D/g, ''))} style={{ maxWidth: 140, fontFamily: 'monospace', letterSpacing: 2 }} />
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={pin === saved}>Save</button>
+        {msg && <span className="text-muted" style={{ fontSize: 13 }}>{msg}</span>}
+      </div>
+      {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
     </div>
   );
 }

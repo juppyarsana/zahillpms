@@ -14,6 +14,7 @@ import InstallPrompt from './components/InstallPrompt';
 import CallOverlay from './components/CallOverlay';
 import AlarmOverlay from './components/AlarmOverlay';
 import MessageOverlay from './components/MessageOverlay';
+import RoomCheckOverlay from './components/RoomCheckOverlay';
 import useResilientEventSource from './useResilientEventSource';
 
 const POLL_MS = 10_000;
@@ -37,6 +38,7 @@ export default function App() {
   const [roomId, setRoomId] = useState(() => localStorage.getItem('roomId'));
   const [displayToken, setDisplayToken] = useState(() => localStorage.getItem('displayToken'));
   const [state, setState] = useState(null);
+  const [showRoomCheck, setShowRoomCheck] = useState(false);   // housekeeping's minibar check (PIN)
   const [error, setError] = useState(null);
   const [debugClicks, setDebugClicks] = useState(0);
   const [showDebugMenu, setShowDebugMenu] = useState(false);
@@ -443,6 +445,8 @@ export default function App() {
           operationsEnabled={state.operationsEnabled}
           housekeepingStatus={state.unit?.housekeeping_status}
           onMarkClean={handleMarkRoomClean}
+          roomCheck={state.roomCheck}
+          onOpenRoomCheck={() => setShowRoomCheck(true)}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
           onCallFrontDesk={handlePlaceCall}
@@ -464,6 +468,7 @@ export default function App() {
           muted={muted}
         />
         <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
+        {showRoomCheck && <RoomCheckOverlay roomId={roomId} onClose={() => setShowRoomCheck(false)} onSent={fetchState} />}
         <UpdatePrompt />
         <InstallPrompt />
       </>
@@ -487,6 +492,8 @@ export default function App() {
         roomControllerEnabled={state.roomControllerEnabled}
         callingEnabled={state.callingEnabled}
         operationsEnabled={state.operationsEnabled}
+        roomCheck={state.roomCheck}
+        onOpenRoomCheck={() => setShowRoomCheck(true)}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
         onCallFrontDesk={handlePlaceCall}
@@ -512,6 +519,7 @@ export default function App() {
       />
       <AlarmOverlay ringing={alarmRinging} time={alarmTime} onDismiss={handleDismissAlarm} />
       <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
+      {showRoomCheck && <RoomCheckOverlay roomId={roomId} onClose={() => setShowRoomCheck(false)} onSent={fetchState} />}
       <UpdatePrompt />
       <InstallPrompt />
     </>

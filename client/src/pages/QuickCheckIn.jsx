@@ -4,6 +4,7 @@ import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
+import RoomCheckPanel from '../components/RoomCheck';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import { useSettings } from '../context/SettingsContext';
 
@@ -489,6 +490,9 @@ export default function QuickCheckIn() {
               ) : (
                 <>
                   {/* Sisa tagihan tamu — checkout ditolak sampai dibayar, kecuali ada alasan */}
+                  <RoomCheckPanel bookingId={coSelected.id} lang="id" onCharged={() => {
+                    api.get(`/api/checkin/checkout/${coSelected.id}/balance`).then(r => setCoSelected(s => (s ? { ...s, guest_balance_due: r.data.owed } : s))).catch(() => {});
+                  }} />
                   <CheckoutBalanceBlock booking={coSelected} lang="id" reason={unpaidReason} setReason={setUnpaidReason}
                     onRecordPayment={closeCoModal} />
 

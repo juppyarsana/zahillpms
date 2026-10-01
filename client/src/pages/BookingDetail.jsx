@@ -14,6 +14,7 @@ import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
 import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import RestaurantRequestsCard from '../components/RestaurantRequests';
+import RoomCheckPanel from '../components/RoomCheck';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
@@ -1166,6 +1167,11 @@ Type the reason to void it:`;
 
       {hasModule('pos_integration') && <RestaurantRequestsCard booking={booking} />}
 
+      {/* Minibar: ask housekeeping, see their answer, add it to the bill (migration 091) */}
+      {hasModule('sales') && ['checked_in', 'checked_out'].includes(booking.status) && (
+        <RoomCheckPanel card bookingId={booking.id} onCharged={() => { load(); if (folio) loadFolio(); }} />
+      )}
+
       {booking.special_requests && (
         <div className="card mt-3">
           <div className="card-title">Special Requests</div>
@@ -2042,6 +2048,11 @@ Type the reason to void it:`;
                     </span>
                   </label>
                 </div>
+              )}
+              {hasModule('sales') && (
+                <RoomCheckPanel bookingId={booking.id} onCharged={() => {
+                  api.get(`/api/checkin/checkout/${id}/balance?bill_to_agent=${!!billToAgent}`).then(r => setCoOwed(r.data.owed)).catch(() => {});
+                }} />
               )}
               <CheckoutBalanceBlock booking={{ ...booking, guest_balance_due: coOwed, agent_billed: cityLedgerSource && billToAgent }}
                 reason={unpaidReason} setReason={setUnpaidReason} onRecordPayment={() => setCheckingOut(false)} />

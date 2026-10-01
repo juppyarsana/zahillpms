@@ -18,7 +18,7 @@ const { round2, computeFolioTotals } = require('./folioService');
 
 const EXTRA_CATEGORIES = {
   room_addon: 'Room add-ons', transport: 'Transport', laundry: 'Laundry',
-  service: 'Services', merchandise: 'Merchandise', other: 'Other',
+  service: 'Services', merchandise: 'Merchandise', minibar: 'Minibar', other: 'Other',
 };
 
 const EXPENSE_CATEGORIES = {

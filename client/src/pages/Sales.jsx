@@ -16,6 +16,8 @@ const CATEGORIES = [
   { key: 'laundry',     icon: '🧺', label: 'Laundry',      hint: 'Per piece or per bag' },
   { key: 'service',     icon: '🛎', label: 'Services',     hint: 'Decoration, BBQ setup, private dinner setup' },
   { key: 'merchandise', icon: '👕', label: 'Merchandise',  hint: 'Souvenirs, toiletries' },
+  // also the list housekeeping ticks on the room tablet (room check, migration 091)
+  { key: 'minibar',     icon: '🥤', label: 'Minibar',      hint: 'Drinks and snacks in the room — housekeeping ticks them on the room tablet' },
   { key: 'other',       icon: '📦', label: 'Other',        hint: '' },
 ];
 const CAT_BY_KEY = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));

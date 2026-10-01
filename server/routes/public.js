@@ -21,4 +21,30 @@ router.get('/properties/:slug/branding', async (req, res) => {
   }
 });
 
+// Room check from a phone (migration 091): the link in the Telegram message
+// front desk's request sends to housekeeping. The token is the credential —
+// random, one per request, dead once answered or closed.
+const roomCheck = require('../services/roomCheckService');
+
+router.get('/room-check/:token', async (req, res) => {
+  try {
+    const rc = await roomCheck.byToken(req.params.token);
+    if (!rc) return res.status(404).json({ error: 'This room check is already answered or closed', code: 'GONE' });
+    res.json({ room: rc.room, property_name: rc.property_name, items: await roomCheck.minibarItems(rc.property_id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/room-check/:token', async (req, res) => {
+  try {
+    const rc = await roomCheck.byToken(req.params.token);
+    if (!rc) return res.status(404).json({ error: 'This room check is already answered or closed', code: 'GONE' });
+    const check = await roomCheck.submit(rc.property_id, { unitId: rc.unit_id, checkId: rc.id, items: req.body.items, note: req.body.note, via: 'link' });
+    res.status(201).json({ room: check.room, total: check.total, items: check.items.length });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message, code: err.code });
+  }
+});
+
 module.exports = router;

@@ -8,7 +8,7 @@ import { useSettings } from '../context/SettingsContext';
 // A property's own recipient list — anyone, with or without a PMS login —
 // each getting the reports ticked for them by Telegram or email.
 
-const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', front_desk: 'Front desk', kitchen: 'Kitchen', other: 'Other' };
+const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', front_desk: 'Front desk', kitchen: 'Kitchen', housekeeping: 'Housekeeping', other: 'Other' };
 const EMPTY = { name: '', channel: 'telegram', address: '', role: 'manager' };
 
 const linkBtn = { background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12 };

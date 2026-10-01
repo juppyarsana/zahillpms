@@ -8,6 +8,7 @@ import UpdatePrompt from './components/UpdatePrompt';
 import CallBanner from './components/CallBanner';
 import CallRoomFab from './components/CallRoomFab';
 import Login from './pages/Login';
+import RoomCheckPublic from './pages/RoomCheckPublic';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
@@ -246,6 +247,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/login/:slug" element={<Login />} />
+          {/* Room check from housekeeping's phone — no login, the link is the key (migration 091) */}
+          <Route path="/room-check/:token" element={<RoomCheckPublic />} />
           <Route path="/admin" element={
             <RequireSuperAdmin>
               <AdminLayout>

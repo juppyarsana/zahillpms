@@ -9,6 +9,7 @@ import OrderFoodTab from '../components/OrderFoodTab';
 import BookActivityTab from '../components/BookActivityTab';
 import YourOrdersTab from '../components/YourOrdersTab';
 import KioskChip from '../components/KioskChip';
+import { HousekeepingEntry } from '../components/RoomCheckOverlay';
 
 const ORDERS_POLL_MS = 15000;
 
@@ -18,7 +19,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'spa',         label: 'Resort'     },
 ];
 
-export default function GuestScreen({ unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, operationsEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive, alarmTime, alarmEnabled, onSetAlarm }) {
+export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, operationsEnabled, onRefresh, onDebugClick, onCallFrontDesk, callActive, alarmTime, alarmEnabled, onSetAlarm }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
 
@@ -111,6 +112,8 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
         </nav>
 
         <div className="shrink-0 w-full flex flex-col items-center gap-3" style={{ padding: '0 8px' }}>
+          {/* staff only: minibar check, behind a PIN */}
+          <HousekeepingEntry roomCheck={roomCheck} onOpen={onOpenRoomCheck} />
           <KioskChip />
           <p className="text-ghost text-xs font-mono">{__APP_COMMIT__}</p>
         </div>

@@ -1824,6 +1824,12 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
    food menu and the room-service confirm queue go too.
 
+## Room check / minibar (2026-10-01, migration 091) — ✅ built
+
+Housekeeping reports what was taken from a room's minibar on the room tablet (PIN) or from a phone link; front desk
+asks for it from the reservation / check-out window and adds the answer to the guest's bill. Minibar items = Sales
+items in the Minibar category. Not built: a housekeeping list of all rooms waiting, restock tracking per room. See CLAUDE.md.
+
 ## A price per night (2026-10-01, migration 090) — ✅ built
 
 Edit Price can set a different price for each night of a stay (agent rates that differ night by night); the folio,
@@ -1843,7 +1849,7 @@ past check-out / not posted / never arrived, the day's figures, money received, 
 audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
 owner-only. Details in `CLAUDE.md`.
 
-## Next migration number: 091
+## Next migration number: 092
 
 ---
 

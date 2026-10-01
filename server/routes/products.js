@@ -6,7 +6,7 @@ const canManageMenu = requireOwnerOrMenu('resto_menu');
 
 // Mirrors products_category_check (migration 067): F&B for the resto app /
 // Room Display Dining, the rest are hotel extras sold from the PMS Sales page.
-const CATEGORIES = ['drinks', 'food', 'room_addon', 'transport', 'laundry', 'service', 'merchandise', 'other'];
+const CATEGORIES = ['drinks', 'food', 'room_addon', 'transport', 'laundry', 'service', 'merchandise', 'minibar', 'other'];
 
 // Breakfast on an item (migrations 074/075): meal_price = ONE breakfast (net),
 // meal_pax = breakfasts one unit includes (single extra bed 1, double 2).

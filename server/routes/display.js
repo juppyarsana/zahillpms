@@ -8,6 +8,7 @@ const { getWeather } = require('../weather');
 const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
 const telegramService = require('../services/telegramService');
+const roomCheck = require('../services/roomCheckService');
 const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
 const opsGate = moduleGuard('operations');
@@ -176,6 +177,13 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       roomControllerEnabled: enabledModules.get('room_controller') || false,
       callingEnabled: enabledModules.get('calling') || false,
       operationsEnabled: enabledModules.get('operations') || false,
+      // Room check / minibar (migration 091): the tablet shows a discreet
+      // Housekeeping entry when the property has a PIN (never sent here), and
+      // marks it when front desk is waiting for this room.
+      roomCheck: {
+        enabled: !!(await roomCheck.pinFor(req.propertyId)),
+        requested: !!(await roomCheck.openRequestForUnit(req.propertyId, unit.id)),
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -608,6 +616,46 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
     res.json({ foodOrders, activityBookings });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Room check / minibar (migration 091) ─────────────────────
+// Housekeeping's discreet entry on the room tablet. Every call carries the
+// property's housekeeping PIN (the guest may be using the tablet); a wrong
+// PIN is 403. See services/roomCheckService.js.
+async function roomCheckUnit(req, res) {
+  const pin = await roomCheck.pinFor(req.propertyId);
+  if (!pin) { res.status(409).json({ error: 'Housekeeping PIN is not set — the owner sets it in Property Details', code: 'NO_PIN' }); return null; }
+  if (String(req.body?.pin || '') !== pin) { res.status(403).json({ error: 'Wrong PIN', code: 'WRONG_PIN' }); return null; }
+  const { rows: [unit] } = await db.query('SELECT id, name FROM units WHERE controller_id = $1 AND property_id = $2', [req.params.roomId, req.propertyId]);
+  if (!unit) { res.status(404).json({ error: 'Room not found' }); return null; }
+  return unit;
+}
+
+// POST /room/:roomId/room-check/open { pin } — the minibar list + whether
+// front desk is waiting for this room.
+router.post('/room/:roomId/room-check/open', authDisplay, async (req, res) => {
+  try {
+    const unit = await roomCheckUnit(req, res);
+    if (!unit) return;
+    const [items, open, stay] = await Promise.all([
+      roomCheck.minibarItems(req.propertyId), roomCheck.openRequestForUnit(req.propertyId, unit.id), roomCheck.stayForUnit(req.propertyId, unit.id)]);
+    res.json({ room: unit.name, items, requested: !!open, has_stay: !!stay || !!open });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /room/:roomId/room-check { pin, items: [{ product_id, quantity }], note }
+router.post('/room/:roomId/room-check', authDisplay, async (req, res) => {
+  try {
+    const unit = await roomCheckUnit(req, res);
+    if (!unit) return;
+    const check = await roomCheck.submit(req.propertyId, { unitId: unit.id, items: req.body.items, note: req.body.note, via: 'tablet' });
+    sse.notify(req.params.roomId, { type: 'room_check' });
+    res.status(201).json({ id: check.id, total: check.total, items: check.items.length });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message, code: err.code });
   }
 });
 
