@@ -2240,9 +2240,9 @@ router.post('/group/:groupId/payments', auth, async (req, res) => {
     }
     await client.query(
       `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
-                           received_by = $3, notes = COALESCE(NULLIF($4, ''), notes)
+                           received_by = $3, notes = COALESCE(NULLIF($4, ''), notes), reference = COALESCE($6, reference)
        WHERE id = ANY($5::uuid[])`,
-      [method, receivedAt, req.user.id, notes || '', ids]
+      [method, receivedAt, req.user.id, notes || '', ids, String(req.body.reference || '').trim().slice(0, 120) || null]
     );
     const bookingIds = [...new Set(lines.map(l => l.booking_id))];
     for (const bid of bookingIds) await recomputeBookingStatus(client, bid);

@@ -528,8 +528,8 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       [booking.unit_id, req.propertyId]
     );
     await client.query(
-      'UPDATE checkin_records SET checkout_time = NOW(), condition_notes = COALESCE($1, condition_notes) WHERE booking_id = $2',
-      [condition_notes, req.params.bookingId]
+      'UPDATE checkin_records SET checkout_time = NOW(), checkout_by = $3, condition_notes = COALESCE($1, condition_notes) WHERE booking_id = $2',
+      [condition_notes, req.params.bookingId, req.user.id]
     );
 
     // Auto-generate housekeeping task

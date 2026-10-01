@@ -2131,6 +2131,10 @@ Type the reason to void it:`;
                 <input className="form-input" type="date" value={payForm.received_at} onChange={e => setPayForm(f=>({...f,received_at:e.target.value}))} />
               </div>
               <div className="form-group">
+                <label className="form-label">Reference</label>
+                <input className="form-input" value={payForm.reference || ''} maxLength={120} placeholder="Card trace no. / transfer ref" onChange={e => setPayForm(f=>({...f,reference:e.target.value}))} />
+              </div>
+              <div className="form-group">
                 <label className="form-label">Notes</label>
                 <input className="form-input" value={payForm.notes} onChange={e => setPayForm(f=>({...f,notes:e.target.value}))} />
               </div>

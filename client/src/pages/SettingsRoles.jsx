@@ -12,6 +12,7 @@ export const MENU_DEFS = [
   { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
   { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
+  { key: 'cashier_closing',  label: 'Cashier Closing (payments received, all users)', group: 'Front Desk' },
   // An action permission, not a page: make a stay free without asking for a
   // manager's Telegram approval code (see ComplimentaryModal.jsx).
   { key: 'grant_complimentary', label: 'Grant complimentary stays (no approval code)', group: 'Front Desk' },

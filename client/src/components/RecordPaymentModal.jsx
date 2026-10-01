@@ -26,7 +26,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const [room, setRoom] = useState({});        // payment_id → { on, amount }
   const [items, setItems] = useState([]);      // folio charge ids
   const [nights, setNights] = useState([]);    // booking_addon ids (not posted yet)
-  const [form, setForm] = useState({ method: methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || '', received_at: todayYmd(), notes: '' });
+  const [form, setForm] = useState({ method: methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || '', received_at: todayYmd(), reference: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
@@ -218,8 +218,12 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                   <input className="form-input" type="date" value={form.received_at} onChange={e => setForm(f => ({ ...f, received_at: e.target.value }))} />
                 </div>
                 <div className="form-group">
+                  <label className="form-label">Reference</label>
+                  <input className="form-input" value={form.reference} maxLength={120} placeholder="Card trace no. / transfer ref" onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Notes</label>
-                  <input className="form-input" value={form.notes} placeholder="e.g. BCA ref 1234" onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+                  <input className="form-input" value={form.notes} placeholder="Optional" onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
               </div>
               {roomBad && <div className="alert alert-error"><div>A room amount must be more than 0 and not more than what's due.</div></div>}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 // The audit report for one business date — same content as its PDF
 // (server/services/nightAuditPdf.js), from GET /api/night-audit/:date/detail.
@@ -50,6 +51,7 @@ const TH = { ...TD, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', t
 const R = { textAlign: 'right', whiteSpace: 'nowrap' };
 
 export default function NightAuditDetailModal({ date, onClose }) {
+  const { can } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -198,6 +200,9 @@ export default function NightAuditDetailModal({ date, onClose }) {
               </Section>
 
               <Section title="Money received that day" right={idr(d.collected.total)}>
+                {can('cashier_closing') && (
+                  <div style={{ fontSize: 12, marginBottom: 6 }}><Link to={`/cashier-closing?date=${date}&user=all`}>Every payment, by user — Cashier closing →</Link></div>
+                )}
                 {!d.collected.by_method.length ? <Empty>No payments received.</Empty> : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <tbody>

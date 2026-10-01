@@ -63,6 +63,7 @@ export default function Sidebar() {
     can('quick_checkin') && !can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick Check-in' },
     can('checkin_full')  && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
     can('guest_lists')   && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
+    can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
     can('guests')        && hasModule('guest_crm')    && { to: '/guests',  icon: '👤', label: 'Guests' },
     can('loyalty')       && hasModule('guest_crm')    && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
     can('sales')         && hasModule('sales')        && { to: '/sales',   icon: '🛍', label: 'Sales' },

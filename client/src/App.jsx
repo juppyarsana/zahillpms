@@ -38,6 +38,7 @@ import SettingsRoles from './pages/SettingsRoles';
 import SettingsRatePlans from './pages/SettingsRatePlans';
 import SettingsBoardCards from './pages/SettingsBoardCards';
 import NightAudit from './pages/NightAudit';
+import CashierClosing from './pages/CashierClosing';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
@@ -70,6 +71,7 @@ function BottomNav() {
     { label: 'Front Desk', items: [
       can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
       can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
+      can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
       can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
     ]},
@@ -297,6 +299,7 @@ export default function App() {
                   <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
+                  <Route path="/cashier-closing"  element={<RequireMenu menuKey="cashier_closing"><RequireModule moduleName="financial"><CashierClosing /></RequireModule></RequireMenu>} />
                   <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
                   <Route path="/agents"          element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/agents/:agentId" element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />

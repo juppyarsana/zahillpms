@@ -358,6 +358,11 @@ export default function GuestLists() {
         </>
       )) : tab === 'balance' ? (balance && (
         <>
+          {can('cashier_closing') && hasModule('financial') && (
+            <div style={{ fontSize: 12, marginBottom: 8, textAlign: 'right' }}>
+              Money already received today: <Link to={`/cashier-closing?date=${date}`}>Cashier closing →</Link>
+            </div>
+          )}
           <div className="card mb-3" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
             <div style={{ flex: '1 1 220px', padding: '14px 18px' }}>
               <div className="stat-label">To collect from departing guests</div>

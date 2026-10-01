@@ -86,6 +86,7 @@ app.use('/api/loyalty', auth, moduleGuard('guest_crm'), require('./routes/loyalt
 app.use('/api/payments', auth, moduleGuard('financial'), require('./routes/payments'));
 app.use('/api/reports', auth, moduleGuard('financial'), require('./routes/reports'));
 app.use('/api/night-audit', auth, moduleGuard('financial'), require('./routes/nightAudit'));
+app.use('/api/cashier-closing', auth, moduleGuard('financial'), require('./routes/cashierClosing'));
 app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));
 app.use('/api/agent-directory', auth, moduleGuard('reservations'), require('./routes/agentDirectory'));

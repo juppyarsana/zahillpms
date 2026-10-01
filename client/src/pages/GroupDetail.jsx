@@ -129,7 +129,7 @@ export default function GroupDetail() {
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const [paying, setPaying] = useState(false);
   const [paySel, setPaySel] = useState(new Set());
-  const [payForm, setPayForm] = useState({ method: '', received_at: todayStr, notes: '' });
+  const [payForm, setPayForm] = useState({ method: '', received_at: todayStr, reference: '', notes: '' });
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState('');
 
@@ -149,7 +149,7 @@ export default function GroupDetail() {
     // transfer), otherwise everything that's left.
     const deposits = lines.filter(l => l.type === 'deposit');
     setPaySel(new Set((deposits.length ? deposits : lines).map(l => l.id)));
-    setPayForm({ method: payMethods.find(m => m.id === 'bank_transfer')?.id || payMethods[0]?.id || '', received_at: todayStr, notes: '' });
+    setPayForm({ method: payMethods.find(m => m.id === 'bank_transfer')?.id || payMethods[0]?.id || '', received_at: todayStr, reference: '', notes: '' });
     setPayError('');
     setPaying(true);
   }
@@ -159,7 +159,7 @@ export default function GroupDetail() {
     setPayError('');
     try {
       await api.post(`/api/bookings/group/${groupId}/payments`, {
-        payment_ids: [...paySel], method: payForm.method, received_at: payForm.received_at, notes: payForm.notes,
+        payment_ids: [...paySel], method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
       });
       setPaying(false);
       load();
@@ -567,8 +567,12 @@ export default function GroupDetail() {
                   </div>
                 </div>
                 <div className="form-group">
+                  <label className="form-label">Reference</label>
+                  <input className="form-input" value={payForm.reference || ''} maxLength={120} placeholder="Card trace no. / transfer ref" onChange={e => setPayForm(f => ({ ...f, reference: e.target.value }))} />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Notes</label>
-                  <input className="form-input" value={payForm.notes} placeholder="e.g. BCA transfer ref 1234" onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} />
+                  <input className="form-input" value={payForm.notes} placeholder="Optional" onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
                 <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
                   <span>Total received</span><span>{fmtIDR(total)}</span>

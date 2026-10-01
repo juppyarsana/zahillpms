@@ -86,6 +86,7 @@ async function resplitPendingLine(client, line, amount) {
 // PUT /api/payments/:id
 router.put('/:id', auth, async (req, res) => {
   const { status, method, received_at, notes, amount } = req.body;
+  const reference = String(req.body.reference || '').trim().slice(0, 120) || null;
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -116,9 +117,10 @@ router.put('/:id', auth, async (req, res) => {
         received_at = COALESCE($3, received_at),
         received_by = COALESCE($4, received_by),
         notes = COALESCE($5, notes),
-        amount = COALESCE($6, amount)
+        amount = COALESCE($6, amount),
+        reference = COALESCE($9, reference)
        WHERE id = $7 AND booking_id IN (SELECT id FROM bookings WHERE property_id = $8) RETURNING *`,
-      [status, method, received_at || null, status === 'received' ? req.user.id : null, notes, amount || null, req.params.id, req.propertyId]
+      [status, method, received_at || null, status === 'received' ? req.user.id : null, notes, amount || null, req.params.id, req.propertyId, reference]
     );
     if (!rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
 

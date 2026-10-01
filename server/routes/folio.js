@@ -182,7 +182,7 @@ async function lockPaymentBooking(client, bookingId, propertyId) {
 }
 
 // Items part: validates and records one payment for the chosen lines / nights.
-async function payItems(client, booking, { chargeIds, addonIds, method, receivedAt, notes, userId }) {
+async function payItems(client, booking, { chargeIds, addonIds, method, receivedAt, notes, userId, reference = null }) {
   const { rows: lines } = chargeIds.length ? await client.query(
     `SELECT fc.id, fc.type, fc.description, fc.amount, fc.tax_mode, ${PAID_AT_DESK_SQL} AS paid_at_desk
      FROM folio_charges fc
@@ -223,16 +223,16 @@ async function payItems(client, booking, { chargeIds, addonIds, method, received
   const what = [...lines.map(l => l.description), ...nights.map(n => `${n.description} — ${ymdOf(n.service_date)}`)].join(', ');
   const cleanNotes = String(notes || '').trim();
   const { rows: [payment] } = await client.query(
-    `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
-     VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6) RETURNING id`,
-    [booking.id, amount, method, receivedAt, userId, (cleanNotes || `Paid at front desk: ${what}`).slice(0, 250)]);
+    `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, reference)
+     VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6, $7) RETURNING id`,
+    [booking.id, amount, method, receivedAt, userId, (cleanNotes || `Paid at front desk: ${what}`).slice(0, 250), reference]);
   if (lines.length) await client.query('UPDATE folio_charges SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, chargeIds]);
   if (nights.length) await client.query('UPDATE booking_addons SET paid_payment_id = $1 WHERE id = ANY($2::uuid[])', [payment.id, addonIds]);
   return { payment: { id: payment.id, amount, count: lines.length + nights.length, what } };
 }
 
 // Room part: marks the chosen pending deposit / balance lines received.
-async function payRoomLines(client, booking, parts, { method, receivedAt, notes, userId }) {
+async function payRoomLines(client, booking, parts, { method, receivedAt, notes, userId, reference = null }) {
   let total = 0;
   for (const part of parts) {
     const { rows: [l] } = await client.query(
@@ -246,15 +246,15 @@ async function payRoomLines(client, booking, parts, { method, receivedAt, notes,
     if (amt >= lineAmt - 0.005) {
       await client.query(
         `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
-                             received_by = $3, notes = COALESCE($4, notes)
-         WHERE id = $5`, [method, receivedAt, userId, notes || null, l.id]);
+                             received_by = $3, notes = COALESCE($4, notes), reference = COALESCE($6, reference)
+         WHERE id = $5`, [method, receivedAt, userId, notes || null, l.id, reference]);
     } else {
       // Part payment: the rest stays pending on the same line.
       await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [round2(lineAmt - amt), l.id]);
       await client.query(
-        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
-         VALUES ($1, $2, $3, 'received', $4, COALESCE($5::timestamptz, NOW()), $6, $7)`,
-        [booking.id, l.type, amt, method, receivedAt, userId, notes || null]);
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, reference)
+         VALUES ($1, $2, $3, 'received', $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8)`,
+        [booking.id, l.type, amt, method, receivedAt, userId, notes || null, reference]);
     }
     total = round2(total + amt);
   }
@@ -284,7 +284,7 @@ router.post('/:bookingId/receive', auth, async (req, res) => {
       'SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
     if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
     const cleanNotes = String(notes || '').trim();
-    const opts = { method, receivedAt, notes: cleanNotes, userId: req.user.id };
+    const opts = { method, receivedAt, notes: cleanNotes, userId: req.user.id, reference: String(req.body.reference || '').trim().slice(0, 120) || null };
 
     const rp = await payRoomLines(client, booking, room, opts);
     if (rp.error) { await client.query('ROLLBACK'); return res.status(rp.status).json({ error: rp.error }); }
@@ -326,7 +326,7 @@ router.post('/:bookingId/pay-lines', auth, async (req, res) => {
       'SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
     if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
     const cleanNotes = String(notes || '').trim();
-    const it = await payItems(client, lk.booking, { chargeIds, addonIds, method, receivedAt: req.body.received_at || null, notes: cleanNotes, userId: req.user.id });
+    const it = await payItems(client, lk.booking, { chargeIds, addonIds, method, receivedAt: req.body.received_at || null, notes: cleanNotes, userId: req.user.id, reference: String(req.body.reference || '').trim().slice(0, 120) || null });
     if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
       lk.booking.id, `Paid now: ${it.payment.what} — Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')} (${pm.label})${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
