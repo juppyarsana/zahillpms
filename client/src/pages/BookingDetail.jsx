@@ -390,7 +390,9 @@ Type the reason to void it:`;
       const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = filename;
+      // Time in the name: a reprint after an edit can't be mistaken for the
+      // earlier file of the same name in Downloads.
+      a.download = filename.replace(/\.pdf$/, `-${new Date().toTimeString().slice(0, 5).replace(':', '')}.pdf`);
       document.body.appendChild(a);
       a.click();
       a.remove();

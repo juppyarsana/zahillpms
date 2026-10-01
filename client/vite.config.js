@@ -31,6 +31,14 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            // Printed documents (invoice, pro forma, registration card,
+            // receipts, report PDFs / Excel / CSV) are always made fresh: the
+            // NetworkFirst rule below hands back the LAST copy when the server
+            // takes over 10 s, which printed a document from before an edit.
+            urlPattern: ({ url }) => /\/(invoice|proforma|receipt|registration-cards?|pdf|xlsx|export|id-document)$/.test(url.pathname),
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\//,
             handler: 'NetworkFirst',
             options: {

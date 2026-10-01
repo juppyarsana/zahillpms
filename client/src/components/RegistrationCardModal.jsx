@@ -42,7 +42,8 @@ export default function RegistrationCardModal({ bookingId, onClose }) {
       const blobUrl = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `registration-card-${bookingId.slice(0, 8)}.pdf`;
+      // Time in the name: a reprint after an edit isn't mistaken for the earlier file.
+      a.download = `registration-card-${bookingId.slice(0, 8)}-${new Date().toTimeString().slice(0, 5).replace(':', '')}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
