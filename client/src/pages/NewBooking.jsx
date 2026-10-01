@@ -120,8 +120,10 @@ function priceWarning(total, normal, nights) {
 // nights null = every night of the stay (follows the dates).
 // own_dates (group rooms): this room has its own check-in / check-out
 // (check_in_date / check_out_date) instead of the booking's dates.
+// per_night (migration 090): a price for each night (night_amounts, by date);
+// total_amount is then their sum.
 const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null,
-  own_dates: false, check_in_date: '', check_out_date: '' };
+  own_dates: false, check_in_date: '', check_out_date: '', per_night: false, night_amounts: {} };
 // Sources whose guests pay extras at the hotel, outside the OTA / agent's
 // money: the extra bed isn't part of the deposit asked.
 const AGENT_SOURCE_TYPES = ['ota', 'travel_agent', 'wholesaler', 'company'];
@@ -387,6 +389,7 @@ export default function NewBooking() {
           unit_id: room.unit_id,
           num_guests: room.num_guests,
           total_amount: room.total_amount,
+          ...(room.per_night ? { night_prices: roomDates(room).map(d => ({ date: d, amount: parseFloat(room.night_amounts[d]) || 0 })) } : {}),
           check_in_date: form.check_in_date,
           check_out_date: form.check_out_date,
           source: form.source,
@@ -414,7 +417,7 @@ export default function NewBooking() {
           group_discount_value: dValue,
           group_deposit_amount: deposit_amount,
           rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null,
-            check_in_date: roomIn(r), check_out_date: roomOut(r) })),
+            check_in_date: roomIn(r), check_out_date: roomOut(r), ...(r.per_night ? { night_prices: roomDates(r).map(d => ({ date: d, amount: parseFloat(r.night_amounts[d]) || 0 })) } : {}) })),
         });
         const byUnit = Object.fromEntries((res.data.bookings || []).map(b => [b.unit_id, b.id]));
         await addExtras(rooms.map(room => ({ booking_id: byUnit[room.unit_id], room })));
@@ -448,8 +451,44 @@ export default function NewBooking() {
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
   function setRoom(i, k, v) { setRooms(rs => rs.map((r, idx) => idx === i ? { ...r, [k]: v } : r)); }
+  // A price per night: the room's total is the sum of its nights.
+  const nightSum = (r, amounts) => roomDates(r).reduce((t, d) => t + (parseFloat(amounts[d]) || 0), 0);
+  function setNightAmount(i, date, v) {
+    setRooms(rs => rs.map((r, idx) => {
+      if (idx !== i) return r;
+      const night_amounts = { ...r.night_amounts, [date]: v };
+      return { ...r, night_amounts, total_amount: String(nightSum(r, night_amounts)) };
+    }));
+  }
+  // Start the nights from the suggested rate when it differs by night and no
+  // other price was typed; otherwise from the typed total, spread evenly.
+  function setPerNight(i, on, suggestion) {
+    setRooms(rs => rs.map((r, idx) => {
+      if (idx !== i) return r;
+      if (!on) return { ...r, per_night: false };
+      const dates = roomDates(r);
+      const typed = parseFloat(r.total_amount) || 0;
+      const bd = suggestion?.night_breakdown || [];
+      const fromSuggestion = bd.length === dates.length && bd.every(n => n.night_total != null)
+        && (!typed || Math.abs(typed - suggestion.grand_total) < 1);
+      const each = dates.length ? Math.round(typed / dates.length) : 0;
+      const night_amounts = Object.fromEntries(dates.map((d, k) => [d, String(
+        fromSuggestion ? bd[k].night_total : (k === dates.length - 1 ? Math.round(typed - each * (dates.length - 1)) : each))]));
+      return { ...r, per_night: true, night_amounts, total_amount: String(nightSum(r, night_amounts)) };
+    }));
+  }
   function addRoom() { setRooms(rs => [...rs, { ...EMPTY_ROOM }]); }
   function removeRoom(i) { setRooms(rs => rs.filter((_, idx) => idx !== i)); }
+
+  const perNightKey = rooms.map(r => (r.per_night ? `${roomIn(r)}|${roomOut(r)}` : '')).join(',');
+  useEffect(() => {
+    setRooms(rs => rs.map(r => {
+      if (!r.per_night) return r;
+      if (roomNights(r) < 2) return { ...r, per_night: false };
+      const t = String(nightSum(r, r.night_amounts));
+      return t === String(r.total_amount) ? r : { ...r, total_amount: t };
+    }));
+  }, [perNightKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const anyUnavailable = availabilities.some(a => a && a.available === false);
 
@@ -730,8 +769,31 @@ export default function NewBooking() {
                   Total for the whole stay{roomNights(room) ? ` (${roomNights(room)} night${roomNights(room) > 1 ? 's' : ''})` : ''} — IDR, incl. tax &amp; service
                 </label>
                 <input className="form-input" type="number" value={room.total_amount} placeholder={suggestedTotal ? `Suggested: ${suggestedTotal}` : ''}
+                  disabled={room.per_night} title={room.per_night ? 'The total of the nights below' : undefined}
                   onChange={e => setRoom(i, 'total_amount', e.target.value)} />
-                {parseFloat(room.total_amount) > 0 && roomNights(room) > 0 && (
+                {roomNights(room) > 1 && (
+                  <label className="flex gap-2" style={{ fontSize: 13, cursor: 'pointer', marginTop: 8, alignItems: 'center' }}>
+                    <input type="checkbox" checked={!!room.per_night} onChange={e => setPerNight(i, e.target.checked, priceSuggestion)} />
+                    <span>Different price each night</span>
+                  </label>
+                )}
+                {room.per_night && (
+                  <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
+                    {roomDates(room).map((d, k) => (
+                      <div key={d} className="flex-between" style={{ gap: 12, padding: '4px 0' }}>
+                        <span style={{ fontSize: 13 }}>
+                          Night {k + 1} · {new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                        </span>
+                        <input className="form-input" type="number" min="0" value={room.night_amounts[d] ?? ''} style={{ maxWidth: 170, textAlign: 'right' }}
+                          onChange={e => setNightAmount(i, d, e.target.value)} />
+                      </div>
+                    ))}
+                    <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                      Each night's price as the guest or agent pays it — tax and the meal plan included. The total above is their sum.
+                    </div>
+                  </div>
+                )}
+                {!room.per_night && parseFloat(room.total_amount) > 0 && roomNights(room) > 0 && (
                   <div style={{ fontSize: 12, marginTop: 4, color: 'var(--text-muted)' }}>
                     = <strong style={{ color: 'var(--text)' }}>{idr(room.total_amount / roomNights(room))} per night</strong> × {roomNights(room)} night{roomNights(room) > 1 ? 's' : ''}
                   </div>
@@ -796,7 +858,8 @@ export default function NewBooking() {
                     )}
 
                     {!room.total_amount && (
-                      <button type="button" className="btn btn-sm btn-secondary mt-2" onClick={() => setRoom(i, 'total_amount', suggestedTotal)}>
+                      <button type="button" className="btn btn-sm btn-secondary mt-2"
+                        onClick={() => (priceSuggestion.varies_by_night ? setPerNight(i, true, priceSuggestion) : setRoom(i, 'total_amount', suggestedTotal))}>
                         Use this
                       </button>
                     )}
@@ -998,6 +1061,11 @@ export default function NewBooking() {
                               {l.r.num_guests} guest{l.r.num_guests > 1 ? 's' : ''}{l.plan ? ` · ${l.plan.code}` : ''}
                               {anyOwnDates && <> · {roomIn(l.r)} → {roomOut(l.r)} ({roomNights(l.r)} night{roomNights(l.r) > 1 ? 's' : ''})</>}
                             </div>
+                            {l.r.per_night && (
+                              <div className="text-muted" style={{ fontSize: 11 }}>
+                                Per night: {roomDates(l.r).map(d => `${d.slice(8, 10)}/${d.slice(5, 7)} ${idr(parseFloat(l.r.night_amounts[d]) || 0)}`).join(' · ')}
+                              </div>
+                            )}
                             {l.warning && <div style={{ fontSize: 11, color: 'var(--danger, #B91C1C)', marginTop: 2 }}>⚠️ {l.warning}</div>}
                           </td>
                           <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{roomNights(l.r) ? idr(l.total / roomNights(l.r)) : '—'}</td>

@@ -1097,7 +1097,10 @@ router.post('/', auth, async (req, res) => {
       return res.status(409).json({ error: 'Unit is not available for the selected dates' });
     }
 
-    const total = parseFloat(total_amount || 0);
+    // A price per night (migration 090): the total is then the nights' sum.
+    const nightPrices = nightRatesSvc.parseNightPrices(req.body.night_prices, stayNightList(check_in_date, check_out_date));
+    if (nightPrices?.error) { await client.query('ROLLBACK'); return res.status(400).json(nightPrices); }
+    const total = nightPrices ? nightPrices.total : parseFloat(total_amount || 0);
 
     // Compute discount
     const dType  = discount_type || null;
@@ -1135,6 +1138,14 @@ router.post('/', auth, async (req, res) => {
        agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
     );
     const booking = rows[0];
+    if (nightPrices?.shares) {
+      const saved = await nightRatesSvc.saveNightRates(client, {
+        bookingId: booking.id, nights: stayNightList(check_in_date, check_out_date), shares: nightPrices.shares, roomNet, mealNet });
+      if (saved.error) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
+      }
+    }
     if (depositAmount > 0) {
       await client.query(
         'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)',
@@ -1248,6 +1259,12 @@ router.post('/group', auth, async (req, res) => {
     const spanOut = rooms.reduce((m, r) => (r.co > m ? r.co : m), rooms[0].co);
     const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
 
+    // A price per night for a room (migration 090): its total is the nights' sum.
+    for (const r of rooms) {
+      const np = nightRatesSvc.parseNightPrices(r.night_prices, stayNightList(r.ci, r.co));
+      if (np?.error) { await client.query('ROLLBACK'); return res.status(400).json(np); }
+      if (np) { r.total_amount = np.total; r.nightShares = np.shares; }
+    }
     const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
 
     const gdType = group_discount_type || null;
@@ -1303,6 +1320,14 @@ router.post('/group', auth, async (req, res) => {
         [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
          agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
       );
+      if (s.room.nightShares) {
+        const saved = await nightRatesSvc.saveNightRates(client, {
+          bookingId: booking.id, nights: stayNightList(s.room.ci, s.room.co), shares: s.room.nightShares, roomNet: roomRevNet, mealNet });
+        if (saved.error) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
+        }
+      }
       if (s.depositShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
       }
@@ -1463,7 +1488,12 @@ async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
   // — straight from what FO entered, so a later tax-rate change can't shift it.
   const oldTotal = round2(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0));
   const perNight = oldTotal / oldNights;
-  const newTotal = round2(perNight * newNights);
+  // A price per night (migration 090): a night that stays keeps its own
+  // price, an added night takes the average — instead of average × nights.
+  const carried = nightRatesSvc.carryPrices(
+    nightRatesSvc.nightPrices(booking, stayNightList(oldCi, oldCo), await nightRatesSvc.loadNightRates(client, booking.id)),
+    stayNightList(checkIn, checkOut));
+  const newTotal = carried ? round2(oldTotal * carried.sum / carried.oldSum) : round2(perNight * newNights);
 
   // Normal rate for the new dates, for reference.
   const [newR, plan] = await Promise.all([
@@ -1477,6 +1507,8 @@ async function datesQuote(client, { propertyId, booking, checkIn, checkOut }) {
     old: { check_in: oldCi, check_out: oldCo, nights: oldNights, total: oldTotal },
     new: { check_in: checkIn, check_out: checkOut, nights: newNights, total: newTotal, normal_total: normalNew, per_night: round2(perNight) },
     difference: round2(newTotal - oldTotal),
+    // each new night's share of the price, when the stay has night prices
+    night_shares: carried ? carried.shares : undefined,
   };
 }
 
@@ -1503,11 +1535,20 @@ async function applyNewDates(client, { propertyId, booking, userId, checkIn, che
       newTotal: Math.max(0, round2(parseFloat(booking.total_amount) + amount)),
       keepDiscount: true, receivedWasTypo: false,
       balanceNote: `Date change ${quote.old.check_in}–${quote.old.check_out} → ${checkIn}–${checkOut} — additional amount due`,
+      // nights that stay keep their own price (see datesQuote)
+      nightShares: quote.night_shares,
     });
     if (priced.error) return priced;
   } else {
     // Same price: re-spread the unchanged room/F&B totals over the new
     // night count and re-post the folio nights.
+    if (quote.night_shares) {
+      const saved = await nightRatesSvc.saveNightRates(client, {
+        bookingId: booking.id, nights: stayNightList(checkIn, checkOut), shares: quote.night_shares,
+        roomNet: fresh.room_revenue, mealNet: fresh.fnb_revenue });
+      // a night below its meals → the same price every night instead
+      if (saved.error) await client.query('DELETE FROM booking_night_rates WHERE booking_id = $1', [booking.id]);
+    }
     await roomCharge.repostStay(client, fresh, userId);
   }
 

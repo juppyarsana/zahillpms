@@ -5,7 +5,8 @@ const agentBilling = require('../services/agentBillingService');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
 const roomCharge = require('../services/roomChargeService');
 const { applyBookingPrice } = require('../services/bookingPriceService');
-const { round2 } = require('../services/folioService');
+const { round2, stayNights } = require('../services/folioService');
+const nightRatesSvc = require('../services/nightRates');
 const multer = require('multer');
 
 // Today's calendar date in WITA (UTC+8) as YYYY-MM-DD.
@@ -248,6 +249,13 @@ async function loadRegCardData(where, params) {
   for (const d of rows) {
     const meals = parseFloat(d.fnb_revenue || 0) > 0;
     d.room_rate = d.nights > 0 ? shown(parseFloat(d.room_revenue || 0) + parseFloat(d.fnb_revenue || 0), basisFrom(d)) / d.nights : null;
+    // A price per night (migration 090): print each night's own rate.
+    const nightList = stayNights(d.check_in_date, d.check_out_date);
+    const rates = await nightRatesSvc.loadNightRates(db, d.booking_id);
+    if (nightRatesSvc.ratesApply(nightList, rates)) {
+      const mealPer = parseFloat(d.fnb_revenue || 0) / nightList.length;
+      d.room_rates = nightRatesSvc.roomNightAmounts(d.room_revenue, nightList, rates).map(r => shown(r + mealPer, basisFrom(d)));
+    }
     const bf = d.includes_breakfast, lu = d.includes_lunch, di = d.includes_dinner;
     d.rate_includes = !meals ? null : bf && lu && di ? 'full board' : bf && di ? 'half board' : bf && !lu && !di ? 'breakfast' : 'meals';
   }
@@ -390,7 +398,12 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
         const oldTotal = parseFloat(b.total_amount);
         const oldDiscount = parseFloat(b.discount_amount || 0);
         const oldNet = round2(oldTotal - oldDiscount);
-        const ratio = stayedNights / bookedNights;
+        // A price per night (migration 090): "nights used" charges the nights
+        // actually stayed at their own prices, not the average.
+        const keptNights = stayNights(ci, newCo);
+        const carried = nightRatesSvc.carryPrices(
+          nightRatesSvc.nightPrices(b, stayNights(ci, co), await nightRatesSvc.loadNightRates(c, b.id)), keptNights);
+        const ratio = carried ? carried.sum / carried.oldSum : stayedNights / bookedNights;
         // Discount scales with the nights kept (e.g. a fixed group discount
         // shouldn't cancel a single remaining night).
         const newDiscount = ed.charge === 'stayed' ? round2(oldDiscount * ratio) : oldDiscount;
@@ -401,6 +414,11 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
         let credit = 0;
         if (ed.charge === 'full') {
           // Same price over fewer nights.
+          if (carried) {
+            const saved = await nightRatesSvc.saveNightRates(c, {
+              bookingId: b.id, nights: keptNights, shares: carried.shares, roomNet: moved.room_revenue, mealNet: moved.fnb_revenue });
+            if (saved.error) await c.query('DELETE FROM booking_night_rates WHERE booking_id = $1', [b.id]);
+          }
           await roomCharge.repostStay(c, moved, req.user.id);
         } else {
           const newTotal = ed.charge === 'stayed'
@@ -410,6 +428,7 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
             propertyId: req.propertyId, before: moved, newTotal, userId: req.user.id,
             keepDiscount: true, receivedWasTypo: false,
             balanceNote: 'Early departure — amount due',
+            nightShares: carried ? carried.shares : undefined,
           });
           if (priced.error) { await c.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
           charged = priced.payable;

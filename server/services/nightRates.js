@@ -101,4 +101,34 @@ function nightPrices(booking, nights, rates) {
   return out;
 }
 
-module.exports = { ymd, loadNightRates, ratesApply, roomNightAmounts, roomRevPerNightSql, saveNightRates, nightPrices };
+// night_prices from a request ([{ date, amount }] — each night's price, tax
+// included, before discount) checked against the stay's nights.
+// → null (none sent) | { error, code } | { total, shares (null when total 0), byDate }
+function parseNightPrices(input, nights) {
+  if (!Array.isArray(input) || !input.length) return null;
+  if (input.some(n => !Number.isFinite(parseFloat(n?.amount)) || parseFloat(n.amount) < 0)) {
+    return { error: 'Each night needs a price of 0 or more', code: 'NIGHT_PRICE_INVALID' };
+  }
+  const byDate = new Map(input.map(n => [String(n.date || '').slice(0, 10), parseFloat(n.amount)]));
+  if (byDate.size !== nights.length || nights.some(d => !byDate.has(d))) {
+    return { error: 'Give one price for each night of the stay', code: 'NIGHTS_MISMATCH' };
+  }
+  const total = round2(nights.reduce((s, d) => s + byDate.get(d), 0));
+  return { total, byDate, shares: total > 0 ? nights.map(d => byDate.get(d) / total) : null };
+}
+
+// A stay's night prices carried onto new dates: a night that stays keeps its
+// own price, a night that is added takes the average of the old ones.
+// `prices` = nightPrices() of the stay before the change ([] → null: the stay
+// was priced the same every night, nothing to carry).
+// → { weights: [per new night], sum } in the same money as `prices`.
+function carryPrices(prices, newNights) {
+  if (!prices || !prices.length || !newNights.length) return null;
+  const old = new Map(prices.map(p => [p.date, p.price]));
+  const avg = prices.reduce((s, p) => s + p.price, 0) / prices.length;
+  const weights = newNights.map(d => (old.has(d) ? old.get(d) : avg));
+  const sum = weights.reduce((s, v) => s + v, 0);
+  return sum > 0 ? { weights, sum, shares: weights.map(w => w / sum), oldSum: prices.reduce((s, p) => s + p.price, 0) } : null;
+}
+
+module.exports = { parseNightPrices, carryPrices, ymd, loadNightRates, ratesApply, roomNightAmounts, roomRevPerNightSql, saveNightRates, nightPrices };

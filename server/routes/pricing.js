@@ -63,6 +63,17 @@ router.get('/suggest', auth, async (req, res) => {
     const meal_total = Math.round(meal_per_night * nights * 100) / 100; // NET
     const gross = computeFolioTotals(room_total + meal_total, settings?.tax_rate, settings?.service_charge_rate);
 
+    // Each night's price as the guest pays it (room + meal plan, service & tax
+    // included), whole rupiah, adding up to the grand total — New Booking's
+    // "Different price each night" starts from these (migration 090).
+    const roomNetTotal = night_breakdown.reduce((t, n) => t + n.room_rate, 0);
+    let left = Math.round(gross.total);
+    night_breakdown.forEach((n, i) => {
+      const share = (n.room_rate + meal_per_night) / ((roomNetTotal + meal_total) || 1);
+      n.night_total = i === night_breakdown.length - 1 ? left : Math.round(gross.total * share);
+      left -= n.night_total;
+    });
+
     res.json({
       nights,
       base_rate: baseRate,

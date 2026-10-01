@@ -1824,12 +1824,12 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
    food menu and the room-service confirm queue go too.
 
-## A price per night (2026-10-01, migration 090) — 🟡 step 1 built
+## A price per night (2026-10-01, migration 090) — ✅ built
 
 Edit Price can set a different price for each night of a stay (agent rates that differ night by night); the folio,
-invoice and daily reports use each night's own price, the meal plan stays the same every night. Step 2, not built:
-New Booking keeping the suggested nightly rates, group rooms at creation, Amend Dates / early departure keeping the
-nights' own prices, Registration Card showing them. See CLAUDE.md.
+invoice and daily reports use each night's own price, the meal plan stays the same every night. Also on New Booking
+(single and group rooms), kept through Amend Dates and early departure, and printed on the Registration Card.
+Still averaged: Add Room to a group, Change Room's quote. See CLAUDE.md.
 
 ## Restore a voided folio line (2026-10-01, no migration) — ✅ built
 

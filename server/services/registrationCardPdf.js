@@ -11,6 +11,16 @@
 // ETA/ETD (arrival/departure *time* isn't tracked anywhere — only the
 // date is).
 
+// The rate per night — or, when the nights are priced differently (migration
+// 090), each night's rate ("Rp 3.000.000 / Rp 3.400.000"); a long stay prints
+// the range so the field stays on one line.
+function nightRatesText(data) {
+  const r = (data.room_rates || []).map(v => Math.round(v));
+  if (r.length < 2 || Math.max(...r) - Math.min(...r) < 1) return fmtIDR(data.room_rate);
+  const rp = n => 'Rp ' + n.toLocaleString('id-ID');
+  return r.length <= 3 ? r.map(rp).join(' / ') : `${rp(Math.min(...r))} – ${rp(Math.max(...r))}`;
+}
+
 function fmtIDR(n) {
   // Fixed 2 decimals — see routes/folio.js's fmtIDR for why the bare
   // toLocaleString('id-ID') is inconsistent (trims trailing zeros unevenly).
@@ -145,7 +155,7 @@ function renderRegistrationCard(doc, { property, data }) {
     cells: [
       { label: 'Room Number', value: data.unit_name },
       { label: 'Source of Booking', value: data.agent_name ? `${data.source_label || ''} · ${data.agent_name}` : data.source_label },
-      { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? `${fmtIDR(data.room_rate)}${data.rate_includes ? ` (incl. ${data.rate_includes})` : ''}` : '') : rateHiddenNote) },
+      { label: 'Room Rate (per night)', value: compNote || (showRate ? (data.room_rate != null ? `${nightRatesText(data)}${data.rate_includes ? ` (incl. ${data.rate_includes})` : ''}` : '') : rateHiddenNote) },
     ],
   });
   gridRow(doc, {
