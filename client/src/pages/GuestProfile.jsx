@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import BackLink from '../components/BackLink';
 import api from '../services/api';
 import GuestIdDocument from '../components/GuestIdDocument';
 import { SourceBadge } from '../context/SettingsContext';
@@ -58,7 +59,7 @@ export default function GuestProfile() {
       <div className="page-header">
         <div>
           <div className="page-title">{guest.name}</div>
-          <div className="page-subtitle"><Link to="/guests">← Guests</Link></div>
+          <div className="page-subtitle"><BackLink to="/guests" label="Guests" /></div>
         </div>
         <div className="flex gap-2">
           {guest.whatsapp && (

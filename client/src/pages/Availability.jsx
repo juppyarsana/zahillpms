@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import BackLink from '../components/BackLink';
 import api from '../services/api';
 
 // Check Availability: a guest asks "do you have a room for these dates?" —
@@ -116,7 +117,7 @@ export default function Availability() {
       <div className="page-header">
         <div>
           <div className="page-title">Check Availability</div>
-          <div className="page-subtitle"><Link to="/reservations">← Reservations</Link></div>
+          <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
         </div>
       </div>
 

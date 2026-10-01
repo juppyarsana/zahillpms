@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import BackLink from '../components/BackLink';
 import api from '../services/api';
 import StayNightsPicker from '../components/StayNightsPicker';
 import { useSettings } from '../context/SettingsContext';
@@ -497,7 +498,7 @@ export default function NewBooking() {
       <div className="page-header">
         <div>
           <div className="page-title">New Booking</div>
-          <div className="page-subtitle"><Link to="/reservations">← Back to Reservations</Link></div>
+          <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
         </div>
       </div>
 

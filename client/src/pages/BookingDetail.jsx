@@ -1156,7 +1156,7 @@ Type the reason to void it:`;
             <span className="text-muted" style={{ fontSize: 12, flex: '1 1 220px' }}>
               Taking money for the room and extras together, or a part payment? Use Record Payment on the folio.
             </span>
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`)}>💳 Record payment on the folio →</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment on the folio →</button>
           </div>
         )}
       </div>

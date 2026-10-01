@@ -1,11 +1,13 @@
 import { Fragment } from 'react';
-import { Link } from 'react-router-dom';
+import BackLink from './BackLink';
 
 // Standard page header for detail pages:
 //   ← Reservations · GROUP BOOKING        [primary] [icons] | [⋮]
 //   PT Telkom
 //   1 Oct → 3 Oct 2026 · 2 nights · 3 rooms  [Upcoming]
-// back:    { to, label }        — small back link above the title
+// back:    { to, label }        — small back link above the title: goes back to
+//                                the page the user came from (BackLink); `to`
+//                                is where it goes when the page was opened directly
 // kind:    'Group booking'      — what this page is, next to the back link
 // title:   the name people know it by (guest, company…)
 // meta:    [node, …]            — key facts, joined with dots (falsy skipped)
@@ -18,7 +20,7 @@ export default function PageHeader({ back, kind, title, meta = [], badge, action
       <div>
         {(back || kind) && (
           <div className="page-eyebrow">
-            {back && <Link to={back.to}>← {back.label}</Link>}
+            {back && <BackLink to={back.to} label={back.label} />}
             {back && kind && <span className="dot">·</span>}
             {kind && <span>{kind}</span>}
           </div>
