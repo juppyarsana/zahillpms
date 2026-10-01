@@ -58,6 +58,18 @@ const CHECKLIST = [
   { key: 'emergency_contact', label: 'Emergency contact shared',        sub: 'Staff WhatsApp: +62 812 XXXX XXXX' },
 ];
 
+// A guest's name in the lists: opens the reservation for staff who may see
+// Reservations; plain text otherwise.
+function GuestName({ b }) {
+  const { can } = useAuth();
+  if (!can('reservations')) return b.guest_name;
+  return (
+    <Link to={`/reservations/${b.id}`} title="Open the reservation" style={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 3 }}>
+      {b.guest_name}
+    </Link>
+  );
+}
+
 export default function CheckIn() {
   const navigate = useNavigate();
   const { can } = useAuth();
@@ -270,7 +282,7 @@ export default function CheckIn() {
                     {initials(b.guest_name)}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}><GuestName b={b} /></div>
                     <div className="text-muted" style={{ fontSize: 11 }}>
                       {b.unit_name} · {b.num_guests} pax · {b.nationality}
                       {b.rate_plan_code && b.rate_plan_code !== 'RO' && <span> · {b.rate_plan_code}</span>}
@@ -372,7 +384,7 @@ export default function CheckIn() {
                   {initials(b.guest_name)}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}><GuestName b={b} /></div>
                   <div className="text-muted" style={{ fontSize: 11 }}>{b.unit_name}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -406,7 +418,7 @@ export default function CheckIn() {
                   {initials(b.guest_name)}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{b.guest_name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}><GuestName b={b} /></div>
                   <div className="text-muted" style={{ fontSize: 11 }}>{b.unit_name}</div>
                   <div className="text-muted" style={{ fontSize: 11 }}>
                     Check-out: {b.check_out_date?.slice(0, 10)}
