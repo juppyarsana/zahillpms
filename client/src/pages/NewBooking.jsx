@@ -158,7 +158,7 @@ export default function NewBooking() {
   const [form, setForm] = useState({
     guest_id: '',
     check_in_date: preIn, check_out_date: preOut,
-    source: 'direct', deposit_pct: 50, special_requests: '', status: 'pending',
+    source: 'direct', deposit_mode: 'amount', deposit_value: '', deposit_pct: 50, special_requests: '', status: 'pending',
     discount_type: '', discount_value: '',
   });
   const [rooms, setRooms] = useState(preUnits.length
@@ -338,6 +338,11 @@ export default function NewBooking() {
   // The deposit asked covers room + extra bed (direct guests); it's held on
   // the room's deposit line, never more than the room itself.
   const depositFor = pct => Math.min(netAmt, Math.round((netAmt + (extrasInDeposit ? extrasTotal : 0)) * pct / 100));
+  // Typed as an amount (the default) or as a percentage.
+  const depositAmt = form.deposit_mode === 'pct'
+    ? depositFor(form.deposit_pct)
+    : Math.min(netAmt, Math.max(0, Math.round(parseFloat(form.deposit_value) || 0)));
+  const depositOver = form.deposit_mode !== 'pct' && (parseFloat(form.deposit_value) || 0) > netAmt && netAmt > 0;
 
   const agentId = agentVal.agent?.id;
   const agentHasLimit = agentVal.agent?.credit_limit != null;
@@ -379,7 +384,7 @@ export default function NewBooking() {
         setMode('search');
       }
       const compOn = comp.on && !isGroup;
-      const deposit_amount = compOn ? 0 : depositFor(form.deposit_pct);
+      const deposit_amount = compOn ? 0 : depositAmt;
 
       if (!isGroup) {
         // Single-room booking — same endpoint and payload shape as before
@@ -935,26 +940,57 @@ export default function NewBooking() {
 
           <div className="form-group">
             <label className="form-label">Deposit Required</label>
-            <div className="flex gap-2 flex-center">
-              <input className="form-input" type="number" min={0} max={100} value={form.deposit_pct}
-                onChange={e => set('deposit_pct', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
-                style={{ maxWidth: 80 }} />
-              <span>%</span>
-              <div className="flex gap-2" style={{ marginLeft: 8 }}>
-                {[0, 30, 50, 100].map(pct => (
-                  <button key={pct} type="button"
-                    className={`btn btn-sm ${form.deposit_pct === pct ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => set('deposit_pct', pct)}>
-                    {pct === 0 ? 'None' : pct === 100 ? 'Full' : `${pct}%`}
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
+              {[{ v: 'amount', label: 'Amount (IDR)' }, { v: 'pct', label: 'Percentage (%)' }].map(opt => (
+                <button key={opt.v} type="button"
+                  className={`btn btn-sm ${form.deposit_mode === opt.v ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => set('deposit_mode', opt.v)}>
+                  {opt.label}
+                </button>
+              ))}
             </div>
+            {form.deposit_mode === 'pct' ? (
+              <div className="flex gap-2 flex-center" style={{ flexWrap: 'wrap' }}>
+                <input className="form-input" type="number" min={0} max={100} value={form.deposit_pct}
+                  onChange={e => set('deposit_pct', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                  style={{ maxWidth: 80 }} />
+                <span>%</span>
+                <div className="flex gap-2" style={{ marginLeft: 8 }}>
+                  {[0, 30, 50, 100].map(pct => (
+                    <button key={pct} type="button"
+                      className={`btn btn-sm ${form.deposit_pct === pct ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => set('deposit_pct', pct)}>
+                      {pct === 0 ? 'None' : pct === 100 ? 'Full' : `${pct}%`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-center" style={{ flexWrap: 'wrap' }}>
+                <input className="form-input" type="number" min={0} placeholder="Amount in IDR — empty = no deposit"
+                  value={form.deposit_value}
+                  onChange={e => set('deposit_value', e.target.value)}
+                  style={{ maxWidth: 260 }} />
+                <span style={{ color: 'var(--text-muted)' }}>IDR</span>
+                {netAmt > 0 && (
+                  <div className="flex gap-2" style={{ marginLeft: 8 }}>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => set('deposit_value', '')}>None</button>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => set('deposit_value', String(depositFor(50)))}>50%</button>
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => set('deposit_value', String(netAmt))}>Full</button>
+                  </div>
+                )}
+              </div>
+            )}
+            {depositOver && (
+              <div style={{ fontSize: 12, color: 'var(--danger, #B91C1C)', marginTop: 4 }}>
+                More than the room price — the deposit will be Rp {netAmt.toLocaleString('id-ID')}.
+              </div>
+            )}
             {netAmt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                Deposit: Rp {depositFor(form.deposit_pct).toLocaleString('id-ID')}
-                {extrasTotal > 0 && (extrasInDeposit ? ' (on room + extra bed)' : ' (room only — the guest pays the extra bed at the hotel)')}
-                {' · '}Balance: Rp {(netAmt - depositFor(form.deposit_pct)).toLocaleString('id-ID')}
+                {depositAmt > 0 ? <>Deposit: Rp {depositAmt.toLocaleString('id-ID')}</> : 'No deposit'}
+                {form.deposit_mode === 'pct' && extrasTotal > 0 && (extrasInDeposit ? ' (on room + extra bed)' : ' (room only — the guest pays the extra bed at the hotel)')}
+                {' · '}Balance: Rp {(netAmt - depositAmt).toLocaleString('id-ID')}
                 {extrasTotal > 0 && <> · Extra bed: Rp {extrasTotal.toLocaleString('id-ID')}</>}
               </div>
             )}
@@ -1004,7 +1040,7 @@ export default function NewBooking() {
         const guestName = mode === 'new' ? newGuest.name : guestSearch;
         const sourceLabel = sources.find(s => s.id === form.source)?.label || form.source;
         const compOn = comp.on && !isGroup;
-        const deposit = compOn ? 0 : depositFor(form.deposit_pct);
+        const deposit = compOn ? 0 : depositAmt;
         const lines = rooms.map((r, i) => {
           const normal = priceSuggestions[i]?.grand_total || 0;
           return {
@@ -1107,7 +1143,7 @@ export default function NewBooking() {
                     <div className="text-muted" style={{ fontSize: 12 }}>🎁 Will be made complimentary ({comp.scope === 'room' ? 'room only' : comp.scope === 'room_meals' ? 'room + meals' : 'everything'}) — the price above is recorded as the value given.</div>
                   ) : (
                     <div className="flex-between text-muted" style={{ fontSize: 13 }}>
-                      <span>Deposit {form.deposit_pct}%{extrasTotal > 0 ? (extrasInDeposit ? ' (room + extra bed)' : ' (room only — extra bed paid at the hotel)') : ''}</span>
+                      <span>Deposit{form.deposit_mode === 'pct' ? ` ${form.deposit_pct}%` : ''}{form.deposit_mode === 'pct' && extrasTotal > 0 ? (extrasInDeposit ? ' (room + extra bed)' : ' (room only — extra bed paid at the hotel)') : ''}</span>
                       <span>{idr(deposit)} · then {idr(netAmt + extrasTotal - deposit)}</span>
                     </div>
                   )}

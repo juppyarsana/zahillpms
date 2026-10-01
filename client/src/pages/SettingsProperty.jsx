@@ -95,6 +95,8 @@ export default function SettingsProperty() {
         )}
       </div>
 
+      <ProformaFooterCard />
+
       <TaxCard />
 
       <div className="card mt-3">
@@ -460,6 +462,97 @@ function MarketInsightsCard() {
       {msg && (
         <div style={{ fontSize: 12, marginTop: 10, color: msg.ok ? 'var(--color-success, #16a34a)' : 'var(--danger, #dc2626)' }}>{msg.text}</div>
       )}
+    </div>
+  );
+}
+
+// Foot of the pro forma invoice (migration 092): payment terms, bank account
+// and the signature lines. Empty = the pro forma prints without them.
+const EMPTY_SIGNERS = [
+  { label: 'Prepared by,', name: '', title: '' },
+  { label: 'Acknowledged by,', name: '', title: '' },
+  { label: 'Acknowledged by,', name: '', title: '' },
+];
+
+function ProformaFooterCard() {
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  const fill = d => ({
+    terms: d.terms || '',
+    bank: { account_name: '', account_no: '', bank_name: '', ...(d.bank || {}) },
+    signers: EMPTY_SIGNERS.map((e, i) => d.signers?.[i] || e),
+  });
+  useEffect(() => {
+    api.get('/api/settings/proforma-footer').then(r => setForm(fill(r.data))).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!form) return null;
+  const setBank = (k, v) => { setForm(f => ({ ...f, bank: { ...f.bank, [k]: v } })); setSaved(false); };
+  const setSigner = (i, k, v) => { setForm(f => ({ ...f, signers: f.signers.map((s, j) => (j === i ? { ...s, [k]: v } : s)) })); setSaved(false); };
+
+  async function save() {
+    setSaving(true); setError('');
+    try {
+      // A signature line with no name and no position isn't printed.
+      const signers = form.signers.filter(s => s.name.trim() || s.title.trim());
+      const r = await api.put('/api/settings/proforma-footer', { ...form, signers });
+      setForm(fill(r.data));
+      setSaved(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card mt-3">
+      <div className="card-title">Pro forma invoice — terms, bank account & signatures</div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+        Printed at the foot of every pro forma invoice (single and group). Leave a part empty to leave it out.
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Account name</label>
+          <input className="form-input" value={form.bank.account_name} onChange={e => setBank('account_name', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Account no.</label>
+          <input className="form-input" value={form.bank.account_no} onChange={e => setBank('account_no', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Bank name</label>
+          <input className="form-input" value={form.bank.bank_name} onChange={e => setBank('bank_name', e.target.value)} />
+        </div>
+      </div>
+      <div className="form-group">
+        <label className="form-label">Terms & conditions</label>
+        <textarea className="form-textarea" rows={5}
+          placeholder="One term per line, printed under the bank account."
+          value={form.terms} onChange={e => { setForm(f => ({ ...f, terms: e.target.value })); setSaved(false); }} />
+      </div>
+      <label className="form-label">Signatures</label>
+      {form.signers.map((s, i) => (
+        <div className="form-row" key={i}>
+          <div className="form-group">
+            <input className="form-input" placeholder="Heading, e.g. Prepared by," value={s.label} onChange={e => setSigner(i, 'label', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <input className="form-input" placeholder="Name" value={s.name} onChange={e => setSigner(i, 'name', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <input className="form-input" placeholder="Position, e.g. Reservation" value={s.title} onChange={e => setSigner(i, 'title', e.target.value)} />
+          </div>
+        </div>
+      ))}
+      {error && <div className="alert alert-error" style={{ marginBottom: 8 }}>{error}</div>}
+      <div className="flex gap-2 items-center">
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        {saved && <span style={{ fontSize: 12, color: 'var(--color-success, #16a34a)' }}>Saved</span>}
+      </div>
     </div>
   );
 }

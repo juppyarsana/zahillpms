@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const proformaFooter = require('../services/proformaFooter');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const modules = require('../modules');
@@ -135,6 +136,26 @@ router.patch('/property', ownerOnly, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Pro forma invoice footer (migration 092) ────────────────────────────────
+// Payment terms, bank account and signature lines printed on the pro forma.
+const EMPTY_FOOTER = { terms: '', bank: {}, signers: [] };
+
+router.get('/proforma-footer', ownerOnly, async (req, res) => {
+  try {
+    res.json(await proformaFooter.load(req.propertyId) || EMPTY_FOOTER);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/proforma-footer', ownerOnly, async (req, res) => {
+  try {
+    res.json(await proformaFooter.save(req.propertyId, req.body) || EMPTY_FOOTER);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

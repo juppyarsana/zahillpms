@@ -3,6 +3,7 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
 const { loadFolio, computeProforma, round2, chargeTotals, billRates, PAID_AT_DESK_SQL } = require('../services/folioService');
+const proformaFooter = require('../services/proformaFooter');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
@@ -865,7 +866,7 @@ function guestCopyOf(folio) {
 }
 
 // Renders the single-booking invoice/pro-forma PDF straight to the response.
-function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, guestCopy = false }) {
+function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, guestCopy = false, footer = null }) {
   const copy = guestCopy ? guestCopyOf(folioIn) : null;
   const folio = copy || folioIn;
   if (copy) filenamePrefix = `${filenamePrefix}-guest`;
@@ -911,7 +912,8 @@ function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, gu
   doc.moveDown(1.5);
   drawChargeTable(doc, folio);
 
-  doc.moveDown(3);
+  if (footer) { doc.moveDown(2); proformaFooter.draw(doc, footer); }
+  doc.moveDown(footer ? 1.5 : 3);
   doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
 
   doc.end();
@@ -939,7 +941,8 @@ router.get('/:bookingId/proforma', auth, async (req, res) => {
   try {
     const folio = await computeProforma(req.params.bookingId, req.propertyId);
     if (!folio) return res.status(404).json({ error: 'Booking not found' });
-    renderBookingInvoicePdf(res, folio, { title: 'Pro Forma Invoice', filenamePrefix: 'proforma', note: PROFORMA_NOTE, guestCopy: req.query.copy === 'guest' });
+    const footer = await proformaFooter.load(req.propertyId);
+    renderBookingInvoicePdf(res, folio, { title: 'Pro Forma Invoice', filenamePrefix: 'proforma', note: PROFORMA_NOTE, guestCopy: req.query.copy === 'guest', footer });
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
@@ -971,6 +974,7 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
       [req.propertyId]
     );
     const property = settings || {};
+    const footer = await proformaFooter.load(req.propertyId);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="proforma-group-${group.id}.pdf"`);
@@ -1050,7 +1054,8 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     }
     grandLine('Estimated Balance Due', settings?.prices_include_tax ? whole(grand.balance_due) : fmtIDR(grand.balance_due), { bold: true });
 
-    doc.moveDown(2);
+    if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
+    doc.moveDown(footer ? 1.5 : 2);
     doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
 
     doc.end();
