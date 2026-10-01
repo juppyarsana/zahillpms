@@ -43,7 +43,7 @@ export default function IdleScreen({ unit, controller, relays = [], property, ro
       {/* Sidebar */}
       <aside className="w-24 bg-sidebar border-r border-app-soft flex flex-col items-center py-7 z-20 shrink-0">
         <div className="shrink-0" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 50, height: 50, objectFit: 'contain' }} />
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 80, height: 80, objectFit: 'contain' }} />
         </div>
         <nav className="flex-1 min-h-0 w-full flex flex-col justify-center gap-1" style={{ padding: '0 8px' }}>
           {navItems.map(item => {

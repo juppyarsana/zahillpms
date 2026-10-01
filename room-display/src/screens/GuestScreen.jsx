@@ -82,7 +82,7 @@ export default function GuestScreen({ unit, booking, relays, controller, propert
       {/* Sidebar */}
       <aside className="w-24 bg-sidebar border-r border-app-soft flex flex-col items-center py-7 z-20 shrink-0">
         <div className="shrink-0" onClick={onDebugClick} style={{ cursor: 'pointer', userSelect: 'none' }}>
-          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 50, height: 50, objectFit: 'contain' }} />
+          <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''} style={{ width: 80, height: 80, objectFit: 'contain' }} />
         </div>
 
         {/* Nav — vertically centered in the rail */}
