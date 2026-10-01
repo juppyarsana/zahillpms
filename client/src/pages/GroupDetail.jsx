@@ -148,13 +148,16 @@ export default function GroupDetail() {
   // The amount paid on a ticked line: what was typed, else the whole line.
   const lineAmount = l => (payAmt[l.id] !== undefined && payAmt[l.id] !== '' ? Math.max(0, parseFloat(payAmt[l.id]) || 0) : parseFloat(l.amount));
 
-  // Spread an amount over the lines — every room's deposit first, then the
-  // balances — filling each line in full, the last one in part.
+  // Spread an amount over the lines room by room — a room's deposit, then its
+  // balance — so each room is paid off in full before the next one gets
+  // anything; only the last room touched is paid in part.
   function spreadAmount(value) {
     setPayTotal(value);
     let left = Math.max(0, Math.round(parseFloat(value) || 0));
     const lines = pendingLines();
-    const order = [...lines.filter(l => l.type === 'deposit'), ...lines.filter(l => l.type !== 'deposit')];
+    const rank = l => (l.type === 'deposit' ? 0 : 1);
+    const roomOrder = [...new Set(lines.map(l => l.booking_id))];
+    const order = [...lines].sort((a, b) => roomOrder.indexOf(a.booking_id) - roomOrder.indexOf(b.booking_id) || rank(a) - rank(b));
     const sel = new Set(), amt = {};
     for (const l of order) {
       if (left <= 0) break;
@@ -578,7 +581,7 @@ export default function GroupDetail() {
                     placeholder={`What the group paid — up to ${fmtIDR(unpaid)}`}
                     onChange={e => spreadAmount(e.target.value)} />
                   <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                    Goes to every room's deposit first, then the balances. Or tick the lines yourself below.
+                    Pays the rooms one by one in the order below (deposit, then balance) — each room in full before the next. Or tick the lines yourself.
                   </div>
                   {typedTotal > unpaid + 0.5 && (
                     <div className="alert alert-warn" style={{ marginTop: 6, fontSize: 12 }}>
