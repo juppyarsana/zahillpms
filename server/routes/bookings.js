@@ -11,6 +11,8 @@ const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer'
 const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
+const nightRatesSvc = require('../services/nightRates');
+const { stayNights: stayNightList } = require('../services/folioService');
 const { nightlyRoomRates } = require('../services/pricingService');
 const { priceBasis } = require('../services/priceBasis');
 const { searchAvailability } = require('../services/availabilityService');
@@ -1049,7 +1051,11 @@ router.get('/:id', auth, async (req, res) => {
       await Promise.all([bookingQ, paymentsQ, notesQ, checkinQ, eventsQ]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     const group = booking.reservation_group_id ? { id: booking.reservation_group_id, room_count: booking.group_size } : null;
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events });
+    // Each night's price when the stay isn't priced the same every night
+    // (migration 090) — [] otherwise.
+    const night_prices = nightRatesSvc.nightPrices(booking,
+      stayNightList(booking.check_in_date, booking.check_out_date), await nightRatesSvc.loadNightRates(db, booking.id));
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1647,7 +1653,13 @@ router.put('/:id/dates', auth, async (req, res) => {
 // Blocked for cancelled/no-show bookings and stays already invoiced to an agent.
 // Owner, or a role with the `edit_price` permission (Roles & Permissions).
 router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res) => {
-  const newTotal = parseFloat(req.body.total_amount);
+  // night_prices: [{ date, amount }] — a price per night (tax included, before
+  // discount, like total_amount); the total is then their sum.
+  const nightPricesIn = Array.isArray(req.body.night_prices) && req.body.night_prices.length ? req.body.night_prices : null;
+  if (nightPricesIn && nightPricesIn.some(n => !Number.isFinite(parseFloat(n?.amount)) || parseFloat(n.amount) < 0)) {
+    return res.status(400).json({ error: 'Each night needs a price of 0 or more' });
+  }
+  const newTotal = nightPricesIn ? round2(nightPricesIn.reduce((s, n) => s + parseFloat(n.amount), 0)) : parseFloat(req.body.total_amount);
   const reason = String(req.body.reason || '').trim();
   if (!Number.isFinite(newTotal) || newTotal < 0) return res.status(400).json({ error: 'total_amount must be a number of 0 or more' });
   if (!reason) return res.status(400).json({ error: 'A reason is required' });
@@ -1672,16 +1684,36 @@ router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res
       return res.status(409).json({ error: 'This stay is complimentary — remove complimentary first to set a price' });
     }
 
+    // A price per night: one for every night of the stay, in any order.
+    let nightShares = null, nightNote = '';
+    const hadNights = (await nightRatesSvc.loadNightRates(client, before.id)).size > 0;
+    if (nightPricesIn) {
+      const stay = stayNightList(before.check_in_date, before.check_out_date);
+      const byDate = new Map(nightPricesIn.map(n => [String(n.date || '').slice(0, 10), parseFloat(n.amount)]));
+      if (byDate.size !== stay.length || stay.some(d => !byDate.has(d))) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Give one price for each night of the stay', code: 'NIGHTS_MISMATCH' });
+      }
+      if (newTotal > 0) {
+        nightShares = stay.map(d => byDate.get(d) / newTotal);
+        nightNote = ` Per night: ${stay.map(d => `${d.slice(8, 10)}/${d.slice(5, 7)} ${fmtIDR(byDate.get(d))}`).join(', ')}.`;
+      }
+    }
+
     const result = await applyBookingPrice(client, {
       propertyId: req.propertyId, before, newTotal, userId: req.user.id,
       keepDiscount: !!before.reservation_group_id && before.discount_type !== 'percentage',
       receivedWasTypo: req.body.received_was_typo,
+      nightShares,
     });
     if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json(result.error); }
     const { payable, received, credit, receivedFixes } = result;
 
     const oldNet = round2(parseFloat(before.total_amount) - parseFloat(before.discount_amount || 0));
     let note = `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}.`;
+    const hasNights = (await nightRatesSvc.loadNightRates(client, before.id)).size > 0;
+    if (hasNights) note += nightNote;
+    else if (hadNights) note += ' Same price every night now.';
     if (receivedFixes.length) note += ` Received payment was a typo too, corrected: ${receivedFixes.join(', ')}.`;
     if (credit > 0) note += ` Guest overpaid ${fmtIDR(credit)} — to be refunded.`;
     note += ` Reason: ${reason}`;
@@ -1694,11 +1726,11 @@ router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res
     if (before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out') {
       await agentBilling.recomputeCommission(req.propertyId, before.id).catch(err => console.error('Commission recompute failed:', err));
     }
-    if (payable !== oldNet) {
+    if (payable !== oldNet || hasNights || hadNights) {
       sendControlAlert(req.propertyId, {
         bookingIds: before.id, userId: req.user.id, reason,
         headline: `💰 Price edited: ${fmtIDR(oldNet)} → ${fmtIDR(payable)} (${payable > oldNet ? '+' : '−'}${fmtIDR(Math.abs(payable - oldNet))})`,
-        details: credit > 0 ? [`Guest has overpaid ${fmtIDR(credit)} — to be refunded`] : [],
+        details: [hasNights ? nightNote.trim() : null, credit > 0 ? `Guest has overpaid ${fmtIDR(credit)} — to be refunded` : null].filter(Boolean),
       });
     }
 

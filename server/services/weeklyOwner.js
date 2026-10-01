@@ -2,6 +2,7 @@ const db = require('../db');
 const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, card } = require('./emailCards');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
+const { roomRevPerNightSql } = require('./nightRates');
 
 // Weekly Owner Report (Reports & Alerts, paid — smart_reports): Monday 08:00
 // WITA. Last week (Mon–Sun) against the week before, from the Reports page's
@@ -53,7 +54,7 @@ async function onTheBooks(propertyId, from, days, sellable) {
   const { rows } = await db.query(`
     SELECT gs::date AS night,
            COUNT(b.id) AS rooms,
-           COALESCE(SUM((COALESCE(b.room_revenue, 0) + COALESCE(b.fnb_revenue, 0)) / NULLIF(b.nights, 0)), 0) AS revenue
+           COALESCE(SUM(${roomRevPerNightSql('b', 'gs')} + COALESCE(b.fnb_revenue, 0) / NULLIF(b.nights, 0)), 0) AS revenue
     FROM generate_series($2::date, $2::date + ($3::int - 1), '1 day') gs
     LEFT JOIN bookings b ON b.property_id = $1
       AND b.status NOT IN ('cancelled', 'no_show')

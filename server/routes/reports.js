@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { round2 } = require('../services/folioService');
+const { roomRevPerNightSql } = require('../services/nightRates');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 
@@ -23,7 +24,8 @@ const NIGHTS_CTE = `
       b.unit_id, b.rate_plan_id, b.guest_id, COALESCE(b.num_guests, 0) AS num_guests,
       COALESCE(b.discount_amount, 0) / NULLIF(b.nights, 0) AS discount_per_night,
       d::date AS night,
-      COALESCE(b.room_revenue, b.total_amount) / NULLIF(b.nights, 0) AS room_rev_per_night,
+      -- each night at its own price when the stay has night rates (090)
+      ${roomRevPerNightSql('b', 'd')} AS room_rev_per_night,
       COALESCE(b.fnb_revenue, 0) / NULLIF(b.nights, 0) AS fnb_rev_per_night,
       -- Complimentary stay (migration 072): counts for occupancy, not ADR.
       (b.complimentary_scope IS NOT NULL) AS comp,

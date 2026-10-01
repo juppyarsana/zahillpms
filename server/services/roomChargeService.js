@@ -1,5 +1,6 @@
 const db = require('../db');
 const { round2, ymd, stayNights, nightlyAmount } = require('./folioService');
+const { loadNightRates, roomNightAmounts } = require('./nightRates');
 
 // Per-night folio posting for the room + F&B (meal-plan) revenue split.
 // One `folio_charges` row of type='room' and (if the plan includes a meal)
@@ -57,14 +58,18 @@ async function postNight(client, { bookingId, serviceDate, roomNet, mealNet, rat
 async function postStay(client, booking, { upToDate = null, actorUserId = null } = {}) {
   const end = upToDate && ymd(upToDate) < ymd(booking.check_out_date) ? upToDate : booking.check_out_date;
   const nights = stayNights(booking.check_in_date, end);
-  const totalNights = stayNights(booking.check_in_date, booking.check_out_date).length;
+  const allNights = stayNights(booking.check_in_date, booking.check_out_date);
+  const totalNights = allNights.length;
+  // Each night's room amount: its own price when the stay has night rates
+  // (migration 090), else the even split. Meals are the same every night.
+  const roomAmounts = roomNightAmounts(booking.room_revenue ?? booking.total_amount, allNights, await loadNightRates(client, booking.id));
   const code = await ratePlanCodeFor(client, booking.rate_plan_id);
   let roomPosted = 0, fnbPosted = 0;
   for (let i = 0; i < nights.length; i++) {
     const r = await postNight(client, {
       bookingId: booking.id,
       serviceDate: nights[i],
-      roomNet: nightlyAmount(booking.room_revenue ?? booking.total_amount, totalNights, i),
+      roomNet: roomAmounts[i],
       mealNet: nightlyAmount(booking.fnb_revenue, totalNights, i),
       ratePlanCode: code,
       actorUserId,

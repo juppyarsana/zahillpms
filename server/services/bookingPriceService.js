@@ -3,6 +3,8 @@ const roomCharge = require('./roomChargeService');
 const { computeFolioTotals, round2 } = require('./folioService');
 const { recomputeBookingStatus } = require('./paymentStatusService');
 const { priceBasis } = require('./priceBasis');
+const { stayNights } = require('./folioService');
+const nightRates = require('./nightRates');
 
 // Booking price maths shared by routes/bookings.js (booking creation, Edit
 // Price, Change Room, Amend Dates) and routes/checkin.js (early departure).
@@ -76,7 +78,10 @@ function snapPayable(computed, typed) {
 //   split — { roomNet, mealNet }: set the NET room/meal amounts exactly
 //     instead of deriving them from newTotal (complimentary stays: room free,
 //     meals still paid). The discount becomes 0; newTotal is ignored.
-async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null }) {
+//   nightShares — a price per night (migration 090): one fraction of the
+//     stay's price per night, or null = the same every night. Left out
+//     (undefined) = keep how the stay is shared between its nights now.
+async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null, nightShares }) {
   const reqBody = { received_was_typo: receivedWasTypo };
   const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId);
   let discountAmount = 0;
@@ -172,6 +177,14 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
      WHERE id = $6 RETURNING *`,
     [storedTotal, discountAmount, roomNet, mealNet, depositAmount, before.id]
   );
+  if (nightShares !== undefined) {
+    const saved = await nightRates.saveNightRates(client, {
+      bookingId: before.id, nights: stayNights(after.check_in_date, after.check_out_date), shares: nightShares, roomNet, mealNet,
+    });
+    if (saved.error) {
+      return { status: 400, error: { error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error } };
+    }
+  }
   await roomCharge.repostStay(client, after, userId);
   await recomputeBookingStatus(client, before.id);
 

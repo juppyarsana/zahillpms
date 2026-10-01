@@ -2,6 +2,7 @@ const db = require('../db');
 const nodemailer = require('nodemailer');
 const { CARD_TABLE_OPEN, CARD_TABLE_CLOSE, CARD_HEIGHT, MOBILE_STYLE, card } = require('../services/emailCards');
 const roomChargeService = require('../services/roomChargeService');
+const { loadNightRates, roomNightAmounts } = require('../services/nightRates');
 const { resolveSmtp } = require('../services/mailer');
 
 function nextDate(dateStr) {
@@ -328,7 +329,8 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
       const r = await roomChargeService.postNight(client, {
         bookingId: bk.id,
         serviceDate: businessDate,
-        roomNet: roomChargeService.nightlyAmount(bk.room_revenue ?? bk.total_amount, nights.length, idx),
+        // its own price when the stay has night rates (migration 090)
+        roomNet: roomNightAmounts(bk.room_revenue ?? bk.total_amount, nights, await loadNightRates(client, bk.id))[idx],
         mealNet: roomChargeService.nightlyAmount(bk.fnb_revenue, nights.length, idx),
         ratePlanCode: bk.rate_plan_code || 'RO',
       });

@@ -1,5 +1,6 @@
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('./publishRate');
 const db = require('../db');
+const { loadNightRates, roomNightAmounts } = require('./nightRates');
 
 function round2(n) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -317,8 +318,10 @@ async function computeProforma(bookingId, propertyId) {
   const ratePlanCode = await ratePlanCodeFor(booking.rate_plan_id);
   const roomTotal = booking.room_revenue ?? booking.total_amount;
   const projectedCharges = [];
+  // Each night at its own price when the stay has night rates (migration 090).
+  const roomAmounts = roomNightAmounts(roomTotal, nights, await loadNightRates(db, booking.id));
   for (let i = 0; i < nights.length; i++) {
-    const roomAmt = nightlyAmount(roomTotal, nights.length, i);
+    const roomAmt = roomAmounts[i];
     const mealAmt = nightlyAmount(booking.fnb_revenue, nights.length, i);
     if (roomAmt > 0) projectedCharges.push({ type: 'room', description: `Room — ${nights[i]}`, quantity: 1, unit_price: roomAmt, amount: roomAmt, service_date: nights[i] });
     if (mealAmt > 0) projectedCharges.push({ type: 'fnb', description: `Meal plan (${ratePlanCode}) — ${nights[i]}`, quantity: 1, unit_price: mealAmt, amount: mealAmt, service_date: nights[i] });

@@ -1824,6 +1824,13 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
    food menu and the room-service confirm queue go too.
 
+## A price per night (2026-10-01, migration 090) — 🟡 step 1 built
+
+Edit Price can set a different price for each night of a stay (agent rates that differ night by night); the folio,
+invoice and daily reports use each night's own price, the meal plan stays the same every night. Step 2, not built:
+New Booking keeping the suggested nightly rates, group rooms at creation, Amend Dates / early departure keeping the
+nights' own prices, Registration Card showing them. See CLAUDE.md.
+
 ## Restore a voided folio line (2026-10-01, no migration) — ✅ built
 
 A folio line voided by mistake can be put back from the Folio tab ("Voided lines" → Restore); void and restore are both
@@ -1836,7 +1843,7 @@ past check-out / not posted / never arrived, the day's figures, money received, 
 audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
 owner-only. Details in `CLAUDE.md`.
 
-## Next migration number: 090
+## Next migration number: 091
 
 ---
 

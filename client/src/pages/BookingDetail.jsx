@@ -658,7 +658,20 @@ Type the reason to void it:`;
   // everything derived from it (room/F&B split, posted folio nights, pending
   // deposit/balance lines, discount) — see PUT /api/bookings/:id/price.
   function openEditPrice() {
-    setPriceForm({ total_amount: String(parseFloat(booking.total_amount) || ''), reason: '', received_was_typo: null });
+    // A price per night (migration 090): the nights of the stay, at their own
+    // prices when the booking has them, else the total spread evenly.
+    const total = parseFloat(booking.total_amount) || 0;
+    const dates = [];
+    for (let d = new Date(String(booking.check_in_date).slice(0, 10) + 'T00:00:00Z'); dates.length < (booking.nights || 0); d = new Date(d.getTime() + 86400000)) {
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    const own = (booking.night_prices || []).length === dates.length && dates.length > 1;
+    const even = dates.length ? Math.round(total / dates.length) : 0;
+    const nights = dates.map((date, i) => ({
+      date,
+      amount: String(own ? booking.night_prices[i].price : (i === dates.length - 1 ? Math.round(total - even * (dates.length - 1)) : even)),
+    }));
+    setPriceForm({ total_amount: String(total || ''), reason: '', received_was_typo: null, perNight: own, nights });
     setPriceError('');
     setPriceResult(null);
     setEditingPrice(true);
@@ -670,6 +683,7 @@ Type the reason to void it:`;
     try {
       const { data } = await api.put(`/api/bookings/${id}/price`, {
         total_amount: parseFloat(priceForm.total_amount),
+        ...(priceForm.perNight ? { night_prices: priceForm.nights.map(n => ({ date: n.date, amount: parseFloat(n.amount) || 0 })) } : {}),
         reason: priceForm.reason.trim(),
         ...(priceForm.received_was_typo !== null ? { received_was_typo: priceForm.received_was_typo } : {}),
       });
@@ -1041,6 +1055,12 @@ Type the reason to void it:`;
             style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
           {' '}for the whole stay.
         </div>
+        {booking.night_prices?.length > 1 && (
+          <div style={{ fontSize: 12, marginBottom: 10 }}>
+            <span className="text-muted">Price per night{parseFloat(booking.discount_amount) > 0 ? ' (before discount)' : ''}: </span>
+            {booking.night_prices.map(n => `${new Date(n.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${fmtIDR(n.price)}`).join(' · ')}
+          </div>
+        )}
         {parseFloat(booking.fnb_revenue || 0) > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
             Net revenue split — Room {fmtIDR(booking.room_revenue)} · F&amp;B {fmtIDR(booking.fnb_revenue)}
@@ -1701,9 +1721,42 @@ Type the reason to void it:`;
                     </div>
                     <div className="form-group">
                       <label className="form-label">New total for the whole stay ({booking.nights} night{booking.nights === 1 ? '' : 's'}) — IDR</label>
-                      <input className="form-input" type="number" min="0" value={priceForm.total_amount} autoFocus
+                      <input className="form-input" type="number" min="0" value={priceForm.total_amount} autoFocus={!priceForm.perNight}
+                        disabled={priceForm.perNight} title={priceForm.perNight ? 'The total of the nights below' : undefined}
                         onChange={e => setPriceForm(f => ({ ...f, total_amount: e.target.value }))} />
-                      {newGross > 0 && booking.nights > 0 && (
+                      {/* A price per night: the total is then the sum of the nights. */}
+                      {priceForm.nights?.length > 1 && (
+                        <label className="flex gap-2" style={{ fontSize: 13, cursor: 'pointer', marginTop: 8, alignItems: 'center' }}>
+                          <input type="checkbox" checked={!!priceForm.perNight}
+                            onChange={e => setPriceForm(f => {
+                              if (!e.target.checked) return { ...f, perNight: false };
+                              // start from the total typed so far, spread evenly
+                              const t = parseFloat(f.total_amount) || 0, n = f.nights.length, each = Math.round(t / n);
+                              return { ...f, perNight: true, nights: f.nights.map((x, i) => ({ ...x, amount: String(i === n - 1 ? Math.round(t - each * (n - 1)) : each) })) };
+                            })} />
+                          <span>Different price each night</span>
+                        </label>
+                      )}
+                      {priceForm.perNight && (
+                        <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
+                          {priceForm.nights.map((n, i) => (
+                            <div key={n.date} className="flex-between" style={{ gap: 12, padding: '4px 0' }}>
+                              <span style={{ fontSize: 13 }}>
+                                Night {i + 1} · {new Date(n.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </span>
+                              <input className="form-input" type="number" min="0" value={n.amount} style={{ maxWidth: 170, textAlign: 'right' }}
+                                onChange={e => setPriceForm(f => {
+                                  const nights = f.nights.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x));
+                                  return { ...f, nights, total_amount: String(nights.reduce((sum, x) => sum + (parseFloat(x.amount) || 0), 0)) };
+                                })} />
+                            </div>
+                          ))}
+                          <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                            Each night's price as the guest or agent pays it — tax{parseFloat(booking.fnb_revenue || 0) > 0 ? ' and the meal plan' : ''} included. The folio, invoice and daily reports use each night's own price.
+                          </div>
+                        </div>
+                      )}
+                      {!priceForm.perNight && newGross > 0 && booking.nights > 0 && (
                         <div style={{ fontSize: 12, marginTop: 4 }}>
                           = <strong>{fmtIDR(newGross / booking.nights)} per night</strong> × {booking.nights} night{booking.nights === 1 ? '' : 's'}
                         </div>
