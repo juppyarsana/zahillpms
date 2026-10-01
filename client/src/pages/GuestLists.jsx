@@ -187,7 +187,7 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
         <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
         <div className="flex gap-2" style={{ alignItems: 'center' }}>
           <span className="text-muted" style={{ fontSize: 13 }}>
-            {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}
+            {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}{summary.extra_beds ? ` + ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'}` : ''}
           </span>
           {action}
         </div>
@@ -209,7 +209,10 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
                 <tr key={r.id} onClick={onOpen ? () => onOpen(r.id) : undefined} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
                   <td><RoomCell r={r} /></td>
                   <td><GuestCell r={r} /></td>
-                  <td>{r.num_guests}</td>
+                  <td>
+                    {r.num_guests}
+                    {r.extra_beds > 0 && <div className="text-muted" title={r.extra_beds_text} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>+ {r.extra_beds} extra bed</div>}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{stayText(r)}</td>
                   <td>{planText(r)}</td>
                   {extra.map(c => <td key={c.label}>{c.render(r)}</td>)}

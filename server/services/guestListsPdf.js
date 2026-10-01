@@ -46,7 +46,7 @@ function cells(list, r, isToday) {
   return {
     room: [r.unit_name, r.unit_type].filter(Boolean).join('\n'),
     guest: [r.guest_name, [r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · ')].filter(Boolean).join('\n'),
-    pax: String(r.num_guests ?? ''),
+    pax: String(r.num_guests ?? '') + (r.extra_beds > 0 ? `+${r.extra_beds}` : ''),
     // Standard PDF Helvetica has no arrow glyph — a dash renders everywhere.
     stay: `${fmtShort(r.check_in_date)} – ${fmtShort(r.check_out_date)}\n${r.nights} night${r.nights === 1 ? '' : 's'}`,
     plan: r.rate_plan_code || '—',
@@ -73,7 +73,7 @@ function drawSection(doc, y, { title, list, rows, summary, empty, isToday }) {
   if (y > BOTTOM - 60) { doc.addPage(); y = 50; }
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(title, LEFT, y);
   doc.font('Helvetica').fontSize(9).fillColor('#555')
-    .text(`${summary.rooms} room${summary.rooms === 1 ? '' : 's'} · ${summary.pax} guest${summary.pax === 1 ? '' : 's'}`, 300, y + 1, { width: RIGHT - 300, align: 'right' });
+    .text(`${summary.rooms} room${summary.rooms === 1 ? '' : 's'} · ${summary.pax} guest${summary.pax === 1 ? '' : 's'}${summary.extra_beds ? ` + ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'}` : ''}`, 300, y + 1, { width: RIGHT - 300, align: 'right' });
   doc.fillColor('#000');
   y += 18;
 
