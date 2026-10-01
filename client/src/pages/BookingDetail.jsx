@@ -301,7 +301,7 @@ export default function BookingDetail() {
   // Opened via Balance Due's "Record payment →" once the estimate is in.
   useEffect(() => {
     if (location.hash === '#record-payment' && estimate && parseFloat(estimate.balance_due) > 0 && !recording) openRecordPayment();
-  }, [estimate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [estimate, location.hash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened via "+ Extra bed / item" (e.g. from the Dashboard room window):
   // Details tab, the Add item window open.
@@ -1032,7 +1032,15 @@ Type the reason to void it:`;
       </div>
 
       <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
-        <div className="card-title">Payment Tracking</div>
+        <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
+        {/* Room price only — extras / restaurant / activities are on the Folio tab. */}
+        <div className="text-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+          The room price only (room{parseFloat(booking.fnb_revenue || 0) > 0 ? ' + meal plan' : ''}): its deposit and balance.
+          Extras, restaurant charges and activities are not counted here — see the{' '}
+          <button type="button" onClick={() => setTab('folio')}
+            style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
+          {' '}for the whole stay.
+        </div>
         {parseFloat(booking.fnb_revenue || 0) > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
             Net revenue split — Room {fmtIDR(booking.room_revenue)} · F&amp;B {fmtIDR(booking.fnb_revenue)}
@@ -1104,23 +1112,31 @@ Type the reason to void it:`;
         </div>
         <div className="divider" />
         <div className="flex-between" style={{ fontWeight: 700 }}>
-          <span>Total</span>
+          <span>Room price</span>
           <span>{fmtIDR(bookingNet)}</span>
         </div>
         {roomPaymentLines.length > 0 && (
           <>
             <div className="flex-between" style={{ fontSize: 13, marginTop: 6 }}>
-              <span className="text-muted">Paid</span>
+              <span className="text-muted">Paid for the room</span>
               <span>{fmtIDR(roomPaid)}</span>
             </div>
             {Math.abs(bookingNet - roomPaid) >= 1 && (
               <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
                 color: roomPaid > bookingNet ? 'var(--color-danger, #dc2626)' : undefined }}>
-                <span>{roomPaid > bookingNet ? 'Overpaid — refund to guest' : 'Balance due'}</span>
+                <span>{roomPaid > bookingNet ? 'Room overpaid — refund to guest' : 'Room still to pay'}</span>
                 <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
               </div>
             )}
           </>
+        )}
+        {!['cancelled', 'no_show'].includes(booking.status) && (
+          <div className="flex-between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
+            <span className="text-muted" style={{ fontSize: 12, flex: '1 1 220px' }}>
+              Taking money for the room and extras together, or a part payment? Use Record Payment on the folio.
+            </span>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`)}>💳 Record payment on the folio →</button>
+          </div>
         )}
       </div>
 

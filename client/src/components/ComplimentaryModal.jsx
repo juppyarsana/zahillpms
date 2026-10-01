@@ -192,7 +192,7 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
             <label className="form-label">Reason for cancelling</label>
             <textarea className="form-textarea" value={cancelReason} autoFocus onChange={e => setCancelReason(e.target.value)} />
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-              The room is freed and its folio charges voided. Money already received isn't refunded automatically — check Payment Tracking.
+              The room is freed and its folio charges voided. Money already received isn't refunded automatically — check Room Payment on the booking.
             </div>
           </div>
         )}
