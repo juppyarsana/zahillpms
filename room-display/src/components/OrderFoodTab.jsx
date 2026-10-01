@@ -342,8 +342,8 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
           {sum.added && cart.length > 0 && (
             <div className="flex flex-col gap-1.5 mb-3" style={{ fontSize: 13 }}>
               <div className="flex justify-between text-muted"><span>Subtotal</span><span>{fmtIDR(sum.subtotal)}</span></div>
-              {sum.service > 0 && <div className="flex justify-between text-muted"><span>Service {menu.prices.service}%</span><span>{fmtIDR(sum.service)}</span></div>}
-              {sum.tax > 0 && <div className="flex justify-between text-muted"><span>Tax {menu.prices.tax}%</span><span>{fmtIDR(sum.tax)}</span></div>}
+              {sum.service > 0 && <div className="flex justify-between text-muted"><span>Service</span><span>{fmtIDR(sum.service)}</span></div>}
+              {sum.tax > 0 && <div className="flex justify-between text-muted"><span>Tax</span><span>{fmtIDR(sum.tax)}</span></div>}
             </div>
           )}
           <div className="flex items-baseline justify-between mb-1">
