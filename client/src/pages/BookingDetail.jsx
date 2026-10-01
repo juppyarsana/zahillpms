@@ -354,16 +354,18 @@ export default function BookingDetail() {
   async function voidCharge(charge) {
     const chargeId = charge.id;
     // A Pay-now line's payment stays on the folio (no refund flow yet).
-    const msg = charge.paid_method
-      ? `Void this charge?
-
-It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.`
-      : `Void "${charge.description}"?
-
-It comes off the guest's bill. It can be put back from "Voided lines" below.`;
-    if (!confirm(msg)) return;
+    // A typed reason, not a bare OK: a void was once clicked through by mistake.
+    const msg = `Void "${charge.description}"? It comes off the guest's bill.
+${charge.paid_method ? `
+It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.
+` : ''}${booking.status === 'checked_out' ? `
+This guest has already checked out.
+` : ''}
+Type the reason to void it:`;
+    const reason = (prompt(msg) || '').trim();
+    if (!reason) return;
     try {
-      await api.delete(`/api/folio/charge/${chargeId}`);
+      await api.delete(`/api/folio/charge/${chargeId}`, { data: { reason } });
       loadFolio();
       load();
     } catch (err) {

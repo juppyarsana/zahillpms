@@ -511,8 +511,11 @@ router.post('/:bookingId/payment', auth, async (req, res) => {
   }
 });
 
-// DELETE /api/folio/charge/:id — void, not hard delete
+// DELETE /api/folio/charge/:id { reason } — void, not hard delete. A typed
+// reason is required: a bare confirm was clicked through by mistake.
 router.delete('/charge/:id', auth, async (req, res) => {
+  const reason = String(req.body?.reason || '').trim().slice(0, 300);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to void a charge', code: 'REASON_REQUIRED' });
   try {
     const { rows: [charge] } = await db.query(
       `UPDATE folio_charges SET is_voided = true, voided_by = $1, voided_at = NOW()
@@ -525,7 +528,7 @@ router.delete('/charge/:id', auth, async (req, res) => {
     if (!charge) return res.status(404).json({ error: 'Charge not found' });
     await db.query(
       'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
-      [charge.booking_id, `Folio line voided: ${charge.description}`.slice(0, 1000), req.user.id]
+      [charge.booking_id, `Folio line voided: ${charge.description}. Reason: ${reason}`.slice(0, 1000), req.user.id]
     );
     res.json(charge);
   } catch (err) {
