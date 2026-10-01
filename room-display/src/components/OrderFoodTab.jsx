@@ -9,6 +9,13 @@ import api from '../api';
 const LEGACY_LABELS = { food: 'Food', drinks: 'Drinks' };
 const LEGACY_ICONS = { food: 'restaurant', drinks: 'local_bar' };
 const CONFIRMATION_MS = 6000;
+// How the guest can pay (the POS says which are allowed). Cash / card are paid
+// at the door — the restaurant brings the bill with the food.
+const PAY_OPTIONS = {
+  room: { icon: 'bed', title: 'Charge to my room', sub: 'Added to your room bill — pay at check-out' },
+  cash: { icon: 'payments', title: 'Cash on delivery', sub: 'Pay in cash when the food arrives' },
+  card: { icon: 'credit_card', title: 'Card on delivery', sub: 'We bring the card machine with your food' },
+};
 const MAX_QTY = 20;
 
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
@@ -96,6 +103,8 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
   const [confirmed, setConfirmed] = useState(null);   // { status, total }
   const [error, setError] = useState(null);
   const [activeCat, setActiveCat] = useState(null);
+  const [askPay, setAskPay] = useState(false);       // the "How would you like to pay?" step
+  const [payment, setPayment] = useState('room');
   const ref = useRef(newRef());   // same id on a retry, so an order is never sent twice
   const scrollRef = useRef(null);
   const sectionRefs = useRef({});
@@ -157,19 +166,28 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
     changeCart(c => c.map(i => i.product_id === productId ? { ...i, quantity: Math.min(MAX_QTY, qty) } : i));
   }
 
+  const payOptions = (menu.pos && Array.isArray(menu.payments) ? menu.payments : ['room']).filter(k => PAY_OPTIONS[k]);
   const count = cart.reduce((s, i) => s + i.quantity, 0);
   const sum = totals(cart.reduce((s, i) => s + i.price * i.quantity, 0), menu.pos ? menu.prices : null);
 
-  async function placeOrder() {
+  // Send order: ask how they'll pay first when there's a choice.
+  function onSend() {
+    if (cart.length === 0 || placing || closed) return;
+    if (payOptions.length > 1) { setPayment(p => (payOptions.includes(p) ? p : 'room')); setAskPay(true); return; }
+    placeOrder('room');
+  }
+
+  async function placeOrder(pay = 'room') {
     if (cart.length === 0 || placing || closed) return;
     setPlacing(true);
     setError(null);
     try {
       const { data } = await api.post(`/display/room/${roomId}/order`, {
         items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
-        ...(menu.pos ? { note: note.trim(), client_ref: ref.current } : {}),
+        ...(menu.pos ? { note: note.trim(), client_ref: ref.current, payment: pay } : {}),
       });
-      setConfirmed({ status: data?.status === 'accepted' ? 'accepted' : 'pending', total: sum.total, count });
+      setAskPay(false);
+      setConfirmed({ status: data?.status === 'accepted' ? 'accepted' : 'pending', total: sum.total, count, payment: data?.payment || pay });
       setCart([]);
       setNote('');
       ref.current = newRef();
@@ -177,6 +195,7 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
       setTimeout(() => setConfirmed(null), CONFIRMATION_MS);
     } catch (err) {
       const data = err.response?.data;
+      setAskPay(false);
       if (data?.code === 'OUT_OF_STOCK') {
         setError(`Sorry, we just ran out of ${data.items.map(i => i.name).join(', ')}. Please adjust your order.`);
         loadMenu();
@@ -202,14 +221,57 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
             : 'The restaurant will confirm it in a moment — you can follow it under Your Orders.'}
         </p>
         <div className="text-dim" style={{ fontSize: 13 }}>
-          {confirmed.count} item{confirmed.count === 1 ? '' : 's'} · {fmtIDR(confirmed.total)} · charged to your room{confirmed.status === 'accepted' ? '' : ' once confirmed'}
+          {confirmed.count} item{confirmed.count === 1 ? '' : 's'} · {fmtIDR(confirmed.total)} · {confirmed.payment === 'cash' ? 'pay in cash when it arrives'
+            : confirmed.payment === 'card' ? 'pay by card when it arrives' : `charged to your room${confirmed.status === 'accepted' ? '' : ' once confirmed'}`}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div className="flex-1 flex overflow-hidden" style={{ position: 'relative' }}>
+      {askPay && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center p-10" style={{ background: 'var(--scrim)' }} onClick={() => !placing && setAskPay(false)}>
+          <div className="rounded-3xl p-8 bg-pane w-full" style={{ maxWidth: 560, border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
+            <div className="text-xs font-bold uppercase tracking-[0.3em] text-accent mb-2">Almost done</div>
+            <h3 className="text-ink font-light mb-6" style={{ fontSize: 28 }}>How would you like to pay?</h3>
+            <div className="flex flex-col gap-3 mb-6">
+              {payOptions.map(k => {
+                const o = PAY_OPTIONS[k], on = payment === k;
+                return (
+                  <button key={k} onClick={() => setPayment(k)} className="rounded-2xl p-4 flex items-center gap-4 text-left"
+                    style={{ cursor: 'pointer', background: on ? 'rgb(var(--accent-rgb) / 0.1)' : 'var(--surface)',
+                      border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}` }}>
+                    <div className="shrink-0 rounded-xl flex items-center justify-center" style={{ width: 48, height: 48,
+                      background: on ? 'var(--accent)' : 'var(--surface-2)', color: on ? 'var(--accent-contrast)' : 'var(--text-muted)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 26 }}>{o.icon}</span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-ink font-semibold" style={{ fontSize: 16 }}>{o.title}</div>
+                      <div className="text-dim" style={{ fontSize: 13 }}>{o.sub}</div>
+                    </div>
+                    <span className="material-symbols-outlined" style={{ fontSize: 24, color: on ? 'var(--accent)' : 'var(--text-ghost)' }}>
+                      {on ? 'radio_button_checked' : 'radio_button_unchecked'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-baseline justify-between mb-5">
+              <span className="text-muted" style={{ fontSize: 14 }}>{count} item{count === 1 ? '' : 's'}</span>
+              <span className="text-ink font-light" style={{ fontSize: 26 }}>{fmtIDR(sum.total)}</span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setAskPay(false)} disabled={placing} className="rounded-2xl font-semibold bg-surface-2 text-ink"
+                style={{ padding: '15px 22px', fontSize: 14, border: 'none', cursor: 'pointer' }}>Back</button>
+              <button onClick={() => placeOrder(payment)} disabled={placing} className="flex-1 rounded-2xl font-bold uppercase tracking-widest"
+                style={{ padding: '15px 0', fontSize: 14, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-contrast)' }}>
+                {placing ? 'Sending…' : 'Send order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Menu */}
       <section ref={scrollRef} onScroll={onScroll} className="flex-1 bg-app overflow-y-auto" style={{ position: 'relative' }}>
         <div className="px-10 pt-9 pb-2 flex items-end justify-between gap-6">
@@ -352,10 +414,10 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
           </div>
           <p className="text-dim mb-4 flex items-center gap-1" style={{ fontSize: 12 }}>
             <span className="material-symbols-outlined" style={{ fontSize: 15 }}>bed</span>
-            Charged to your room{menu.pos ? ' once the restaurant confirms' : ''}
+            {payOptions.length > 1 ? 'Charge to your room, or pay cash / card on delivery' : `Charged to your room${menu.pos ? ' once the restaurant confirms' : ''}`}
           </p>
           <button
-            onClick={placeOrder}
+            onClick={onSend}
             disabled={cart.length === 0 || placing || closed}
             className="w-full rounded-2xl font-bold uppercase tracking-widest flex items-center justify-center gap-2"
             style={{

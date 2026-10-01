@@ -484,6 +484,8 @@ router.get('/room/:roomId/menu', authDisplay, async (req, res, next) => {
       hours: m.hours || null,
       items: (m.menu || []).map(i => ({ id: i.id, name: i.name, category: i.cat || 'Menu', description: i.sub || '', emoji: i.emoji || '', price: i.price })),
       prices: m.prices || { include: true, service: 0, tax: 0 },
+      // how the guest may pay: 'room' (charged to the room) + cash / card on delivery
+      payments: Array.isArray(m.payments) ? m.payments : ['room'],
     });
   } catch (err) { posFail(res, err); }
 });
@@ -517,7 +519,9 @@ router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
 // Prices are looked up server-side, not trusted from the request — unlike
 // the staff POS (routes/sales.js), this endpoint is reachable by a guest
 // device, so it must not accept a client-supplied unit_price.
-// Through the POS: { items: [{ product_id, quantity, note? }], note?, client_ref }
+// Through the POS: { items: [{ product_id, quantity, note? }], note?, client_ref,
+// payment: 'room' (default) | 'cash' | 'card' — cash / card are paid on
+// delivery: the POS leaves the bill open and staff bring it.
 // — the POS answers pending (staff accept first) or accepted (straight to the
 // kitchen); either way it is charged to the room only once the kitchen has it.
 router.post('/room/:roomId/order', authDisplay, async (req, res, next) => {
@@ -536,8 +540,10 @@ router.post('/room/:roomId/order', authDisplay, async (req, res, next) => {
       clientRef, booking_id: stay.booking_id, room: stay.room, guest: stay.guest_name,
       items: items.map(i => ({ menuItemId: i.product_id, qty: parseInt(i.quantity, 10) || 0, note: i.note || '' })),
       note: note || '',
+      payment: ['room', 'cash', 'card'].includes(req.body.payment) ? req.body.payment : 'room',
     });
-    res.status(r.replayed ? 200 : 201).json({ ok: true, total: r.total, status: r.status === 'pending' ? 'pending_confirmation' : 'accepted' });
+    res.status(r.replayed ? 200 : 201).json({ ok: true, total: r.total, payment: r.payment || 'room',
+      status: r.status === 'pending' ? 'pending_confirmation' : 'accepted' });
   } catch (err) { posFail(res, err); }
 });
 
@@ -679,8 +685,11 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
             confirmation_status: o.status === 'pending' ? 'pending' : o.status === 'rejected' ? 'rejected'
               : o.status === 'voided' ? 'cancelled' : 'confirmed',
             rejection_reason: o.reason || null,
-            // The POS doesn't track delivery yet: "Being prepared" for an hour after it was accepted.
-            kitchen_status: o.status === 'accepted' ? (recent(o) ? 'preparing' : 'accepted') : null,
+            // Delivered when the runner taps it in the POS (or a cash / card
+            // bill is closed); otherwise "Being prepared" for an hour after Accept.
+            kitchen_status: o.status !== 'accepted' ? null : o.deliveredAt ? 'served' : recent(o) ? 'preparing' : 'accepted',
+            payment: o.payment || 'room',
+            paid: !!o.paidAt,
             source: 'pos',
           }));
         } catch (_) { /* POS down — show the rest */ }

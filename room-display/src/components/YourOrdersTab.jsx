@@ -5,7 +5,7 @@ const FOOD_STATUS = {
   preparing: { label: 'Being prepared', color: '#fb923c' },
   accepted:  { label: 'Accepted', color: '#64748b' },
   ready:     { label: 'Ready',     color: '#4ade80' },
-  served:    { label: 'Served',    color: '#64748b' },
+  served:    { label: 'Delivered', color: '#4ade80' },
 };
 // Room-service orders wait for the resto team to confirm before they reach
 // the kitchen (see server/routes/resto.js) — takes priority over kitchen_status.
@@ -82,6 +82,12 @@ export default function YourOrdersTab({ foodOrders = [], activityBookings = [], 
                     </span>
                     <span className="text-muted text-sm">{fmtIDR(o.total_amount)}</span>
                   </div>
+                  {o.payment && o.payment !== 'room' && !['rejected', 'cancelled'].includes(o.confirmation_status) && (
+                    <div className="text-dim text-xs mt-2">{o.paid ? `Paid by ${o.payment === 'cash' ? 'cash' : 'card'}` : `Pay by ${o.payment === 'cash' ? 'cash' : 'card'} when it arrives`}</div>
+                  )}
+                  {o.source === 'pos' && o.payment === 'room' && o.confirmation_status === 'confirmed' && (
+                    <div className="text-dim text-xs mt-2">Charged to your room</div>
+                  )}
                   {['rejected', 'cancelled'].includes(o.confirmation_status) && o.rejection_reason && (
                     <div className="text-xs mt-2" style={{ color: '#f87171' }}>{o.rejection_reason}</div>
                   )}
