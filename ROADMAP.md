@@ -1834,7 +1834,8 @@ app) 8, last used 9 Sept; room tablet dining **never used**; `external_pos` none
 2. **After 2–4 quiet weeks (one pass, full backup first):** remove `resto-display/`, `kitchen-display/`, `routes/resto.js`,
    `restoGuest.js`, `kitchen.js`, `tables.js`, table sessions, the `resto_ordering` module and the `resto.` / `kitchen.`
    sub-domains; old sales stay in the reports.
-3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7. After that the PMS
+3. **Room tablet in-room dining stays** and moves onto the POS — POS repo `HOTEL_POS_PLAN.md` Phase 7 — **✅ built 2026-10-02 (migration 094,
+   not deployed; link it in Property Details → POS Integration → Room tablet orders).** After that the PMS
    food menu and the room-service confirm queue go too.
 
 ## Cashier closing (2026-10-01, migration 093) — ✅ built
@@ -1872,7 +1873,7 @@ past check-out / not posted / never arrived, the day's figures, money received, 
 audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
 owner-only. Details in `CLAUDE.md`.
 
-## Next migration number: 094
+## Next migration number: 095
 
 ---
 

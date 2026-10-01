@@ -352,6 +352,76 @@ function PosIntegrationCard() {
         </button>
       )}
       {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
+      <PosRoomOrders />
+    </div>
+  );
+}
+
+// Room tablet orders through the POS (migration 094): the POS's address and
+// the key the POS made for the hotel (POS Setup → Room service). With both
+// set, the room tablet's Dining tab orders from the POS menu; the order is
+// charged to the room once the restaurant accepts it.
+function PosRoomOrders() {
+  const [cfg, setCfg] = useState(null);
+  const [url, setUrl] = useState('');
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);   // { ok, text }
+
+  useEffect(() => {
+    api.get('/api/settings/pos-room-orders').then(r => { setCfg(r.data); setUrl(r.data.url || ''); }).catch(() => setCfg(false));
+  }, []);
+
+  async function run(fn) {
+    setBusy(true); setMsg(null);
+    try { await fn(); } catch (err) { setMsg({ ok: false, text: err.response?.data?.error || 'Something went wrong' }); }
+    finally { setBusy(false); }
+  }
+  const save = () => run(async () => {
+    const r = await api.put('/api/settings/pos-room-orders', { url, key });
+    setCfg(r.data); setKey('');
+    const t = await api.post('/api/settings/pos-room-orders/test', {}).catch(e => ({ error: e.response?.data?.error }));
+    setMsg(t.error ? { ok: false, text: `Saved, but the POS didn't answer: ${t.error}` } : { ok: true, text: `Saved and connected — room service is ${t.data.status}, ${t.data.items} item(s) on the room menu.` });
+  });
+  const test = () => run(async () => {
+    const t = await api.post('/api/settings/pos-room-orders/test', { url, key });
+    setMsg({ ok: true, text: `Connected — room service is ${t.data.status}, ${t.data.items} item(s) on the room menu.` });
+  });
+  const unlink = () => {
+    if (!window.confirm('Stop sending room tablet orders to the POS? The tablet goes back to the PMS food menu.')) return;
+    run(async () => { const r = await api.put('/api/settings/pos-room-orders', { clear: true }); setCfg(r.data); setUrl(''); setKey(''); setMsg({ ok: true, text: 'Unlinked.' }); });
+  };
+
+  if (!cfg) return null;
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', marginTop: 18, paddingTop: 14 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>Room tablet orders</div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+        Guests order food from the tablet in their room, from the POS menu. The PMS only lets a room with a checked-in
+        guest order; the restaurant accepts it in the POS, the kitchen ticket prints, and it is charged to the room.
+        Get the address and the key from the POS: <b>Setup → Room service → Key for the hotel</b>.
+      </p>
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">POS address</label>
+          <input className="form-input" value={url} placeholder="https://pos.example.com" onChange={e => setUrl(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Key for the hotel</label>
+          <input className="form-input" value={key} style={{ fontFamily: 'monospace' }}
+            placeholder={cfg.key_set ? `saved · ends in ${cfg.key_last4} — paste to replace` : 'Paste the key from the POS'}
+            onChange={e => setKey(e.target.value)} />
+        </div>
+      </div>
+      <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !url.trim() || (!key.trim() && !cfg.key_set)}>{busy ? 'Working…' : 'Save'}</button>
+        <button className="btn btn-secondary btn-sm" onClick={test} disabled={busy || !url.trim() || (!key.trim() && !cfg.key_set)}>Test</button>
+        {cfg.key_set && <button className="btn btn-secondary btn-sm" onClick={unlink} disabled={busy}>Unlink</button>}
+      </div>
+      <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
+        {cfg.key_set && cfg.url ? 'Linked — the room tablet orders from the POS (POS Integration must be on for this property).' : 'Not linked — the room tablet uses the PMS food menu.'}
+      </div>
+      {msg && <div className={`alert ${msg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginTop: 8 }}><div>{msg.text}</div></div>}
     </div>
   );
 }

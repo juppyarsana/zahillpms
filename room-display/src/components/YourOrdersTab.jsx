@@ -2,14 +2,15 @@ function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
 const FOOD_STATUS = {
   new:       { label: 'New',       color: '#818cf8' },
-  preparing: { label: 'Preparing', color: '#fb923c' },
+  preparing: { label: 'Being prepared', color: '#fb923c' },
+  accepted:  { label: 'Accepted', color: '#64748b' },
   ready:     { label: 'Ready',     color: '#4ade80' },
   served:    { label: 'Served',    color: '#64748b' },
 };
 // Room-service orders wait for the resto team to confirm before they reach
 // the kitchen (see server/routes/resto.js) — takes priority over kitchen_status.
 function resolveFoodStatus(o) {
-  if (o.confirmation_status === 'pending') return { label: 'Awaiting confirmation', color: '#fb923c' };
+  if (o.confirmation_status === 'pending') return { label: 'Waiting for the restaurant', color: '#fb923c' };
   if (o.confirmation_status === 'rejected') return { label: 'Declined', color: '#f87171' };
   return FOOD_STATUS[o.kitchen_status] || { label: 'Placed', color: '#64748b' };
 }

@@ -72,7 +72,7 @@ export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking,
 
   const hasOrders = orders.foodOrders.length > 0 || orders.activityBookings.length > 0;
   const hasActiveOrder =
-    orders.foodOrders.some(o => o.kitchen_status && o.kitchen_status !== 'served') ||
+    orders.foodOrders.some(o => o.confirmation_status === 'pending' || (o.kitchen_status && !['served', 'accepted'].includes(o.kitchen_status))) ||
     orders.activityBookings.some(b => ['requested', 'confirmed'].includes(b.status));
 
   return (

@@ -9,6 +9,7 @@ const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
 const telegramService = require('../services/telegramService');
 const roomCheck = require('../services/roomCheckService');
+const posRoomOrders = require('../services/posRoomOrders');
 const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
 const opsGate = moduleGuard('operations');
@@ -172,7 +173,10 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
       weather,
       property: propertyRows[0] || null,
-      orderingEnabled: (enabledModules.get('sales') || false) && fnbRow.has_fnb,
+      // Dining orders from the POS when its link is set (migration 094),
+      // otherwise from the PMS's own food menu as before.
+      orderingEnabled: posRoomOrders.linked(await posRoomOrders.config(unit.property_id))
+        || ((enabledModules.get('sales') || false) && fnbRow.has_fnb),
       activitiesEnabled: enabledModules.get('activities') || false,
       roomControllerEnabled: enabledModules.get('room_controller') || false,
       callingEnabled: enabledModules.get('calling') || false,
@@ -431,7 +435,59 @@ router.post('/room/:roomId/message/:messageId/dismiss', authDisplay, async (req,
   }
 });
 
-// GET /api/display/room/:roomId/menu — guest self-ordering menu
+// ─── Dining through the POS (migration 094) ──────────────────
+// When the POS link is set, the tablet's Dining menu, orders and their status
+// come from the POS (see services/posRoomOrders.js). The PMS decides who pays:
+// only a room with a checked-in guest can order, and the order goes to the POS
+// with that stay's booking — the tablet never chooses.
+async function posLinkFor(req) {
+  const cfg = await posRoomOrders.config(req.propertyId);
+  return posRoomOrders.linked(cfg) ? cfg : null;
+}
+async function checkedInStay(propertyId, roomId) {
+  const { rows: [r] } = await db.query(
+    `SELECT u.id AS unit_id, u.name AS room, b.id AS booking_id, g.name AS guest_name
+     FROM units u
+     LEFT JOIN bookings b ON b.unit_id = u.id AND b.status = 'checked_in'
+     LEFT JOIN guests g ON g.id = b.guest_id
+     WHERE u.controller_id = $1 AND u.property_id = $2
+     ORDER BY b.check_in_date DESC NULLS LAST LIMIT 1`, [roomId, propertyId]);
+  return r || null;
+}
+function posFail(res, err) {
+  if (err instanceof posRoomOrders.PosError) {
+    return res.status(err.status === 503 ? 503 : err.status >= 500 ? 502 : err.status).json({ error: err.message, code: err.code });
+  }
+  res.status(500).json({ error: err.message });
+}
+const POS_CLOSED_MSG = {
+  off: 'Room service ordering is not available — please call the front desk',
+  paused: 'Room service is paused right now — please call the front desk',
+  closed: 'Room service is closed now — please call the front desk',
+};
+
+// GET /api/display/room/:roomId/menu — guest self-ordering menu. From the POS
+// (when linked): { source: 'pos', status, message, hours, items, prices };
+// otherwise the PMS's own food products (an array, as before).
+router.get('/room/:roomId/menu', authDisplay, async (req, res, next) => {
+  try {
+    const cfg = await posLinkFor(req);
+    if (!cfg) return next();
+    const stay = await checkedInStay(req.propertyId, req.params.roomId);
+    if (!stay) return res.status(404).json({ error: 'Room not found' });
+    const m = await posRoomOrders.menu(cfg);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      source: 'pos',
+      status: m.status,
+      message: POS_CLOSED_MSG[m.status] || null,
+      hours: m.hours || null,
+      items: (m.menu || []).map(i => ({ id: i.id, name: i.name, category: i.cat || 'Menu', description: i.sub || '', emoji: i.emoji || '', price: i.price })),
+      prices: m.prices || { include: true, service: 0, tax: 0 },
+    });
+  } catch (err) { posFail(res, err); }
+});
+
 router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
   const { roomId } = req.params;
   try {
@@ -461,6 +517,30 @@ router.get('/room/:roomId/menu', authDisplay, salesGate, async (req, res) => {
 // Prices are looked up server-side, not trusted from the request — unlike
 // the staff POS (routes/sales.js), this endpoint is reachable by a guest
 // device, so it must not accept a client-supplied unit_price.
+// Through the POS: { items: [{ product_id, quantity, note? }], note?, client_ref }
+// — the POS answers pending (staff accept first) or accepted (straight to the
+// kitchen); either way it is charged to the room only once the kitchen has it.
+router.post('/room/:roomId/order', authDisplay, async (req, res, next) => {
+  try {
+    const cfg = await posLinkFor(req);
+    if (!cfg) return next();
+    const { items, note } = req.body || {};
+    if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'items required' });
+    const stay = await checkedInStay(req.propertyId, req.params.roomId);
+    if (!stay) return res.status(404).json({ error: 'Room not found' });
+    if (!stay.booking_id) return res.status(409).json({ error: 'Ordering opens once you are checked in — please call the front desk', code: 'NOT_CHECKED_IN' });
+    const clientRef = /^[A-Za-z0-9_-]{8,64}$/.test(String(req.body.client_ref || ''))
+      ? String(req.body.client_ref)
+      : require('crypto').randomBytes(12).toString('hex');
+    const r = await posRoomOrders.placeOrder(cfg, {
+      clientRef, booking_id: stay.booking_id, room: stay.room, guest: stay.guest_name,
+      items: items.map(i => ({ menuItemId: i.product_id, qty: parseInt(i.quantity, 10) || 0, note: i.note || '' })),
+      note: note || '',
+    });
+    res.status(r.replayed ? 200 : 201).json({ ok: true, total: r.total, status: r.status === 'pending' ? 'pending_confirmation' : 'accepted' });
+  } catch (err) { posFail(res, err); }
+});
+
 router.post('/room/:roomId/order', authDisplay, salesGate, async (req, res) => {
   const { roomId } = req.params;
   const { items } = req.body;
@@ -581,6 +661,31 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
     const { rows: unitRows } = await db.query('SELECT id FROM units WHERE controller_id = $1 AND property_id = $2', [roomId, req.propertyId]);
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
 
+    // Orders sent to the POS (migration 094) — for the guest checked in now.
+    // A POS that can't be reached just leaves them out (the rest still shows).
+    let posOrders = [];
+    const cfg = await posRoomOrders.config(req.propertyId);
+    if (posRoomOrders.linked(cfg)) {
+      const stay = await checkedInStay(req.propertyId, roomId);
+      if (stay?.booking_id) {
+        try {
+          const list = await posRoomOrders.ordersFor(cfg, stay.booking_id);
+          const recent = o => Date.now() - new Date(o.decidedAt || o.createdAt).getTime() < 60 * 60 * 1000;
+          posOrders = list.map(o => ({
+            id: o.id,
+            total_amount: o.total,
+            created_at: o.createdAt,
+            items: (o.items || []).map(i => ({ name: i.name, quantity: i.qty })),
+            confirmation_status: o.status === 'pending' ? 'pending' : o.status === 'rejected' ? 'rejected' : 'confirmed',
+            rejection_reason: o.reason || null,
+            // The POS doesn't track delivery yet: "Being prepared" for an hour after it was accepted.
+            kitchen_status: o.status === 'accepted' ? (recent(o) ? 'preparing' : 'accepted') : null,
+            source: 'pos',
+          }));
+        } catch (_) { /* POS down — show the rest */ }
+      }
+    }
+
     const { rows: bookingRows } = await db.query(
       `SELECT id FROM bookings
        WHERE unit_id = $1 AND status IN ('confirmed', 'checked_in')
@@ -588,7 +693,7 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
        ORDER BY check_in_date DESC LIMIT 1`,
       [unitRows[0].id]
     );
-    if (!bookingRows[0]) return res.json({ foodOrders: [], activityBookings: [] });
+    if (!bookingRows[0]) return res.json({ foodOrders: posOrders, activityBookings: [] });
     const bookingId = bookingRows[0].id;
 
     const { rows: foodOrders } = await db.query(
@@ -613,7 +718,7 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
       [bookingId, req.propertyId]
     );
 
-    res.json({ foodOrders, activityBookings });
+    res.json({ foodOrders: [...posOrders, ...foodOrders].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)), activityBookings });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

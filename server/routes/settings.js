@@ -71,6 +71,53 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
   }
 });
 
+// ── Room tablet orders through the POS (migration 094) ──────────────────────
+// The POS's address + the key the POS made for the hotel (POS Setup → Room
+// service). The key is write-only: only its last 4 characters come back.
+router.get('/pos-room-orders', ownerOnly, async (req, res) => {
+  try {
+    const { rows: [p] } = await db.query('SELECT pos_url, pos_hotel_key FROM properties WHERE id = $1', [req.propertyId]);
+    if (!p) return res.status(404).json({ error: 'Property not found' });
+    res.json({ url: p.pos_url || '', key_set: !!p.pos_hotel_key, key_last4: p.pos_hotel_key ? p.pos_hotel_key.slice(-4) : '' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT { url, key? } — empty key keeps the saved one; { clear: true } unlinks.
+router.put('/pos-room-orders', ownerOnly, async (req, res) => {
+  try {
+    if (req.body?.clear) {
+      await db.query('UPDATE properties SET pos_url = NULL, pos_hotel_key = NULL WHERE id = $1', [req.propertyId]);
+      return res.json({ url: '', key_set: false, key_last4: '' });
+    }
+    const url = String(req.body?.url || '').trim().replace(/\/+$/, '');
+    const key = String(req.body?.key || '').trim();
+    if (!/^https?:\/\/[^\s/]+/i.test(url)) return res.status(400).json({ error: 'The POS address must start with http:// or https://' });
+    if (key && key.length < 16) return res.status(400).json({ error: 'That key looks too short — copy it again from the POS' });
+    const { rows: [p] } = await db.query(
+      `UPDATE properties SET pos_url = $1, pos_hotel_key = COALESCE(NULLIF($2, ''), pos_hotel_key)
+       WHERE id = $3 RETURNING pos_url, pos_hotel_key`, [url, key, req.propertyId]);
+    if (!p.pos_hotel_key) return res.status(400).json({ error: 'Paste the key from the POS (Setup → Room service → Key for the hotel)' });
+    res.json({ url: p.pos_url, key_set: true, key_last4: p.pos_hotel_key.slice(-4) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST { url?, key? } — try the link (typed values, else the saved ones).
+router.post('/pos-room-orders/test', ownerOnly, async (req, res) => {
+  const posRoomOrders = require('../services/posRoomOrders');
+  try {
+    const { rows: [p] } = await db.query('SELECT pos_url, pos_hotel_key FROM properties WHERE id = $1', [req.propertyId]);
+    const url = String(req.body?.url || '').trim() || p?.pos_url || '';
+    const key = String(req.body?.key || '').trim() || p?.pos_hotel_key || '';
+    res.json(await posRoomOrders.test(url, key));
+  } catch (err) {
+    res.status(err.status && err.status < 600 ? (err.status === 503 ? 400 : err.status) : 500).json({ error: err.message });
+  }
+});
+
 // ── Property Details & Tax Config ────────────────────────────────────────────
 
 const PROPERTY_FIELDS = `tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email,
