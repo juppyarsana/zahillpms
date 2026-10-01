@@ -97,19 +97,22 @@ function escapeHtml(s) {
 async function sendAlert(propertyId, alertKey, message, { html = false, replyMarkup = null } = {}) {
   try {
     const token = await botTokenFor(propertyId);
-    if (!token) return;
+    if (!token) return 0;
     // Paid alerts (e.g. owner control alerts) only with the smart_reports add-on.
     const { REPORTS, isModuleEnabled } = require('./smartReports');   // lazy: circular
-    if (REPORTS[alertKey]?.paid && !(await isModuleEnabled(propertyId))) return;
+    if (REPORTS[alertKey]?.paid && !(await isModuleEnabled(propertyId))) return 0;
     const { rows: chats } = await db.query(
       `SELECT address FROM notification_recipients
        WHERE property_id = $1 AND channel = 'telegram' AND is_active
          AND address IS NOT NULL AND $2 = ANY(reports)`,
       [propertyId, alertKey]
     );
-    await Promise.all(chats.map(({ address }) => sendToChat(token, address, message, { html, replyMarkup })));
+    // How many chats got it — a caller can tell the user when nobody did.
+    const results = await Promise.all(chats.map(({ address }) => sendToChat(token, address, message, { html, replyMarkup })));
+    return results.filter(r => r.ok).length;
   } catch (err) {
     console.error('Telegram alert failed:', err.message);
+    return 0;
   }
 }
 

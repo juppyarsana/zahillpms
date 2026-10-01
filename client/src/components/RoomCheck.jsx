@@ -17,7 +17,9 @@ const TEXT = {
     title: 'Room check (minibar)',
     ask: '🧺 Ask housekeeping to check the room', asking: 'Asking…',
     waiting: at => `Waiting for housekeeping — asked ${at}`, waitNote: 'You can check out without it; the answer still arrives here.',
-    again: 'Ask again', cancel: 'Cancel request',
+    again: 'Ask again', cancel: 'Cancel request', recheck: 'Ask to check again',
+    sent: n => `Sent to housekeeping on Telegram (${n} chat${n === 1 ? '' : 's'}).`,
+    notSent: 'Nobody got it on Telegram — tick “Room checks (minibar)” for a recipient in Reports & Alerts. Housekeeping can still see it on the room tablet.',
     found: at => `Housekeeping checked the room${at ? ` at ${at}` : ''}`, nothing: 'Nothing taken from the minibar.',
     add: total => `Add ${total} to the bill`, ok: 'OK — nothing to charge', aside: 'Don’t charge',
     done: 'Added to the bill', doneNothing: 'Checked — nothing taken', note: 'Note',
@@ -27,7 +29,9 @@ const TEXT = {
     title: 'Cek kamar (minibar)',
     ask: '🧺 Minta housekeeping cek kamar', asking: 'Meminta…',
     waiting: at => `Menunggu housekeeping — diminta ${at}`, waitNote: 'Check-out tetap bisa dilakukan; hasilnya tetap muncul di sini.',
-    again: 'Minta lagi', cancel: 'Batalkan permintaan',
+    again: 'Minta lagi', cancel: 'Batalkan permintaan', recheck: 'Minta cek ulang',
+    sent: n => `Terkirim ke housekeeping lewat Telegram (${n} chat).`,
+    notSent: 'Tidak ada yang menerima di Telegram — centang “Room checks (minibar)” untuk penerima di Reports & Alerts. Housekeeping tetap bisa melihatnya di tablet kamar.',
     found: at => `Housekeeping sudah cek kamar${at ? ` pukul ${at}` : ''}`, nothing: 'Tidak ada yang diambil dari minibar.',
     add: total => `Tambahkan ${total} ke tagihan`, ok: 'OK — tidak ada tagihan', aside: 'Jangan tagih',
     done: 'Sudah masuk tagihan', doneNothing: 'Sudah dicek — tidak ada yang diambil', note: 'Catatan',
@@ -41,6 +45,7 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [qty, setQty] = useState({});   // front desk's corrected quantities, by product
+  const [told, setTold] = useState(null);   // { n, at } — how many Telegram chats the last request reached
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +70,11 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
     catch (err) { setError(err.response?.data?.error || 'Something went wrong'); }
     finally { setBusy(false); }
   }
-  const ask = () => run(() => api.post('/api/room-checks', { booking_id: bookingId }));
+  const ask = () => run(async () => {
+    setTold(null);
+    const r = await api.post('/api/room-checks', { booking_id: bookingId });
+    setTold({ n: r.data.notified || 0, at: new Date() });
+  });
   const dismiss = c => { if (c.status === 'submitted' && !confirm(t.asideConfirm)) return; run(() => api.post(`/api/room-checks/${c.id}/dismiss`)); };
   const charge = c => run(async () => {
     const items = c.items.map(i => ({ product_id: i.product_id, quantity: qty[i.product_id] ?? i.quantity }));
@@ -90,6 +99,11 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
           <div>
             ⏳ {t.waiting(fmtTime(open.requested_at))}
             <div style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>{t.waitNote}</div>
+            {told && (
+              <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6 }}>
+                {told.n > 0 ? `✓ ${fmtTime(told.at)} — ${t.sent(told.n)}` : `⚠ ${t.notSent}`}
+              </div>
+            )}
             <div className="flex gap-2" style={{ marginTop: 8 }}>
               <button type="button" className="btn btn-secondary btn-sm" onClick={ask} disabled={busy}>{t.again}</button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => dismiss(open)} disabled={busy}>{t.cancel}</button>
@@ -118,6 +132,7 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
             {open.items.length > 0 && (
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => dismiss(open)} disabled={busy}>{t.aside}</button>
             )}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={ask} disabled={busy}>{t.recheck}</button>
           </div>
         </div>
       )}

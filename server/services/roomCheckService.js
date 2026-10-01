@@ -86,7 +86,10 @@ function clientBase() {
   return String(process.env.CLIENT_URL || '').split(',')[0].trim().replace(/\/$/, '');
 }
 
-// Front desk asks. One open request per room: asking again re-sends the alert.
+// Front desk asks. One open check per room: asking again re-sends the alert
+// (and stamps the new time); asking again after housekeeping answered puts the
+// same check back to "requested" with a fresh link. Returns the check plus
+// `notified` = how many Telegram chats got the message.
 async function request(propertyId, bookingId, user) {
   const { rows: [b] } = await db.query(
     `SELECT b.id, b.unit_id, b.status, u.name AS room, g.name AS guest_name
@@ -95,6 +98,17 @@ async function request(propertyId, bookingId, user) {
   if (!b) throw new CheckError(404, 'Booking not found');
   if (!['checked_in', 'checked_out'].includes(b.status)) throw new CheckError(409, 'A room check is for a guest who is checked in', 'NOT_IN_HOUSE');
   let open = await openRequestForUnit(propertyId, b.unit_id);
+  if (!open) {
+    // an answer front desk hasn't closed yet: ask housekeeping to check again
+    const token = crypto.randomBytes(24).toString('hex');
+    const { rows: [again] } = await db.query(
+      `UPDATE room_checks SET status = 'requested', requested_by = $1, requested_at = NOW(), link_token = $2
+        WHERE id = (SELECT id FROM room_checks WHERE property_id = $3 AND unit_id = $4 AND status = 'submitted' ORDER BY created_at DESC LIMIT 1)
+        RETURNING id`, [user.id, token, propertyId, b.unit_id]);
+    if (again) open = again;
+  } else {
+    await db.query('UPDATE room_checks SET requested_at = NOW(), requested_by = $1 WHERE id = $2', [user.id, open.id]);
+  }
   if (!open) {
     const token = crypto.randomBytes(24).toString('hex');
     const { rows: [r] } = await db.query(
@@ -115,11 +129,11 @@ async function request(propertyId, bookingId, user) {
      link && !asButton ? link : ''],
     [`Asked by ${h(user.name || 'front desk')}`],
   ].map(s => s.filter(Boolean).join('\n')).join('\n\n');
-  telegram.sendAlert(propertyId, 'alert_room_check', msg, {
+  const notified = await telegram.sendAlert(propertyId, 'alert_room_check', msg, {
     html: true,
     replyMarkup: asButton ? { inline_keyboard: [[{ text: `🧺 Check Room ${b.room}`, url: link }]] } : null,
-  }).catch(() => {});
-  return getOne(propertyId, open.id);
+  }).catch(() => 0);
+  return { ...(await getOne(propertyId, open.id)), notified: notified || 0 };
 }
 
 // Housekeeping's answer. items: [{ product_id, quantity }] — names and prices
