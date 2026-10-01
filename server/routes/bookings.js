@@ -2225,14 +2225,21 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
 
 // POST /api/bookings/group/:groupId/payments — record ONE payment from the
 // group (e.g. the booker's single transfer) against several rooms' pending
-// deposit/balance lines at once: { payment_ids: [...], method, received_at?,
-// notes? }. Each line is marked received exactly as "Mark Received" on a
-// room does (routes/payments.js PUT), and each room's status is recomputed
+// deposit/balance lines at once: { lines: [{ payment_id, amount }], method,
+// received_at?, reference?, notes? } (or the older payment_ids: [...] = each
+// line in full). A line paid in full is marked received exactly as "Mark
+// Received" on a room does; a smaller amount is a part payment — the
+// received part becomes its own line and the rest stays pending (same as the
+// room's Record Payment window). Each room's status is recomputed
 // (pending → deposit_paid → confirmed). All-or-nothing.
 router.post('/group/:groupId/payments', auth, async (req, res) => {
-  const ids = Array.isArray(req.body.payment_ids) ? [...new Set(req.body.payment_ids)] : [];
+  const parts = Array.isArray(req.body.lines)
+    ? req.body.lines.filter(l => l && l.payment_id).map(l => ({ id: String(l.payment_id), amount: round2(parseFloat(l.amount)) }))
+    : (Array.isArray(req.body.payment_ids) ? req.body.payment_ids.map(id => ({ id: String(id), amount: null })) : []);
+  const ids = [...new Set(parts.map(p => p.id))];
   const { method, notes } = req.body;
   if (!ids.length) return res.status(400).json({ error: 'Select at least one payment line' });
+  if (ids.length !== parts.length) return res.status(400).json({ error: 'A payment line is listed twice' });
   if (!method) return res.status(400).json({ error: 'Payment method required' });
   const receivedAt = req.body.received_at || null;
   const client = await db.pool.connect();
@@ -2254,20 +2261,38 @@ router.post('/group/:groupId/payments', auth, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Some of these lines are already marked received — refresh and try again' });
     }
-    await client.query(
-      `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
-                           received_by = $3, notes = COALESCE(NULLIF($4, ''), notes), reference = COALESCE($6, reference)
-       WHERE id = ANY($5::uuid[])`,
-      [method, receivedAt, req.user.id, notes || '', ids, String(req.body.reference || '').trim().slice(0, 120) || null]
-    );
+    const reference = String(req.body.reference || '').trim().slice(0, 120) || null;
+    const byId = new Map(lines.map(l => [l.id, l]));
+    let total = 0;
+    for (const part of parts) {
+      const l = byId.get(part.id);
+      const lineAmt = parseFloat(l.amount);
+      const amt = part.amount === null ? lineAmt : part.amount;
+      if (!(amt > 0) || amt > lineAmt + 0.005) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `The amount for a ${l.type} line must be between 1 and ${Math.round(lineAmt).toLocaleString('id-ID')}` });
+      }
+      if (amt >= lineAmt - 0.005) {
+        await client.query(
+          `UPDATE payments SET status = 'received', method = $1, received_at = COALESCE($2::timestamptz, NOW()),
+                               received_by = $3, notes = COALESCE(NULLIF($4, ''), notes), reference = COALESCE($6, reference)
+           WHERE id = $5`,
+          [method, receivedAt, req.user.id, notes || '', l.id, reference]);
+        total = round2(total + lineAmt);
+      } else {
+        // Part payment: the rest stays pending on the same line.
+        await client.query('UPDATE payments SET amount = $1 WHERE id = $2', [round2(lineAmt - amt), l.id]);
+        await client.query(
+          `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, reference)
+           VALUES ($1, $2, $3, 'received', $4, COALESCE($5::timestamptz, NOW()), $6, NULLIF($7, ''), $8)`,
+          [l.booking_id, l.type, amt, method, receivedAt, req.user.id, notes || '', reference]);
+        total = round2(total + amt);
+      }
+    }
     const bookingIds = [...new Set(lines.map(l => l.booking_id))];
     for (const bid of bookingIds) await recomputeBookingStatus(client, bid);
     await client.query('COMMIT');
-    res.json({
-      lines: lines.length,
-      rooms: bookingIds.length,
-      total: round2(lines.reduce((s, l) => s + parseFloat(l.amount), 0)),
-    });
+    res.json({ lines: lines.length, rooms: bookingIds.length, total });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

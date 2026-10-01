@@ -129,6 +129,8 @@ export default function GroupDetail() {
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const [paying, setPaying] = useState(false);
   const [paySel, setPaySel] = useState(new Set());
+  const [payAmt, setPayAmt] = useState({}); // line id -> amount typed for a part payment
+  const [payTotal, setPayTotal] = useState(''); // "Amount received" typed — spread over the lines
   const [payForm, setPayForm] = useState({ method: '', received_at: todayStr, reference: '', notes: '' });
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState('');
@@ -143,12 +145,37 @@ export default function GroupDetail() {
         .map(p => ({ ...p, unit_name: b.unit_name, guest_name: b.guest_name })));
   }
 
+  // The amount paid on a ticked line: what was typed, else the whole line.
+  const lineAmount = l => (payAmt[l.id] !== undefined && payAmt[l.id] !== '' ? Math.max(0, parseFloat(payAmt[l.id]) || 0) : parseFloat(l.amount));
+
+  // Spread an amount over the lines — every room's deposit first, then the
+  // balances — filling each line in full, the last one in part.
+  function spreadAmount(value) {
+    setPayTotal(value);
+    let left = Math.max(0, Math.round(parseFloat(value) || 0));
+    const lines = pendingLines();
+    const order = [...lines.filter(l => l.type === 'deposit'), ...lines.filter(l => l.type !== 'deposit')];
+    const sel = new Set(), amt = {};
+    for (const l of order) {
+      if (left <= 0) break;
+      const full = parseFloat(l.amount);
+      const take = Math.min(full, left);
+      sel.add(l.id);
+      if (take < full - 0.005) amt[l.id] = String(take);
+      left -= take;
+    }
+    setPaySel(sel);
+    setPayAmt(amt);
+  }
+
   function openGroupPayment() {
     const lines = pendingLines();
     // Start with the deposits ticked when any are open (the usual first
     // transfer), otherwise everything that's left.
     const deposits = lines.filter(l => l.type === 'deposit');
     setPaySel(new Set((deposits.length ? deposits : lines).map(l => l.id)));
+    setPayAmt({});
+    setPayTotal('');
     setPayForm({ method: payMethods.find(m => m.id === 'bank_transfer')?.id || payMethods[0]?.id || '', received_at: todayStr, reference: '', notes: '' });
     setPayError('');
     setPaying(true);
@@ -158,8 +185,9 @@ export default function GroupDetail() {
     setPaySaving(true);
     setPayError('');
     try {
+      const lines = pendingLines().filter(l => paySel.has(l.id));
       await api.post(`/api/bookings/group/${groupId}/payments`, {
-        payment_ids: [...paySel], method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
+        lines: lines.map(l => ({ payment_id: l.id, amount: lineAmount(l) })), method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
       });
       setPaying(false);
       load();
@@ -525,8 +553,17 @@ export default function GroupDetail() {
 
       {paying && (() => {
         const lines = pendingLines();
-        const total = lines.filter(l => paySel.has(l.id)).reduce((sum, l) => sum + parseFloat(l.amount), 0);
-        const toggle = lineId => setPaySel(sel => { const n = new Set(sel); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n; });
+        const picked = lines.filter(l => paySel.has(l.id));
+        const total = picked.reduce((sum, l) => sum + lineAmount(l), 0);
+        const unpaid = lines.reduce((sum, l) => sum + parseFloat(l.amount), 0);
+        const badLine = picked.find(l => !(lineAmount(l) > 0) || lineAmount(l) > parseFloat(l.amount) + 0.005);
+        const typedTotal = Math.round(parseFloat(payTotal) || 0);
+        const pick = ids => { setPaySel(new Set(ids)); setPayAmt({}); setPayTotal(''); };
+        const toggle = lineId => {
+          setPaySel(sel => { const n = new Set(sel); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n; });
+          setPayAmt(a => { const n = { ...a }; delete n[lineId]; return n; });
+          setPayTotal('');
+        };
         return (
           <div className="modal-backdrop">
             <div className="modal" style={{ maxWidth: 560, width: '100%' }}>
@@ -535,24 +572,53 @@ export default function GroupDetail() {
                 <button className="btn btn-icon" onClick={() => setPaying(false)}>✕</button>
               </div>
               <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Amount received (IDR)</label>
+                  <input className="form-input" type="number" min={0} value={payTotal}
+                    placeholder={`What the group paid — up to ${fmtIDR(unpaid)}`}
+                    onChange={e => spreadAmount(e.target.value)} />
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                    Goes to every room's deposit first, then the balances. Or tick the lines yourself below.
+                  </div>
+                  {typedTotal > unpaid + 0.5 && (
+                    <div className="alert alert-warn" style={{ marginTop: 6, fontSize: 12 }}>
+                      <div>More than the rooms still owe ({fmtIDR(unpaid)}). Record {fmtIDR(unpaid)} here; money for extras goes on that room's folio.</div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
-                  <span className="text-muted" style={{ fontSize: 13, alignSelf: 'center' }}>This payment covers:</span>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set(lines.filter(l => l.type === 'deposit').map(l => l.id)))}>All deposits</button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set(lines.map(l => l.id)))}>Everything unpaid</button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setPaySel(new Set())}>Clear</button>
+                  <span className="text-muted" style={{ fontSize: 13, alignSelf: 'center' }}>Or pick:</span>
+                  <button className="btn btn-sm btn-secondary" onClick={() => pick(lines.filter(l => l.type === 'deposit').map(l => l.id))}>All deposits</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => pick(lines.map(l => l.id))}>Everything unpaid</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => pick([])}>Clear</button>
                 </div>
                 <div style={{ border: '1px solid var(--border)', borderRadius: 6, marginBottom: 12 }}>
-                  {lines.map(l => (
-                    <label key={l.id} className="flex-between" style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13 }}>
-                      <span className="flex gap-2" style={{ alignItems: 'center' }}>
-                        <input type="checkbox" checked={paySel.has(l.id)} onChange={() => toggle(l.id)} />
-                        <b>{l.unit_name}</b>
-                        <span style={{ textTransform: 'capitalize' }}>{l.type}</span>
-                        <span className="text-muted" style={{ fontSize: 11 }}>{l.guest_name}</span>
-                      </span>
-                      <span style={{ fontWeight: 600 }}>{fmtIDR(l.amount)}</span>
-                    </label>
-                  ))}
+                  <div className="flex-between text-muted" style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                    <span>Line · due</span><span>Paying now</span>
+                  </div>
+                  {lines.map(l => {
+                    const on = paySel.has(l.id);
+                    const part = on && lineAmount(l) < parseFloat(l.amount) - 0.005;
+                    return (
+                      <div key={l.id} className="flex-between" style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 13, gap: 8 }}>
+                        <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', minWidth: 0, flexWrap: 'wrap' }}>
+                          <input type="checkbox" checked={on} onChange={() => toggle(l.id)} />
+                          <b>{l.unit_name}</b>
+                          <span style={{ textTransform: 'capitalize' }}>{l.type}</span>
+                          <span className="text-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtIDR(l.amount)}</span>
+                        </label>
+                        {on ? (
+                          <span style={{ textAlign: 'right' }}>
+                            <input className="form-input" type="number" min={1} max={Math.round(parseFloat(l.amount))}
+                              style={{ width: 130, textAlign: 'right', padding: '4px 8px' }}
+                              value={payAmt[l.id] !== undefined ? payAmt[l.id] : String(Math.round(parseFloat(l.amount) * 100) / 100)}
+                              onChange={e => { const v = e.target.value; setPayAmt(a => ({ ...a, [l.id]: v })); setPayTotal(''); }} />
+                            {part && <div className="text-muted" style={{ fontSize: 11 }}>part · {fmtIDR(parseFloat(l.amount) - lineAmount(l))} stays open</div>}
+                          </span>
+                        ) : <span className="text-muted">—</span>}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="form-row">
                   <div className="form-group">
@@ -578,13 +644,14 @@ export default function GroupDetail() {
                   <span>Total received</span><span>{fmtIDR(total)}</span>
                 </div>
                 <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                  Should match what the group actually paid. For a different amount, adjust that room's line on its booking first.
+                  A line paid in part stays open for the rest. A room counts as deposit paid once its whole deposit is in.
                 </div>
+                {badLine && <div className="alert alert-error" style={{ marginTop: 8, fontSize: 12 }}><div>Room {badLine.unit_name} {badLine.type}: the amount must be between Rp 1 and {fmtIDR(badLine.amount)}.</div></div>}
                 {payError && <div className="alert alert-error" style={{ marginTop: 10 }}>{payError}</div>}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method}>
+                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method || !!badLine}>
                   {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
                 </button>
               </div>
