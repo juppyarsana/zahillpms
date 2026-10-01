@@ -840,6 +840,9 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
       ? { icon: '⚠️', title: 'Tablet: wifi but no internet' }
       : health?.lowBattery
         ? { icon: '🔋', title: `Tablet battery ${health.battery}%` }
+        // a tablet that is online and fine: green, so rooms WITH a tablet
+        // stand out from rooms without one (no badge at all)
+        : health ? { icon: '📱', title: 'Tablet online', ok: true }
         : null;
   // Still checked in past check-out (nights_left < 0) — see the Dashboard banner.
   const overdue = unit.status === 'occupied' && unit.guest_name && unit.nights_left != null && unit.nights_left < 0;
@@ -862,7 +865,7 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
           {overdue && <span className="unit-tile-badge warn" title="Overdue — still checked in past check-out">⏰</span>}
           {flags?.dnd && <span className="unit-tile-badge" title="Do Not Disturb">🔕</span>}
           {flags?.clean && <span className="unit-tile-badge" title="Clean requested">🧹</span>}
-          {tabletBadge && <span className="unit-tile-badge warn" title={tabletBadge.title}>{tabletBadge.icon}</span>}
+          {tabletBadge && <span className={`unit-tile-badge ${tabletBadge.ok ? 'ok' : 'warn'}`} title={tabletBadge.title}>{tabletBadge.icon}</span>}
         </span>
       )}
     </button>
