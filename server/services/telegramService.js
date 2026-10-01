@@ -94,7 +94,7 @@ function escapeHtml(s) {
 // Fire-and-forget: never throws, one bad chat doesn't stop the others.
 // html: the message uses Telegram HTML (<b>, <i>) — escape anything typed by
 // staff / guests with escapeHtml before building it.
-async function sendAlert(propertyId, alertKey, message, { html = false } = {}) {
+async function sendAlert(propertyId, alertKey, message, { html = false, replyMarkup = null } = {}) {
   try {
     const token = await botTokenFor(propertyId);
     if (!token) return;
@@ -107,7 +107,7 @@ async function sendAlert(propertyId, alertKey, message, { html = false } = {}) {
          AND address IS NOT NULL AND $2 = ANY(reports)`,
       [propertyId, alertKey]
     );
-    await Promise.all(chats.map(({ address }) => sendToChat(token, address, message, { html })));
+    await Promise.all(chats.map(({ address }) => sendToChat(token, address, message, { html, replyMarkup })));
   } catch (err) {
     console.error('Telegram alert failed:', err.message);
   }

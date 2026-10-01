@@ -104,13 +104,21 @@ async function request(propertyId, bookingId, user) {
   }
   const { rows: [row] } = await db.query('SELECT link_token FROM room_checks WHERE id = $1', [open.id]);
   const base = clientBase();
+  const link = base && row.link_token ? `${base}/room-check/${row.link_token}` : '';
+  // The link goes under the message as a button; Telegram only takes a
+  // button for a public https address, so a local / http server keeps the
+  // address as text.
+  const asButton = link.startsWith('https://');
   const msg = [
     [`🧺 <b>Room check — Room ${h(b.room)}</b>`, `👤 ${h(b.guest_name)}${b.status === 'checked_in' ? ' · checking out' : ''}`],
-    ['Check the minibar and send what was taken — on the room tablet (Housekeeping), or here:',
-     base && row.link_token ? `${base}/room-check/${row.link_token}` : ''],
+    [`Check the minibar and send what was taken — on the room tablet (Housekeeping)${link ? (asButton ? ', or with the button below.' : ', or here:') : '.'}`,
+     link && !asButton ? link : ''],
     [`Asked by ${h(user.name || 'front desk')}`],
   ].map(s => s.filter(Boolean).join('\n')).join('\n\n');
-  telegram.sendAlert(propertyId, 'alert_room_check', msg, { html: true }).catch(() => {});
+  telegram.sendAlert(propertyId, 'alert_room_check', msg, {
+    html: true,
+    replyMarkup: asButton ? { inline_keyboard: [[{ text: `🧺 Check Room ${b.room}`, url: link }]] } : null,
+  }).catch(() => {});
   return getOne(propertyId, open.id);
 }
 
