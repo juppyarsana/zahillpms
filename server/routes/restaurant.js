@@ -239,7 +239,7 @@ router.get('/room-charges', gate, async (req, res) => {
       `SELECT s.id, s.created_at, s.external_ref, s.description, s.total_amount AS net,
               COALESCE(s.shown_total, s.total_amount) AS gross, s.booking_id,
               g.name AS guest_name, u.name AS room, b.status AS booking_status,
-              fc.id AS folio_charge_id, fc.is_voided, fc.voided_at
+              fc.id AS folio_charge_id, fc.is_voided, fc.voided_at, s.pos_void_sent_at
          FROM sales s
          LEFT JOIN bookings b ON b.id = s.booking_id
          LEFT JOIN guests g ON g.id = b.guest_id
@@ -253,16 +253,20 @@ router.get('/room-charges', gate, async (req, res) => {
         WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [req.propertyId, p.from, p.to]);
     const inSession = new Map();
     for (const s of sess) for (const rc of (s.list || [])) inSession.set(rc.id, { date: ymd(s.business_date), session: LABEL[s.session_key], total: r2(rc.total), room: rc.room, guest: rc.guest });
-    const refs = new Set(rows.map(r => r.external_ref).filter(Boolean));
+    // A bill charged to a room again after the hotel voided it carries
+    // "<POS bill id>~<n>" (migration 095); the POS session lists the bill id.
+    const base = ref => String(ref || '').replace(/~\d+$/, '');
+    const refs = new Set(rows.map(r => base(r.external_ref)).filter(Boolean));
     const charges = rows.map(r => {
-      const sessionHit = r.external_ref ? inSession.get(r.external_ref) : null;
+      const sessionHit = r.external_ref && !r.is_voided ? inSession.get(base(r.external_ref)) : null;
       const problems = [];
       if (!r.folio_charge_id) problems.push('Not on the folio');
-      else if (r.is_voided) problems.push('Voided on the folio');
+      else if (r.is_voided && !r.pos_void_sent_at) problems.push('Voided on the folio — the POS was not told');
       if (sessionHit && Math.abs(sessionHit.total - r2(r.gross)) > 1) problems.push(`POS says ${sessionHit.total}`);
       return { id: r.id, created_at: r.created_at, pos_ref: r.external_ref, description: r.description,
         net: r2(r.net), gross: r2(r.gross), booking_id: r.booking_id, guest_name: r.guest_name, room: r.room,
         booking_status: r.booking_status, folio: !r.folio_charge_id ? 'missing' : r.is_voided ? 'voided' : 'posted',
+        pos_reopened: !!r.pos_void_sent_at,
         session: sessionHit ? `${sessionHit.session} ${sessionHit.date}` : null, problems };
     });
     const missingInPms = [...inSession.entries()].filter(([id]) => !refs.has(id))

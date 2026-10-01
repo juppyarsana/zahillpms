@@ -451,8 +451,9 @@ function RoomChargesTab() {
   const [onlyProblems, setOnlyProblems] = useState(false);
   const { data, error, loading } = useLoad('/api/restaurant/room-charges', { from, to }, [from, to]);
   const rows = (data?.charges || []).filter(c => !onlyProblems || c.problems.length);
-  const badge = f => (f === 'posted' ? <span className="badge badge-green">On the folio</span>
-    : f === 'voided' ? <span className="badge badge-red">Voided on the folio</span> : <span className="badge badge-red">Not on the folio</span>);
+  const badge = (f, c) => (f === 'posted' ? <span className="badge badge-green">On the folio</span>
+    : f === 'voided' ? (c?.pos_reopened ? <span className="badge badge-gray" title="Front desk voided it; the POS reopened the bill">Voided · reopened in the POS</span> : <span className="badge badge-red">Voided — POS not told</span>)
+    : <span className="badge badge-red">Not on the folio</span>);
   return (
     <>
       <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
@@ -493,7 +494,7 @@ function RoomChargesTab() {
                     <td><b>{c.room || '—'}</b>{c.guest_name ? ` · ${c.guest_name}` : ''}</td>
                     <td style={{ fontSize: 12, maxWidth: 300 }}>{c.description}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(c.gross)}{c.gross !== c.net && <div className="text-muted" style={{ fontSize: 11 }}>{fmtIDR(c.net)} before tax</div>}</td>
-                    <td>{badge(c.folio)}{c.problems.filter(p => p.startsWith('POS says')).map(p => <div key={p} className="text-muted" style={{ fontSize: 11 }}>{p}</div>)}</td>
+                    <td>{badge(c.folio, c)}{c.problems.filter(p => p.startsWith('POS says')).map(p => <div key={p} className="text-muted" style={{ fontSize: 11 }}>{p}</div>)}</td>
                     <td style={{ fontSize: 12 }}>{c.session || <span className="text-muted">not sent yet</span>}</td>
                   </tr>
                 ))}

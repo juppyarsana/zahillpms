@@ -676,7 +676,8 @@ router.get('/room/:roomId/orders', authDisplay, async (req, res) => {
             total_amount: o.total,
             created_at: o.createdAt,
             items: (o.items || []).map(i => ({ name: i.name, quantity: i.qty })),
-            confirmation_status: o.status === 'pending' ? 'pending' : o.status === 'rejected' ? 'rejected' : 'confirmed',
+            confirmation_status: o.status === 'pending' ? 'pending' : o.status === 'rejected' ? 'rejected'
+              : o.status === 'voided' ? 'cancelled' : 'confirmed',
             rejection_reason: o.reason || null,
             // The POS doesn't track delivery yet: "Being prepared" for an hour after it was accepted.
             kitchen_status: o.status === 'accepted' ? (recent(o) ? 'preparing' : 'accepted') : null,

@@ -181,6 +181,8 @@ async function loadFolio(bookingId, propertyId) {
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
+            -- a restaurant bill from the POS: voiding it tells the POS (migration 095)
+            EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_pos,
             ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
@@ -256,6 +258,8 @@ async function computeProforma(bookingId, propertyId) {
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
+            -- a restaurant bill from the POS: voiding it tells the POS (migration 095)
+            EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_pos,
             ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon')

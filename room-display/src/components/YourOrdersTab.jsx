@@ -12,6 +12,7 @@ const FOOD_STATUS = {
 function resolveFoodStatus(o) {
   if (o.confirmation_status === 'pending') return { label: 'Waiting for the restaurant', color: '#fb923c' };
   if (o.confirmation_status === 'rejected') return { label: 'Declined', color: '#f87171' };
+  if (o.confirmation_status === 'cancelled') return { label: 'Cancelled', color: '#f87171' };
   return FOOD_STATUS[o.kitchen_status] || { label: 'Placed', color: '#64748b' };
 }
 const ACTIVITY_STATUS = {
@@ -81,7 +82,7 @@ export default function YourOrdersTab({ foodOrders = [], activityBookings = [], 
                     </span>
                     <span className="text-muted text-sm">{fmtIDR(o.total_amount)}</span>
                   </div>
-                  {o.confirmation_status === 'rejected' && o.rejection_reason && (
+                  {['rejected', 'cancelled'].includes(o.confirmation_status) && o.rejection_reason && (
                     <div className="text-xs mt-2" style={{ color: '#f87171' }}>{o.rejection_reason}</div>
                   )}
                 </div>

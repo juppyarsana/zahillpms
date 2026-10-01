@@ -112,8 +112,10 @@ router.get('/:bookingId', auth, async (req, res) => {
     // Lines staff voided by hand, so a mistaken void can be restored (nights
     // and per-night extras are voided by the system and left out).
     const { rows: voided_charges } = await db.query(
-      `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.tax_mode, fc.voided_at, u.name AS voided_by_name
+      `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.tax_mode, fc.voided_at, u.name AS voided_by_name,
+              (s.order_source = 'external_pos') AS pos_bill, s.pos_void_sent_at, s.pos_void_error
          FROM folio_charges fc LEFT JOIN users u ON u.id = fc.voided_by
+         LEFT JOIN sales s ON s.id = fc.sale_id
         WHERE fc.booking_id = $1 AND fc.is_voided = true AND fc.type NOT IN ('room', 'fnb', 'addon')
         ORDER BY fc.voided_at DESC`,
       [booking.id]
@@ -531,7 +533,37 @@ router.delete('/charge/:id', auth, async (req, res) => {
       'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
       [charge.booking_id, `Folio line voided: ${charge.description}. Reason: ${reason}`.slice(0, 1000), req.user.id]
     );
-    res.json(charge);
+    // A restaurant (POS) bill: tell the POS, which reopens it as unpaid
+    // (migration 095). The void stands even if the POS can't be reached.
+    const pos = charge.sale_id ? await tellPos(req, charge.sale_id, reason) : null;
+    res.json({ ...charge, pos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function tellPos(req, saleId, reason) {
+  const { rows: [me] } = await db.query('SELECT name FROM users WHERE id = $1', [req.user.id]);
+  return require('../services/posRoomOrders').tellPosVoid(req.propertyId, saleId, { reason, by: me?.name || null });
+}
+
+// POST /api/folio/charge/:id/tell-pos — the POS couldn't be told when the
+// line was voided (down, or the link wasn't set up): try again.
+router.post('/charge/:id/tell-pos', auth, async (req, res) => {
+  try {
+    const { rows: [c] } = await db.query(
+      `SELECT fc.id, fc.sale_id, fc.booking_id, fc.is_voided, s.order_source, s.pos_void_sent_at
+         FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id LEFT JOIN sales s ON s.id = fc.sale_id
+        WHERE fc.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
+    if (!c) return res.status(404).json({ error: 'Charge not found' });
+    if (!c.is_voided || c.order_source !== 'external_pos') return res.status(409).json({ error: 'Only a voided restaurant (POS) charge is sent to the POS' });
+    if (c.pos_void_sent_at) return res.json({ told: true, already: true });
+    const { rows: [ev] } = await db.query(
+      `SELECT note FROM booking_events WHERE booking_id = $1 AND note LIKE 'Folio line voided:%' ORDER BY created_at DESC LIMIT 1`, [c.booking_id]);
+    const reason = (ev?.note.match(/Reason: (.*)$/) || [])[1] || 'Voided on the guest folio';
+    const r = await tellPos(req, c.sale_id, reason);
+    if (!r.told) return res.status(502).json({ error: `The POS couldn't be told: ${r.error}` });
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -548,6 +580,7 @@ router.post('/charge/:id/restore', auth, async (req, res) => {
     const { rows: [charge] } = await client.query(
       `SELECT fc.*, b.status AS booking_status, b.folio_status,
               (SELECT s.confirmation_status FROM sales s WHERE s.id = fc.sale_id) AS sale_confirmation,
+              (SELECT s.pos_void_sent_at FROM sales s WHERE s.id = fc.sale_id) AS pos_void_sent_at,
               (SELECT ab.status FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id LIMIT 1) AS activity_status
          FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id
         WHERE fc.id = $1 AND b.property_id = $2
@@ -563,6 +596,11 @@ router.post('/charge/:id/restore', auth, async (req, res) => {
     if (['cancelled', 'no_show'].includes(charge.booking_status)) return refuse(409, 'This booking is cancelled', 'BOOKING_CANCELLED');
     if (['invoiced', 'paid'].includes(charge.folio_status)) {
       return refuse(409, 'This stay is already on an agent invoice — its bill can no longer change', 'AGENT_INVOICED');
+    }
+    // The POS already reopened that restaurant bill (migration 095): the
+    // restaurant charges it to the room again from the POS if it should be.
+    if (charge.pos_void_sent_at) {
+      return refuse(409, 'The restaurant already reopened this bill in the POS — charge it to the room again from the POS if it should be on the bill', 'POS_REOPENED');
     }
     if (charge.sale_confirmation === 'rejected') return refuse(409, 'This order was declined — it can\'t go back on the bill', 'ORDER_REJECTED');
     if (['cancelled', 'no_show'].includes(charge.activity_status)) {

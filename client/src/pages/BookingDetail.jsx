@@ -362,16 +362,30 @@ ${charge.paid_method ? `
 It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.
 ` : ''}${booking.status === 'checked_out' ? `
 This guest has already checked out.
+` : ''}${charge.is_pos ? `
+This is a restaurant bill from the POS — the POS is told and reopens the bill there, to be paid another way or cancelled.
 ` : ''}
 Type the reason to void it:`;
     const reason = (prompt(msg) || '').trim();
     if (!reason) return;
     try {
-      await api.delete(`/api/folio/charge/${chargeId}`, { data: { reason } });
+      const r = await api.delete(`/api/folio/charge/${chargeId}`, { data: { reason } });
+      if (r.data?.pos && !r.data.pos.told) {
+        alert(`Voided here, but the POS couldn't be told: ${r.data.pos.error}\n\nOpen "Voided lines" below and press "Tell the POS" once it's back.`);
+      }
       loadFolio();
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to void charge');
+    }
+  }
+
+  async function tellPos(charge) {
+    try {
+      await api.post(`/api/folio/charge/${charge.id}/tell-pos`);
+      loadFolio();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not reach the POS');
     }
   }
 
@@ -1383,10 +1397,16 @@ Type the reason to void it:`;
                           voided{c.voided_at ? ` ${new Date(c.voided_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
                           {c.voided_by_name && ` · ${c.voided_by_name}`}
                         </div>
+                        {c.pos_bill && (
+                          <div style={{ fontSize: 12, color: c.pos_void_sent_at ? 'var(--text-muted)' : 'var(--danger-text, #b91c1c)' }}>
+                            {c.pos_void_sent_at ? 'Restaurant bill — reopened in the POS' : `Restaurant bill — the POS doesn't know yet${c.pos_void_error ? ` (${c.pos_void_error})` : ''}`}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2 items-center">
                         <s className="text-muted">{fmtIDR(lineShown(c.amount, c, folio))}</s>
-                        <button className="btn btn-secondary btn-sm" onClick={() => restoreCharge(c)}>↩ Restore</button>
+                        {c.pos_bill && !c.pos_void_sent_at && <button className="btn btn-primary btn-sm" onClick={() => tellPos(c)}>Tell the POS</button>}
+                        {!(c.pos_bill && c.pos_void_sent_at) && <button className="btn btn-secondary btn-sm" onClick={() => restoreCharge(c)}>↩ Restore</button>}
                       </div>
                     </div>
                   ))}

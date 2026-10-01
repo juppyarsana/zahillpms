@@ -61,10 +61,32 @@ const menu = cfg => call(cfg, 'GET', '/api/hotel/menu');
 const placeOrder = (cfg, order) => call(cfg, 'POST', '/api/hotel/room-orders', order);
 const ordersFor = (cfg, bookingId) => call(cfg, 'GET', `/api/hotel/room-orders?booking_id=${encodeURIComponent(bookingId)}`);
 
+// Front desk voided the folio line of a POS room charge (migration 095): tell
+// the POS, which reopens that bill as unpaid. Recorded on the sale either way;
+// returns { told, error }. Never throws — the void itself already happened.
+async function tellPosVoid(propertyId, saleId, { reason, by }) {
+  const { rows: [s] } = await db.query(
+    `SELECT id, external_ref, order_source FROM sales WHERE id = $1 AND property_id = $2`, [saleId, propertyId]);
+  if (!s || s.order_source !== 'external_pos' || !s.external_ref) return null;   // not a POS bill
+  const cfg = await config(propertyId);
+  let error = null;
+  if (!cfg.url || !cfg.key) {
+    error = 'The POS link is not set up (Property Details → POS Integration → Room tablet orders)';
+  } else {
+    try {
+      await call(cfg, 'POST', '/api/hotel/room-charges/void', { external_ref: s.external_ref, sale_id: s.id, reason, by });
+    } catch (err) { error = err.message; }
+  }
+  await db.query(
+    `UPDATE sales SET pos_void_sent_at = CASE WHEN $2::text IS NULL THEN NOW() ELSE pos_void_sent_at END,
+                      pos_void_error = $2 WHERE id = $1`, [s.id, error]);
+  return { told: !error, error };
+}
+
 // Settings → "Test": the menu call with the address / key just typed.
 async function test(url, key) {
   const m = await call({ url: String(url || '').trim().replace(/\/+$/, ''), key }, 'GET', '/api/hotel/menu');
   return { ok: true, status: m.status, items: (m.menu || []).length };
 }
 
-module.exports = { PosError, config, linked, menu, placeOrder, ordersFor, test };
+module.exports = { PosError, config, linked, menu, placeOrder, ordersFor, test, tellPosVoid };
