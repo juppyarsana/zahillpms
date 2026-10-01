@@ -442,6 +442,19 @@ Per-property tax and service charge rates, applied on folio and invoice.
 - Master folio, group check-in
 - Needed for villa/event properties
 - Status: ✅ Implemented (migration 033) — see write-up below
+- ⚪ **Later — a real group bill (master account)** (noted 2026-10-02, owner: "good enough for now").
+  Today the Master Folio is only a combined view: every charge and payment lives on a room, and Record
+  Group Payment spreads the money over the rooms' deposit / balance lines (room by room, each in full
+  before the next). Cloudbeds (Group Folio) and Opera (master account / Post Master + routing
+  instructions) instead give the group its own folio that can **hold money** (a group transfer stays as a
+  group credit) and **receive routed charges** (e.g. room + breakfast from every room), so the company /
+  booker pays one bill and each guest only settles their own extras at check-out. Would need: a group
+  folio with its own charges + payments, routing rules per group (which charge types go there),
+  check-out of a room whose charges are on the group bill, one group invoice, and moving money from the
+  group credit to a room. Build when a property gets groups that pay as one bill.
+  Also open (small): the group deposit is still split over the rooms by price share at booking time
+  (odd amounts like 527.778) — could fill room by room like the payment window; kept as is for now
+  (room-by-room leaves later rooms without a deposit if one is cancelled).
 
 ### 10. F&B / Full POS
 - Table management, kitchen display system, stock tracking
