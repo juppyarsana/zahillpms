@@ -1645,7 +1645,8 @@ router.put('/:id/dates', auth, async (req, res) => {
 // price; a fixed group discount keeps the room's prorated share as-is (the
 // room stores the group's full fixed value, not its share).
 // Blocked for cancelled/no-show bookings and stays already invoiced to an agent.
-router.put('/:id/price', auth, requireRole('owner'), async (req, res) => {
+// Owner, or a role with the `edit_price` permission (Roles & Permissions).
+router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res) => {
   const newTotal = parseFloat(req.body.total_amount);
   const reason = String(req.body.reason || '').trim();
   if (!Number.isFinite(newTotal) || newTotal < 0) return res.status(400).json({ error: 'total_amount must be a number of 0 or more' });

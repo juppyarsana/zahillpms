@@ -176,6 +176,7 @@ export default function BookingDetail() {
   const { paymentMethods, sources, branding } = useSettings();
   const { hasModule, user, can } = useAuth();
   const isOwner = user?.role === 'owner';
+  const canEditPrice = isOwner || can('edit_price');
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -801,7 +802,7 @@ Type the reason to void it:`;
       { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Guest', icon: '👤', onClick: openChangeGuest },
-    isOwner && !['cancelled', 'no_show'].includes(booking.status) &&
+    canEditPrice && !['cancelled', 'no_show'].includes(booking.status) &&
       !['invoiced', 'paid'].includes(booking.folio_status) && !booking.complimentary_scope &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
@@ -1067,18 +1068,25 @@ Type the reason to void it:`;
               )}
               <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>Amount</div>
               {editingAmount === p.id ? (
-                <div className="flex gap-2 flex-center" style={{ marginBottom: 8 }}>
-                  <input className="form-input" type="number" value={newAmount} autoFocus
-                    style={{ maxWidth: 160 }} onChange={e => setNewAmount(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveAmount(p)} />
-                  <button className="btn btn-sm btn-primary" onClick={() => saveAmount(p)}>Save</button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => setEditingAmount(null)}>✕</button>
-                </div>
+                <>
+                  <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
+                    <input className="form-input" type="number" value={newAmount} autoFocus
+                      style={{ maxWidth: 160 }} onChange={e => setNewAmount(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveAmount(p)} />
+                    <button className="btn btn-sm btn-primary" onClick={() => saveAmount(p)}>Save</button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => setEditingAmount(null)}>✕</button>
+                  </div>
+                  {/* Only the split moves: the lines always add up to the unpaid part of the price. */}
+                  <div className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: 1.4 }}>
+                    This only changes how the unpaid {fmtIDR(Math.max(0, bookingNet - roomPaid))} is split — the rest goes on the other line.
+                    It does not change the price{canEditPrice ? ': use ⋮ → Edit Price for that.' : ' — ask the owner to use Edit Price for that.'}
+                  </div>
+                </>
               ) : (
                 <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
                   <span style={{ fontWeight: 700, fontSize: 18 }}>{fmtIDR(p.amount)}</span>
                   {p.status === 'pending' && (
-                    <button className="btn btn-icon btn-sm" title="Edit amount"
+                    <button className="btn btn-icon btn-sm" title="Change the deposit / balance split (not the price)"
                       onClick={() => { setEditingAmount(p.id); setNewAmount(p.amount); }}>✏️</button>
                   )}
                 </div>

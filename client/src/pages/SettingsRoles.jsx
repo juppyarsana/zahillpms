@@ -15,6 +15,9 @@ export const MENU_DEFS = [
   // An action permission, not a page: make a stay free without asking for a
   // manager's Telegram approval code (see ComplimentaryModal.jsx).
   { key: 'grant_complimentary', label: 'Grant complimentary stays (no approval code)', group: 'Front Desk' },
+  // An action permission: Edit Price on a booking (reason required, logged,
+  // owner alerted). Owners always can.
+  { key: 'edit_price',       label: 'Edit a booking\'s price', group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
   { key: 'loyalty',          label: 'Loyalty',              group: 'Front Desk' },
   { key: 'sales',            label: 'Sales',                group: 'Guest Experience' },
