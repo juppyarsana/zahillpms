@@ -41,7 +41,7 @@ const EDIT_BED_PREFS = [
 ];
 
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 const COMP_LABEL = { room: 'Room free', room_meals: 'Room + meals free', all: 'Everything free' };
 // YYYY-MM-DD date math on local calendar dates (not UTC).
 function addDaysYmd(ymd, n) { const [y, m, d] = ymd.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
@@ -1999,8 +1999,8 @@ Type the reason to void it:`;
                 {q && (
                   <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
                     <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                      Room price for the {q.nights} {q.nights === 1 ? 'night' : 'nights'} {booking.status === 'checked_in' ? 'still to come' : 'of the stay'}
-                      {q.nights > 0 && ` (${fmtStay(q.from, q.to)})`}, incl. service & tax
+                      Price for the {q.nights} {q.nights === 1 ? 'night' : 'nights'} {booking.status === 'checked_in' ? 'still to come' : 'of the stay'}
+                      {q.nights > 0 && ` (${fmtStay(q.from, q.to)})`}, incl. service & tax{q.meals > 0 && ' and the meal plan'}
                     </div>
                     <div className="flex-between" style={{ fontSize: 13 }}>
                       <span>{q.current.name}{q.current.type ? ` · ${q.current.type}` : ''} — booked price</span>
@@ -2021,6 +2021,7 @@ Type the reason to void it:`;
                       {edited
                         ? <>Normal rate {fmtIDR(q.next.total)} · <a href="#" onClick={e => { e.preventDefault(); setCustomAmount(String(Math.round(q.next.total))); }}>use normal rate</a></>
                         : 'Normal rate — type another price for a special rate'}
+                      {q.meals > 0 && !edited && <div>Room {fmtIDR(q.next.room_total)} + meal plan {fmtIDR(q.meals)}</div>}
                     </div>
                     <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
                       <span>{diff >= 0 ? 'Difference' : 'Difference (cheaper)'}</span>

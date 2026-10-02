@@ -5,7 +5,7 @@ import AgentFormModal from '../components/AgentFormModal';
 import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, CITY_LEDGER, commissionText } from '../lib/agents';
 
 function fmtIDR(n) {
-  return 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+  return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 }
 function fmtDate(str) {
   if (!str) return '—';

@@ -51,7 +51,7 @@ const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.age
              EXISTS (SELECT 1 FROM agents ag WHERE ag.id = b.agent_id
                        AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')) AS agent_billed`;
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
 // Telegram "new booking" alert (Reports & Alerts → New bookings): sections
 // separated by a blank line, one fact per line (Telegram HTML).
@@ -2417,8 +2417,8 @@ router.put('/group/:groupId/guests', auth, async (req, res) => {
 // to come (all nights for a stay that hasn't started, from today for a guest
 // already in house) the difference is: the NEW room's normal rate (base rate
 // + pricing periods, services/pricingService.js — same as New Booking's
-// suggestion) minus what the guest actually pays for the CURRENT room — the
-// booking's own room price (room_revenue, after discount, the price FO typed)
+// suggestion) plus the booking's meal plan, minus what the guest actually
+// pays now — the booking's own price (after discount, the price FO typed)
 // spread per night. Using the current room's normal rate instead gave a wrong
 // difference whenever the booking had a special price. Both grossed up with
 // service/tax, so it's what the guest pays on top. Negative = downgrade (a
@@ -2436,22 +2436,27 @@ async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   const { tax_rate, service_charge_rate } = await grossFactor(client, propertyId);
   const gross = net => computeFolioTotals(net, tax_rate, service_charge_rate).total;
   const nights = from < co ? next.night_breakdown.length : 0;
-  // What the booking charges for the ROOM per night: its price as entered
-  // (total − discount, incl. service/tax) times the room's share of the net
-  // split (meals are separate and don't change with the room). Taken from the
-  // stored total, so a later tax-rate change can't shift it.
+  // Both sides are the price the guest pays for those nights WITH the meal
+  // plan, in whole rupiah — the same figure the booking page shows. Current =
+  // the booking's price as entered (total − discount, incl. service/tax; from
+  // the stored total, so a later tax-rate change can't shift it). The meal
+  // part (its share of the net split) doesn't change with the room, so it is
+  // added to the new room's normal rate. Comparing room parts only showed a
+  // 900.000 booking as "699.999,99" and read as the wrong price.
+  const whole = n => Math.round(n);
   const stayNights = Math.max(1, parseInt(booking.nights, 10) || 1);
   const bookedGross = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
   const roomNet = parseFloat(booking.room_revenue ?? 0), mealNet = parseFloat(booking.fnb_revenue ?? 0);
   const roomShare = booking.room_revenue != null && roomNet + mealNet > 0 ? roomNet / (roomNet + mealNet) : 1;
-  const curTotal = nights ? round2(bookedGross * roomShare / stayNights * nights) : 0;
-  const curNormal = nights ? gross(cur.room_total) : 0;
-  const nextTotal = nights ? gross(next.room_total) : 0;
+  const curTotal = nights ? whole(bookedGross / stayNights * nights) : 0;
+  const meals = nights ? whole(curTotal * (1 - roomShare)) : 0;
+  const curNormal = nights ? whole(gross(cur.room_total)) + meals : 0;
+  const nextTotal = nights ? whole(gross(next.room_total)) + meals : 0;
   return {
-    from, to: co, nights,
+    from, to: co, nights, meals,
     current: { unit_id: cur.unit.id, name: cur.unit.name, type: cur.unit.type, total: curTotal, normal_total: curNormal },
-    next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal },
-    difference: round2(nextTotal - curTotal),
+    next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal, room_total: nextTotal - meals },
+    difference: nextTotal - curTotal,
   };
 }
 

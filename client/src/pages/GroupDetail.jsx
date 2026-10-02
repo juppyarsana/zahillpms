@@ -11,7 +11,7 @@ import MasterFolio from '../components/MasterFolio';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 // '2026-10-01' → '1 Oct' (withYear → '1 Oct 2026')
 function fmtDate(s, withYear = false) {
   if (!s) return '';

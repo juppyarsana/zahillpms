@@ -21,7 +21,7 @@ const LINKABLE_STATUSES = ['pending', 'deposit_paid', 'confirmed', 'checked_in']
 const HIDDEN_PAY_METHODS = ['ota_managed'];
 const EMPTY = { activity_id: '', scheduled_date: '', scheduled_time: '', num_participants: 1, guest_name: '', guest_phone: '', payment_method: '', pickup_location: '', notes: '', booking_id: '' };
 
-const fmtIDR = n => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 const round2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
 const ymd = d => String(d || '').slice(0, 10);
 

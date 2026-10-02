@@ -15,7 +15,7 @@ const TAX_MODES = [
   { key: 'included', label: 'Included in the price (all-in)',     short: 'nett', hint: 'The guest pays the price, nothing more. The service and tax inside it are worked out for the reports. Usual for vendor tours resold under the hotel name.' },
   { key: 'none',     label: 'No service charge or tax',           short: 'no tax', hint: 'The guest pays the price and none of it is counted as service or tax. Ask your accountant which fits.' },
 ];
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
 export default function Activities() {
   const { user } = useAuth();

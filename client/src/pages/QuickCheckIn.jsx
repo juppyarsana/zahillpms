@@ -18,7 +18,7 @@ function initials(name = '') {
   const p = name.trim().split(/\s+/);
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
 // Groups arrivals sharing a reservation_group_id under one cluster, in the
 // order their first room appears, leaving ungrouped rows as singles.

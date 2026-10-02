@@ -13,7 +13,7 @@ const PREF_CLASS  = { dietary: 'pref-food', room: 'pref-room', habit: 'pref-habi
 const STATUS_CLASS = { confirmed: 'badge-blue', deposit_paid: 'badge-amber', pending: 'badge-amber', checked_in: 'badge-green', checked_out: 'badge-gray', cancelled: 'badge-red', no_show: 'badge-red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 function toWaNum(raw) { const s = (raw || '').trim(); let n = s.replace(/\D/g, ''); if (!s.startsWith('+')) { if (n.startsWith('0')) n = '62' + n.slice(1); else if (!n.startsWith('62')) n = '62' + n; } return n; }
 
 export default function GuestProfile() {

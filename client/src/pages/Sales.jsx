@@ -31,7 +31,7 @@ const TABS = [
   { key: 'items',   icon: '🏷', label: 'Items' },
 ];
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 function fmtDateTime(s) {
   if (!s) return '—';
   const d = new Date(s);

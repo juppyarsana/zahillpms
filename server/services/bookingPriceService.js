@@ -9,7 +9,7 @@ const nightRates = require('./nightRates');
 // Booking price maths shared by routes/bookings.js (booking creation, Edit
 // Price, Change Room, Amend Dates) and routes/checkin.js (early departure).
 
-function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
+function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100),
 // plus how prices are entered (divisor: F when they include tax, else 1 —
