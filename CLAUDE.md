@@ -342,8 +342,9 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 093 | Cashier closing — `payments.reference` (card trace / transfer ref), `payments.recorded_at` (set by trigger `payments_stamp_recorded` whenever a payment becomes received — `received_at` is the date FO chose, often without a time), partial index on `received_at`, `checkin_records.checkout_by`, new `cashier_closing` menu permission given to every role with `checkin_full`. See the Cashier closing write-up. Additive only. |
 | 094 | Room tablet orders through the POS — `properties.pos_url` / `pos_hotel_key` (the POS's address + the key the POS made for the hotel; both NULL = the tablet keeps the PMS food menu). See the Room tablet orders write-up. Additive only. |
 | 095 | Voiding a POS room charge tells the POS — `sales.pos_void_sent_at` (the POS confirmed; the line can't be restored then) / `pos_void_error` (last attempt failed). See the Room tablet orders write-up. Additive only. |
+| 096 | Reports & Alerts recipient role `housekeeping` allowed — `notification_recipients_role_check` widened (091 added the role in code but not in the database, so adding a housekeeping recipient failed). No data changes. |
 
-**Next migration number: 096** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
+**Next migration number: 097** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
 
 ---
 

@@ -1873,7 +1873,7 @@ past check-out / not posted / never arrived, the day's figures, money received, 
 audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
 owner-only. Details in `CLAUDE.md`.
 
-## Next migration number: 096
+## Next migration number: 097
 
 ---
 
