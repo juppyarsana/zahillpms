@@ -34,6 +34,7 @@
   --danger:      #dc2626;
   --danger-soft: rgba(220, 38, 38, 0.12);
   --danger-text: #f87171;
+  --warn:        #f59e0b;
   --ok:          #22c55e;
 
   color-scheme: dark;
@@ -61,6 +62,7 @@
   --danger:      #b3261e;
   --danger-soft: rgba(179, 38, 30, 0.12);
   --danger-text: #b3261e;
+  --warn:        #b45309;
   --ok:          #1f8a4c;
 
   color-scheme: light;
