@@ -223,6 +223,8 @@ async function loadRegCardData(where, params) {
        b.id AS booking_id,
        g.name AS guest_name, g.address, g.email, g.nationality, g.id_number, g.whatsapp AS mobile,
        b.num_guests, b.check_in_date, b.check_out_date, b.purpose_of_stay, b.room_revenue, b.fnb_revenue, b.nights, b.deposit_amount, b.complimentary_scope,
+       -- a room of a group billed as a whole (migration 097): its deposit is the group's
+       EXISTS (SELECT 1 FROM reservation_groups rgb WHERE rgb.id = b.reservation_group_id AND rgb.group_billing) AS group_billed,
        u.name AS unit_name, u.type AS room_type_name,
        rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
        bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by, ag.name AS agent_name,

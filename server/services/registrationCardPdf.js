@@ -162,7 +162,9 @@ function renderRegistrationCard(doc, { property, data }) {
     cells: [
       { label: 'Type', value: data.room_type_name },
       { label: 'Purpose of Stay', value: data.purpose_of_stay },
-      { label: 'Deposit', value: compNote && !Number(data.deposit_amount) ? '-' : (showRate ? (data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '') : rateHiddenNote) },
+      { label: 'Deposit', value: compNote && !Number(data.deposit_amount) ? '-'
+        : data.group_billed ? 'Paid by the group'
+        : (showRate ? (data.deposit_amount != null ? fmtIDR(data.deposit_amount) : '') : rateHiddenNote) },
     ],
   });
   gridRow(doc, {

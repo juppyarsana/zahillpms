@@ -32,6 +32,7 @@
 //   node maintenance/moveGroupPayments.js --apply         does it (writes a backup file first)
 //   ... --property zahill                                 one property only (slug)
 //   ... --group "Lia Etika"                               one group only (its id, or part of the booker's name)
+//   ... --no-merge                                        keep same-day lines recorded before 093 as separate payments
 // Safe to run more than once (a group already moved is skipped).
 require('dotenv').config();
 const fs = require('fs');
@@ -45,6 +46,7 @@ const propIdx = process.argv.indexOf('--property');
 const PROPERTY = propIdx > -1 ? process.argv[propIdx + 1] : null;
 const grpIdx = process.argv.indexOf('--group');
 const GROUP = grpIdx > -1 ? process.argv[grpIdx + 1] : null;
+const MERGE_DAY = !process.argv.includes('--no-merge');
 
 const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -93,14 +95,19 @@ async function run() {
 
       const byRoom = new Map(rooms.map(r => [r.id, r]));
       const received = lines.filter(l => l.status === 'received' && parseFloat(l.amount) > 0);
-      // One transfer the old Record Group Payment spread over several rooms
-      // (same recorded instant, method, person, reference) → ONE group
-      // payment again. Rows with no recorded time (before migration 093) stay
-      // one each — two real transfers on the same day are never merged.
+      // One transfer the old screens spread over several rooms → ONE group
+      // payment again. Recorded with a time (migration 093 on): lines of the
+      // same recorded instant, method, person and reference. Recorded before
+      // that (no time): lines of the same received day (property time),
+      // method, person and reference — unless --no-merge. Only rows are
+      // combined; the amounts, the group's bill and balance stay the same.
       const txns = [];
       const byKey = new Map();
+      const day = v => new Date(v).toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
       for (const l of received) {
-        const key = l.recorded_at ? `${new Date(l.recorded_at).toISOString()}|${l.method}|${l.received_by || ''}|${l.reference || ''}` : null;
+        const who = `${l.method}|${l.received_by || ''}|${l.reference || ''}`;
+        const key = l.recorded_at ? `t:${new Date(l.recorded_at).toISOString()}|${who}`
+          : MERGE_DAY && l.received_at ? `d:${day(l.received_at)}|${who}` : null;
         let t = key && byKey.get(key);
         if (!t) { t = { lines: [], amount: 0 }; txns.push(t); if (key) byKey.set(key, t); }
         t.lines.push(l);
