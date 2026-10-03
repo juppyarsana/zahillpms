@@ -47,6 +47,17 @@ router.get('/group/:groupId', auth, async (req, res) => {
     // no-show rooms aren't billed. Each line says whether it's posted yet.
     const active = bookingRows.filter(b => !['cancelled', 'no_show'].includes(b.status));
     const estimates = await Promise.all(active.map(b => computeProforma(b.id, req.propertyId)));
+    // Each received payment's method label and who took it — the Master
+    // Folio lists every transaction, not just a sum per room.
+    const { rows: payInfo } = await db.query(
+      `SELECT p.id, COALESCE(pm.label, p.method) AS method_label, us.name AS received_by_name
+       FROM payments p JOIN bookings b ON b.id = p.booking_id
+       LEFT JOIN payment_methods pm ON pm.id = p.method AND pm.property_id = b.property_id
+       LEFT JOIN users us ON us.id = p.received_by
+       WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND p.status = 'received'`,
+      [req.params.groupId, req.propertyId]
+    );
+    const payById = new Map(payInfo.map(p => [p.id, p]));
     const estRooms = active.map((b, i) => {
       const est = estimates[i];
       const f = folios[bookingRows.indexOf(b)];
@@ -65,7 +76,11 @@ router.get('/group/:groupId', auth, async (req, res) => {
             : ['room', 'fnb'].includes(c.type) ? postedNights.has(`${c.type}:${ymdOf(c.service_date)}`)
             : c.type === 'addon' ? postedAddons.has(c.description) : false,
         })),
-        payments: est.payments.filter(p => p.status === 'received'),
+        payments: est.payments.filter(p => p.status === 'received').map(p => ({
+          id: p.id, type: p.type, amount: p.amount, method: p.method, reference: p.reference || null, notes: p.notes || null,
+          received_at: p.received_at, recorded_at: p.recorded_at || null, received_by: p.received_by || null,
+          method_label: payById.get(p.id)?.method_label || p.method, received_by_name: payById.get(p.id)?.received_by_name || null,
+        })),
         subtotal: est.subtotal, service_charge_amount: est.service_charge_amount, tax_amount: est.tax_amount,
         total: est.total, balance_due: est.balance_due, tax_rate: est.tax_rate, service_charge_rate: est.service_charge_rate,
       };

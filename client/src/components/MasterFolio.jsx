@@ -67,6 +67,95 @@ function extraLines(room, rates) {
   return out;
 }
 
+const PAY_TYPE = { deposit: 'Deposit', balance: 'Balance', incidental: 'Extras' };
+// The received date FO chose; plus the time it was recorded when that's the
+// same day (payments recorded before migration 093 have no time).
+const localDay = v => new Date(v).toLocaleDateString('en-CA');
+const payDate = p => {
+  if (!p.received_at) return '—';
+  const day = localDay(p.received_at);
+  const d = shortDate(day);
+  if (!p.recorded_at || localDay(p.recorded_at) !== day) return d;
+  return `${d}, ${new Date(p.recorded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+// Every received payment of the group as transactions: lines recorded in one
+// go (Record Group Payment marks several rooms' lines at the same instant,
+// same method / person / reference) are one transaction with its rooms.
+function transactions(rooms) {
+  const map = new Map();
+  for (const room of rooms) {
+    for (const p of room.payments) {
+      const key = p.recorded_at ? `${p.recorded_at}|${p.method}|${p.received_by || ''}|${p.reference || ''}` : p.id;
+      let t = map.get(key);
+      if (!t) {
+        t = { key, when: p.recorded_at || p.received_at, date: payDate(p), method: p.method_label, reference: p.reference,
+          by: p.received_by_name, notes: p.notes, parts: [], total: 0 };
+        map.set(key, t);
+      }
+      t.parts.push({ room: room.unit_name, type: PAY_TYPE[p.type] || p.type, amount: parseFloat(p.amount) });
+      t.total += parseFloat(p.amount);
+    }
+  }
+  return [...map.values()].sort((a, b) => String(a.when).localeCompare(String(b.when)));
+}
+
+function PaymentsReceived({ rooms }) {
+  const txns = transactions(rooms);
+  if (!txns.length) return null;
+  const byMethod = new Map();
+  for (const t of txns) byMethod.set(t.method, (byMethod.get(t.method) || 0) + t.total);
+  const cell = { padding: '6px 8px', borderBottom: '1px solid var(--border)', fontSize: 13, verticalAlign: 'top' };
+  const total = txns.reduce((s, t) => s + t.total, 0);
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+      <div className="flex-between" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <b style={{ fontSize: 15 }}>Payments received</b>
+        <span className="text-muted" style={{ fontSize: 12 }}>{txns.length} transaction{txns.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="table-wrap">
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr className="text-muted" style={{ fontSize: 11, textAlign: 'left' }}>
+              <th style={cell}>Date</th><th style={cell}>Method</th><th style={cell}>For</th><th style={cell}>By</th>
+              <th style={{ ...cell, textAlign: 'right' }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {txns.map(t => (
+              <tr key={t.key}>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>{t.date}</td>
+                <td style={cell}>
+                  {t.method}
+                  {t.reference && <div className="text-muted" style={{ fontSize: 11 }}>Ref {t.reference}</div>}
+                </td>
+                <td style={cell}>
+                  {t.parts.map((p, i) => (
+                    <div key={i} style={{ fontSize: 12 }}>
+                      Room {p.room} · {p.type}{t.parts.length > 1 && <span className="text-muted"> · {fmtIDR(p.amount)}</span>}
+                    </div>
+                  ))}
+                  {t.notes && <div className="text-muted" style={{ fontSize: 11 }}>{t.notes}</div>}
+                </td>
+                <td style={cell} className="text-muted">{t.by || '—'}</td>
+                <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{fmtIDR(t.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ maxWidth: 320, marginLeft: 'auto', marginTop: 8 }}>
+        {[...byMethod.entries()].map(([m, amt]) => (
+          <div key={m} className="flex-between" style={{ fontSize: 13, marginBottom: 2 }}><span className="text-muted">{m}</span><span>{fmtIDR(amt)}</span></div>
+        ))}
+        <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 4, marginTop: 4 }}>
+          <span>Total received</span><span>{fmtIDR(total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STATUS = { pending: 'Pending', deposit_paid: 'Deposit paid', confirmed: 'Confirmed', checked_in: 'Checked in', checked_out: 'Checked out' };
 
 export default function MasterFolio({ folio, onRecordGroupPayment }) {
@@ -101,7 +190,6 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
       {est.rooms.map(room => {
         const runs = stayRuns(room, rates);
         const extras = extraLines(room, rates);
-        const paid = room.payments.reduce((s, p) => s + parseFloat(p.amount), 0);
         return (
           <div key={room.booking_id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
             <div className="flex-between" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
@@ -157,19 +245,24 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
                   {!runs.length && !extras.length && (
                     <tr><td style={cell} className="text-muted" colSpan={3}>Nothing to charge</td></tr>
                   )}
-                  {paid > 0 && (
-                    <tr>
-                      <td style={{ ...cell, borderBottom: 'none' }} className="text-muted">Payments received</td>
-                      <td style={{ ...cell, borderBottom: 'none' }} />
-                      <td style={{ ...cell, borderBottom: 'none', textAlign: 'right', whiteSpace: 'nowrap', color: 'var(--color-success, #16a34a)' }}>− {fmtIDR(paid)}</td>
+                  {room.payments.map((p, i) => (
+                    <tr key={`p${p.id}`}>
+                      <td style={{ ...cell, borderBottom: i === room.payments.length - 1 ? 'none' : cell.borderBottom }} className="text-muted">
+                        {PAY_TYPE[p.type] || p.type} received · {p.method_label} · {payDate(p)}
+                        {p.reference && <span> · Ref {p.reference}</span>}
+                      </td>
+                      <td style={{ ...cell, borderBottom: i === room.payments.length - 1 ? 'none' : cell.borderBottom }} />
+                      <td style={{ ...cell, borderBottom: i === room.payments.length - 1 ? 'none' : cell.borderBottom, textAlign: 'right', whiteSpace: 'nowrap', color: 'var(--color-success, #16a34a)' }}>− {fmtIDR(p.amount)}</td>
                     </tr>
-                  )}
+                  ))}
                 </tbody>
               </table>
             </div>
           </div>
         );
       })}
+
+      <PaymentsReceived rooms={est.rooms} />
 
       <div style={{ maxWidth: 420, marginLeft: 'auto', marginTop: 8 }}>
         {!rates.prices_include_tax && hasTaxRates && (<>
