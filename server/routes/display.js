@@ -482,7 +482,8 @@ router.get('/room/:roomId/menu', authDisplay, async (req, res, next) => {
       status: m.status,
       message: POS_CLOSED_MSG[m.status] || null,
       hours: m.hours || null,
-      items: (m.menu || []).map(i => ({ id: i.id, name: i.name, category: i.cat || 'Menu', description: i.sub || '', emoji: i.emoji || '', price: i.price })),
+      // nett: the POS item's price already includes service & tax (nothing added on top)
+      items: (m.menu || []).map(i => ({ id: i.id, name: i.name, category: i.cat || 'Menu', description: i.sub || '', emoji: i.emoji || '', price: i.price, nett: !!i.nett })),
       prices: m.prices || { include: true, service: 0, tax: 0 },
       // how the guest may pay: 'room' (charged to the room) + cash / card on delivery
       payments: Array.isArray(m.payments) ? m.payments : ['room'],

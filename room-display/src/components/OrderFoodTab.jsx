@@ -21,11 +21,15 @@ const MAX_QTY = 20;
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 const newRef = () => 'rd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
-// Same formula as the POS till: service first, then tax on price + service.
-function totals(subtotal, prices) {
+// Same formula as the POS till: service first, then tax on price + service —
+// added only to "++" items; an item marked nett (price incl. service & tax)
+// counts at exactly its price. service / tax = what is added on top.
+function totals(lines, prices) {
+  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   if (!prices || prices.include !== false) return { subtotal, service: 0, tax: 0, total: subtotal, added: false };
-  const service = Math.round(subtotal * (prices.service || 0) / 100);
-  const tax = Math.round((subtotal + service) * (prices.tax || 0) / 100);
+  const plus = lines.filter(l => !l.nett).reduce((s, l) => s + l.amount, 0);
+  const service = Math.round(plus * (prices.service || 0) / 100);
+  const tax = Math.round((plus + service) * (prices.tax || 0) / 100);
   return { subtotal, service, tax, total: subtotal + service + tax, added: service > 0 || tax > 0 };
 }
 
@@ -79,7 +83,10 @@ function DishCard({ item, qty, closed, legacyIcon, onAdd, onQty, onOpen }) {
         </div>
       </div>
       <div className="mt-auto flex items-center justify-between gap-2">
-        <span className="text-accent font-semibold" style={{ fontSize: 17, whiteSpace: 'nowrap' }}>{fmtIDR(item.price)}</span>
+        <span className="text-accent font-semibold" style={{ fontSize: 17, whiteSpace: 'nowrap' }}>
+          {fmtIDR(item.price)}
+          {item.nett && <span className="block text-muted" style={{ fontSize: 11, fontWeight: 500 }}>incl. service &amp; tax</span>}
+        </span>
         {inCart ? (
           <Stepper qty={qty} onChange={onQty} size={32} />
         ) : (
@@ -112,6 +119,7 @@ function DishDetails({ item, qty, closed, legacyIcon, category, onAdd, onQty, on
             {category && <div className="text-xs font-bold uppercase tracking-[0.25em] text-accent mb-2">{category}</div>}
             <h3 className="text-ink font-light leading-tight" style={{ fontSize: 28 }}>{item.name}</h3>
             <div className="text-accent font-semibold mt-2" style={{ fontSize: 20 }}>{fmtIDR(item.price)}</div>
+            {item.nett && <div className="text-muted" style={{ fontSize: 13 }}>Price includes service &amp; tax</div>}
           </div>
           <button onClick={onClose} className="shrink-0 rounded-full flex items-center justify-center bg-surface-2 text-ink"
             style={{ width: 44, height: 44, border: 'none', cursor: 'pointer' }} aria-label="Close">
@@ -275,7 +283,7 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
     changeCart(c => {
       const existing = c.find(i => i.product_id === product.id);
       if (existing) return c.map(i => i.product_id === product.id ? { ...i, quantity: Math.min(MAX_QTY, i.quantity + 1) } : i);
-      return [...c, { product_id: product.id, name: product.name, emoji: product.emoji, price: product.price, quantity: 1 }];
+      return [...c, { product_id: product.id, name: product.name, emoji: product.emoji, price: product.price, nett: !!product.nett, quantity: 1 }];
     });
   }
   function setQty(productId, qty) {
@@ -285,7 +293,7 @@ export default function OrderFoodTab({ roomId, onOrderPlaced }) {
 
   const payOptions = (menu.pos && Array.isArray(menu.payments) ? menu.payments : ['room']).filter(k => PAY_OPTIONS[k]);
   const count = cart.reduce((s, i) => s + i.quantity, 0);
-  const sum = totals(cart.reduce((s, i) => s + i.price * i.quantity, 0), menu.pos ? menu.prices : null);
+  const sum = totals(cart.map(i => ({ amount: i.price * i.quantity, nett: !!i.nett })), menu.pos ? menu.prices : null);
 
   // Send order: ask how they'll pay first when there's a choice.
   function onSend() {
