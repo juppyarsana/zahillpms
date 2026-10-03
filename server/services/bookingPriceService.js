@@ -108,6 +108,29 @@ async function applyBookingPrice(client, { propertyId, before, newTotal, userId,
     : snapPayable(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total, newTotal - discountAmount);
   const storedTotal = round2(payable + discountAmount);
 
+  // A room of a group billed as a whole (migration 097) has no payment lines:
+  // the group's bill follows the new price; its status is the group's.
+  const { rows: [groupBilled] } = await client.query(
+    `SELECT rg.id FROM reservation_groups rg WHERE rg.id = $1 AND rg.group_billing`, [before.reservation_group_id || null]);
+  if (groupBilled) {
+    const { rows: [after] } = await client.query(
+      `UPDATE bookings SET total_amount = $1, discount_amount = $2, room_revenue = $3, fnb_revenue = $4,
+                           deposit_amount = 0, updated_at = NOW()
+       WHERE id = $5 RETURNING *`,
+      [storedTotal, discountAmount, roomNet, mealNet, before.id]);
+    if (nightShares !== undefined) {
+      const saved = await nightRates.saveNightRates(client, {
+        bookingId: before.id, nights: stayNights(after.check_in_date, after.check_out_date), shares: nightShares, roomNet, mealNet,
+      });
+      if (saved.error) {
+        return { status: 400, error: { error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error } };
+      }
+    }
+    await roomCharge.repostStay(client, after, userId);
+    await recomputeBookingStatus(client, before.id);
+    return { after, payable, storedTotal, received: 0, credit: 0, receivedFixes: [], discountAmount };
+  }
+
   // Room payment lines: keep received ones, reshape the pending ones so
   // they add up to what's still owed.
   const { rows: lines } = await client.query(

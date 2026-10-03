@@ -7,6 +7,7 @@ const proformaFooter = require('../services/proformaFooter');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
+const groupBilling = require('../services/groupBilling');
 
 function fmtIDR(n) {
   // Fixed 2 decimals — the default toLocaleString('id-ID') caps at 3 fraction
@@ -83,14 +84,32 @@ router.get('/group/:groupId', auth, async (req, res) => {
         })),
         subtotal: est.subtotal, service_charge_amount: est.service_charge_amount, tax_amount: est.tax_amount,
         total: est.total, balance_due: est.balance_due, tax_rate: est.tax_rate, service_charge_rate: est.service_charge_rate,
+        // a group billed as a whole (migration 097): the room's part on the
+        // group bill and its own part (balance_due is then the own part)
+        group_total: est.group?.group_total ?? null, own_total: est.group?.own_total ?? null,
       };
     });
     const eSum = key => round2(estRooms.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0));
+    const roomsReceived = round2(estRooms.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + parseFloat(p.amount), 0), 0));
+    const bill = await groupBilling.groupBill(req.params.groupId, req.propertyId);
     const estimate = {
       rooms: estRooms,
       subtotal: eSum('subtotal'), service_charge_amount: eSum('service_charge_amount'), tax_amount: eSum('tax_amount'),
-      total: eSum('total'), balance_due: eSum('balance_due'),
-      received: round2(estRooms.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + parseFloat(p.amount), 0), 0)),
+      total: eSum('total'),
+      // billed as a whole: the group's balance + each room's own balance
+      balance_due: bill ? round2(bill.balance_due + eSum('balance_due')) : eSum('balance_due'),
+      received: round2(roomsReceived + (bill ? bill.received : 0)),
+      // { billing_mode, total, received, balance_due, payments, deposit_required } — null when paid room by room
+      group: bill ? {
+        billing_mode: bill.billing_mode, total: bill.total, received: bill.received, balance_due: bill.balance_due,
+        deposit_required: bill.deposit_required,
+        payments: bill.payments.map(p => ({
+          id: p.id, amount: p.amount, method: p.method, method_label: p.method_label, reference: p.reference, notes: p.notes,
+          received_at: p.received_at, recorded_at: p.recorded_at, received_by_name: p.received_by_name,
+          is_voided: p.is_voided, void_reason: p.void_reason, voided_by_name: p.voided_by_name, voided_at: p.voided_at,
+        })),
+        rooms_own_balance: eSum('balance_due'),
+      } : null,
     };
 
     res.json({

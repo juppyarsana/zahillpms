@@ -17,6 +17,7 @@ const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { sendControlAlert } = require('../services/ownerAlerts');
 const { guestBalance } = require('../services/checkoutBalance');
+const { groupRoomMoney } = require('../services/paymentStatusService');
 const { renderRegistrationCard } = require('../services/registrationCardPdf');
 const { saveIdDocument } = require('../services/idDocument');
 const { basisFrom, shown } = require('../services/priceBasis');
@@ -59,14 +60,22 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
     }
   } else if (payLaterReason && ['deposit_paid', 'pending'].includes(booking.status)) {
     // Checked in without full payment — record how much is still owed and why.
-    ({ rows: [{ unpaid: payLaterUnpaid }] } = await db.query(
-      `SELECT COALESCE(SUM(amount), 0) AS unpaid FROM payments
-       WHERE booking_id = $1 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0`,
-      [bookingId]
-    ));
+    // A room of a group billed as a whole (migration 097): what the GROUP
+    // still owes for its rooms (its status follows the group's payments).
+    const { rows: [gb] } = await db.query(
+      'SELECT id FROM reservation_groups WHERE id = $1 AND group_billing', [booking.reservation_group_id || null]);
+    if (gb) {
+      payLaterUnpaid = (await groupRoomMoney(db, gb.id)).unpaid;
+    } else {
+      ({ rows: [{ unpaid: payLaterUnpaid }] } = await db.query(
+        `SELECT COALESCE(SUM(amount), 0) AS unpaid FROM payments
+         WHERE booking_id = $1 AND type IN ('deposit', 'balance') AND status = 'pending' AND amount > 0`,
+        [bookingId]
+      ));
+    }
     await db.query(
       'INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
-      [bookingId, `Checked in without full payment — Rp ${Math.round(parseFloat(payLaterUnpaid)).toLocaleString('id-ID')} unpaid (pay later). Reason: ${payLaterReason}`.slice(0, 1000), userId]
+      [bookingId, `Checked in without full payment — Rp ${Math.round(parseFloat(payLaterUnpaid)).toLocaleString('id-ID')} unpaid${gb ? ' by the group' : ''} (pay later). Reason: ${payLaterReason}`.slice(0, 1000), userId]
     );
   } else {
     // Direct / walk-in: full payment required before check-in
@@ -234,11 +243,16 @@ async function loadRegCardData(where, params) {
      -- fill in by hand) on a card printed before arrival.
      LEFT JOIN checkin_records cr ON cr.booking_id = b.id
      LEFT JOIN users cu ON cu.id = cr.processed_by
-     LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = (
+     LEFT JOIN payment_methods pm ON pm.property_id = b.property_id AND pm.id = COALESCE((
        SELECT p.method FROM payments p
        WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')
        ORDER BY p.received_at DESC NULLS LAST LIMIT 1
-     )
+     ), (
+       -- a room of a group billed as a whole (migration 097): the group's payment
+       SELECT gp.method FROM group_payments gp
+       WHERE gp.group_id = b.reservation_group_id AND NOT gp.is_voided
+       ORDER BY gp.received_at DESC LIMIT 1
+     ))
      ${where}`,
     params
   );

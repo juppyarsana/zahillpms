@@ -145,6 +145,29 @@ const PAYMENTS_WITH_RECEIPT_SQL = `
     END AS receipt_kind
   FROM payments p WHERE p.booking_id = $1 ORDER BY p.type`;
 
+// A group billed as a whole (migration 097): which of a room's charges go on
+// the GROUP's bill. Room nights + meal plan always; extras only when the group
+// pays everything. A line already paid at the desk stays with the room (its
+// payment is the room's). The rest is the room's own bill.
+function toGroup(c, billingMode) {
+  if (c.paid_at_desk) return false;
+  if (c.type === 'room' || c.type === 'fnb') return true;
+  return billingMode === 'everything';
+}
+// SQL for the booking queries below: the group, when it's billed as a whole.
+const GROUP_BILLING_SQL = `rgb.id AS billed_group_id, rgb.billing_mode AS group_billing_mode`;
+const GROUP_BILLING_JOIN = `LEFT JOIN reservation_groups rgb ON rgb.id = b.reservation_group_id AND rgb.group_billing`;
+
+// Splits a group room's billable lines into the group part and the room's
+// own part (each with its own service & tax). Marks each line `to_group`.
+function groupSplit(booking, billable, rates) {
+  if (!booking?.billed_group_id) return null;
+  for (const c of billable) c.to_group = toGroup(c, booking.group_billing_mode);
+  const g = chargeTotals(billable.filter(c => c.to_group), rates.tax_rate, rates.service_charge_rate);
+  const own = chargeTotals(billable.filter(c => !c.to_group), rates.tax_rate, rates.service_charge_rate);
+  return { group_id: booking.billed_group_id, billing_mode: booking.group_billing_mode, group_total: g.total, own_total: own.total, group_subtotal: g.subtotal };
+}
+
 // A balance of a few cents is rounding (service + tax on net amounts can't
 // always land on the exact rupiah the guest paid) — nothing is owed.
 function settleCents(balance) {
@@ -160,13 +183,15 @@ async function loadFolio(bookingId, propertyId) {
             COALESCE(ag.payment_status, 'normal') AS agent_payment_status,
             COALESCE(ag.payment_status, 'normal') AS source_payment_status, bs.label as source_label,
             ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by,
-            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner
+            rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
+            ${GROUP_BILLING_SQL}
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN agents ag ON ag.id = b.agent_id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+     ${GROUP_BILLING_JOIN}
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
@@ -207,7 +232,9 @@ async function loadFolio(bookingId, propertyId) {
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
     chargeTotals(billable, rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
-  const balance_due = settleCents(round2(total - receivedTotal));
+  // A group room: the room owes only its own part; the rest is on the group's bill.
+  const group = groupSplit(booking, billable, rates);
+  const balance_due = settleCents(round2((group ? group.own_total : total) - receivedTotal));
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
   const agent_billable_total = chargeTotals(
@@ -217,6 +244,7 @@ async function loadFolio(bookingId, propertyId) {
   return {
     booking, charges, payments,
     subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, agent_billable_total,
+    group,
     complimentary_extras,
     // Prices entered incl. service & tax (migration 079): show lines all-in.
     prices_include_tax: !!settings?.prices_include_tax,
@@ -242,13 +270,15 @@ async function computeProforma(bookingId, propertyId) {
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
-            bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by
+            bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by,
+            ${GROUP_BILLING_SQL}
      FROM bookings b
      JOIN guests g ON b.guest_id = g.id
      JOIN units u ON b.unit_id = u.id
      LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN agents ag ON ag.id = b.agent_id
+     ${GROUP_BILLING_JOIN}
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
@@ -340,14 +370,18 @@ async function computeProforma(bookingId, propertyId) {
   const complimentary_extras = markComplimentary(booking, charges);
 
   const rates = billRates(booking, settings);
+  const billable = charges.filter(c => !c.complimentary);
   const { subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total } =
-    chargeTotals(charges.filter(c => !c.complimentary), rates.tax_rate, rates.service_charge_rate);
+    chargeTotals(billable, rates.tax_rate, rates.service_charge_rate);
   const receivedTotal = round2(payments.filter(p => p.status === 'received').reduce((sum, p) => sum + parseFloat(p.amount), 0));
-  const balance_due = settleCents(round2(total - receivedTotal));
+  // A group room: the room owes only its own part; the rest is on the group's bill.
+  const group = groupSplit(booking, billable, rates);
+  const balance_due = settleCents(round2((group ? group.own_total : total) - receivedTotal));
 
   return {
     booking, charges, payments,
     subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
+    group,
     complimentary_extras,
     prices_include_tax: !!settings?.prices_include_tax,
     show_tax_breakdown: !!settings?.show_tax_breakdown,
@@ -356,4 +390,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, PAYMENTS_WITH_RECEIPT_SQL, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };

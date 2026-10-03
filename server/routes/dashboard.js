@@ -7,6 +7,7 @@ const moduleGuard = require('../middleware/moduleGuard');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const { todayWITA } = require('../services/roomChargeService');
 const { bookingsMade } = require('../services/bookingPickup');
+const { GROUP_OWED_SQL } = require('../services/groupBilling');
 
 function addDays(ymd, n) {
   const d = new Date(ymd + 'T00:00:00Z');
@@ -137,9 +138,11 @@ router.get('/summary', auth, async (req, res) => {
         WHERE b.property_id = $1 AND b.check_out_date = ${TODAY_WITA_SQL} AND b.status = 'checked_in'
       `, [req.propertyId]),
       db.query(`
-        SELECT COUNT(*) as count FROM payments p
-        JOIN bookings b ON p.booking_id = b.id
-        WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0 AND b.status NOT IN ('cancelled','no_show')
+        SELECT (SELECT COUNT(*) FROM payments p
+                JOIN bookings b ON p.booking_id = b.id
+                WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0 AND b.status NOT IN ('cancelled','no_show'))
+             -- + groups billed as a whole still owing (migration 097)
+             + (SELECT COUNT(*) FROM (${GROUP_OWED_SQL}) go WHERE go.owed >= 1) AS count
       `, [req.propertyId]),
       db.query(`SELECT COUNT(*) as count FROM tasks WHERE property_id = $1 AND status != 'done'`, [req.propertyId]),
       db.query(`
@@ -226,11 +229,17 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_s
       getReport(pid, first, last),
       bookingsMade(pid, first, today),
       bookingsMade(pid, prevFirst, prevTo),
+      // + groups billed as a whole (migration 097), each counted as one
       db.query(`
-        SELECT COUNT(DISTINCT b.id) AS bookings, COALESCE(SUM(p.amount), 0) AS amount
-        FROM payments p JOIN bookings b ON b.id = p.booking_id
-        WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
-          AND b.status NOT IN ('cancelled', 'no_show')`, [pid]),
+        WITH owed AS (
+          SELECT b.id::text AS ref, p.amount
+          FROM payments p JOIN bookings b ON b.id = p.booking_id
+          WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
+            AND b.status NOT IN ('cancelled', 'no_show')
+          UNION ALL
+          SELECT go.id::text, go.owed FROM (${GROUP_OWED_SQL}) go WHERE go.owed >= 1
+        )
+        SELECT COUNT(DISTINCT ref) AS bookings, COALESCE(SUM(amount), 0) AS amount FROM owed`, [pid]),
     ]);
     const sellable = parseInt(u.sellable, 10) || 0;
     const figures = (r, days) => ({

@@ -42,7 +42,15 @@ async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
     owed -= roomPending;
   }
   owed = round2(owed);
-  return { owed: owed >= 1 ? owed : 0, agent_billed: false, agent_name: b.agent_name || null, ota };
+  // A room of a group billed as a whole (migration 097): the guest owes only
+  // the room's own part (above); what the group still owes is shown, not
+  // asked of this guest (`group_owed`).
+  let group = null;
+  if (pf.group) {
+    const bill = await require('./groupBilling').groupBill(pf.group.group_id, propertyId);
+    if (bill) group = { group_id: bill.group_id, group_owed: bill.balance_due >= 1 ? bill.balance_due : 0, billing_mode: bill.billing_mode };
+  }
+  return { owed: owed >= 1 ? owed : 0, agent_billed: false, agent_name: b.agent_name || null, ota, group };
 }
 
 module.exports = { guestBalance };

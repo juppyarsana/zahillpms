@@ -3,7 +3,8 @@ const PDFDocument = require('pdfkit');
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
-const { recomputeBookingStatus } = require('../services/paymentStatusService');
+const { recomputeBookingStatus, recomputeGroupStatus } = require('../services/paymentStatusService');
+const groupBilling = require('../services/groupBilling');
 const agentBilling = require('../services/agentBillingService');
 const agentService = require('../services/agentService');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
@@ -670,7 +671,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
 
   const { rows: candidates } = await db.query(`
-    SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status,
+    SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status, b.reservation_group_id,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
            COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
            COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name,
@@ -711,6 +712,27 @@ async function loadBalanceDue(propertyId, requestedDate) {
       paid,
       balance_due: pf.balance_due,
       agent_billed: agentBilled,
+    });
+  }
+  // Groups billed as a whole (migration 097): the rooms above show only their
+  // own extras; the group's bill is one row (the booker, its rooms), in the
+  // section of the group's last check-out (departing on it, else staying).
+  const groupIds = [...new Set(candidates.map(c => c.reservation_group_id).filter(Boolean))];
+  for (const gid of groupIds) {
+    const bill = await groupBilling.groupBill(gid, propertyId);
+    if (!bill || bill.balance_due < 1) continue;
+    const { rows: [g] } = await db.query(
+      `SELECT gg.name AS guest_name, to_char(rg.check_in_date, 'YYYY-MM-DD') AS check_in_date,
+              to_char(rg.check_out_date, 'YYYY-MM-DD') AS check_out_date
+       FROM reservation_groups rg JOIN guests gg ON gg.id = rg.primary_guest_id WHERE rg.id = $1`, [gid]);
+    const section = g.check_out_date <= date ? 'departing' : 'staying';
+    sections[section].push({
+      id: null, group_id: gid, is_group: true,
+      guest_name: g.guest_name, unit_name: `Group · ${bill.rooms.map(r => r.unit_name).join(', ')}`,
+      check_in_date: g.check_in_date, check_out_date: g.check_out_date, nights: null, num_guests: null,
+      status: null, source_label: null, is_ota: false,
+      room_and_meals: null, extras: null, service_and_tax: null,
+      total: bill.total, paid: bill.received, balance_due: bill.balance_due, agent_billed: false,
     });
   }
   const toCollect = list => round2(list.filter(r => !r.agent_billed).reduce((s, r) => s + r.balance_due, 0));
@@ -903,10 +925,14 @@ router.get('/groups', auth, async (req, res) => {
              string_agg(u.name, ', ' ORDER BY u.name) FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')) AS room_names,
              COALESCE(SUM(b.total_amount - COALESCE(b.discount_amount, 0))
                         FILTER (WHERE b.status NOT IN ('cancelled', 'no_show')), 0) AS net_amount,
-             COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b2 ON b2.id = p.booking_id
+             rg.group_billing, rg.billing_mode,
+             -- billed as a whole (migration 097): the group's own payments
+             CASE WHEN rg.group_billing
+               THEN COALESCE((SELECT SUM(gp.amount) FROM group_payments gp WHERE gp.group_id = rg.id AND NOT gp.is_voided), 0)
+               ELSE COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bookings b2 ON b2.id = p.booking_id
                         WHERE b2.reservation_group_id = rg.id AND p.status = 'received'
                           AND b2.status NOT IN ('cancelled', 'no_show')
-                          AND p.type IN ('deposit', 'balance')), 0) AS paid_amount
+                          AND p.type IN ('deposit', 'balance')), 0) END AS paid_amount
       FROM reservation_groups rg
       JOIN guests g ON g.id = rg.primary_guest_id
       LEFT JOIN bookings b ON b.reservation_group_id = rg.id
@@ -976,6 +1002,9 @@ router.get('/group/:groupId', auth, async (req, res) => {
     const totalAmount = active.reduce((s, b) => s + parseFloat(b.total_amount), 0);
     const discountAmount = active.reduce((s, b) => s + parseFloat(b.discount_amount || 0), 0);
     const netAmount = totalAmount - discountAmount;
+    // Billed as a whole (migration 097): the group's own payments and bill
+    // (room nights + meal plan, plus extras when the group pays everything).
+    const bill = group.group_billing ? await groupBilling.groupBill(group.id, req.propertyId) : null;
 
     // The group's history: every room's Edit History, newest first, with the
     // room it belongs to (the group page merges one action on several rooms).
@@ -993,6 +1022,8 @@ router.get('/group/:groupId', auth, async (req, res) => {
       group,
       bookings: bookingsWithPayments,
       events,
+      // group_billing: { billing_mode, total, received, balance_due, payments, rooms [{ group_total, own_total, own_balance }] }
+      bill,
       rollup: {
         room_count: active.length,
         cancelled_count: inactive.size,
@@ -1000,9 +1031,13 @@ router.get('/group/:groupId', auth, async (req, res) => {
         discount_amount: round2(discountAmount),
         net_amount: round2(netAmount),
         deposit_amount: parseFloat(group.group_deposit_amount || 0),
-        paid_amount: round2(paidAmount),
-        paid_on_cancelled: round2(paidOnCancelled),
-        balance_due: round2(netAmount - paidAmount),
+        group_billing: !!group.group_billing,
+        billing_mode: group.billing_mode,
+        // A group billed as a whole: its payments against its bill.
+        paid_amount: bill ? bill.received : round2(paidAmount),
+        paid_on_cancelled: bill ? 0 : round2(paidOnCancelled),
+        bill_total: bill ? bill.total : round2(netAmount),
+        balance_due: bill ? bill.balance_due : round2(netAmount - paidAmount),
         status_breakdown: statusBreakdown,
       },
     });
@@ -1026,6 +1061,9 @@ router.get('/:id', auth, async (req, res) => {
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size,
+             -- A group billed as a whole (migration 097): the room price is paid by the group.
+             COALESCE((SELECT rg.group_billing FROM reservation_groups rg WHERE rg.id = b.reservation_group_id), false) AS group_billed,
+             (SELECT rg.billing_mode FROM reservation_groups rg WHERE rg.id = b.reservation_group_id) AS group_billing_mode,
              -- Agent billing (city ledger): shown as a badge on the booking page.
              ai.invoice_number AS agent_invoice_number,
              (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
@@ -1310,10 +1348,20 @@ router.post('/group', auth, async (req, res) => {
       s.balanceShare = s.roomNet - s.depositShare;
     });
 
+    // Billed as a whole (migration 097): one bill and one payment record for
+    // the group, no deposit / balance lines on its rooms — except a group
+    // billed to a city-ledger agent, which keeps per-room agent billing.
+    let groupBilled = true;
+    if (agentPick.agentId) {
+      const { rows: [ag] } = await client.query('SELECT payment_status FROM agents WHERE id = $1', [agentPick.agentId]);
+      if (agentBilling.CITY_LEDGER.includes(ag?.payment_status)) groupBilled = false;
+    }
+    const billingMode = req.body.billing_mode === 'everything' ? 'everything' : 'room_meals';
+
     const { rows: [group] } = await client.query(
-      `INSERT INTO reservation_groups (property_id, primary_guest_id, check_in_date, check_out_date, group_discount_type, group_discount_value, group_discount_amount, group_deposit_amount, special_requests, internal_notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.propertyId, guest_id, spanIn, spanOut, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id]
+      `INSERT INTO reservation_groups (property_id, primary_guest_id, check_in_date, check_out_date, group_discount_type, group_discount_value, group_discount_amount, group_deposit_amount, special_requests, internal_notes, created_by, group_billing, billing_mode)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [req.propertyId, guest_id, spanIn, spanOut, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id, groupBilled, billingMode]
     );
 
     const bookings = [];
@@ -1333,7 +1381,7 @@ router.post('/group', auth, async (req, res) => {
       const { rows: [booking] } = await client.query(
         `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
-        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
+        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, groupBilled ? 0 : s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
          agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
       );
       if (s.room.nightShares) {
@@ -1344,10 +1392,10 @@ router.post('/group', auth, async (req, res) => {
           return res.status(400).json({ error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
         }
       }
-      if (s.depositShare > 0) {
+      if (!groupBilled && s.depositShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
       }
-      if (s.balanceShare > 0) {
+      if (!groupBilled && s.balanceShare > 0) {
         await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', s.balanceShare]);
       }
       bookings.push(booking);
@@ -1866,10 +1914,12 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
 
     const { roomNet, mealNet } = splitRevenue({ grossNet: total, nights, ratePlan, numGuests: guests, F, divisor, tax_rate, service_charge_rate });
     const payable = snapPayable(round2(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total), total);
-    const depositAmount = given(deposit_amount)
+    // A group billed as a whole (migration 097): no lines on the room — the
+    // group's bill simply grows by it.
+    const depositAmount = group.group_billing ? 0 : given(deposit_amount)
       ? Math.max(0, Math.min(parseFloat(deposit_amount) || 0, payable))
       : Math.round(payable * 0.5); // 50%, same default as New Booking
-    const balanceAmount = round2(payable - depositAmount);
+    const balanceAmount = group.group_billing ? 0 : round2(payable - depositAmount);
 
     const { rows: [booking] } = await client.query(
       `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_amount, special_requests, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
@@ -1883,6 +1933,7 @@ router.post('/group/:groupId/rooms', auth, async (req, res) => {
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
       [booking.id, `Added to group booking: room ${unit.name}, ${fmtIDR(payable)}${why ? `. Reason: ${why}` : ''}`.slice(0, 1000), req.user.id]);
     await syncGroupSpan(client, group.id);
+    if (group.group_billing) await recomputeGroupStatus(client, group.id);
     await client.query('COMMIT');
 
     telegramService.sendAlert(req.propertyId, 'alert_new_booking',
@@ -2213,6 +2264,10 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
     note += ` Reason: ${reason}`;
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id, note.slice(0, 1000), req.user.id]);
     await syncGroupSpan(client, req.params.groupId);   // the group's dates = its remaining rooms
+    // Billed as a whole: the money stays with the group; its bill shrinks.
+    await recomputeBookingStatus(client, (await client.query(
+      "SELECT id FROM bookings WHERE reservation_group_id = $1 AND status NOT IN ('cancelled', 'no_show') LIMIT 1",
+      [req.params.groupId])).rows[0].id);
     await client.query('COMMIT');
     res.json({ ok: true, paid_on_room: parseFloat(paid) });
   } catch (err) {
@@ -2232,6 +2287,88 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
 // received part becomes its own line and the rest stays pending (same as the
 // room's Record Payment window). Each room's status is recomputed
 // (pending → deposit_paid → confirmed). All-or-nothing.
+//
+// A group billed as a whole (migration 097) has no room lines: the body is
+// { amount, method, received_at?, reference?, notes? } and the payment is
+// recorded once, on the group (services/groupBilling.js).
+router.post('/group/:groupId/payments', auth, async (req, res, next) => {
+  try {
+    const { rows: [g] } = await db.query(
+      'SELECT group_billing FROM reservation_groups WHERE id = $1 AND property_id = $2', [req.params.groupId, req.propertyId]);
+    if (!g) return res.status(404).json({ error: 'Group not found' });
+    if (!g.group_billing) return next();
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await groupBilling.recordPayment(client, {
+      propertyId: req.propertyId, groupId: req.params.groupId, userId: req.user.id,
+      amount: req.body.amount, method: req.body.method, receivedAt: req.body.received_at || null,
+      reference: req.body.reference, notes: req.body.notes,
+    });
+    if (r.error) { await client.query('ROLLBACK'); return res.status(r.status).json({ error: r.error, code: r.code }); }
+    await client.query('COMMIT');
+    res.status(201).json({ payment: r.payment, total: r.payment.amount });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/bookings/group/:groupId/payments/:paymentId — { reason } — void
+// a group payment (kept, struck through; Edit History of every room).
+router.delete('/group/:groupId/payments/:paymentId', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await groupBilling.voidPayment(client, {
+      propertyId: req.propertyId, groupId: req.params.groupId, paymentId: req.params.paymentId,
+      userId: req.user.id, reason: req.body?.reason,
+    });
+    if (r.error) { await client.query('ROLLBACK'); return res.status(r.status).json({ error: r.error, code: r.code }); }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/bookings/group/:groupId/billing — { billing_mode: 'room_meals' |
+// 'everything' } — what the group pays: room nights + meal plan only (each
+// room's guest pays its own extras), or everything. Only for a group billed
+// as a whole.
+router.put('/group/:groupId/billing', auth, async (req, res) => {
+  const mode = req.body.billing_mode;
+  if (!['room_meals', 'everything'].includes(mode)) return res.status(400).json({ error: 'billing_mode must be room_meals or everything' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [g] } = await client.query(
+      'SELECT group_billing, billing_mode FROM reservation_groups WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.groupId, req.propertyId]);
+    if (!g) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Group not found' }); }
+    if (!g.group_billing) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This group is paid room by room', code: 'NOT_GROUP_BILLED' }); }
+    if (g.billing_mode !== mode) {
+      await client.query('UPDATE reservation_groups SET billing_mode = $1, updated_at = NOW() WHERE id = $2', [mode, req.params.groupId]);
+      const label = m => (m === 'everything' ? 'everything (rooms, meals and extras)' : 'room & meal plan (extras paid by each room)');
+      await groupBilling.logToRooms(client, req.params.groupId, `Group pays: ${label(g.billing_mode)} → ${label(mode)}.`, req.user.id);
+    }
+    await client.query('COMMIT');
+    res.json({ billing_mode: mode });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 router.post('/group/:groupId/payments', auth, async (req, res) => {
   const parts = Array.isArray(req.body.lines)
     ? req.body.lines.filter(l => l && l.payment_id).map(l => ({ id: String(l.payment_id), amount: round2(parseFloat(l.amount)) }))

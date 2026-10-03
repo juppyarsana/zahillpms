@@ -22,7 +22,8 @@ const COLS = [
 function parseYmd(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 function fmtShort(s) { return parseYmd(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID'); }
-function num(n) { return Math.round(Number(n) || 0).toLocaleString('id-ID'); }
+// '—' where a figure doesn't apply (a group's row: its bill isn't split up here)
+function num(n) { return n == null ? '—' : Math.round(Number(n) || 0).toLocaleString('id-ID'); }
 
 function note(r) {
   if (r.agent_billed) return 'Billed to agent — not collected at desk';

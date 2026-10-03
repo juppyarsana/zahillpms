@@ -122,14 +122,28 @@ async function buildFullReport(propertyId, from, to) {
     collected(propertyId, from, to),
     // Still owed as of today (not tied to the period): guests' deposit /
     // balance lines not received yet, split by where the stay is.
+    // A group billed as a whole (migration 097) has no lines: what it still
+    // owes for its rooms (rooms' prices − group payments), counted as one.
     db.query(`
-      SELECT CASE WHEN b.status = 'checked_out' THEN 'checked_out'
-                  WHEN b.status = 'checked_in' THEN 'in_house' ELSE 'upcoming' END AS stage,
-             COUNT(DISTINCT b.id) AS bookings, COALESCE(SUM(p.amount), 0) AS amount
-      FROM payments p JOIN bookings b ON b.id = p.booking_id
-      WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
-        AND b.status NOT IN ('cancelled', 'no_show') AND b.folio_status IS NULL
-      GROUP BY 1`, [propertyId]),
+      WITH owed AS (
+        SELECT CASE WHEN b.status = 'checked_out' THEN 'checked_out'
+                    WHEN b.status = 'checked_in' THEN 'in_house' ELSE 'upcoming' END AS stage,
+               b.id::text AS ref, p.amount
+        FROM payments p JOIN bookings b ON b.id = p.booking_id
+        WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
+          AND b.status NOT IN ('cancelled', 'no_show') AND b.folio_status IS NULL
+        UNION ALL
+        SELECT CASE WHEN bool_and(b.status = 'checked_out') THEN 'checked_out'
+                    WHEN bool_or(b.status IN ('checked_in', 'checked_out')) THEN 'in_house' ELSE 'upcoming' END,
+               rg.id::text,
+               SUM(b.total_amount - COALESCE(b.discount_amount, 0))
+                 - COALESCE((SELECT SUM(gp.amount) FROM group_payments gp WHERE gp.group_id = rg.id AND NOT gp.is_voided), 0)
+        FROM reservation_groups rg JOIN bookings b ON b.reservation_group_id = rg.id
+        WHERE rg.property_id = $1 AND rg.group_billing AND b.status NOT IN ('cancelled', 'no_show')
+        GROUP BY rg.id
+      )
+      SELECT stage, COUNT(DISTINCT ref) AS bookings, COALESCE(SUM(amount), 0) AS amount
+      FROM owed WHERE amount >= 1 GROUP BY 1`, [propertyId]),
     aging(propertyId),
     // Reservations made / cancelled in the period (by the day it happened) —
     // the Dashboard's and Daily Close's definition.

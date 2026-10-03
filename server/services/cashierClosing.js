@@ -14,7 +14,7 @@ const { PAID_AT_DESK_SQL, billRates, computeFolioTotals, round2 } = require('./f
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
-const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras' };
+const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment' };
 
 async function load(propertyId, date, { userId = null } = {}) {
   const { rows } = await db.query(`
@@ -63,6 +63,18 @@ async function load(propertyId, date, { userId = null } = {}) {
       FROM agent_payments ap
       LEFT JOIN agents agn ON agn.id = ap.agent_id
       WHERE ap.property_id = $1 AND ap.received_on = $2::date
+      UNION ALL
+      -- A payment from a group billed as a whole (migration 097): one line,
+      -- its rooms listed, the booker as the guest.
+      SELECT gp.method, gp.amount, gp.reference, gp.notes, 'group', gp.recorded_at, gp.received_by,
+             NULL, (SELECT 'Group · ' || string_agg(gu.name, ', ' ORDER BY gu.name) FROM bookings gb JOIN units gu ON gu.id = gb.unit_id
+                    WHERE gb.reservation_group_id = gp.group_id AND gb.status NOT IN ('cancelled', 'no_show')),
+             gg.name
+      FROM group_payments gp
+      JOIN reservation_groups rg ON rg.id = gp.group_id
+      JOIN guests gg ON gg.id = rg.primary_guest_id
+      WHERE gp.property_id = $1 AND NOT gp.is_voided
+        AND (gp.received_at AT TIME ZONE ${TZ})::date = $2::date
     )
     SELECT money.*, COALESCE(pm.label, money.method, 'Other') AS method_label,
            us.name AS user_name,

@@ -83,6 +83,12 @@ async function collected(propertyId, from, to = from) {
       SELECT ap.method, ap.amount
       FROM agent_payments ap
       WHERE ap.property_id = $1 AND ap.received_on BETWEEN $2::date AND $3::date
+      UNION ALL
+      -- Payments from a group billed as a whole (migration 097)
+      SELECT gp.method, gp.amount
+      FROM group_payments gp
+      WHERE gp.property_id = $1 AND NOT gp.is_voided
+        AND (gp.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
     )
     SELECT COALESCE(pm.label, money.method, 'Other') AS method, SUM(money.amount) AS amount
     FROM money
