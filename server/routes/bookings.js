@@ -78,6 +78,8 @@ async function withGuestBalance(rows, propertyId) {
   for (const r of rows) {
     const g = await guestBalance(r.id, propertyId);
     r.guest_balance_due = g ? g.owed : null;
+    // a room of a group billed as a whole (migration 097): what the group still owes
+    r.group_owed = g?.group ? g.group.group_owed : null;
   }
   return rows;
 }

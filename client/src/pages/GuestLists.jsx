@@ -115,7 +115,11 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
 }
 
 // Balance Due tab: one section of unpaid guests (departing / overdue / staying).
+// A group billed as a whole (migration 097) is one row (is_group): its bill,
+// opening the group page (its rooms' rows show only their own extras).
 function BalanceSection({ title, icon, rows, total, empty, onOpen, onOpenPay }) {
+  const nav = useNavigate();
+  const money = n => (n == null ? '—' : fmtIDR(n));
   return (
     <div className="card mb-3">
       <div className="flex-between" style={{ marginBottom: 8 }}>
@@ -137,28 +141,36 @@ function BalanceSection({ title, icon, rows, total, empty, onOpen, onOpenPay }) 
             </thead>
             <tbody>
               {rows.map(r => {
-                const note = r.agent_billed ? 'Billed to agent — not collected at desk'
+                const note = r.is_group ? 'Group bill — paid by the group'
+                  : r.agent_billed ? 'Billed to agent — not collected at desk'
                   : r.status === 'checked_out' ? 'Already checked out — left unpaid'
                   : r.status !== 'checked_in' && r.section === 'staying' ? 'Not checked in yet'
                   : r.is_ota ? 'OTA booking — check if prepaid to OTA' : '';
+                const open = !onOpen ? undefined : r.is_group ? () => nav(`/reservations/group/${r.group_id}`) : () => onOpen(r.id);
                 return (
-                  <tr key={r.id} onClick={onOpen ? () => onOpen(r.id) : undefined} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
+                  <tr key={r.id || `g${r.group_id}`} onClick={open} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
                     <td><RoomCell r={r} /></td>
                     <td>
-                      <div style={{ fontWeight: 600 }}>{r.guest_name}</div>
+                      <div style={{ fontWeight: 600 }}>{r.is_group && '👥 '}{r.guest_name}</div>
                       <div className="text-muted" style={{ fontSize: 11 }}>{[r.source_label, note].filter(Boolean).join(' · ')}</div>
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{fmtShort(r.check_out_date)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.room_and_meals)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.extras)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtIDR(r.service_and_tax)}</td>
+                    <td style={{ textAlign: 'right' }}>{money(r.room_and_meals)}</td>
+                    <td style={{ textAlign: 'right' }}>{money(r.extras)}</td>
+                    <td style={{ textAlign: 'right' }}>{money(r.service_and_tax)}</td>
                     <td style={{ textAlign: 'right' }}>{fmtIDR(r.paid)}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', color: r.agent_billed ? 'var(--text-muted)' : 'var(--danger-text)' }}>
                       {fmtIDR(r.balance_due)}
-                      {onOpen && !r.agent_billed && (
+                      {onOpen && !r.agent_billed && !r.is_group && (
                         <div>
                           <a href={`/reservations/${r.id}#record-payment`} style={{ fontSize: 11, fontWeight: 600 }}
                             onClick={e => { e.preventDefault(); e.stopPropagation(); onOpenPay(r.id); }}>Record payment →</a>
+                        </div>
+                      )}
+                      {onOpen && r.is_group && (
+                        <div>
+                          <a href={`/reservations/group/${r.group_id}`} style={{ fontSize: 11, fontWeight: 600 }}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); nav(`/reservations/group/${r.group_id}`); }}>Group payment →</a>
                         </div>
                       )}
                     </td>

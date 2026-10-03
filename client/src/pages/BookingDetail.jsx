@@ -191,6 +191,7 @@ export default function BookingDetail() {
   // What the guest still owes at checkout (null = not known yet) + the reason
   // to check out anyway — the server refuses checkout without it (BALANCE_DUE).
   const [coOwed, setCoOwed] = useState(null);
+  const [coGroupOwed, setCoGroupOwed] = useState(null);   // a group billed as a whole: what the group still owes (migration 097)
   const [unpaidReason, setUnpaidReason] = useState('');
   const [earlyCo, setEarlyCo] = useState({ early: false, valid: true, early_departure: null }); // leaving before the booked date
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -470,7 +471,7 @@ Type the reason to void it:`;
     if (!checkingOut) return;
     setCoOwed(null);
     api.get(`/api/checkin/checkout/${id}/balance?bill_to_agent=${!!billToAgent}`)
-      .then(r => setCoOwed(r.data.owed)).catch(() => setCoOwed(0));
+      .then(r => { setCoOwed(r.data.owed); setCoGroupOwed(r.data.group?.group_owed ?? null); }).catch(() => setCoOwed(0));
   }, [checkingOut, billToAgent, id]);
 
   async function doCheckout() {
@@ -1064,7 +1065,30 @@ Type the reason to void it:`;
         </div>
       </div>
 
-      <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
+      {/* A room of a group billed as a whole (migration 097): the room price is on
+          the group's bill and paid by the group — nothing to collect here. */}
+      {booking.group_billed && (
+        <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
+          <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>
+            <b>Paid by the group.</b> The room price{parseFloat(booking.fnb_revenue || 0) > 0 ? ' and meal plan' : ''} ({fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0))})
+            {booking.group_billing_mode === 'everything' ? ', and the extras charged to this room,' : ''} {booking.group_billing_mode === 'everything' ? 'are' : 'is'} on the group's bill.
+          </div>
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            {booking.group_billing_mode === 'everything'
+              ? 'Payments are recorded once, on the group.'
+              : 'Payments are recorded once, on the group. Extras charged to this room are paid by its guest — see the Folio tab.'}
+          </div>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+            <Link to={`/reservations/group/${booking.reservation_group_id}`} className="btn btn-secondary btn-sm">Group bill & payments →</Link>
+            {booking.group_billing_mode !== 'everything' && !['cancelled', 'no_show'].includes(booking.status) && (
+              <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment for extras →</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!booking.group_billed && <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
         <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
         {/* Room price only — extras / restaurant / activities are on the Folio tab. */}
         <div className="text-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
@@ -1177,7 +1201,7 @@ Type the reason to void it:`;
             <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment on the folio →</button>
           </div>
         )}
-      </div>
+      </div>}
 
       <StayExtrasCard booking={booking} openAdd={openAddItem}
         onBookActivity={hasModule('activities') ? startBookActivity : null}
@@ -1280,9 +1304,17 @@ Type the reason to void it:`;
                       {fmtIDR(shownTotal(estimate.balance_due, estimate))}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                    Projected for the whole stay: posted + not posted yet − paid. Use this to know what the guest actually still owes.
-                  </div>
+                  {estimate.group ? (
+                    <div style={{ fontSize: 12, marginTop: 6 }}>
+                      {fmtIDR(shownTotal(estimate.group.group_total, estimate))} of it is on the{' '}
+                      <Link to={`/reservations/group/${estimate.group.group_id}`}>group's bill</Link> (paid by the group) —
+                      the balance above is what this room's guest pays: {estimate.group.billing_mode === 'everything' ? 'nothing beyond what was paid at the desk' : 'its own extras'}.
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                      Projected for the whole stay: posted + not posted yet − paid. Use this to know what the guest actually still owes.
+                    </div>
+                  )}
                   {parseFloat(estimate.balance_due) > 0 && !['cancelled', 'no_show'].includes(booking.status) && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
                   )}
@@ -1452,7 +1484,13 @@ Type the reason to void it:`;
                 const color = due > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)';
                 return (
                   <div style={{ marginTop: folio.payments.some(p => p.status === 'received') ? 12 : 0 }}>
-                    {notCharged.length > 0 && (
+                    {estimate?.group && (
+                      <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                        <span className="text-muted">On the group's bill (room{estimate.group.billing_mode === 'everything' ? ', meals and extras' : ' & meal plan'})</span>
+                        <span>− {fmtIDR(shownTotal(estimate.group.group_total, estimate))}</span>
+                      </div>
+                    )}
+                    {notCharged.length > 0 && !estimate?.group && (
                       <>
                         <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
                           <span className="text-muted">Posted − paid</span><span>{fmtIDR(posted)}</span>
@@ -2099,7 +2137,7 @@ Type the reason to void it:`;
                   api.get(`/api/checkin/checkout/${id}/balance?bill_to_agent=${!!billToAgent}`).then(r => setCoOwed(r.data.owed)).catch(() => {});
                 }} />
               )}
-              <CheckoutBalanceBlock booking={{ ...booking, guest_balance_due: coOwed, agent_billed: cityLedgerSource && billToAgent }}
+              <CheckoutBalanceBlock booking={{ ...booking, guest_balance_due: coOwed, group_owed: coGroupOwed, agent_billed: cityLedgerSource && billToAgent }}
                 reason={unpaidReason} setReason={setUnpaidReason} onRecordPayment={() => setCheckingOut(false)} />
               {checkoutCredit && checkoutCredit.would_exceed && (
                 <div style={{ marginBottom: 12, fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 10px' }}>

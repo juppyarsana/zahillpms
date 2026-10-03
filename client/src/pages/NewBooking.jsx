@@ -155,6 +155,8 @@ export default function NewBooking() {
   // price, then made free on the booking page (ComplimentaryModal) — directly
   // with the permission, otherwise via a manager's Telegram approval code.
   const [comp, setComp] = useState({ on: false, scope: 'room', reason: '' });
+  // A group is billed as a whole (migration 097): what the group pays.
+  const [groupPays, setGroupPays] = useState('room_meals');
   const [form, setForm] = useState({
     guest_id: '',
     check_in_date: preIn, check_out_date: preOut,
@@ -422,6 +424,7 @@ export default function NewBooking() {
           group_discount_type: form.discount_type || null,
           group_discount_value: dValue,
           group_deposit_amount: deposit_amount,
+          billing_mode: groupPays,
           rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null,
             check_in_date: roomIn(r), check_out_date: roomOut(r), ...(r.per_night ? { night_prices: roomDates(r).map(d => ({ date: d, amount: parseFloat(r.night_amounts[d]) || 0 })) } : {}) })),
         });
@@ -938,8 +941,32 @@ export default function NewBooking() {
             )}
           </div>
 
+          {isGroup && (
+            <div className="form-group">
+              <label className="form-label">Group pays</label>
+              {CITY_LEDGER.includes(agentVal.agent?.payment_status) ? (
+                <div className="text-muted" style={{ fontSize: 12 }}>Billed to {agentVal.agent?.name} — each room goes on the agent's bill.</div>
+              ) : (<>
+                <div className="flex gap-2 flex-center" style={{ marginBottom: 6, flexWrap: 'wrap' }}>
+                  {[{ v: 'room_meals', label: 'Room & meal plan' }, { v: 'everything', label: 'Everything' }].map(opt => (
+                    <button key={opt.v} type="button"
+                      className={`btn btn-sm ${groupPays === opt.v ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setGroupPays(opt.v)}>{opt.label}</button>
+                  ))}
+                </div>
+                <div className="text-muted" style={{ fontSize: 12 }}>
+                  One bill and one payment record for the group.{' '}
+                  {groupPays === 'everything'
+                    ? 'Extras charged to a room go on the group bill too.'
+                    : 'Extras charged to a room are paid by that room’s guest at check-out.'}
+                  {' '}Can be changed later on the group page.
+                </div>
+              </>)}
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label">Deposit Required</label>
+            <label className="form-label">{isGroup ? 'Deposit Required (for the whole group)' : 'Deposit Required'}</label>
             <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
               {[{ v: 'amount', label: 'Amount (IDR)' }, { v: 'pct', label: 'Percentage (%)' }].map(opt => (
                 <button key={opt.v} type="button"
@@ -1145,6 +1172,12 @@ export default function NewBooking() {
                     <div className="flex-between text-muted" style={{ fontSize: 13 }}>
                       <span>Deposit{form.deposit_mode === 'pct' ? ` ${form.deposit_pct}%` : ''}{form.deposit_mode === 'pct' && extrasTotal > 0 ? (extrasInDeposit ? ' (room + extra bed)' : ' (room only — extra bed paid at the hotel)') : ''}</span>
                       <span>{idr(deposit)} · then {idr(netAmt + extrasTotal - deposit)}</span>
+                    </div>
+                  )}
+                  {isGroup && !CITY_LEDGER.includes(agentVal.agent?.payment_status) && (
+                    <div className="flex-between text-muted" style={{ fontSize: 13 }}>
+                      <span>Group pays</span>
+                      <span>{groupPays === 'everything' ? 'Everything (rooms, meals, extras)' : 'Room & meal plan · rooms pay their extras'}</span>
                     </div>
                   )}
                 </div>

@@ -55,14 +55,14 @@ function extraLines(room, rates) {
   for (const n of nightly) {
     const last = out[out.length - 1];
     if (last && last.run && last.name === n.name && last.posted === n.c.posted && last.paid === (n.c.paid_method || null)
-      && Math.abs(last.rate - n.amount) < 1 && nextDay(last.to) === n.d) {
+      && last.toGroup === !!n.c.to_group && Math.abs(last.rate - n.amount) < 1 && nextDay(last.to) === n.d) {
       last.to = n.d; last.count++; last.sum += n.amount;
-    } else out.push({ run: true, name: n.name, from: n.d, to: n.d, count: 1, rate: n.amount, sum: n.amount, posted: n.c.posted, paid: n.c.paid_method || null });
+    } else out.push({ run: true, name: n.name, from: n.d, to: n.d, count: 1, rate: n.amount, sum: n.amount, posted: n.c.posted, paid: n.c.paid_method || null, toGroup: !!n.c.to_group });
   }
   for (const c of room.charges.filter(x => !['room', 'fnb'].includes(x.type) && !(x.type === 'addon' && x.service_date))) {
     out.push({ run: false, name: String(c.description).replace(/ — \d{4}-\d{2}-\d{2}$/, ''), date: c.service_date || c.posted_at,
       qty: parseFloat(c.quantity), unit: lineShown(c.unit_price, c, rates), sum: c.complimentary ? null : lineShown(c.amount, c, rates),
-      posted: c.posted, paid: c.paid_method || null, notPaid: !!c.not_paid });
+      posted: c.posted, paid: c.paid_method || null, notPaid: !!c.not_paid, toGroup: !!c.to_group });
   }
   return out;
 }
@@ -82,8 +82,14 @@ const payDate = p => {
 // Every received payment of the group as transactions: lines recorded in one
 // go (Record Group Payment marks several rooms' lines at the same instant,
 // same method / person / reference) are one transaction with its rooms.
-function transactions(rooms) {
+// A group billed as a whole (migration 097): its own payments are
+// transactions "for the group" (voided ones left out).
+function transactions(rooms, groupPayments = []) {
   const map = new Map();
+  for (const p of groupPayments.filter(x => !x.is_voided)) {
+    map.set(p.id, { key: p.id, when: p.recorded_at || p.received_at, date: payDate(p), method: p.method_label, reference: p.reference,
+      by: p.received_by_name, notes: p.notes, parts: [{ room: null, type: 'Group payment', amount: parseFloat(p.amount) }], total: parseFloat(p.amount) });
+  }
   for (const room of rooms) {
     for (const p of room.payments) {
       const key = p.recorded_at ? `${p.recorded_at}|${p.method}|${p.received_by || ''}|${p.reference || ''}` : p.id;
@@ -100,8 +106,8 @@ function transactions(rooms) {
   return [...map.values()].sort((a, b) => String(a.when).localeCompare(String(b.when)));
 }
 
-function PaymentsReceived({ rooms }) {
-  const txns = transactions(rooms);
+function PaymentsReceived({ rooms, groupPayments }) {
+  const txns = transactions(rooms, groupPayments);
   if (!txns.length) return null;
   const byMethod = new Map();
   for (const t of txns) byMethod.set(t.method, (byMethod.get(t.method) || 0) + t.total);
@@ -132,7 +138,7 @@ function PaymentsReceived({ rooms }) {
                 <td style={cell}>
                   {t.parts.map((p, i) => (
                     <div key={i} style={{ fontSize: 12 }}>
-                      Room {p.room} · {p.type}{t.parts.length > 1 && <span className="text-muted"> · {fmtIDR(p.amount)}</span>}
+                      {p.room ? `Room ${p.room} · ` : ''}{p.type}{t.parts.length > 1 && <span className="text-muted"> · {fmtIDR(p.amount)}</span>}
                     </div>
                   ))}
                   {t.notes && <div className="text-muted" style={{ fontSize: 11 }}>{t.notes}</div>}
@@ -165,10 +171,38 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
   const hasTaxRates = parseFloat(rates.service_charge_rate) > 0 || parseFloat(rates.tax_rate) > 0;
   const money = n => fmtIDR(shownTotal(n, rates));
   const cell = { padding: '6px 8px', borderBottom: '1px solid var(--border)', fontSize: 13, verticalAlign: 'top' };
+  // Billed as a whole (migration 097): one group bill + each room's own part.
+  const gb = est.group;
+  const due = n => ({ color: n > 0.5 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' });
 
   return (
     <>
-      <div className="flex-between" style={{ padding: '14px 16px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+      {gb && (
+        <div style={{ padding: '14px 16px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 16 }}>
+          <div className="flex-between" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div className="text-muted" style={{ fontSize: 12 }}>Group bill · {gb.billing_mode === 'everything' ? 'everything' : 'room & meal plan'}</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{money(gb.total)}</div>
+            </div>
+            <div>
+              <div className="text-muted" style={{ fontSize: 12 }}>Paid by the group</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{fmtIDR(gb.received)}</div>
+            </div>
+            <div>
+              <div className="text-muted" style={{ fontSize: 12 }}>Group balance due</div>
+              <div style={{ fontSize: 22, fontWeight: 800, ...due(gb.balance_due) }}>{money(gb.balance_due)}</div>
+            </div>
+            {onRecordGroupPayment && <button className="btn btn-primary btn-sm" onClick={onRecordGroupPayment}>💳 Record Group Payment</button>}
+          </div>
+          <div style={{ fontSize: 13, marginTop: 8 }}>
+            Rooms pay themselves (their own extras): <b style={due(gb.rooms_own_balance)}>{money(gb.rooms_own_balance)}</b> still to pay
+          </div>
+          <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+            Projected for the whole stay, including nights not posted yet (they post at night audit). Cancelled rooms aren't included.
+          </div>
+        </div>
+      )}
+      {!gb && <div className="flex-between" style={{ padding: '14px 16px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="text-muted" style={{ fontSize: 12 }}>Estimated total · whole stay, {est.rooms.length} room{est.rooms.length === 1 ? '' : 's'}</div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>{money(est.total)}</div>
@@ -185,7 +219,7 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
         <div className="text-muted" style={{ fontSize: 11, flexBasis: '100%' }}>
           Projected for the whole stay, including nights not posted yet (they post at night audit). Cancelled rooms aren't included.
         </div>
-      </div>
+      </div>}
 
       {est.rooms.map(room => {
         const runs = stayRuns(room, rates);
@@ -201,10 +235,17 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 13 }}>Total <b>{money(room.total)}</b></div>
-                <div style={{ fontSize: 12, color: room.balance_due > 0.5 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
-                  Balance {money(room.balance_due)}
-                </div>
+                {gb ? (<>
+                  <div style={{ fontSize: 13 }}>On the group bill <b>{money(room.group_total)}</b></div>
+                  {(room.own_total > 0.5 || room.balance_due > 0.5) && (
+                    <div style={{ fontSize: 12 }}>Room pays {money(room.own_total)} · <span style={due(room.balance_due)}>balance {money(room.balance_due)}</span></div>
+                  )}
+                </>) : (<>
+                  <div style={{ fontSize: 13 }}>Total <b>{money(room.total)}</b></div>
+                  <div style={{ fontSize: 12, ...due(room.balance_due) }}>
+                    Balance {money(room.balance_due)}
+                  </div>
+                </>)}
                 <div className="flex gap-2" style={{ justifyContent: 'flex-end', marginTop: 4 }}>
                   {/* Charges are posted per room — these open that room's reservation. */}
                   {['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(room.status) && (
@@ -235,6 +276,7 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
                         {x.notPaid ? <span className="badge badge-yellow" style={{ marginLeft: 6, fontSize: 10 }}>not paid yet</span>
                           : !x.posted && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>upcoming</span>}
                         {x.paid && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>Paid · {x.paid}</span>}
+                        {gb && !x.paid && !x.toGroup && x.sum !== null && <span className="badge badge-gray" style={{ marginLeft: 6, fontSize: 10 }} title="Not on the group bill — this room's guest pays it">room pays</span>}
                       </td>
                       <td style={{ ...cell, textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">
                         {x.run ? `${x.count} × ${fmtIDR(x.rate)}` : x.qty > 1 ? `${x.qty} × ${fmtIDR(x.unit)}` : ''}
@@ -262,7 +304,7 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
         );
       })}
 
-      <PaymentsReceived rooms={est.rooms} />
+      <PaymentsReceived rooms={est.rooms} groupPayments={gb?.payments || []} />
 
       <div style={{ maxWidth: 420, marginLeft: 'auto', marginTop: 8 }}>
         {!rates.prices_include_tax && hasTaxRates && (<>
@@ -283,6 +325,11 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
           <span>Estimated balance due</span>
           <span style={{ color: est.balance_due > 0.5 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>{money(est.balance_due)}</span>
         </div>
+        {gb && (
+          <div className="text-muted" style={{ fontSize: 12, marginTop: 4, textAlign: 'right' }}>
+            group {money(gb.balance_due)} + rooms' own extras {money(gb.rooms_own_balance)}
+          </div>
+        )}
         <div className="text-muted" style={{ fontSize: 11, marginTop: 6 }}>
           Posted to the ledger so far: {money(folio.total)}. To add a charge, open the room's folio.
         </div>

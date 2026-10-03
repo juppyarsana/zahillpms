@@ -21,7 +21,7 @@ async function load(propertyId, date, { userId = null } = {}) {
     WITH money AS (
       SELECT p.method, p.amount, p.reference, p.notes, p.type AS kind,
              p.recorded_at AS at, p.received_by AS user_id,
-             b.id AS booking_id, u.name AS room, g.name AS guest
+             b.id AS booking_id, u.name AS room, g.name AS guest, NULL::uuid AS group_id
       FROM payments p
       JOIN bookings b ON b.id = p.booking_id
       JOIN units u ON u.id = b.unit_id
@@ -32,7 +32,7 @@ async function load(propertyId, date, { userId = null } = {}) {
       SELECT s.payment_method, s.total_amount + COALESCE(s.service_charge_amount, 0) + COALESCE(s.tax_amount, 0),
              NULL, COALESCE(s.description, (SELECT string_agg(COALESCE(si.description, pr.name), ', ')
                                             FROM sale_items si LEFT JOIN products pr ON pr.id = si.product_id WHERE si.sale_id = s.id)),
-             'sale', s.created_at, s.served_by, s.booking_id, su.name, COALESCE(sg.name, 'Walk-in')
+             'sale', s.created_at, s.served_by, s.booking_id, su.name, COALESCE(sg.name, 'Walk-in'), NULL
       FROM sales s
       LEFT JOIN bookings sb ON sb.id = s.booking_id
       LEFT JOIN units su ON su.id = sb.unit_id
@@ -47,7 +47,7 @@ async function load(propertyId, date, { userId = null } = {}) {
              ab.total_amount + CASE WHEN ab.tax_mode = 'added'
                                     THEN COALESCE(ab.service_charge_amount, 0) + COALESCE(ab.tax_amount, 0) ELSE 0 END,
              NULL, a.name, 'activity', ab.created_at, ab.created_by, ab.booking_id, au.name,
-             COALESCE(ag.name, ab.guest_name, 'Walk-in')
+             COALESCE(ag.name, ab.guest_name, 'Walk-in'), NULL
       FROM activity_bookings ab
       JOIN activities a ON a.id = ab.activity_id
       LEFT JOIN bookings abk ON abk.id = ab.booking_id
@@ -59,7 +59,7 @@ async function load(propertyId, date, { userId = null } = {}) {
         AND NOT EXISTS (SELECT 1 FROM payments p3 WHERE p3.activity_booking_id = ab.id)
       UNION ALL
       SELECT ap.method, ap.amount, ap.reference, ap.notes, 'agent', ap.created_at, ap.created_by,
-             NULL, NULL, COALESCE(agn.name, 'Agent')
+             NULL, NULL, COALESCE(agn.name, 'Agent'), NULL
       FROM agent_payments ap
       LEFT JOIN agents agn ON agn.id = ap.agent_id
       WHERE ap.property_id = $1 AND ap.received_on = $2::date
@@ -69,7 +69,7 @@ async function load(propertyId, date, { userId = null } = {}) {
       SELECT gp.method, gp.amount, gp.reference, gp.notes, 'group', gp.recorded_at, gp.received_by,
              NULL, (SELECT 'Group · ' || string_agg(gu.name, ', ' ORDER BY gu.name) FROM bookings gb JOIN units gu ON gu.id = gb.unit_id
                     WHERE gb.reservation_group_id = gp.group_id AND gb.status NOT IN ('cancelled', 'no_show')),
-             gg.name
+             gg.name, gp.group_id
       FROM group_payments gp
       JOIN reservation_groups rg ON rg.id = gp.group_id
       JOIN guests gg ON gg.id = rg.primary_guest_id
@@ -92,7 +92,7 @@ async function load(propertyId, date, { userId = null } = {}) {
     // the time is only shown when the payment was recorded on this same day
     time: r.kind === 'agent' ? null : (r.recorded_on === date ? r.time : null),
     recorded_on: r.recorded_on && r.recorded_on !== date && r.kind !== 'agent' ? r.recorded_on : null,
-    room: r.room, guest: r.guest, booking_id: r.booking_id,
+    room: r.room, guest: r.guest, booking_id: r.booking_id, group_id: r.group_id || null,
     what: WHAT[r.kind] || (r.kind === 'sale' ? 'Sale' : r.kind === 'activity' ? 'Activity' : 'Agent payment'),
     reference: r.reference || null,
     notes: r.notes || null,

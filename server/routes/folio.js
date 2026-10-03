@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
-const { loadFolio, computeProforma, round2, chargeTotals, billRates, PAID_AT_DESK_SQL } = require('../services/folioService');
+const { loadFolio, computeProforma, round2, chargeTotals, billRates, settleCents, PAID_AT_DESK_SQL } = require('../services/folioService');
 const proformaFooter = require('../services/proformaFooter');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
@@ -937,10 +937,25 @@ function guestCopyOf(folio) {
   };
 }
 
+// A room of a group billed as a whole (migration 097): its own bill is only
+// what the room pays itself (charges not on the group's bill) and its own
+// payments; the rest is on the group invoice.
+function groupRoomView(folio) {
+  if (!folio.group) return null;
+  const own = folio.charges.filter(c => !c.to_group && !c.complimentary);
+  const t = chargeTotals(own, folio.tax_rate, folio.service_charge_rate);
+  return {
+    ...folio, charges: folio.charges.filter(c => !c.to_group),
+    subtotal: t.subtotal, untaxed_subtotal: t.untaxed_subtotal, service_charge_amount: t.service_charge_amount,
+    tax_amount: t.tax_amount, total: t.total, balance_due: folio.balance_due,
+  };
+}
+
 // Renders the single-booking invoice/pro-forma PDF straight to the response.
 function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, guestCopy = false, footer = null }) {
-  const copy = guestCopy ? guestCopyOf(folioIn) : null;
-  const folio = copy || folioIn;
+  const groupView = groupRoomView(folioIn);
+  const copy = !groupView && guestCopy ? guestCopyOf(folioIn) : null;
+  const folio = groupView || copy || folioIn;
   if (copy) filenamePrefix = `${filenamePrefix}-guest`;
   const { booking, property } = folio;
 
@@ -972,6 +987,14 @@ function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, gu
     doc.moveDown(0.5);
     doc.fontSize(9).font('Helvetica').fillColor('#555')
       .text(`Your room is arranged by ${copy.hideStayFor} — this bill shows your own charges.`, { width: 500 });
+    doc.fillColor('#000');
+  }
+  if (groupView) {
+    doc.moveDown(0.5);
+    doc.fontSize(9).font('Helvetica').fillColor('#555')
+      .text(groupView.group.billing_mode === 'everything'
+        ? `Part of group #${groupView.group.group_id.slice(0, 8).toUpperCase()} — the room, meals and extras are on the group's invoice. This bill shows only what was paid here.`
+        : `Part of group #${groupView.group.group_id.slice(0, 8).toUpperCase()} — the room and meal plan are on the group's invoice. This bill shows this room's own extras.`, { width: 500 });
     doc.fillColor('#000');
   }
   const compNote = complimentaryNote(booking.complimentary_scope);
@@ -1020,18 +1043,153 @@ router.get('/:bookingId/proforma', auth, async (req, res) => {
   }
 });
 
+// The ONE bill of a group billed as a whole (migration 097): per room only the
+// lines on the group's bill (room nights + meal plan; extras too when the
+// group pays everything), then the group total, the group's payments and its
+// balance. `folios` = loadFolio (invoice: posted so far) or computeProforma
+// (pro forma: whole stay) per active room.
+async function renderGroupBillPdf(res, { group, folios, propertyId, title, filename, note, footer }) {
+  const { rows: [settings] } = await db.query(
+    `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
+     FROM property_settings WHERE property_id = $1`, [propertyId]);
+  const property = settings || {};
+  const payments = (await groupBilling.listPayments(group.id, propertyId)).filter(p => !p.is_voided);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  doc.pipe(res);
+  drawDocumentHeader(doc, property, { title, refLine: `Group #${group.id.slice(0, 8).toUpperCase()}` });
+
+  doc.fontSize(10).font('Helvetica-Bold').text('Billed to');
+  doc.font('Helvetica').text(group.guest_name);
+  doc.moveDown(0.5);
+  doc.font('Helvetica-Bold').text('Stay');
+  doc.font('Helvetica').text(
+    `${folios.length} room${folios.length !== 1 ? 's' : ''}  ·  ${String(group.check_in_date).slice(0, 10)}  –  ${String(group.check_out_date).slice(0, 10)}`);
+  doc.moveDown(0.5);
+  doc.fontSize(9).font('Helvetica').fillColor('#555').text(group.billing_mode === 'everything'
+    ? 'This bill covers every room: room nights, meal plan and extras.'
+    : 'This bill covers every room\'s room nights and meal plan. Extras charged to a room are on that room\'s own bill.', { width: 500 });
+  if (note) {
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e').text(note, { width: 500 });
+  }
+  doc.fillColor('#000');
+  doc.moveDown(1.2);
+
+  let total = 0, sub = 0, untaxed = 0, sc = 0, tax = 0;
+  for (const f of folios) {
+    const lines = f.charges.filter(c => c.to_group);
+    const t = chargeTotals(lines, f.tax_rate, f.service_charge_rate);
+    total += t.total; sub += t.subtotal; untaxed += t.untaxed_subtotal; sc += t.service_charge_amount; tax += t.tax_amount;
+    if (doc.y > 650) { doc.addPage(); doc.y = 50; }
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text(
+      `${f.booking.unit_name}  ·  ${f.booking.guest_name}  ·  ${String(f.booking.check_in_date).slice(0, 10)} – ${String(f.booking.check_out_date).slice(0, 10)}`, 50, doc.y);
+    const compNote = complimentaryNote(f.booking.complimentary_scope);
+    if (compNote) doc.fontSize(9).font('Helvetica-Bold').fillColor('#047857').text(compNote, 50, doc.y).fillColor('#000');
+    doc.moveDown(0.3);
+    drawChargeTable(doc, { ...f, charges: lines, ...t, payments: [], showBalance: false });
+    doc.y += 14;
+  }
+  total = round2(total);
+  const received = round2(payments.reduce((s, p) => s + p.amount, 0));
+  const balance = round2(total - received);
+
+  if (doc.y > 640) { doc.addPage(); doc.y = 50; }
+  doc.moveTo(50, doc.y).lineTo(550, doc.y).strokeColor('#000').lineWidth(1).stroke();
+  doc.moveDown(0.5);
+  doc.fontSize(11).font('Helvetica-Bold').fillColor('#000').text('GROUP TOTAL', 50, doc.y);
+  doc.moveDown(0.3);
+  const line = (label, value, opts = {}) => {
+    if (doc.y > 760) { doc.addPage(); doc.y = 50; }
+    const y = doc.y;
+    doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.bold ? 11 : 10);
+    doc.text(label, opts.left ? 50 : 210, y, { width: opts.left ? 400 : 150, align: opts.left ? 'left' : 'right' });
+    doc.text(value, 460, y, { width: 90, align: 'right' });
+    doc.y = y + (opts.bold ? 18 : 15);
+  };
+  const nett = !!settings?.prices_include_tax;
+  const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
+  const money = nett ? whole : fmtIDR;
+  if (nett) {
+    line('Total', whole(total), { bold: true });
+    const inc = settings?.show_tax_breakdown && includesNote({ service_charge_rate: folios[0]?.service_charge_rate, service_charge_amount: sc, tax_rate: folios[0]?.tax_rate, tax_amount: tax }, whole);
+    if (inc) { doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, doc.y - 4, { width: 500, align: 'right' }); doc.fillColor('#000'); doc.moveDown(0.6); }
+  } else {
+    const hasSc = parseFloat(folios[0]?.service_charge_rate) > 0, hasTax = parseFloat(folios[0]?.tax_rate) > 0;
+    if (hasSc || hasTax) line('Subtotal', fmtIDR(sub));
+    if (hasSc) line(`Service Charge (${folios[0].service_charge_rate}%)`, fmtIDR(sc));
+    if (hasTax) line(`Tax (${folios[0].tax_rate}%)`, fmtIDR(tax));
+    line('Total', fmtIDR(total), { bold: true });
+  }
+  if (payments.length) {
+    doc.moveDown(0.4);
+    doc.font('Helvetica-Bold').fontSize(10).text('Payments Received', 50, doc.y);
+    doc.moveDown(0.2);
+    for (const p of payments) {
+      const when = new Date(p.received_at).toLocaleDateString('en-GB');
+      line(`${p.method_label} · ${when}${p.reference ? ` · Ref ${p.reference}` : ''}`, money(p.amount), { left: true });
+    }
+  }
+  doc.moveDown(0.3);
+  line(balance < 0 ? 'Credit' : 'Balance Due', money(Math.abs(settleCents(balance))), { bold: true });
+
+  if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
+  doc.moveDown(footer ? 1.5 : 2);
+  doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
+  doc.end();
+}
+
+async function loadGroupForPdf(groupId, propertyId) {
+  const { rows: [group] } = await db.query(
+    `SELECT rg.id, rg.check_in_date, rg.check_out_date, rg.group_billing, rg.billing_mode, g.name as guest_name
+     FROM reservation_groups rg JOIN guests g ON rg.primary_guest_id = g.id
+     WHERE rg.id = $1 AND rg.property_id = $2`, [groupId, propertyId]);
+  if (!group) return null;
+  const { rows } = await db.query(
+    `SELECT b.id FROM bookings b JOIN units u ON u.id = b.unit_id
+     WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND b.status NOT IN ('cancelled', 'no_show') ORDER BY u.name`,
+    [groupId, propertyId]);
+  return { group, bookingIds: rows.map(r => r.id) };
+}
+
+// GET /api/folio/group/:groupId/invoice — the group's invoice (posted so far),
+// only for a group billed as a whole (migration 097).
+router.get('/group/:groupId/invoice', auth, async (req, res) => {
+  try {
+    const g = await loadGroupForPdf(req.params.groupId, req.propertyId);
+    if (!g) return res.status(404).json({ error: 'Group not found' });
+    if (!g.group.group_billing) return res.status(409).json({ error: 'This group is paid room by room — print each room\'s invoice', code: 'NOT_GROUP_BILLED' });
+    const folios = (await Promise.all(g.bookingIds.map(id => loadFolio(id, req.propertyId)))).filter(Boolean);
+    await renderGroupBillPdf(res, { group: g.group, folios, propertyId: req.propertyId, title: 'Invoice (Group)', filename: `invoice-group-${g.group.id}.pdf` });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/folio/group/:groupId/proforma — PDF, one section per room
 // (each projected the same way as the single-booking pro forma) followed by
-// a grand total across the whole group.
+// a grand total across the whole group. A group billed as a whole (migration
+// 097) gets its one bill instead (renderGroupBillPdf).
 router.get('/group/:groupId/proforma', auth, async (req, res) => {
   try {
     const { rows: [group] } = await db.query(
-      `SELECT rg.id, rg.check_in_date, rg.check_out_date, g.name as guest_name
+      `SELECT rg.id, rg.check_in_date, rg.check_out_date, rg.group_billing, g.name as guest_name
        FROM reservation_groups rg JOIN guests g ON rg.primary_guest_id = g.id
        WHERE rg.id = $1 AND rg.property_id = $2`,
       [req.params.groupId, req.propertyId]
     );
     if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.group_billing) {
+      const g = await loadGroupForPdf(req.params.groupId, req.propertyId);
+      const folios = (await Promise.all(g.bookingIds.map(id => computeProforma(id, req.propertyId)))).filter(Boolean);
+      const footer = await proformaFooter.load(req.propertyId);
+      return await renderGroupBillPdf(res, {
+        group: g.group, folios, propertyId: req.propertyId, title: 'Pro Forma Invoice (Group)', filename: `proforma-group-${group.id}.pdf`,
+        note: 'Estimate only — projected charges for the full stay. The final invoice may differ if dates, rate plans, or extras change.', footer,
+      });
+    }
 
     const { rows: bookingRows } = await db.query(
       // A cancelled / no-show room isn't billed on the group's estimate.

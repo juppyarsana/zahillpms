@@ -7,6 +7,7 @@ import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import MasterFolio from '../components/MasterFolio';
+import GroupBillingCard, { GroupPaymentModal } from '../components/GroupBillingCard';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -88,21 +89,25 @@ export default function GroupDetail() {
 
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
 
-  async function downloadGroupProforma() {
+  // kind: 'proforma' (whole stay, estimate) | 'invoice' (posted so far — only
+  // for a group billed as a whole, migration 097)
+  async function downloadGroupPdf(kind = 'proforma') {
     try {
-      const r = await api.get(`/api/folio/group/${groupId}/proforma`, { responseType: 'blob' });
+      const r = await api.get(`/api/folio/group/${groupId}/${kind}`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
+      const t = new Date();
       a.href = url;
-      a.download = `proforma-group-${groupId}.pdf`;
+      a.download = `${kind}-group-${groupId.slice(0, 8)}-${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert('Failed to download pro forma');
+      alert(`Failed to download the ${kind === 'invoice' ? 'invoice' : 'pro forma'}`);
     }
   }
+  const downloadGroupProforma = () => downloadGroupPdf('proforma');
 
   async function checkInGroup() {
     setCheckingIn(true);
@@ -134,6 +139,7 @@ export default function GroupDetail() {
   const [payForm, setPayForm] = useState({ method: '', received_at: todayStr, reference: '', notes: '' });
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState('');
+  const [folioPaying, setFolioPaying] = useState(false);   // group billed as a whole: Record Group Payment from the Master Folio
 
   // Every unpaid room payment line in the group, room by room.
   function pendingLines() {
@@ -418,7 +424,10 @@ export default function GroupDetail() {
               bare
               icon="⬇"
               ariaLabel="Download documents"
-              items={[{ label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma }]}
+              items={[
+                data.bill && { label: 'Group Invoice', icon: '🧾', hint: 'The group\'s one bill — charges posted so far, group payments, balance', onClick: () => downloadGroupPdf('invoice') },
+                { label: data.bill ? 'Group Pro Forma' : 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma },
+              ].filter(Boolean)}
             />
           </div>
           {groupMenu.length > 0 && <div className="header-divider" />}
@@ -490,6 +499,18 @@ export default function GroupDetail() {
                 </div>
                 <div className="flex gap-2" style={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {(() => {
+                    // Billed as a whole (migration 097): the room price is on
+                    // the group's bill — only the room's own extras are its own.
+                    if (data.bill) {
+                      const own = data.bill.rooms.find(r => r.booking_id === b.id)?.own_balance || 0;
+                      if (own < 1) return null;
+                      return (
+                        <>
+                          <span style={{ fontSize: 12, color: 'var(--color-danger, #dc2626)', fontWeight: 600 }} title="Extras this room pays itself">{fmtIDR(own)} own extras</span>
+                          <Link to={`/reservations/${b.id}#record-payment`} className="btn btn-sm btn-secondary">Pay →</Link>
+                        </>
+                      );
+                    }
                     // Unpaid room payment lines → shortcut to that room's
                     // Payment Tracking to mark them received.
                     const unpaid = (b.payments || [])
@@ -513,7 +534,13 @@ export default function GroupDetail() {
             ))}
           </div>
 
-          <div className="card mb-3">
+          {data.bill && (
+            <GroupBillingCard groupId={groupId} bill={data.bill} rollup={rollup}
+              canPay={group.status !== 'cancelled'}
+              onChanged={() => { load(); if (folio) loadFolio(); }} />
+          )}
+
+          {!data.bill && <div className="card mb-3">
             <div className="card-title">Group Payment Summary</div>
             <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
               <span className="text-muted">Total ({rollup.room_count} rooms)</span><span>{fmtIDR(rollup.total_amount)}</span>
@@ -548,7 +575,7 @@ export default function GroupDetail() {
                 </span>
               </div>
             )}
-          </div>
+          </div>}
 
           <GroupHistory events={data.events || []} />
         </>
@@ -662,6 +689,12 @@ export default function GroupDetail() {
           </div>
         );
       })()}
+
+      {folioPaying && data.bill && (
+        <GroupPaymentModal groupId={groupId} balance={data.bill.balance_due}
+          onClose={() => setFolioPaying(false)}
+          onSaved={() => { setFolioPaying(false); load(); loadFolio(); }} />
+      )}
 
       {amending && (
         <GroupAmendDatesModal groupId={groupId} groupName={group.guest_name} rooms={amendableRooms}
@@ -854,7 +887,9 @@ export default function GroupDetail() {
         <div className="card mt-3">
           <div className="card-title">Master Folio</div>
           {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
-            <MasterFolio folio={folio} onRecordGroupPayment={pendingLines().length > 0 ? openGroupPayment : null} />
+            <MasterFolio folio={folio}
+              onRecordGroupPayment={data.bill ? (group.status !== 'cancelled' ? () => setFolioPaying(true) : null)
+                : pendingLines().length > 0 ? openGroupPayment : null} />
           )}
         </div>
       )}
