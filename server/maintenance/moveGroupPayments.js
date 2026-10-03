@@ -31,6 +31,7 @@
 //   node maintenance/moveGroupPayments.js                 dry run — shows what would change
 //   node maintenance/moveGroupPayments.js --apply         does it (writes a backup file first)
 //   ... --property zahill                                 one property only (slug)
+//   ... --group "Lia Etika"                               one group only (its id, or part of the booker's name)
 // Safe to run more than once (a group already moved is skipped).
 require('dotenv').config();
 const fs = require('fs');
@@ -42,13 +43,15 @@ const { recomputeGroupStatus } = require('../services/paymentStatusService');
 const APPLY = process.argv.includes('--apply');
 const propIdx = process.argv.indexOf('--property');
 const PROPERTY = propIdx > -1 ? process.argv[propIdx + 1] : null;
+const grpIdx = process.argv.indexOf('--group');
+const GROUP = grpIdx > -1 ? process.argv[grpIdx + 1] : null;
 
 const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const ACTIVE = b => !['cancelled', 'no_show'].includes(b.status);
 // Same rule as paymentStatusService.recomputeGroupStatus, for the dry run.
 function groupStatus(due, received, deposit) {
-  const depositOk = deposit <= 0 || received >= deposit - 0.05;
+  const depositOk = deposit > 0 ? received >= deposit - 0.05 : (received > 0.05 || due <= 0.05);
   const balanceOk = received >= due - 0.05;
   return depositOk && balanceOk ? 'confirmed' : depositOk ? 'deposit_paid' : 'pending';
 }
@@ -66,7 +69,9 @@ async function run() {
   for (const p of properties) {
     const { rows: groups } = await db.query(
       `SELECT rg.*, g.name AS booker FROM reservation_groups rg JOIN guests g ON g.id = rg.primary_guest_id
-       WHERE rg.property_id = $1 AND NOT rg.group_billing ORDER BY rg.check_in_date`, [p.id]);
+       WHERE rg.property_id = $1 AND NOT rg.group_billing
+         AND ($2::text IS NULL OR rg.id::text = $2 OR g.name ILIKE '%' || $2 || '%')
+       ORDER BY rg.check_in_date`, [p.id, GROUP]);
     console.log(`── ${p.name} (${p.slug}) — ${groups.length} group${groups.length === 1 ? '' : 's'} paid room by room ──`);
     for (const g of groups) {
       const { rows: rooms } = await db.query(
@@ -118,7 +123,7 @@ async function run() {
       for (const t of txns) {
         const l = t.lines[0];
         const parts = t.lines.map(x => `${byRoom.get(x.booking_id).unit_name} ${x.type}${t.lines.length > 1 ? ` ${rp(x.amount)}` : ''}`).join(' + ');
-        console.log(`         ${rp(t.amount)} · ${l.method || '?'} · ${l.received_at ? new Date(l.received_at).toISOString().slice(0, 10) : 'no date'}${l.reference ? ` · ref ${l.reference}` : ''} — was ${parts}`);
+        console.log(`         ${rp(t.amount)} · ${l.method || '?'} · ${l.received_at ? new Date(l.received_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' }) : 'no date'}${l.reference ? ` · ref ${l.reference}` : ''} — was ${parts}`);
       }
       if (changes.length) console.log(`       status: ${changes.map(r => `${r.unit_name} ${r.status} → ${newStatus}`).join(', ')}`);
       if (!APPLY) { totals.groups++; totals.moved += txns.length; totals.amount = r2(totals.amount + recvAll); continue; }

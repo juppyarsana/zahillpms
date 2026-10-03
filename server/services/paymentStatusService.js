@@ -70,7 +70,9 @@ async function groupRoomMoney(client, groupId) {
 async function recomputeGroupStatus(client, groupId) {
   const m = await groupRoomMoney(client, groupId);
   if (!m) return null;
-  const depositOk = m.deposit <= 0 || m.received >= m.deposit - 0.05;
+  // No deposit asked: "deposit paid" only once something is received (or
+  // nothing is owed) — a group that paid nothing stays pending.
+  const depositOk = m.deposit > 0 ? m.received >= m.deposit - 0.05 : (m.received > 0.05 || m.due <= 0.05);
   const balanceOk = m.received >= m.due - 0.05;
   const status = depositOk && balanceOk ? 'confirmed' : depositOk ? 'deposit_paid' : 'pending';
   await client.query(
