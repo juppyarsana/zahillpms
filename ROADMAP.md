@@ -1873,7 +1873,7 @@ past check-out / not posted / never arrived, the day's figures, money received, 
 audit runs so reprints don't change. Managers can view it via the new `night_audit` permission; running stays
 owner-only. Details in `CLAUDE.md`.
 
-### 🟡 Group billing (migration 097) — Sessions 1–2 of 3 done (server + screens), 2026-10-03
+### ✅ Group billing (migration 097) — done 2026-10-03 (server, screens, move script)
 
 The accountant asked for a group to have ONE bill and ONE payment record (no payment spread over its rooms; charges
 billed to a specific room stay with that room). Per group *Group pays*: room & meal plan (rooms pay their own extras)
@@ -1881,7 +1881,9 @@ or everything. One group invoice. Existing groups moved over by a script. Sessio
 group bill / status / payments, check-in / checkout / Balance Due / money reports) and Session 2 (screens: group
 page Group Bill card + Record / Void Group Payment + Group pays switch, Master Folio, booking page "Paid by the group",
 checkout note, New Booking choice, Balance Due / Cashier Closing links, group invoice + pro forma PDFs) done.
-**Session 3 (move existing groups' room payments onto the group — dry run, backup) to do.** Details in `CLAUDE.md`.
+Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over (dry run, backup, money checked
+per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
+`--apply`. Details in `CLAUDE.md`.
 
 ## Next migration number: 098
 
