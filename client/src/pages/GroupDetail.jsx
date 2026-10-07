@@ -5,6 +5,7 @@ import ActionMenu from '../components/ActionMenu';
 import PageHeader from '../components/PageHeader';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import MasterFolio from '../components/MasterFolio';
 import GroupBillingCard, { GroupPaymentModal } from '../components/GroupBillingCard';
@@ -60,6 +61,9 @@ function GroupHistory({ events }) {
 
 export default function GroupDetail() {
   const { groupId } = useParams();
+  const { user, can } = useAuth();
+  // Corrections (owner or the `corrections` permission): put a cancelled room back.
+  const canCorrect = user?.role === 'owner' || can('corrections');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('details');
@@ -77,6 +81,20 @@ export default function GroupDetail() {
   }
 
   useEffect(() => { load(); }, [groupId]);
+
+  async function reinstateRoom(b) {
+    const reason = (window.prompt(`Put room ${b.unit_name} back into this group? It must still be free for its dates.
+
+Reason (required — goes into History):`) || '').trim();
+    if (!reason) return;
+    try {
+      await api.put(`/api/bookings/${b.id}/reinstate`, { reason });
+      setFolio(null);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not reinstate the room');
+    }
+  }
 
   async function loadFolio() {
     setFolioLoading(true);
@@ -528,6 +546,10 @@ export default function GroupDetail() {
                   {['pending', 'deposit_paid', 'confirmed'].includes(b.status) && activeRoomCount > 1 && (
                     <button className="btn btn-sm btn-secondary" title="The group needs one room fewer — cancel this room only"
                       onClick={() => { setRemoving(b); setRemoveReason(''); setRemoveError(''); }}>Remove</button>
+                  )}
+                  {canCorrect && b.status === 'cancelled' && (
+                    <button className="btn btn-sm btn-secondary" title="Cancelled by mistake — put this room back if it is still free"
+                      onClick={() => reinstateRoom(b)}>↩ Reinstate</button>
                   )}
                 </div>
               </div>

@@ -19,6 +19,10 @@ export const MENU_DEFS = [
   // An action permission: Edit Price on a booking (reason required, logged,
   // owner alerted). Owners always can.
   { key: 'edit_price',       label: 'Edit a booking\'s price', group: 'Front Desk' },
+  // An action permission: put a front desk mistake right — undo a check-out
+  // or check-in, reinstate a cancelled booking, edit a stay after check-out
+  // (reason required, logged, owner alerted). Owners always can.
+  { key: 'corrections',      label: 'Corrections (undo check-out / check-in, reinstate a booking, edit after check-out)', group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
   { key: 'loyalty',          label: 'Loyalty',              group: 'Front Desk' },
   { key: 'sales',            label: 'Sales',                group: 'Guest Experience' },

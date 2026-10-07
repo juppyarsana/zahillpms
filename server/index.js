@@ -74,6 +74,7 @@ app.use('/api/display', require('./routes/display'));
 // (each route file also calls auth internally per-handler; running it twice
 // is redundant but harmless — same JWT, same result)
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/complimentary'));
+app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/corrections'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/stayAddons'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/restaurantRequests'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/bookings'));

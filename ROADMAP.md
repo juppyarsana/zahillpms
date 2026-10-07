@@ -472,6 +472,8 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
+> **2026-10-07 — Corrections pack, Session 1 of 3 done (no migration):** undo check-out, undo check-in, reinstate a cancelled booking / group room, edit details after check-out — owner or the new `corrections` permission, reason required. Scope widened to the original eight + refund / reverse a payment, move a payment, group refund. Session 2 = payments (refund, correct, move, void a Sales sale), Session 3 = agent billing on a past stay, void an agent invoice, group refund. Accounting step 1 (GL export) comes after. Write-up in `CLAUDE.md` ("Corrections pack").
+>
 > **2026-09-28 — agents become their own list (migration 084), ✅ Sessions 1–3 done (backend 2026-09-28, screens + reports / Reg Card / check-in-out rules 2026-09-29); production tidy-up with `maintenance/splitAgentSources.js` after deploy. Next agreed: a corrections pack (undo check-out / check-in, reinstate, payment / agent billing / sale / agent-invoice corrections), then accounting.** Agents / companies move out of `booking_sources` into `agents`; a booking gets an optional agent + its own commission; all agent billing is keyed by agent. Session 2 = screens, Session 3 = reports / Reg Card / production tidy-up with `maintenance/splitAgentSources.js`. Full write-up in `CLAUDE.md` ("Agents & companies as their own list"). Accounting (GL export + light books) waits for this.
 
 > Scoped 2026-08-17 after a client conversation: their property takes many

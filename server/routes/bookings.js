@@ -2834,6 +2834,25 @@ router.put('/:id', auth, async (req, res) => {
     const { rows: [before] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
 
+    // After check-out, what the bill and the reports are built on (source,
+    // agent + commission, guests, meal plan) is a correction: owner or the
+    // `corrections` permission, with a reason. Notes, bed preference and
+    // purpose of stay stay open to everyone (the Registration Card saves one).
+    let correctionReason = null;
+    if (before.status === 'checked_out') {
+      const changed = (v, old) => v !== undefined && v !== null && String(v) !== String(old ?? '');
+      const agentSent = req.body.agent_id !== undefined && (req.body.agent_id || null) !== (before.agent_id || null);
+      const commissionSent = 'commission_type' in commission.values
+        && (String(commission.values.commission_type ?? '') !== String(before.commission_type ?? '')
+          || Number(commission.values.commission_value ?? 0) !== Number(before.commission_value ?? 0));
+      if (changed(source, before.source) || changed(num_guests, before.num_guests) || changed(rate_plan_id, before.rate_plan_id) || agentSent || commissionSent) {
+        const allowed = req.user.role === 'owner' || (Array.isArray(req.user.allowed_menus) && req.user.allowed_menus.includes('corrections'));
+        if (!allowed) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This guest has checked out — changing the source, agent, guests or meal plan needs the Corrections permission', code: 'NEEDS_CORRECTIONS' }); }
+        correctionReason = String(req.body.reason || '').trim().slice(0, 500);
+        if (!correctionReason) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'A reason is required to change a stay after check-out', code: 'REASON_REQUIRED' }); }
+      }
+    }
+
     // Agent (migration 084): agent_id absent = unchanged, '' / null = none.
     let agentId = before.agent_id;
     if (req.body.agent_id !== undefined) {
@@ -2883,7 +2902,8 @@ router.put('/:id', auth, async (req, res) => {
         commission_value = CASE WHEN $13::boolean THEN $15::numeric ELSE commission_value END,
         updated_at = NOW()
        WHERE id = $7 AND property_id = $8 RETURNING *`,
-      [num_guests, source, total_amount, special_requests, internal_notes, status, req.params.id, req.propertyId,
+      // status is never set here (it has its own flows: check in / out, cancel, no-show, corrections)
+      [num_guests, source, null, special_requests, internal_notes, null, req.params.id, req.propertyId,
         rate_plan_id || null, bed_preference === undefined ? null : bed_preference, purpose_of_stay,
         agentId, 'commission_type' in commissionVals, commissionVals.commission_type ?? null, commissionVals.commission_value ?? null]
     );
@@ -2911,8 +2931,15 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     await logBookingChanges(client, { propertyId: req.propertyId, bookingId: req.params.id, userId: req.user.id, before, after: booking });
+    if (correctionReason) {
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [req.params.id, `Details corrected after check-out. Reason: ${correctionReason}`, req.user.id]);
+    }
 
     await client.query('COMMIT');
+    if (correctionReason) {
+      sendControlAlert(req.propertyId, { bookingIds: booking.id, userId: req.user.id, reason: correctionReason, headline: '✏️ Stay details corrected after check-out' });
+    }
     // A commission already posted at checkout (still unpaid) follows the new rate.
     if (commissionChanged && booking.agent_id) {
       await agentBilling.recomputeCommission(req.propertyId, booking.id).catch(err => console.error('Commission recompute failed:', err));
@@ -2968,6 +2995,7 @@ module.exports = router;
 // Shared with services/reports (Smart Reports' Morning Brief), so the brief
 // shows exactly the figures of the Guest Lists and Balance Due pages.
 module.exports.loadGuestLists = loadGuestLists;
+module.exports.syncGroupSpan = syncGroupSpan;   // routes/corrections.js (reinstate a group's room)
 module.exports.loadBalanceDue = loadBalanceDue;
 module.exports.loadKitchen = loadKitchen;
 module.exports.breakfastValues = breakfastValues;

@@ -178,6 +178,9 @@ export default function BookingDetail() {
   const { hasModule, user, can } = useAuth();
   const isOwner = user?.role === 'owner';
   const canEditPrice = isOwner || can('edit_price');
+  // Corrections (undo check-out / check-in, reinstate, edit after check-out):
+  // owner or the `corrections` permission; a reason every time.
+  const canCorrect = isOwner || can('corrections');
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -653,6 +656,7 @@ Type the reason to void it:`;
       internal_notes: booking.internal_notes || '',
       bed_preference: booking.bed_preference || '',
       rate_plan_id: booking.rate_plan_id || '',
+      reason: '',
     });
     setEditAgent(agentValueFromBooking(booking));
     setEditingDetails(true);
@@ -662,9 +666,10 @@ Type the reason to void it:`;
     setEditDetailsLoading(true);
     try {
       // The meal plan is only sent when it changed (the server then re-splits room / meals).
-      const { rate_plan_id, ...fields } = editDetailsForm;
+      const { rate_plan_id, reason, ...fields } = editDetailsForm;
       const planChanged = rate_plan_id && rate_plan_id !== booking.rate_plan_id;
-      await api.put(`/api/bookings/${id}`, { ...fields, ...(planChanged ? { rate_plan_id } : {}), ...agentBody(editAgent) });
+      await api.put(`/api/bookings/${id}`, { ...fields, ...(planChanged ? { rate_plan_id } : {}), ...agentBody(editAgent),
+        ...(booking.status === 'checked_out' ? { reason: (reason || '').trim() } : {}) });
       setEditingDetails(false);
       load();
     } catch (err) {
@@ -763,6 +768,22 @@ Type the reason to void it:`;
     }
   }
 
+  // A correction: asks for the reason, then PUT /api/bookings/:id/<step>.
+  async function correct(step, question) {
+    const reason = (window.prompt(`${question}
+
+Reason (required — goes into Edit History):`) || '').trim();
+    if (!reason) return;
+    try {
+      await api.put(`/api/bookings/${id}/${step}`, { reason });
+      setFolio(null);
+      setEstimate(null);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not do that');
+    }
+  }
+
   async function callRoomAction() {
     try {
       await callRoom({ id: booking.unit_id, name: booking.unit_name });
@@ -827,12 +848,21 @@ Type the reason to void it:`;
   const modifyItems = [
     booking.status === 'no_show' &&
       { label: 'Undo No-Show', icon: '↩️', onClick: undoNoShow, hint: 'The guest did arrive — put the booking back' },
+    canCorrect && booking.status === 'checked_out' && !['invoiced', 'paid'].includes(booking.folio_status) &&
+      { label: 'Undo Check-out', icon: '↩️', hint: 'Checked out by mistake — the guest is still here',
+        onClick: () => correct('undo-checkout', `Undo the check-out of ${booking.guest_name} (${booking.unit_name})? The stay is in house again; charges and payments stay as they are.`) },
+    canCorrect && booking.status === 'checked_in' &&
+      { label: 'Undo Check-in', icon: '↩️', hint: 'Checked in by mistake — the guest has not arrived',
+        onClick: () => correct('undo-checkin', `Undo the check-in of ${booking.guest_name} (${booking.unit_name})? The booking goes back to arriving and the room is free again. Nights already posted are voided (they post again after the real check-in).`) },
+    canCorrect && booking.status === 'cancelled' &&
+      { label: 'Reinstate Booking', icon: '↩️', hint: 'Cancelled by mistake — book it again if the room is still free',
+        onClick: () => correct('reinstate', `Reinstate this cancelled booking for ${booking.guest_name} (${booking.unit_name})?`) },
     // A group room can have its own dates too (the group page moves them all).
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Room', icon: '🔀', onClick: openTransfer },
-    ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+    (['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) || (canCorrect && booking.status === 'checked_out')) &&
       { label: 'Edit Details', icon: '📝', onClick: openEditDetails },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Change Guest', icon: '👤', onClick: openChangeGuest },
@@ -1679,6 +1709,15 @@ Type the reason to void it:`;
               <button className="btn btn-icon" onClick={() => setEditingDetails(false)}>✕</button>
             </div>
             <div className="modal-body">
+              {booking.status === 'checked_out' && (
+                <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+                  <div>
+                    This guest has checked out. Changing the source, agent, number of guests or meal plan is a correction — give the reason:
+                    <input className="form-input" style={{ marginTop: 6 }} placeholder="Reason (goes into Edit History)" value={editDetailsForm.reason || ''}
+                      onChange={e => setEditDetailsForm(f => ({ ...f, reason: e.target.value }))} />
+                  </div>
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Source</label>

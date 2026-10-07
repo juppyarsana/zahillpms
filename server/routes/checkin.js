@@ -618,3 +618,4 @@ async function recalcGuestTier(client, guestId, propertyId) {
 }
 
 module.exports = router;
+module.exports.recalcGuestTier = recalcGuestTier;   // routes/corrections.js (undo check-out)

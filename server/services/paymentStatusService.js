@@ -35,8 +35,13 @@ async function recomputeBookingStatus(client, bookingId) {
   const deposits = pmts.filter(p => p.type === 'deposit');
   const balances = pmts.filter(p => p.type === 'balance');
 
-  const depositOk = noDeposit || (deposits.length > 0 && deposits.every(p => p.status === 'received'));
   const balanceOk = balances.every(p => p.status === 'received');
+  // No deposit asked: "deposit paid" only once something is received (or
+  // nothing is owed) — a booking that paid nothing stays pending (same rule
+  // as a group, recomputeGroupStatus).
+  const depositOk = noDeposit
+    ? (balanceOk || pmts.some(p => p.status === 'received'))
+    : (deposits.length > 0 && deposits.every(p => p.status === 'received'));
 
   const newStatus = (depositOk && balanceOk) ? 'confirmed'
     : depositOk ? 'deposit_paid'
