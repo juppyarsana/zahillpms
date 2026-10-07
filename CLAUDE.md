@@ -742,6 +742,17 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 ---
 
+## Pending on the next production deploy
+
+> Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
+
+- **Run the deposit-label check once** (added 2026-10-07): `node maintenance/checkDepositPaidLabels.js --property zahill` (dry run — lists bookings labelled "Deposit Paid" with nothing paid), then the same with `--apply`. Changes only the status label.
+- **Tick the `corrections` permission** (added 2026-10-07): Roles & Permissions → Front Desk → Corrections, for each role that should be able to undo / refund / void. No role has it by default (owners always do); those staff must log in again.
+- **Group billing (097), if not done yet:** back up → deploy → `node maintenance/moveGroupPayments.js --property zahill` (dry run, check with the owner) → `--apply`. Then the two parked group credits (Rp 1.000.000 group in credit; Rp 700.000 received on a cancelled room) can be given back with the group page's Refund.
+- Migrations 098–100 run by themselves on deploy (`npm run migrate`); the client needs a rebuild and staff must accept the app's update prompt.
+
+---
+
 ## Open Decisions (not yet final — context for whoever picks this up next)
 
 - ~~**Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner...~~ **Decided (2026-08-14): the product name is HALF.** See the domain/tenancy note under "What this is" above for the working domain (`half.kdai.cloud`) and architecture. Actual rename across code/docs/infra is still pending — see that note for what's not done yet.
