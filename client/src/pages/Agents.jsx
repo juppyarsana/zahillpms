@@ -171,6 +171,7 @@ function AgentDetail({ agentId }) {
   const [payOpen, setPayOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
   const [voidingInv, setVoidingInv] = useState(null);   // invoice row
+  const [voidingPay, setVoidingPay] = useState(null);   // agent payment row
   const [editOpen, setEditOpen] = useState(false);
 
   function showToast(msg, type = 'success') {
@@ -206,13 +207,11 @@ function AgentDetail({ agentId }) {
     } catch { showToast('Failed to download invoice', 'error'); }
   }
 
-  async function voidPayment(id) {
-    if (!confirm('Void this payment? Allocations are removed and affected bookings revert.')) return;
-    try {
-      await api.delete(`/api/agents/payments/${id}`);
-      showToast('Payment voided');
-      load();
-    } catch (err) { showToast(err.response?.data?.error || 'Failed', 'error'); }
+  async function voidPayment(p, reason) {
+    await api.delete(`/api/agents/payments/${p.id}`, { data: { reason } });
+    setVoidingPay(null);
+    showToast('Payment voided');
+    load();
   }
 
   async function setCommission(id, status) {
@@ -314,11 +313,12 @@ function AgentDetail({ agentId }) {
         {payments.length === 0 ? <Empty>No payments recorded.</Empty> : payments.map(p => (
           <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid #F3F4F6' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <div>
-                <strong>{fmtIDR(p.amount)}</strong>
+              <div style={p.is_voided ? { opacity: 0.6 } : undefined}>
+                <strong style={p.is_voided ? { textDecoration: 'line-through' } : undefined}>{fmtIDR(p.amount)}</strong>
                 <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(p.received_on)}{p.method ? ` · ${p.method.replace('_', ' ')}` : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
+                {p.is_voided && <div style={{ fontSize: 12, color: '#B91C1C' }}>Voided {fmtDate(p.voided_at)}{p.voided_by_name ? ` by ${p.voided_by_name}` : ''} — {p.void_reason}</div>}
               </div>
-              <button className="btn btn-sm btn-secondary" onClick={() => voidPayment(p.id)}>Void</button>
+              {!p.is_voided && <button className="btn btn-sm btn-secondary" onClick={() => setVoidingPay(p)}>Void</button>}
             </div>
             {(p.allocations || []).length > 0 && (
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
@@ -366,6 +366,16 @@ function AgentDetail({ agentId }) {
 
       {editOpen && <AgentFormModal agent={agent} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); showToast('Saved'); load(); }} />}
       {payOpen && <RecordPaymentModal agentId={agentId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
+      {voidingPay && (
+        <ReasonModal title="Void this agent payment?" confirmLabel="Void payment" danger placeholder="e.g. recorded twice"
+          onClose={() => setVoidingPay(null)} onConfirm={reason => voidPayment(voidingPay, reason)}>
+          <b>{fmtIDR(voidingPay.amount)}</b> · received {fmtDate(voidingPay.received_on)}{voidingPay.reference ? ` · Ref ${voidingPay.reference}` : ''}.
+          <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
+            For a payment recorded by mistake. It is kept on record, marked voided, and no longer counted as money received.
+            The {voidingPay.allocations?.length || 0} stay(s) it paid are unpaid by the agent again.
+          </div>
+        </ReasonModal>
+      )}
       {voidingInv && (
         <ReasonModal title={`Void invoice ${voidingInv.invoice_number}?`} confirmLabel="Void invoice" danger
           placeholder="e.g. wrong stays on it" onClose={() => setVoidingInv(null)} onConfirm={reason => voidInvoice(voidingInv, reason)}>

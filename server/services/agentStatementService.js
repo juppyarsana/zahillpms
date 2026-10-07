@@ -176,7 +176,7 @@ async function statement(propertyId, agentId) {
   ]);
 
   const { rows: payments } = await db.query(
-    `SELECT ap.*,
+    `SELECT ap.*, (SELECT name FROM users WHERE id = ap.voided_by) AS voided_by_name,
             COALESCE(json_agg(json_build_object(
               'booking_id', al.booking_id, 'amount', al.amount,
               'guest_name', g.name, 'check_out_date', b.check_out_date
@@ -187,7 +187,7 @@ async function statement(propertyId, agentId) {
      LEFT JOIN guests g ON g.id = b.guest_id
      WHERE ap.property_id = $1 AND ap.agent_id = $2
      GROUP BY ap.id
-     ORDER BY ap.received_on DESC, ap.created_at DESC`,
+     ORDER BY ap.is_voided, ap.received_on DESC, ap.created_at DESC`,
     [propertyId, agentId]
   );
 
@@ -341,6 +341,7 @@ async function updatePayment(propertyId, paymentId, body) {
       'SELECT * FROM agent_payments WHERE id = $1 AND property_id = $2', [paymentId, propertyId]
     );
     if (!payment) { await client.query('ROLLBACK'); return { error: 'Payment not found' }; }
+    if (payment.is_voided) { await client.query('ROLLBACK'); return { error: 'This payment was voided — it can\'t be changed' }; }
 
     const { rows: oldAllocs } = await client.query(
       'SELECT booking_id FROM agent_payment_allocations WHERE agent_payment_id = $1', [paymentId]
@@ -407,21 +408,36 @@ async function updatePayment(propertyId, paymentId, body) {
   }
 }
 
-async function voidPayment(propertyId, paymentId) {
+// Voids an agent payment recorded by mistake (migration 100): the row is kept
+// (who / when / why, and the allocations it had), never counted again; the
+// stays it paid are unpaid again. Reason required.
+async function voidPayment(propertyId, paymentId, reason, userId) {
+  const why = String(reason || '').trim().slice(0, 500);
+  if (!why) return { error: 'A reason is required', code: 'REASON_REQUIRED', status: 400 };
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [payment] } = await client.query(
-      'SELECT id FROM agent_payments WHERE id = $1 AND property_id = $2', [paymentId, propertyId]
+      'SELECT * FROM agent_payments WHERE id = $1 AND property_id = $2 FOR UPDATE', [paymentId, propertyId]
     );
-    if (!payment) { await client.query('ROLLBACK'); return { error: 'Payment not found' }; }
+    if (!payment) { await client.query('ROLLBACK'); return { error: 'Payment not found', status: 404 }; }
+    if (payment.is_voided) { await client.query('ROLLBACK'); return { error: 'This payment is already voided', status: 409 }; }
     const { rows: allocs } = await client.query(
-      'SELECT booking_id FROM agent_payment_allocations WHERE agent_payment_id = $1', [paymentId]
+      'DELETE FROM agent_payment_allocations WHERE agent_payment_id = $1 RETURNING booking_id, amount', [paymentId]
     );
-    await client.query('DELETE FROM agent_payments WHERE id = $1', [paymentId]); // cascades allocations
+    await client.query(
+      `UPDATE agent_payments SET is_voided = true, voided_at = NOW(), voided_by = $1, void_reason = $2, voided_allocations = $3 WHERE id = $4`,
+      [userId || null, why, JSON.stringify(allocs), paymentId]
+    );
     await reconcileBookingStatuses(client, propertyId, allocs.map(a => a.booking_id));
+    const ids = allocs.map(a => a.booking_id);
+    if (ids.length) {
+      await client.query(
+        'INSERT INTO booking_events (booking_id, note, created_by) SELECT unnest($1::uuid[]), $2, $3',
+        [ids, `Agent payment of Rp ${Math.round(parseFloat(payment.amount)).toLocaleString('id-ID')} voided — this stay is unpaid by the agent again. Reason: ${why}`.slice(0, 1000), userId || null]);
+    }
     await client.query('COMMIT');
-    return { ok: true };
+    return { ok: true, amount: parseFloat(payment.amount), bookings: ids };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -82,7 +82,7 @@ async function collected(propertyId, from, to = from) {
       UNION ALL
       SELECT ap.method, ap.amount
       FROM agent_payments ap
-      WHERE ap.property_id = $1 AND ap.received_on BETWEEN $2::date AND $3::date
+      WHERE ap.property_id = $1 AND NOT ap.is_voided AND ap.received_on BETWEEN $2::date AND $3::date
       UNION ALL
       -- Payments from a group billed as a whole (migration 097)
       SELECT gp.method, gp.amount

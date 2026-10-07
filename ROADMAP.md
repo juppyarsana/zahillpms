@@ -472,7 +472,12 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
-> **2026-10-07 — Corrections pack COMPLETE, Session 3 done (migration 099):** fix agent billing on a checked-out stay, void an agent invoice (kept, re-invoice with a new number), refund to a group billed as a whole. Next agreed: accounting step 1 (account mapping + daily journal export); before it, make voiding an agent payment keep the record (it still deletes).
+> **2026-10-07 — Corrections pack COMPLETE, Session 3 done (migration 099):** fix agent billing on a checked-out stay, void an agent invoice (kept, re-invoice with a new number), refund to a group billed as a whole. Voiding an agent payment now keeps the record (migration 100). Next agreed: accounting step 1 (account mapping + daily journal export).
+>
+> **To settle WITH the accounting build (left alone on purpose, 2026-10-07):**
+> - **Editing an agent payment leaves no log** — `PATCH /api/agents/payments/:id` (owner-only) changes method / date / reference / allocations with no Edit History and no reason; changing the date moves money between days.
+> - **Closed days:** once a day's journal is exported it must not be rewritten — a later correction goes out as a reversing entry on the day it is made. Still changing a past day in place today: correcting a payment's date, the agent payment edit, undoing a received payment (the line goes back to pending, so its original day loses the money), Edit Price / Amend Dates on a past stay. Decide per case: block on a closed day, or post the difference today.
+> - **The journal must read** group payments and their refunds (097, 099), refund rows and voided payments (098), voided sales (098), voided agent invoices (099) and voided agent payments (100).
 >
 > **2026-10-07 — Corrections pack, Session 2 of 3 done (migration 098):** refund (a negative received payment on the refund day), undo / correct / move a received payment, void a Sales till sale; the generic payment update is locked to pending lines. Session 3 left: agent billing on a past stay, void an agent invoice, group refund.
 >
@@ -1891,7 +1896,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 100
+## Next migration number: 101
 
 ---
 

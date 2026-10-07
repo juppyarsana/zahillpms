@@ -62,7 +62,7 @@ async function load(propertyId, date, { userId = null } = {}) {
              NULL, NULL, COALESCE(agn.name, 'Agent'), NULL
       FROM agent_payments ap
       LEFT JOIN agents agn ON agn.id = ap.agent_id
-      WHERE ap.property_id = $1 AND ap.received_on = $2::date
+      WHERE ap.property_id = $1 AND NOT ap.is_voided AND ap.received_on = $2::date
       UNION ALL
       -- A payment from a group billed as a whole (migration 097): one line,
       -- its rooms listed, the booker as the guest.
