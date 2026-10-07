@@ -64,8 +64,8 @@ export default function Properties() {
       <div className="card">
         {properties.length === 0 && <p className="text-muted">No properties yet.</p>}
         {properties.map(p => (
-          <div key={p.id} className="flex-between" style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-            <div>
+          <div key={p.id} className="flex-between" style={{ padding: '12px 0', borderBottom: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{p.name}</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                 {p.slug} · {p.module_count} module{p.module_count === '1' ? '' : 's'}

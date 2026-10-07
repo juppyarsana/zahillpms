@@ -19,6 +19,8 @@ const MODULE_LABELS = {
   smart_reports:   'Smart Reports',
   pos_integration: 'POS Integration',
   accounting:      'Accounting',
+  channel_manager: 'Channel Manager',
+  yield_management: 'Yield Management',
 };
 
 const EMPTY_USER_FORM = { name: '', email: '', password: '', role: '' };
@@ -162,7 +164,7 @@ export default function PropertyDetail() {
   if (!property || !form || !brandingForm) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       <div className="page-header">
         <div>
           <button className="btn btn-sm btn-secondary" onClick={() => navigate('/admin')} style={{ marginBottom: 8 }}>
@@ -173,6 +175,8 @@ export default function PropertyDetail() {
         </div>
       </div>
 
+      {/* Two columns on a wide screen (Property info + Branding | Modules + Staff), one on a phone */}
+      <div className="admin-cols">
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">Property Info</div>
         {error && <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
@@ -257,7 +261,10 @@ export default function PropertyDetail() {
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-title">Modules</div>
+        <div className="flex-between" style={{ marginBottom: 4 }}>
+          <div className="card-title" style={{ marginBottom: 0 }}>Modules</div>
+          <span className="text-muted" style={{ fontSize: 12 }}>{modules.filter(m => m.is_enabled).length} of {modules.length} on</span>
+        </div>
         {modules.map(m => (
           <div key={m.module} className="flex-between" style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
             <span style={{ fontSize: 14 }}>{MODULE_LABELS[m.module] || m.module}</span>
@@ -294,6 +301,7 @@ export default function PropertyDetail() {
             <span className="badge badge-blue">{u.role}</span>
           </div>
         ))}
+      </div>
       </div>
 
       {userModal && (

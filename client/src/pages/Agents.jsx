@@ -78,7 +78,7 @@ function AgentList() {
         <button className="btn btn-primary" onClick={() => setEditing('new')}>+ New agent</button>
       </div>
 
-      <div className="stat-grid" style={{ marginBottom: 16 }}>
+      <div className="stat-grid stat-grid-money" style={{ marginBottom: 16 }}>
         <div className="stat-card"><div className="stat-label">Owed by agents</div><div className="stat-value">{fmtIDR(totals.owed)}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{ color: totals.overdue > 0 ? '#DC2626' : undefined }}>{fmtIDR(totals.overdue)}</div></div>
         <div className="stat-card"><div className="stat-label">Commission to pay</div><div className="stat-value" style={{ color: totals.commission > 0 ? '#D97706' : undefined }}>{fmtIDR(totals.commission)}</div></div>
@@ -280,7 +280,7 @@ function AgentDetail({ agentId }) {
 
       <Section title={`Open Items (${open_items.length})`}>
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (
-          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrap"><table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse' }}>
             <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               {['Booking', 'Dates', 'Status', 'Folio', 'Allocated', 'Balance', 'Due'].map(h => <th key={h} style={{ ...TH, textAlign: h === 'Booking' || h === 'Dates' || h === 'Status' ? 'left' : 'right' }}>{h}</th>)}
             </tr></thead>
@@ -427,7 +427,7 @@ function AgentBookings({ bookings, agent }) {
               </button>
             ))}
           </div>
-          <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrap"><table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse' }}>
             <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               <th style={TH}>Guest</th><th style={TH}>Stay</th>
               <th style={{ ...TH, textAlign: 'right' }}>Price</th><th style={TH}>Billing</th>

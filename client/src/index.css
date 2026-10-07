@@ -177,7 +177,7 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
   line-height: 1;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0,0,0,0.28);
-  z-index: 900;
+  z-index: 150; /* under modals (200) and the phone menu (300) */
   transition: transform var(--transition), box-shadow var(--transition);
 }
 .call-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.32); }
@@ -279,6 +279,14 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 .nav-signout:hover { color: white; }
 
 .main-content { flex: 1; }
+
+/* ── Superadmin shell (AdminLayout): a top bar over the page, not the staff sidebar layout ── */
+.admin-shell { flex-direction: column; }
+.admin-shell .nav-bar { justify-content: space-between; flex-shrink: 0; }
+.admin-shell .nav-logo { border-right: none; }
+.admin-shell .nav-end { border-left: none; }
+.admin-cols { columns: 2 400px; column-gap: 20px; }
+.admin-cols > .card { break-inside: avoid; margin-bottom: 20px; }
 .page-wrap { max-width: 1200px; margin: 0 auto; padding: var(--space-6) var(--space-6) 96px; } /* bottom: room to scroll the last row clear of the floating call button */
 
 /* ── Page Header ── */
@@ -727,6 +735,7 @@ tr:hover td { background: #FAFAF8; }
   .nav-end  { display: none; }
   .nav-logo { border-right: none; }
   .nav-bar  { padding: 0 4px; }
+  .admin-shell .nav-end { display: flex; padding: 0 12px; }   /* keep Sign out reachable on a phone */
 
   /* Lock layout to actual rendered frame height (not 100vh which ignores browser chrome) */
   html, body, #root { height: 100%; }
@@ -811,10 +820,16 @@ tr:hover td { background: #FAFAF8; }
     z-index: 300;
     align-items: flex-end;
   }
+  /* Never taller than the screen: the list scrolls inside, the header stays put. */
   .drawer {
     background: white;
     border-radius: 20px 20px 0 0;
     width: 100%;
+    max-height: 88vh;
+    max-height: 88dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding-bottom: env(safe-area-inset-bottom, 12px);
   }
   .drawer-header {
@@ -823,6 +838,11 @@ tr:hover td { background: #FAFAF8; }
     justify-content: space-between;
     padding: 16px 20px;
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: white;
+    border-radius: 20px 20px 0 0;
+    z-index: 1;
   }
   .drawer-item {
     display: flex;

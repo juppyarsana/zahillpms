@@ -148,7 +148,7 @@ export default function Activities() {
 
           <div className="card">
             <div className="table-wrap">
-              <table>
+              <table style={{ minWidth: 640 }}>
                 <thead><tr><th>Date</th><th>Activity</th><th>Guest</th><th>Pax</th><th>Total</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                   {bookings.map(b => (
@@ -195,7 +195,7 @@ export default function Activities() {
           )}
           <div className="card">
             <div className="table-wrap">
-              <table>
+              <table style={{ minWidth: 640 }}>
                 <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Capacity/Slot</th><th>Available</th>{isOwner && <th></th>}</tr></thead>
                 <tbody>
                   {activities.map(a => (

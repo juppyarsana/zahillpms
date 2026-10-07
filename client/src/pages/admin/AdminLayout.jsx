@@ -4,7 +4,7 @@ export default function AdminLayout({ children }) {
   const { user, logout } = useAuth();
 
   return (
-    <div className="app-shell">
+    <div className="app-shell admin-shell">
       <nav className="nav-bar">
         <div className="nav-logo" style={{ color: 'white', fontWeight: 700, fontSize: 16 }}>
           Platform Admin

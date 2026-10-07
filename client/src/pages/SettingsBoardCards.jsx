@@ -176,7 +176,7 @@ export default function SettingsBoardCards() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {group.items.map(card => (
                     <div key={card.id} style={{
-                      display: 'flex', alignItems: 'flex-start', gap: 14,
+                      display: 'flex', alignItems: 'flex-start', gap: '10px 14px', flexWrap: 'wrap',
                       padding: '12px 14px', borderRadius: 10,
                       background: 'var(--cream)', border: '1px solid var(--border)',
                       opacity: card.active ? 1 : 0.5,
@@ -184,8 +184,8 @@ export default function SettingsBoardCards() {
                       {card.image_url && (
                         <img src={card.image_url} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                       )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           {card.title}
                           {card.activity_id && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 10, padding: '1px 8px' }}>
