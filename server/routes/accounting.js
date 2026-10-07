@@ -5,12 +5,16 @@
 //   PUT  /map                   { map: { key: account_id | null } }
 //   GET  /journal?from=&to=     the daily journal (JSON)
 //   GET  /journal/xlsx?from=&to= the same as an Excel workbook
+//   GET  /closing               closed through + corrections waiting
+//   POST /closing               { through, start? } close days
+//   DELETE /closing/last        open the last closed day again (owner)
 // Owner, or the `accounting` permission (an accountant's login).
 const router = require('express').Router();
 const db = require('../db');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const accounting = require('../services/accountingService');
-const { buildJournal } = require('../services/journalService');
+const requireRole = require('../middleware/role');
+const { buildJournal, closingStatus, closeDays, reopenLastDay } = require('../services/journalService');
 const { todayWITA } = require('../services/roomChargeService');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -81,6 +85,44 @@ router.get('/journal', async (req, res) => {
     const j = await buildJournal(req.propertyId, p.from, p.to);
     if (j.error) return res.status(400).json({ error: j.error });
     res.json(j);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Closing days (migration 102): how far the books are closed + corrections
+// to closed days waiting for the next close.
+router.get('/closing', async (req, res) => {
+  try {
+    res.json({ ...(await closingStatus(req.propertyId)), today: todayWITA() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// { through, start? } — closes every open day up to `through` (yesterday at
+// the latest). `start` = the first day of the books, the first time only.
+router.post('/closing', async (req, res) => {
+  const through = String(req.body?.through || '');
+  const start = req.body?.start ? String(req.body.start) : null;
+  if (!DATE_RE.test(through) || isNaN(Date.parse(through)) || (start && (!DATE_RE.test(start) || isNaN(Date.parse(start))))) {
+    return res.status(400).json({ error: 'Choose the day to close up to' });
+  }
+  try {
+    const r = await closeDays(req.propertyId, through, req.user.id, { start, today: todayWITA() });
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Opens the last closed day again. Owner only.
+router.delete('/closing/last', requireRole('owner'), async (req, res) => {
+  try {
+    const r = await reopenLastDay(req.propertyId);
+    if (r.error) return res.status(409).json({ error: r.error });
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

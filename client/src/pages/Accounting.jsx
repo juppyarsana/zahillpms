@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { propertyToday } from '../lib/propertyTime';
+import { useAuth } from '../context/AuthContext';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const amt = n => (n ? Math.round(Number(n)).toLocaleString('id-ID') : '');
@@ -60,6 +61,7 @@ function JournalTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [version, setVersion] = useState(0);   // bumped when days are closed / opened again
 
   useEffect(() => {
     let off = false;
@@ -69,7 +71,7 @@ function JournalTab() {
       .catch(err => { if (!off) { setData(null); setError(err.response?.data?.error || 'Failed to load'); } })
       .finally(() => { if (!off) setLoading(false); });
     return () => { off = true; };
-  }, [from, to]);
+  }, [from, to, version]);
 
   function pick(f, t) { setFrom(f); setTo(t); }
   const monthStart = today.slice(0, 8) + '01';
@@ -115,6 +117,8 @@ function JournalTab() {
         </button>
       </div>
 
+      <ClosingCard version={version} onChanged={() => setVersion(v => v + 1)} />
+
       {error && <div className="alert alert-error">{error}</div>}
       {loading ? <div className="text-muted">Loading…</div> : data && (<>
         {data.unmapped.length > 0 && (
@@ -136,7 +140,9 @@ function JournalTab() {
             <div className="stat-label">Money received</div>
             <div className="stat-value">{idr(data.checks.money.journal)}</div>
             <div className="text-muted" style={{ fontSize: 12 }}>
-              {Math.abs(data.checks.money.difference) < 1 ? '✓ Same as the Daily Close / Cashier Closing' : `⚠ Daily Close says ${idr(data.checks.money.pms)}`}
+              {Math.abs(data.checks.money.difference) < 1 ? '✓ Same as the Daily Close / Cashier Closing'
+                : data.closed_days > 0 ? `Daily Close says ${idr(data.checks.money.pms)} — a closed day was corrected later (posted on the day it was next closed)`
+                : `⚠ Daily Close says ${idr(data.checks.money.pms)}`}
             </div>
           </div>
           <div className="stat-card">
@@ -153,7 +159,10 @@ function JournalTab() {
         {data.days.map(day => (
           <div className="card mt-3" key={day.date}>
             <div className="flex-between" style={{ marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title" style={{ margin: 0 }}>{fmtLong(day.date)}</div>
+              <div className="card-title" style={{ margin: 0 }}>
+                {fmtLong(day.date)}
+                {day.closed && <span className="text-muted" style={{ fontWeight: 400, fontSize: 12 }} title="Closed — this day no longer changes"> · 🔒 closed</span>}
+              </div>
               <div className="text-muted" style={{ fontSize: 12 }}>{idr(day.debit)}{day.balanced ? '' : ' · ⚠ not balanced'}</div>
             </div>
             <div className="table-wrap">
@@ -253,6 +262,130 @@ function JournalTab() {
         )}
       </>)}
     </>
+  );
+}
+
+// Closing days (migration 102): a closed day's journal is kept as it is; a
+// later change to it is posted as a correction in the next day closed.
+function ClosingCard({ version, onChanged }) {
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
+  const [st, setSt] = useState(null);
+  const [through, setThrough] = useState('');
+  const [start, setStart] = useState('');
+  const [step, setStep] = useState(null);   // 'close' | 'reopen' — waiting for the second click
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    let off = false;
+    api.get('/api/accounting/closing')
+      .then(r => {
+        if (off) return;
+        setSt(r.data);
+        const yesterday = shiftDate(r.data.today, -1);
+        setThrough(t => t || yesterday);
+        setStart(s0 => s0 || yesterday.slice(0, 8) + '01');
+      })
+      .catch(err => { if (!off) setError(err.response?.data?.error || 'Failed to load'); });
+    return () => { off = true; };
+  }, [version]);
+
+  if (!st) return error ? <div className="alert alert-error"><div>{error}</div></div> : null;
+  const yesterday = shiftDate(st.today, -1);
+  const firstOpen = st.closed_through ? shiftDate(st.closed_through, 1) : start;
+  const canClose = through && firstOpen && through >= firstOpen && through <= yesterday;
+  const count = canClose ? Math.round((Date.parse(through) - Date.parse(firstOpen)) / 86400000) + 1 : 0;
+  const waiting = st.corrections.reduce((n, c) => n + c.items.length, 0);
+
+  async function run(fn) {
+    setBusy(true); setError('');
+    try { await fn(); setStep(null); onChanged(); }
+    catch (err) { setError(err.response?.data?.error || 'Failed'); setStep(null); }
+    finally { setBusy(false); }
+  }
+  const close = () => run(() => api.post('/api/accounting/closing', { through, ...(st.closed_through ? {} : { start }) }));
+  const reopen = () => run(() => api.delete('/api/accounting/closing/last'));
+
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div className="flex-between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div>
+          <div className="card-title" style={{ margin: 0 }}>
+            {st.closed_through ? <>🔒 Closed through {fmtLong(st.closed_through)}</> : 'No day is closed yet'}
+          </div>
+          <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
+            A closed day never changes again. If something in it is corrected later, the difference is posted in the next day you close.
+          </div>
+        </div>
+        {isOwner && st.closed_through && (step === 'reopen' ? (
+          <div className="flex gap-2" style={{ alignItems: 'center' }}>
+            <span style={{ fontSize: 13 }}>Open {fmtLong(st.closed_through)} again?</span>
+            <button className="btn btn-danger btn-sm" onClick={reopen} disabled={busy}>Yes, open it</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setStep(null)} disabled={busy}>Cancel</button>
+          </div>
+        ) : (
+          <button className="btn btn-secondary btn-sm" onClick={() => setStep('reopen')}>Open the last day again</button>
+        ))}
+      </div>
+
+      {error && <div className="alert alert-error" style={{ marginTop: 8 }}><div>{error}</div></div>}
+
+      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        {!st.closed_through && (<>
+          <span style={{ fontSize: 13 }}>First day of the books</span>
+          <input className="form-input" type="date" value={start} max={yesterday} onChange={e => { setStart(e.target.value); setStep(null); }} style={{ width: 160 }} />
+        </>)}
+        <span style={{ fontSize: 13 }}>Close {st.closed_through ? `from ${fmtLong(firstOpen)} ` : ''}up to</span>
+        <input className="form-input" type="date" value={through} min={firstOpen || undefined} max={yesterday}
+          onChange={e => { setThrough(e.target.value); setStep(null); }} style={{ width: 160 }} />
+        {step === 'close' ? (<>
+          <span style={{ fontSize: 13 }}>
+            Close {count} day{count === 1 ? '' : 's'}{waiting ? ` and post ${waiting} correction line${waiting === 1 ? '' : 's'} on ${fmtLong(through)}` : ''}?
+          </span>
+          <button className="btn btn-primary btn-sm" onClick={close} disabled={busy}>{busy ? 'Closing…' : 'Yes, close'}</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setStep(null)} disabled={busy}>Cancel</button>
+        </>) : (
+          <button className="btn btn-primary btn-sm" onClick={() => setStep('close')} disabled={!canClose}>Close days</button>
+        )}
+        {st.closed_through && through > yesterday && <span className="text-muted" style={{ fontSize: 12 }}>Today can be closed from tomorrow.</span>}
+        {st.closed_through && yesterday < firstOpen && <span className="text-muted" style={{ fontSize: 12 }}>Everything up to yesterday is closed.</span>}
+      </div>
+
+      {waiting > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>
+            Changed after closing — {st.corrections.length} day{st.corrections.length === 1 ? '' : 's'}, waiting for the next close{' '}
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowAll(v => !v)}>{showAll ? 'Hide' : 'Show'}</button>
+          </div>
+          {showAll && (
+            <div className="table-wrap" style={{ marginTop: 6 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={TH}>Closed day</th><th style={TH}>Room · guest</th><th style={TH}>What</th><th style={TH}>Account</th>
+                    <th style={{ ...TH, ...R }}>Debit</th><th style={{ ...TH, ...R }}>Credit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {st.corrections.flatMap(c => c.items.map((it, i) => (
+                    <tr key={`${c.date}-${i}`}>
+                      <td style={{ ...TD, whiteSpace: 'nowrap' }}>{i === 0 ? fmtLong(c.date) : ''}</td>
+                      <td style={TD}>{it.ref || '—'}</td>
+                      <td style={TD}>{it.what}</td>
+                      <td style={TD}>{it.account_code} · {it.account_name}</td>
+                      <td style={{ ...TD, ...R }}>{amt(it.debit)}</td>
+                      <td style={{ ...TD, ...R }}>{amt(it.credit)}</td>
+                    </tr>
+                  )))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

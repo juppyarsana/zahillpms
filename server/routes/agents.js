@@ -42,7 +42,7 @@ router.post('/:agentId/payments', ownerOnly, async (req, res) => {
 
 router.patch('/payments/:paymentId', ownerOnly, async (req, res) => {
   try {
-    const result = await svc.updatePayment(req.propertyId, req.params.paymentId, req.body);
+    const result = await svc.updatePayment(req.propertyId, req.params.paymentId, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.json(result);
   } catch (err) {

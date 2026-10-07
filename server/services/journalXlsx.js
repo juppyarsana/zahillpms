@@ -100,7 +100,8 @@ async function buildJournalXlsx(journal, { propertyName } = {}) {
   ], 'The journal against the PMS\'s own reports for the same period.');
   c.add(['Debits = credits', journal.totals.debit, journal.totals.credit, journal.totals.debit - journal.totals.credit, journal.balanced ? 'Balanced' : 'NOT balanced — tell support']);
   const m = journal.checks.money;
-  c.add(['Money received (Daily Close / Cashier Closing)', m.journal, m.pms, m.difference, 'Should always be 0']);
+  c.add(['Money received (Daily Close / Cashier Closing)', m.journal, m.pms, m.difference,
+    journal.closed_days ? '0, unless a closed day was corrected later — the correction is in the day it was next closed' : 'Should always be 0']);
   for (const r of journal.checks.revenue) {
     c.add([`Revenue — ${r.label} (Reports page)`, r.journal, r.reports, r.difference,
       r.difference ? 'The journal counts what is posted to folios; Reports also count nights of guests not checked in yet' : '']);

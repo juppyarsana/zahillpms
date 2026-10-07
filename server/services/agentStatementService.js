@@ -333,7 +333,7 @@ async function recordPayment(propertyId, agentId, body, userId) {
   }
 }
 
-async function updatePayment(propertyId, paymentId, body) {
+async function updatePayment(propertyId, paymentId, body, userId) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -386,8 +386,13 @@ async function updatePayment(propertyId, paymentId, body) {
 
     const sets = [];
     const vals = [];
+    const changed = Array.isArray(body.allocations) ? ['which stays it pays'] : [];
+    const shown = v => (v == null || v === '' ? 'none' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 60));
     for (const f of ['method', 'received_on', 'reference', 'notes']) {
-      if (body[f] !== undefined) { vals.push(body[f] === '' ? null : body[f]); sets.push(`${f} = $${vals.length}`); }
+      if (body[f] === undefined) continue;
+      const next = body[f] === '' ? null : body[f];
+      vals.push(next); sets.push(`${f} = $${vals.length}`);
+      if (shown(payment[f]) !== shown(next)) changed.push(`${f === 'received_on' ? 'date received' : f}: ${shown(payment[f])} → ${shown(next)}`);
     }
     if (sets.length) {
       vals.push(paymentId, propertyId);
@@ -398,6 +403,13 @@ async function updatePayment(propertyId, paymentId, body) {
     }
 
     await reconcileBookingStatuses(client, propertyId, affected);
+    // An edit can move money between days — leave a record on every stay it pays or paid.
+    const stays = [...new Set(affected)];
+    if (changed.length && stays.length) {
+      await client.query(
+        'INSERT INTO booking_events (booking_id, note, created_by) SELECT unnest($1::uuid[]), $2, $3',
+        [stays, `Agent payment of Rp ${Math.round(parseFloat(payment.amount)).toLocaleString('id-ID')} changed — ${changed.join('; ')}`.slice(0, 1000), userId || null]);
+    }
     await client.query('COMMIT');
     return { ok: true };
   } catch (err) {
