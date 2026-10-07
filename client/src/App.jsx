@@ -42,6 +42,7 @@ import CashierClosing from './pages/CashierClosing';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
+import Accounting from './pages/Accounting';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
@@ -93,6 +94,7 @@ function BottomNav() {
     ]},
     { label: 'Back Office', items: [
       isOwner && hasModule('back_office') && { to: '/back-office', icon: '🏭', label: 'Back Office' },
+      can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
     ]},
     { label: 'Settings · Property', items: [
       isOwner && { to: '/settings/property', icon: '🏢', label: 'Property Details' },
@@ -305,6 +307,7 @@ export default function App() {
                   <Route path="/agents/:agentId" element={<RequireOwner><RequireModule moduleName="financial"><Agents /></RequireModule></RequireOwner>} />
                   <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />
                   <Route path="/back-office"     element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
+                  <Route path="/accounting"      element={<RequireMenu menuKey="accounting"><RequireModule moduleName="accounting"><Accounting /></RequireModule></RequireMenu>} />
                 </Routes>
               </Layout>
             </CallProvider>

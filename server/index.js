@@ -103,6 +103,8 @@ app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insigh
 app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/activities'));
 app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/expenses'));
+// Accounting, step 1 (migration 101): chart of accounts, account mapping, daily journal.
+app.use('/api/accounting', auth, moduleGuard('accounting'), require('./routes/accounting'));
 app.use('/api/yield', auth, moduleGuard('yield_management'), requireRole('owner'), require('./routes/yield'));
 app.use('/api/channel-manager', auth, moduleGuard('channel_manager'), require('./routes/channelManager'));
 // Reports & Alerts: free instant Telegram alerts for every property; the

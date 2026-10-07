@@ -14,6 +14,7 @@ const ORDERED_PATHS = [
   { key: 'operations',    path: '/operations' },
   { key: 'restaurant',    path: '/restaurant' },
   { key: 'night_audit',   path: '/night-audit' },
+  { key: 'accounting',    path: '/accounting' },
   { key: 'sales',         path: '/sales' },
   { key: 'activities',    path: '/activities' },
   { key: 'guest_board',   path: '/settings/board' },

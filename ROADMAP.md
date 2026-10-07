@@ -472,7 +472,9 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
-> **START HERE (written 2026-10-07 evening):** `main` = 2a47a53 (corrections pack 098–100 live on production since bed80dc; the group in / out commit 2a47a53 is released to `main` — pull, client build, restart on the server if not done yet). **Next work: accounting step 1** — per-property account mapping + a daily double-entry journal export. Two questions for the owner before the first line of code: (1) what does the accountant use today (Accurate / Jurnal.id / Zahir / Excel / VHP back office) — it decides the export file layout; (2) when is revenue booked — proposal: night by night as the night audit posts it, deposits held as a liability until then. The list "To settle WITH the accounting build" below goes into that design. Next migration: 101.
+> **START HERE (written 2026-10-08):** dev has **accounting step 1, session 1** (migration 101, not released): `accounting` module + permission, chart of accounts + account mapping, the daily journal on the Accounting page and as Excel — rule agreed with the owner: revenue night by night as the folio is posted, money received before arrival = Advance deposits. The accountant is on the VHP back office today and has not chosen what comes next (may be this app), so there is no accountant-specific file layout yet. **Next: session 2 — closed days** (a day exported is never rewritten; later corrections post on the day they are made; log the agent-payment edit) using the list "To settle WITH the accounting build" below; then step 2 (light books) if the owner wants the accounting done in this app. Before releasing 101: click through the Accounting page (journal tables + Accounts tab not seen in a browser). Also 2026-10-08: production Postgres set to `jit = off` (Reports page went from 15–40 s to instant — see `CLAUDE.md` "Production server settings"); no VPS upgrade needed. Next migration: 102.
+>
+> **(written 2026-10-07 evening):** `main` = 2a47a53 (corrections pack 098–100 live on production since bed80dc; the group in / out commit 2a47a53 is released to `main` — pull, client build, restart on the server if not done yet). **Next work: accounting step 1** — per-property account mapping + a daily double-entry journal export. Two questions for the owner before the first line of code: (1) what does the accountant use today (Accurate / Jurnal.id / Zahir / Excel / VHP back office) — it decides the export file layout; (2) when is revenue booked — proposal: night by night as the night audit posts it, deposits held as a liability until then. The list "To settle WITH the accounting build" below goes into that design. Next migration: 101.
 >
 > **2026-10-07 — Move a booking into / out of a group (no migration):** two more corrections — booking ⋮ → Move into a Group (money received on the room becomes a group payment) and Take out of the Group (FO says how much of the group's payments goes with the room, up to the room's price). Write-up in `CLAUDE.md`. Screens not clicked through yet.
 >
@@ -1901,7 +1903,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 101
+## Next migration number: 102
 
 ---
 

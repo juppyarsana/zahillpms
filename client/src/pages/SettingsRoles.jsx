@@ -35,6 +35,8 @@ export const MENU_DEFS = [
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },
+  // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
+  { key: 'accounting',       label: 'Accounting (accounts & daily journal)', group: 'Revenue' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
   { key: 'allotments',       label: 'Channels',             group: 'Revenue'   },
   { key: 'units',            label: 'Unit Settings',        group: 'Settings'  },

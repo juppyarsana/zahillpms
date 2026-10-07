@@ -128,6 +128,9 @@ export default function Sidebar() {
         {isOwner && hasModule('back_office') && (
           <SidebarLink to="/back-office" icon="🏭" label="Back Office" />
         )}
+        {can('accounting') && hasModule('accounting') && (
+          <SidebarLink to="/accounting" icon="📒" label="Accounting" />
+        )}
       </nav>
 
       {hasSettings && (

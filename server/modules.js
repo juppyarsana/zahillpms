@@ -39,6 +39,10 @@ module.exports = {
   // in-house guests and charges bills to their room. Own API key auth
   // (authPos), guard applied per-route inside routes/posIntegration.js.
   pos_integration: { label: 'POS Integration', routes: ['posIntegration'] },
+  // Default OFF — paid add-on (migration 101). Chart of accounts, account
+  // mapping and the daily journal (Excel) built from folios, payments, POS
+  // sessions and expenses. Owner or the `accounting` permission.
+  accounting:      { label: 'Accounting',      routes: ['accounting'] },
 };
 
 // Core routes — always on, no module guard:
