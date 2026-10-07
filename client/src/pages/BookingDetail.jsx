@@ -6,6 +6,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
+import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
 import PageHeader from '../components/PageHeader';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
@@ -181,6 +182,8 @@ export default function BookingDetail() {
   // Corrections (undo check-out / check-in, reinstate, edit after check-out):
   // owner or the `corrections` permission; a reason every time.
   const canCorrect = isOwner || can('corrections');
+  const [refunding, setRefunding] = useState(false);
+  const [cancelling, setCancelling] = useState(null);   // { reason, sure, busy, error }
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -506,10 +509,22 @@ Type the reason to void it:`;
     }
   }
 
-  async function cancel() {
-    if (!confirm('Cancel this booking?')) return;
-    await api.delete(`/api/bookings/${id}`);
-    nav('/reservations');
+  // Cancel Booking: a window with the booking spelled out, a required reason
+  // and a tick box — never a one-click confirm.
+  function cancel() {
+    setCancelling({ reason: '', sure: false, busy: false, error: '' });
+  }
+  async function doCancel() {
+    setCancelling(c => ({ ...c, busy: true, error: '' }));
+    try {
+      await api.delete(`/api/bookings/${id}`, { data: { reason: cancelling.reason.trim() } });
+      setCancelling(null);
+      setFolio(null);
+      setEstimate(null);
+      load();   // stay on the booking: a refund is done from here
+    } catch (err) {
+      setCancelling(c => ({ ...c, busy: false, error: err.response?.data?.error || 'Could not cancel the booking' }));
+    }
   }
 
   async function addNote() {
@@ -768,6 +783,14 @@ Type the reason to void it:`;
     }
   }
 
+  // After a payment correction / refund: everything money-related reloads.
+  function afterMoneyFix() {
+    setRefunding(false);
+    setFolio(null);
+    setEstimate(null);
+    load();
+  }
+
   // A correction: asks for the reason, then PUT /api/bookings/:id/<step>.
   async function correct(step, question) {
     const reason = (window.prompt(`${question}
@@ -869,6 +892,8 @@ Reason (required — goes into Edit History):`) || '').trim();
     canEditPrice && !['cancelled', 'no_show'].includes(booking.status) &&
       !['invoiced', 'paid'].includes(booking.folio_status) && !booking.complimentary_scope &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
+    canCorrect && (booking.payments || []).some(p => p.status === 'received') &&
+      { label: 'Refund', icon: '💸', onClick: () => setRefunding(true), hint: 'Give money back to the guest (a credit, or a cancelled booking)' },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
       !booking.complimentary_scope &&
       { label: booking.complimentary_request_pending ? 'Complimentary — waiting for approval' : 'Make Complimentary', icon: '🎁',
@@ -1162,7 +1187,10 @@ Reason (required — goes into Edit History):`) || '').trim();
             <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 12 }}>
               <div className="flex-between mb-3">
                 <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{p.type}</span>
-                <span className={`badge badge-${p.status === 'received' ? 'green' : 'orange'}`}>{p.status}</span>
+                <span className="flex gap-2 items-center">
+                  <span className={`badge badge-${p.status === 'received' ? 'green' : 'orange'}`}>{p.status}</span>
+                  {canCorrect && p.status === 'received' && <PaymentFixMenu payment={p} onDone={afterMoneyFix} />}
+                </span>
               </div>
               {p.status === 'pending' && p.notes && (
                 <div className="text-muted" style={{ fontSize: 11, marginTop: -8, marginBottom: 8 }}>{p.notes}</div>
@@ -1494,8 +1522,9 @@ Reason (required — goes into Edit History):`) || '').trim();
                   <div className="card-title" style={{ fontSize: 13 }}>Payments Received</div>
                   {folio.payments.filter(p => p.status === 'received').map(p => (
                     <div key={p.id} className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-                      <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type === 'incidental' ? 'Extras (paid at desk)' : p.type} · {p.method?.replace('_', ' ')}</span>
+                      <span className="text-muted" style={{ textTransform: 'capitalize' }}>{p.type === 'incidental' ? 'Extras (paid at desk)' : p.type === 'refund' ? 'Refund (given back)' : p.type} · {p.method?.replace('_', ' ')}</span>
                       <span className="flex gap-2 items-center">
+                        {canCorrect && <PaymentFixMenu payment={p} onDone={afterMoneyFix} />}
                         {p.receipt_kind && (
                           <button className="btn btn-icon btn-sm" style={{ padding: '0 6px' }} title="Print the receipt for this payment" onClick={() => downloadPaymentReceipt(p)}>🖨</button>
                         )}
@@ -1700,6 +1729,55 @@ Reason (required — goes into Edit History):`) || '').trim();
           </div>
         </div>
       )}
+
+      {cancelling && (() => {
+        const received = (booking.payments || []).filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
+        return (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <div className="modal-header">
+                <div className="modal-title">Cancel this booking?</div>
+                <button className="btn btn-icon" onClick={() => setCancelling(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                {cancelling.error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{cancelling.error}</div></div>}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700 }}>{booking.guest_name} · {booking.unit_name}</div>
+                  <div className="text-muted" style={{ fontSize: 13 }}>
+                    {booking.check_in_date?.slice(0, 10)} → {booking.check_out_date?.slice(0, 10)} · {booking.nights} night{booking.nights === 1 ? '' : 's'} · {fmtIDR(bookingNet)}
+                  </div>
+                </div>
+                <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+                  <div>
+                    The room becomes free for other guests.
+                    {received > 0
+                      ? <> <b>{fmtIDR(received)} has been received</b> on this booking — it stays recorded; give it back afterwards with ⋮ → Refund (all of it, or less a cancellation fee).</>
+                      : <> No payment has been received on it.</>}
+                    {booking.reservation_group_id && <> This only cancels this room, not the rest of its group.</>}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Reason (required — goes into Edit History)</label>
+                  <input className="form-input" autoFocus value={cancelling.reason} placeholder="e.g. guest cancelled by phone"
+                    onChange={e => setCancelling(c => ({ ...c, reason: e.target.value }))} />
+                </div>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={cancelling.sure} onChange={e => setCancelling(c => ({ ...c, sure: e.target.checked }))} />
+                  Yes, cancel the booking of {booking.guest_name} in {booking.unit_name}
+                </label>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setCancelling(null)}>Keep the booking</button>
+                <button className="btn btn-danger" onClick={doCancel} disabled={cancelling.busy || !cancelling.sure || !cancelling.reason.trim()}>
+                  {cancelling.busy ? 'Cancelling…' : 'Cancel booking'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {refunding && <RefundModal bookingId={id} guestName={booking.guest_name} onClose={() => setRefunding(false)} onDone={afterMoneyFix} />}
 
       {editingDetails && (
         <div className="modal-backdrop">

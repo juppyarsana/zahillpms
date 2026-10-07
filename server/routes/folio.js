@@ -1324,3 +1324,4 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.payRoomLines = payRoomLines;   // routes/payments.js (move a payment)

@@ -95,7 +95,7 @@ async function collected(propertyId, from, to = from) {
     LEFT JOIN payment_methods pm ON pm.id = money.method AND pm.property_id = $1
     GROUP BY 1 ORDER BY 2 DESC
   `, [propertyId, from, to]);
-  const byMethod = rows.map(r => ({ method: r.method, amount: parseFloat(r.amount) })).filter(r => r.amount > 0);
+  const byMethod = rows.map(r => ({ method: r.method, amount: parseFloat(r.amount) })).filter(r => Math.abs(r.amount) > 0.005);   // a day of refunds only is negative
   return { total: byMethod.reduce((s, r) => s + r.amount, 0), by_method: byMethod };
 }
 

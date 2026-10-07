@@ -1419,9 +1419,21 @@ router.post('/group', auth, async (req, res) => {
 
 // DELETE /api/bookings/group/:groupId  (cancel whole group — no hard delete)
 router.delete('/group/:groupId', auth, async (req, res) => {
+  // A reason every time; a group with a guest in house can't be cancelled as
+  // a whole (it used to cancel checked-in rooms too) — remove the rooms that
+  // aren't coming instead.
+  const reason = String(req.body?.reason || '').trim().slice(0, 500);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to cancel a group', code: 'REASON_REQUIRED' });
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    const { rows: [inHouse] } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM bookings WHERE reservation_group_id = $1 AND property_id = $2 AND status = 'checked_in'`,
+      [req.params.groupId, req.propertyId]);
+    if (inHouse.n > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `${inHouse.n} room${inHouse.n === 1 ? ' is' : 's are'} checked in — remove the rooms that aren't coming instead of cancelling the whole group`, code: 'ROOMS_IN_HOUSE' });
+    }
     const { rows: [group] } = await client.query(
       "UPDATE reservation_groups SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
       [req.params.groupId, req.propertyId]
@@ -1433,7 +1445,11 @@ router.delete('/group/:groupId', auth, async (req, res) => {
        RETURNING *`,
       [req.params.groupId, req.propertyId]
     );
-    for (const b of bookings) await roomCharge.voidAll(client, b.id, req.user.id);
+    for (const b of bookings) {
+      await roomCharge.voidAll(client, b.id, req.user.id);
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [b.id, `Group cancelled. Reason: ${reason}`.slice(0, 1000), req.user.id]);
+    }
     await client.query('COMMIT');
     res.json({ group, bookings });
   } catch (err) {
@@ -2956,6 +2972,14 @@ router.put('/:id', auth, async (req, res) => {
 // DELETE /api/bookings/:id  (cancel only — no hard delete)
 router.delete('/:id', auth, async (req, res) => {
   try {
+    // A reason every time, and only a booking that hasn't arrived (it used to
+    // cancel anything, a checked-in or checked-out stay included).
+    if (!String(req.body?.reason || '').trim()) return res.status(400).json({ error: 'A reason is required to cancel a booking', code: 'REASON_REQUIRED' });
+    const { rows: [cur] } = await db.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!cur) return res.status(404).json({ error: 'Booking not found' });
+    if (!['pending', 'deposit_paid', 'confirmed'].includes(cur.status)) {
+      return res.status(409).json({ error: cur.status === 'checked_in' ? 'This guest is checked in — check them out (or undo the check-in) instead' : `This booking is already ${cur.status.replace('_', ' ')}`, code: 'NOT_CANCELLABLE' });
+    }
     const { rows } = await db.query(
       "UPDATE bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
       [req.params.id, req.propertyId]

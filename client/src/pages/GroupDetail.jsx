@@ -67,6 +67,7 @@ export default function GroupDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('details');
+  const [cancellingGroup, setCancellingGroup] = useState(null);   // { reason, sure, busy, error }
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
   const [checkingIn, setCheckingIn] = useState(false);
@@ -355,13 +356,20 @@ Reason (required — goes into History):`) || '').trim();
     setRemoveSaving(false);
   }
 
-  async function cancelGroup() {
-    if (!confirm('Cancel this entire group booking? All rooms not already checked out will be cancelled.')) return;
+  // Cancel Group: a window with the group spelled out, a required reason and
+  // a tick box — never a one-click confirm.
+  function cancelGroup() {
+    setCancellingGroup({ reason: '', sure: false, busy: false, error: '' });
+  }
+  async function doCancelGroup() {
+    setCancellingGroup(c => ({ ...c, busy: true, error: '' }));
     try {
-      await api.delete(`/api/bookings/group/${groupId}`);
+      await api.delete(`/api/bookings/group/${groupId}`, { data: { reason: cancellingGroup.reason.trim() } });
+      setCancellingGroup(null);
+      setFolio(null);
       load();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to cancel group');
+      setCancellingGroup(c => ({ ...c, busy: false, error: err.response?.data?.error || 'Failed to cancel group' }));
     }
   }
 
@@ -723,6 +731,63 @@ Reason (required — goes into History):`) || '').trim();
           onClose={() => setAmending(false)}
           onDone={async () => { setAmending(false); await load(); if (folio) loadFolio(); }} />
       )}
+
+      {cancellingGroup && (() => {
+        const toCancel = bookings.filter(b => ['pending', 'deposit_paid', 'confirmed'].includes(b.status));
+        const inHouse = bookings.filter(b => b.status === 'checked_in');
+        const received = parseFloat(data.bill ? data.bill.received : rollup.paid_amount) || 0;
+        return (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <div className="modal-header">
+                <div className="modal-title">Cancel this whole group?</div>
+                <button className="btn btn-icon" onClick={() => setCancellingGroup(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                {cancellingGroup.error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{cancellingGroup.error}</div></div>}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700 }}>{group.guest_name}</div>
+                  <div className="text-muted" style={{ fontSize: 13 }}>
+                    {group.check_in_date?.slice(0, 10)} → {group.check_out_date?.slice(0, 10)} · {toCancel.length} room{toCancel.length === 1 ? '' : 's'} will be cancelled
+                    {toCancel.length > 0 && <>: {toCancel.map(b => b.unit_name).join(', ')}</>}
+                  </div>
+                </div>
+                {inHouse.length > 0 ? (
+                  <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                    <div>{inHouse.length} room{inHouse.length === 1 ? ' is' : 's are'} checked in ({inHouse.map(b => b.unit_name).join(', ')}) — a group with guests in house can't be cancelled as a whole. Use <b>Remove</b> on the rooms that aren't coming instead.</div>
+                  </div>
+                ) : (
+                  <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+                    <div>
+                      Every room of this group that hasn't arrived is cancelled and becomes free for other guests.
+                      {received > 0
+                        ? <> <b>{fmtIDR(received)} has been received</b> from this group — it stays recorded and has to be given back by hand.</>
+                        : <> No payment has been received from it.</>}
+                      {' '}If only some rooms aren't coming, use <b>Remove</b> on those rooms instead.
+                    </div>
+                  </div>
+                )}
+                <div className="form-group">
+                  <label className="form-label">Reason (required — goes into History)</label>
+                  <input className="form-input" autoFocus value={cancellingGroup.reason} placeholder="e.g. the company cancelled the event"
+                    onChange={e => setCancellingGroup(c => ({ ...c, reason: e.target.value }))} />
+                </div>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={cancellingGroup.sure} onChange={e => setCancellingGroup(c => ({ ...c, sure: e.target.checked }))} />
+                  Yes, cancel the whole group of {group.guest_name}
+                </label>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setCancellingGroup(null)}>Keep the group</button>
+                <button className="btn btn-danger" onClick={doCancelGroup}
+                  disabled={cancellingGroup.busy || !cancellingGroup.sure || !cancellingGroup.reason.trim() || inHouse.length > 0}>
+                  {cancellingGroup.busy ? 'Cancelling…' : 'Cancel group'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {removing && (() => {
         const paid = (removing.payments || [])

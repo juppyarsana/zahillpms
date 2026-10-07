@@ -14,7 +14,7 @@ const { PAID_AT_DESK_SQL, billRates, computeFolioTotals, round2 } = require('./f
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
-const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment' };
+const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund' };
 
 async function load(propertyId, date, { userId = null } = {}) {
   const { rows } = await db.query(`
@@ -83,7 +83,7 @@ async function load(propertyId, date, { userId = null } = {}) {
     FROM money
     LEFT JOIN payment_methods pm ON pm.id = money.method AND pm.property_id = $1
     LEFT JOIN users us ON us.id = money.user_id
-    WHERE money.amount > 0
+    WHERE money.amount <> 0   -- a refund (migration 098) is a negative line
     ORDER BY method_label, money.at NULLS FIRST, room
   `, [propertyId, date]);
 

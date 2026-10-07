@@ -67,7 +67,7 @@ function extraLines(room, rates) {
   return out;
 }
 
-const PAY_TYPE = { deposit: 'Deposit', balance: 'Balance', incidental: 'Extras' };
+const PAY_TYPE = { deposit: 'Deposit', balance: 'Balance', incidental: 'Extras', refund: 'Refund' };
 // The received date FO chose; plus the time it was recorded when that's the
 // same day (payments recorded before migration 093 have no time).
 const localDay = v => new Date(v).toLocaleDateString('en-CA');

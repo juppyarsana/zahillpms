@@ -66,7 +66,9 @@ function linePrice(i) {
 let openLineSeq = 0;
 
 export default function Sales() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
+  // Corrections (owner or the `corrections` permission): void a sale rung up by mistake.
+  const canCorrect = user?.role === 'owner' || can('corrections');
   const { paymentMethods, branding } = useSettings();
   // Same rule the server enforces on /api/products writes (requireOwnerOrMenu).
   const canManageItems = user?.role === 'owner' || (user?.allowed_menus || []).includes('resto_menu');
@@ -92,6 +94,19 @@ export default function Sales() {
   const [historyModal, setHistoryModal] = useState(null); // { product, rows, loading, error }
 
   async function loadProducts() { const r = await api.get('/api/products'); setProducts(r.data.filter(p => CAT_BY_KEY[p.category])); }
+  async function voidSale(s) {
+    const reason = (window.prompt(`Void this sale (${s.items_summary || 'sale'})? Its line on the guest's bill and its payment are voided too, and the stock comes back.
+
+Reason (required):`) || '').trim();
+    if (!reason) return;
+    try {
+      await api.post(`/api/sales/${s.id}/void`, { reason });
+      loadSales();
+      loadProducts();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not void the sale');
+    }
+  }
   async function loadSales() { const r = await api.get('/api/sales?scope=extras'); setSales(r.data); }
   async function loadInHouse() { const r = await api.get('/api/bookings?status=checked_in'); setInHouse(r.data); }
   useEffect(() => { loadProducts(); loadSales(); loadInHouse(); }, []);
@@ -499,9 +514,12 @@ export default function Sales() {
               <thead><tr><th>Date</th><th>Items</th><th>Guest / Room</th><th>Method</th><th>Total</th><th>Served By</th><th></th></tr></thead>
               <tbody>
                 {sales.map(s => (
-                  <tr key={s.id}>
+                  <tr key={s.id} style={s.voided_at ? { opacity: 0.55 } : undefined}>
                     <td style={{ whiteSpace: 'nowrap' }}>{fmtDateTime(s.created_at)}</td>
-                    <td>{s.items_summary || '—'}</td>
+                    <td>
+                      <span style={s.voided_at ? { textDecoration: 'line-through' } : undefined}>{s.items_summary || '—'}</span>
+                      {s.voided_at && <div style={{ fontSize: 11 }}><span className="badge badge-red">Voided</span> {s.void_reason}</div>}
+                    </td>
                     <td>{s.guest_name ? <>{s.guest_name}<div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.unit_name}</div></> : <span className="text-muted">Walk-in</span>}</td>
                     <td><span className={'badge ' + (s.payment_method === 'unpaid' ? 'badge-amber' : 'badge-gray')}>{methodLabel(s.payment_method)}</span></td>
                     {/* shown_total: the all-in price as sold (prices incl. tax, migration 079) — never re-worked at today's rates. */}
@@ -509,8 +527,11 @@ export default function Sales() {
                       : parseFloat(s.total_amount) + parseFloat(s.service_charge_amount || 0) + parseFloat(s.tax_amount || 0))}</td>
                     <td>{s.served_by_name || '—'}</td>
                     <td>
-                      {s.payment_method !== 'room_charge' && s.payment_method !== 'unpaid' && (
+                      {!s.voided_at && s.payment_method !== 'room_charge' && s.payment_method !== 'unpaid' && (
                         <button className="btn btn-sm btn-secondary" onClick={() => openReceipt(s.id)} title="Paid directly — print a receipt">🖨 Receipt</button>
+                      )}
+                      {canCorrect && !s.voided_at && s.confirmation_status !== 'rejected' && s.order_source !== 'external_pos' && (
+                        <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6 }} onClick={() => voidSale(s)} title="Rung up by mistake — void it">Void</button>
                       )}
                     </td>
                   </tr>
