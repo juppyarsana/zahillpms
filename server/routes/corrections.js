@@ -3,7 +3,8 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const roomCharge = require('../services/roomChargeService');
-const { recomputeBookingStatus } = require('../services/paymentStatusService');
+const { recomputeBookingStatus, recomputeGroupStatus } = require('../services/paymentStatusService');
+const groupBilling = require('../services/groupBilling');
 const { occupiedUntilSql } = require('../services/occupancySql');
 const { sendControlAlert } = require('../services/ownerAlerts');
 const sse = require('../sse');
@@ -18,6 +19,9 @@ const agentService = require('../services/agentService');
 //   PUT /:id/undo-checkout   checked out by mistake → back in house
 //   PUT /:id/undo-checkin    checked in by mistake  → back to arriving
 //   PUT /:id/reinstate       cancelled by mistake   → booked again (room still free)
+//   PUT /:id/agent-billing   agent billing decided wrong at check-out
+//   PUT /:id/join-group      a booking on its own → a room of a group
+//   PUT /:id/leave-group     a group's room → a booking on its own
 const canCorrect = requireOwnerOrMenu('corrections');
 
 const readReason = req => String(req.body?.reason || '').trim().slice(0, 500);
@@ -218,6 +222,168 @@ router.put('/:id/agent-billing', auth, canCorrect, correction(async (client, b, 
   await logEvent(client, b.id, `Agent billing corrected: ${changes.join('; ')}. Reason: ${reason}`, userId);
   return { json: { id: b.id, folio_status: settled.folio_status, agent_id: agentId, commission: now.commission == null ? null : parseFloat(now.commission) },
     headline: '✏️ Agent billing corrected after check-out', details: changes };
+}));
+
+// ── Into / out of a group ────────────────────────────────────────────────
+const rp = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+const r2 = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const MOVABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+
+// What can go with a room that leaves a group billed as a whole: the room's
+// price, and how much of the group's payments may move with it — up to the
+// room's price, never more than the group has received. What moves is no
+// longer paid towards the group's other rooms (group_owes_after says what the
+// group would still owe if `max` moved; group_credit = what it has paid
+// beyond its other rooms).
+async function leaveQuote(b, propertyId) {
+  const { rows: [g] } = await db.query(
+    `SELECT rg.id, rg.group_billing, gu.name AS booker,
+            (SELECT COUNT(*)::int FROM bookings x WHERE x.reservation_group_id = rg.id AND x.id <> $2
+               AND x.status NOT IN ('cancelled', 'no_show')) AS other_rooms
+     FROM reservation_groups rg JOIN guests gu ON gu.id = rg.primary_guest_id
+     WHERE rg.id = $1 AND rg.property_id = $3`, [b.reservation_group_id, b.id, propertyId]);
+  if (!g) return null;
+  const price = r2(parseFloat(b.total_amount) - parseFloat(b.discount_amount || 0));
+  const out = { group_id: g.id, booker: g.booker, group_billing: g.group_billing, other_rooms: g.other_rooms, price, group_credit: 0, max: 0 };
+  if (g.group_billing) {
+    const bill = await groupBilling.groupBill(g.id, propertyId);
+    const mine = bill.rooms.find(r => r.booking_id === b.id);
+    out.group_received = bill.received;
+    out.group_bill_after = r2(bill.total - (mine?.group_total || 0));
+    out.group_credit = Math.max(0, r2(bill.received - out.group_bill_after));
+    out.max = Math.min(price, Math.max(0, bill.received));
+  }
+  return out;
+}
+
+// GET /api/bookings/:id/leave-group/quote — for the "Take out of the group" window.
+router.get('/:id/leave-group/quote', auth, canCorrect, async (req, res) => {
+  try {
+    const { rows: [b] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!b) return res.status(404).json({ error: 'Booking not found' });
+    if (!b.reservation_group_id) return res.status(409).json({ error: 'This booking is not in a group' });
+    res.json(await leaveQuote(b, req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/:id/join-group { group_id, reason } — a reservation made on
+// its own turns out to belong to a group. The booking keeps its room, guest,
+// dates, price, folio and check-in state; only its group changes (the group's
+// dates stretch to cover it). In a group billed as a whole (migration 097) the
+// room has no payment lines of its own: its deposit / balance lines are
+// removed and what was received on them becomes group payments (same amount,
+// method, date, person, reference). Extras the guest paid stay on the room.
+router.put('/:id/join-group', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId, body }) => {
+  if (b.reservation_group_id) return { error: 'This booking is already in a group — take it out of that group first', code: 'ALREADY_IN_GROUP' };
+  if (!MOVABLE.includes(b.status)) return { error: `A ${b.status.replace('_', ' ')} booking can't be moved into a group` };
+  if (b.folio_status) return { error: 'This stay is on an agent\'s bill — it can\'t be moved into a group', code: 'ON_AGENT_INVOICE' };
+  if (!body.group_id) return { status: 400, error: 'Choose the group' };
+  const { rows: [g] } = await client.query(
+    `SELECT rg.*, gu.name AS booker FROM reservation_groups rg JOIN guests gu ON gu.id = rg.primary_guest_id
+     WHERE rg.id = $1 AND rg.property_id = $2 FOR UPDATE OF rg`, [body.group_id, propertyId]);
+  if (!g) return { status: 404, error: 'Group not found' };
+  if (g.status === 'cancelled') return { error: 'This group is cancelled' };
+
+  const details = [];
+  if (g.group_billing) {
+    const { rows: [ag] } = await client.query('SELECT name, payment_status FROM agents WHERE id = $1', [b.agent_id]);
+    if (ag && agentBilling.CITY_LEDGER.includes(ag.payment_status)) {
+      return { error: `This booking is billed to ${ag.name} — it can't also be on the group's bill. Change its agent first (Edit Details).`, code: 'AGENT_BILLED' };
+    }
+    const { rows: [refunded] } = await client.query(
+      "SELECT 1 FROM payments WHERE booking_id = $1 AND type = 'refund' AND status = 'received' LIMIT 1", [b.id]);
+    if (refunded) return { error: 'This booking has a refund on it — undo the refund first (it can be given again from the group)', code: 'HAS_REFUND' };
+
+    const { rows: lines } = await client.query(
+      "SELECT * FROM payments WHERE booking_id = $1 AND type IN ('deposit', 'balance') ORDER BY received_at NULLS LAST, created_at FOR UPDATE", [b.id]);
+    const received = lines.filter(l => l.status === 'received' && parseFloat(l.amount) > 0);
+    let moved = 0;
+    for (const l of received) {
+      await client.query(
+        `INSERT INTO group_payments (property_id, group_id, amount, method, received_at, received_by, recorded_at, reference, notes, legacy_payment_id)
+         VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, $7::timestamptz, $11::timestamptz, NOW()), $6, $7::timestamptz, $8, $9, $10)`,
+        [propertyId, g.id, l.amount, l.method || 'other', l.received_at, l.received_by, l.recorded_at, l.reference,
+         [l.notes, `moved from room ${b.unit_name} ${l.type}`].filter(Boolean).join(' · '), l.id, l.created_at]);
+      moved = r2(moved + parseFloat(l.amount));
+    }
+    if (lines.length) await client.query('DELETE FROM payments WHERE id = ANY($1::uuid[])', [lines.map(l => l.id)]);
+    await client.query('UPDATE bookings SET deposit_amount = 0 WHERE id = $1', [b.id]);
+    details.push(moved > 0 ? `${rp(moved)} received on the room is now a group payment` : 'nothing was received on the room yet',
+      'the room and meal plan are now on the group\'s bill');
+  }
+  await client.query('UPDATE bookings SET reservation_group_id = $1, updated_at = NOW() WHERE id = $2', [g.id, b.id]);
+  const { syncGroupSpan } = require('./bookings');
+  await syncGroupSpan(client, g.id);
+  const status = await recomputeBookingStatus(client, b.id);
+  await groupBilling.logToRooms(client, g.id,
+    `Room ${b.unit_name} moved into this group (was a booking on its own)${details.length ? ` — ${details[0]}` : ''}. Reason: ${reason}`, userId);
+  return { json: { id: b.id, reservation_group_id: g.id, status: status || b.status },
+    headline: `👥 Booking moved into the group of ${g.booker}`, details };
+}));
+
+// PUT /api/bookings/:id/leave-group { amount?, reason } — a group's room
+// becomes a booking on its own (same room, guest, dates, price, folio). Not
+// the group's last room. Out of a group billed as a whole the room gets its
+// own payment lines back; `amount` = how much of the group's payments goes
+// with it (0 … the room's price, at most what the group has received): taken
+// off the group as a minus line and recorded as received on the room, the
+// rest of the price is a pending balance. The group owes that much more.
+router.put('/:id/leave-group', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId, body }) => {
+  if (!b.reservation_group_id) return { error: 'This booking is not in a group' };
+  if (!MOVABLE.includes(b.status)) return { error: `A ${b.status.replace('_', ' ')} room can't be taken out of its group` };
+  if (b.folio_status) return { error: 'This stay is on an agent\'s bill — it can\'t be taken out of its group', code: 'ON_AGENT_INVOICE' };
+  const groupId = b.reservation_group_id;
+  await client.query('SELECT id FROM reservation_groups WHERE id = $1 AND property_id = $2 FOR UPDATE', [groupId, propertyId]);
+  const q = await leaveQuote(b, propertyId);
+  if (!q) return { status: 404, error: 'Group not found' };
+  if (q.other_rooms === 0) return { error: 'This is the group\'s last room — a group needs at least one', code: 'LAST_ROOM' };
+
+  const details = [];
+  await client.query(
+    // A fixed group discount is stored on every room as the GROUP's value;
+    // on its own the booking keeps only its share.
+    `UPDATE bookings SET reservation_group_id = NULL, updated_at = NOW(),
+            discount_value = CASE WHEN discount_type = 'fixed' THEN discount_amount ELSE discount_value END
+     WHERE id = $1`, [b.id]);
+  if (q.group_billing) {
+    const amt = r2(parseFloat(body.amount || 0));
+    if (!(amt >= 0)) return { status: 400, error: 'Enter the amount that goes with the room (0 for none)' };
+    if (amt > q.max + 0.05) {
+      return { code: 'OVER_CREDIT', error: q.max > 0
+        ? `Only ${rp(q.max)} of the group's payments can go with this room`
+        : 'None of the group\'s payments can go with this room — the group has not paid anything yet' };
+    }
+    if (amt > 0) {
+      const { rows: [last] } = await client.query(
+        `SELECT method FROM group_payments WHERE group_id = $1 AND NOT is_voided AND amount > 0
+         ORDER BY received_at DESC, created_at DESC LIMIT 1`, [groupId]);
+      const method = last?.method || 'other';
+      await client.query(
+        `INSERT INTO group_payments (property_id, group_id, amount, method, received_by, notes, is_refund)
+         VALUES ($1, $2, $3, $4, $5, $6, true)`,
+        [propertyId, groupId, -amt, method, userId, `Moved to room ${b.unit_name}, taken out of the group`]);
+      await client.query(
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes)
+         VALUES ($1, 'deposit', $2, 'received', $3, NOW(), $4, $5)`,
+        [b.id, amt, method, userId, `Moved from the payments of ${q.booker}'s group`]);
+    }
+    const rest = r2(q.price - amt);
+    if (rest > 0.05) await client.query("INSERT INTO payments (booking_id, type, amount) VALUES ($1, 'balance', $2)", [b.id, rest]);
+    await client.query('UPDATE bookings SET deposit_amount = $1 WHERE id = $2', [amt, b.id]);
+    details.push(amt > 0 ? `${rp(amt)} of the group's payments went with the room` : 'none of the group\'s payments went with the room',
+      rest > 0.05 ? `${rp(rest)} still to pay on the room` : 'the room is paid');
+  }
+  const { syncGroupSpan } = require('./bookings');
+  await syncGroupSpan(client, groupId);
+  if (q.group_billing) await recomputeGroupStatus(client, groupId);
+  const status = await recomputeBookingStatus(client, b.id);
+  const note = `Room ${b.unit_name} taken out of the group of ${q.booker} — now a booking on its own${details.length ? ` (${details.join('; ')})` : ''}. Reason: ${reason}`;
+  await logEvent(client, b.id, note, userId);
+  await groupBilling.logToRooms(client, groupId, note, userId);
+  return { json: { id: b.id, reservation_group_id: null, status: status || b.status },
+    headline: `👤 Room taken out of the group of ${q.booker}`, details };
 }));
 
 module.exports = router;

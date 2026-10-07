@@ -472,6 +472,8 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
+> **2026-10-07 — Move a booking into / out of a group (no migration):** two more corrections — booking ⋮ → Move into a Group (money received on the room becomes a group payment) and Take out of the Group (FO says how much of the group's payments goes with the room, up to the room's price). Write-up in `CLAUDE.md`. Screens not clicked through yet.
+>
 > **2026-10-07 — Corrections pack COMPLETE, Session 3 done (migration 099):** fix agent billing on a checked-out stay, void an agent invoice (kept, re-invoice with a new number), refund to a group billed as a whole. Voiding an agent payment now keeps the record (migration 100). Next agreed: accounting step 1 (account mapping + daily journal export).
 >
 > **To settle WITH the accounting build (left alone on purpose, 2026-10-07):**

@@ -8,6 +8,7 @@ import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
 import ReasonModal from '../components/ReasonModal';
 import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
+import { JoinGroupModal, LeaveGroupModal } from '../components/GroupMove';
 import PageHeader from '../components/PageHeader';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
@@ -184,6 +185,7 @@ export default function BookingDetail() {
   // owner or the `corrections` permission; a reason every time.
   const canCorrect = isOwner || can('corrections');
   const [refunding, setRefunding] = useState(false);
+  const [groupMove, setGroupMove] = useState(null);   // 'join' | 'leave'
   const [voidingCharge, setVoidingCharge] = useState(null);   // folio line
   const [correcting, setCorrecting] = useState(null);   // { step, title, text, confirmLabel }
   const [cancelling, setCancelling] = useState(null);   // { reason, sure, busy, error }
@@ -902,6 +904,12 @@ export default function BookingDetail() {
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
     canCorrect && booking.status === 'checked_out' && !['invoiced', 'paid'].includes(booking.folio_status) &&
       { label: 'Fix Agent Billing', icon: '🧾', onClick: openAgentFix, hint: 'Wrong agent, billed to the agent by mistake (or not), wrong commission' },
+    canCorrect && !booking.reservation_group_id && !booking.folio_status &&
+      ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Move into a Group', icon: '👥', onClick: () => setGroupMove('join'), hint: 'Booked on its own, but belongs to a group booking' },
+    canCorrect && booking.reservation_group_id && !booking.folio_status &&
+      ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
+      { label: 'Take out of the Group', icon: '👤', onClick: () => setGroupMove('leave'), hint: 'This room becomes a booking on its own' },
     canCorrect && (booking.payments || []).some(p => p.status === 'received') &&
       { label: 'Refund', icon: '💸', onClick: () => setRefunding(true), hint: 'Give money back to the guest (a credit, or a cancelled booking)' },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
@@ -1849,6 +1857,8 @@ export default function BookingDetail() {
         </ReasonModal>
       )}
 
+      {groupMove === 'join' && <JoinGroupModal booking={booking} onClose={() => setGroupMove(null)} onDone={() => { setGroupMove(null); afterMoneyFix(); }} />}
+      {groupMove === 'leave' && <LeaveGroupModal booking={booking} onClose={() => setGroupMove(null)} onDone={() => { setGroupMove(null); afterMoneyFix(); }} />}
       {refunding && <RefundModal bookingId={id} guestName={booking.guest_name} onClose={() => setRefunding(false)} onDone={afterMoneyFix} />}
 
       {editingDetails && (
