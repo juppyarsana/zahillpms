@@ -1048,6 +1048,34 @@ router.get('/:bookingId/proforma', auth, async (req, res) => {
 // group pays everything), then the group total, the group's payments and its
 // balance. `folios` = loadFolio (invoice: posted so far) or computeProforma
 // (pro forma: whole stay) per active room.
+// Group bill, under a room's lines: what that room's guest already paid at the
+// front desk themselves (an extra bed paid directly, an activity…). For the
+// record only — never part of the group's total. Amounts are what the guest
+// paid (service & tax included).
+function drawPaidByRoom(doc, f) {
+  const paid = allInCharges(f.charges.filter(c => !c.to_group && c.paid_at_desk && !c.complimentary), f.tax_rate, f.service_charge_rate);
+  if (!paid.length) return;
+  const isNight = c => c.type === 'addon' && c.service_date;
+  const lines = [...mergeAddonLines(paid), ...paid.filter(c => !isNight(c))];
+  const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
+  let y = doc.y + 4;
+  if (y > 720) { doc.addPage(); y = 50; }
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#555')
+    .text('PAID BY THE ROOM ITSELF — NOT ON THIS BILL', 50, y);
+  y += 12;
+  for (const c of lines) {
+    if (y > 760) { doc.addPage(); y = 50; }
+    const desc = `${c.description}${parseFloat(c.quantity) > 1 ? ` · ${parseFloat(c.quantity)} × ${whole(c.unit_price)}` : ''} (paid · ${c.paid_method || 'front desk'})`;
+    doc.font('Helvetica').fontSize(9).fillColor('#555');
+    const h = Math.max(13, doc.heightOfString(desc, { width: 390 }) + 3);
+    doc.text(desc, 50, y, { width: 390 });
+    doc.text(whole(c.amount), 460, y, { width: 90, align: 'right' });
+    y += h;
+  }
+  doc.fillColor('#000');
+  doc.y = y;
+}
+
 async function renderGroupBillPdf(res, { group, folios, propertyId, title, filename, note, footer }) {
   const { rows: [settings] } = await db.query(
     `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
@@ -1090,6 +1118,7 @@ async function renderGroupBillPdf(res, { group, folios, propertyId, title, filen
     if (compNote) doc.fontSize(9).font('Helvetica-Bold').fillColor('#047857').text(compNote, 50, doc.y).fillColor('#000');
     doc.moveDown(0.3);
     drawChargeTable(doc, { ...f, charges: lines, ...t, payments: [], showBalance: false });
+    drawPaidByRoom(doc, f);
     doc.y += 14;
   }
   total = round2(total);
