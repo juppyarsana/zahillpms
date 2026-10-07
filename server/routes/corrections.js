@@ -7,6 +7,8 @@ const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const { occupiedUntilSql } = require('../services/occupancySql');
 const { sendControlAlert } = require('../services/ownerAlerts');
 const sse = require('../sse');
+const agentBilling = require('../services/agentBillingService');
+const agentService = require('../services/agentService');
 
 // Corrections — mounted at /api/bookings (reservations module), ahead of
 // routes/bookings.js. Front desk mistakes are put right by reversing the
@@ -55,7 +57,7 @@ function correction(work) {
       await client.query('BEGIN');
       const b = await lockBooking(client, req.params.id, req.propertyId);
       if (!b) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
-      const out = await work(client, b, { reason, userId: req.user.id, propertyId: req.propertyId });
+      const out = await work(client, b, { reason, userId: req.user.id, propertyId: req.propertyId, body: req.body || {} });
       if (out.error) { await client.query('ROLLBACK'); return res.status(out.status || 409).json({ error: out.error, ...(out.code ? { code: out.code } : {}) }); }
       await client.query('COMMIT');
       if (b.controller_id) sse.notify(b.controller_id, { type: 'guest_changed' });
@@ -153,6 +155,69 @@ router.put('/:id/reinstate', auth, canCorrect, correction(async (client, b, { re
   const status = await recomputeBookingStatus(client, b.id);
   await logEvent(client, b.id, `Booking reinstated — status back to ${status.replace('_', ' ')}. Reason: ${reason}`, userId);
   return { json: { id: b.id, status }, headline: '↩️ Cancelled booking reinstated' };
+}));
+
+// PUT /api/bookings/:id/agent-billing { agent_id, commission_type?, commission_value?, bill_to_agent, reason }
+// A checked-out stay whose agent billing came out wrong at check-out: wrong
+// agent (or none), billed to the agent when the guest paid — or the other way
+// round — or the wrong commission. What check-out decided is taken back
+// (billed-to-agent mark, an unpaid commission) and decided again with the
+// values given, by the same rule check-out uses (agentBilling.settleCheckout).
+//   agent_id       '' / null = no agent; absent = keep
+//   bill_to_agent  true = on the agent's bill, false = the guest pays
+// Refused once the stay is on an agent invoice (void the invoice first), has
+// agent payments allocated to it, or its commission is already paid out.
+router.put('/:id/agent-billing', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId, body }) => {
+  if (b.status !== 'checked_out') return { error: 'Agent billing is corrected here only after check-out — before that, use Edit Details' };
+  if (['invoiced', 'paid'].includes(b.folio_status) || b.agent_invoice_id) {
+    return { error: 'This stay is on an agent invoice — void the invoice first (Agent Billing → the agent → Invoices)', code: 'ON_AGENT_INVOICE' };
+  }
+  const { rows: [alloc] } = await client.query('SELECT 1 FROM agent_payment_allocations WHERE booking_id = $1 LIMIT 1', [b.id]);
+  if (alloc) return { error: 'The agent has already paid towards this stay — take that payment off it first (Agent Billing → the agent → Payments)', code: 'AGENT_PAID' };
+  const { rows: [paidOut] } = await client.query("SELECT 1 FROM agent_commissions WHERE booking_id = $1 AND status <> 'unpaid'", [b.id]);
+  if (paidOut) return { error: 'The commission of this stay is already paid out — mark it unpaid first (Agent Billing → the agent → Commissions)', code: 'COMMISSION_PAID' };
+
+  let agentId = b.agent_id;
+  if (body.agent_id !== undefined) {
+    if (!body.agent_id) agentId = null;
+    else {
+      const agent = await agentService.getAgent(propertyId, body.agent_id, client);
+      if (!agent) return { status: 404, error: 'Agent not found' };
+      agentId = agent.id;
+    }
+  }
+  const commission = agentService.parseBookingCommission(body);
+  if (commission.error) return { status: 400, error: commission.error };
+  const billToAgent = !!body.bill_to_agent;
+  if (billToAgent && !agentId) return { status: 400, error: 'Choose the agent this stay is billed to' };
+
+  const snapshot = async id => (await client.query(
+    `SELECT (SELECT name FROM agents WHERE id = $2) AS agent_name,
+            (SELECT amount FROM agent_commissions WHERE booking_id = $1) AS commission`, [b.id, id])).rows[0];
+  const was = await snapshot(b.agent_id);
+  await client.query("DELETE FROM agent_commissions WHERE booking_id = $1 AND property_id = $2 AND status = 'unpaid'", [b.id, propertyId]);
+  const own = !!agentId && 'commission_type' in commission.values;
+  await client.query(
+    `UPDATE bookings SET agent_id = $1, folio_status = NULL,
+            commission_type = CASE WHEN $2::boolean THEN $3 WHEN $1::uuid IS NULL THEN NULL ELSE commission_type END,
+            commission_value = CASE WHEN $2::boolean THEN $4::numeric WHEN $1::uuid IS NULL THEN NULL ELSE commission_value END,
+            updated_at = NOW() WHERE id = $5`,
+    [agentId, own, own ? commission.values.commission_type : null, own ? commission.values.commission_value : null, b.id]);
+  const settled = await agentBilling.settleCheckout(client, { propertyId, bookingId: b.id, billToAgent, actorUserId: userId });
+  if (settled.error) return { status: 400, error: settled.error };
+
+  const now = await snapshot(agentId);
+  const money = n => (n == null ? 'none' : 'Rp ' + Math.round(parseFloat(n)).toLocaleString('id-ID'));
+  const wasBilled = b.folio_status === 'pending_agent_invoice';
+  const changes = [
+    (was.agent_name || null) !== (now.agent_name || null) ? `agent ${was.agent_name || 'none'} → ${now.agent_name || 'none'}` : '',
+    wasBilled !== billToAgent ? (billToAgent ? `now billed to ${now.agent_name}` : 'no longer billed to the agent — the guest pays') : '',
+    money(was.commission) !== money(now.commission) ? `commission ${money(was.commission)} → ${money(now.commission)}` : '',
+  ].filter(Boolean);
+  if (!changes.length) return { status: 400, error: 'Nothing was changed' };
+  await logEvent(client, b.id, `Agent billing corrected: ${changes.join('; ')}. Reason: ${reason}`, userId);
+  return { json: { id: b.id, folio_status: settled.folio_status, agent_id: agentId, commission: now.commission == null ? null : parseFloat(now.commission) },
+    headline: '✏️ Agent billing corrected after check-out', details: changes };
 }));
 
 module.exports = router;

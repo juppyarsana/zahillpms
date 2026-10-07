@@ -106,7 +106,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
         payments: bill.payments.map(p => ({
           id: p.id, amount: p.amount, method: p.method, method_label: p.method_label, reference: p.reference, notes: p.notes,
           received_at: p.received_at, recorded_at: p.recorded_at, received_by_name: p.received_by_name,
-          is_voided: p.is_voided, void_reason: p.void_reason, voided_by_name: p.voided_by_name, voided_at: p.voided_at,
+          is_voided: p.is_voided, is_refund: p.is_refund, void_reason: p.void_reason, voided_by_name: p.voided_by_name, voided_at: p.voided_at,
         })),
         rooms_own_balance: eSum('balance_due'),
       } : null,
@@ -1158,7 +1158,7 @@ async function renderGroupBillPdf(res, { group, folios, propertyId, title, filen
     doc.moveDown(0.2);
     for (const p of payments) {
       const when = new Date(p.received_at).toLocaleDateString('en-GB');
-      line(`${p.method_label} · ${when}${p.reference ? ` · Ref ${p.reference}` : ''}`, money(p.amount), { left: true });
+      line(`${p.amount < 0 ? 'Refund · ' : ''}${p.method_label} · ${when}${p.reference ? ` · Ref ${p.reference}` : ''}`, money(p.amount), { left: true });
     }
   }
   doc.moveDown(0.3);

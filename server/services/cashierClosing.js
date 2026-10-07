@@ -14,7 +14,7 @@ const { PAID_AT_DESK_SQL, billRates, computeFolioTotals, round2 } = require('./f
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
-const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund' };
+const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund', group_refund: 'Group refund' };
 
 async function load(propertyId, date, { userId = null } = {}) {
   const { rows } = await db.query(`
@@ -66,7 +66,7 @@ async function load(propertyId, date, { userId = null } = {}) {
       UNION ALL
       -- A payment from a group billed as a whole (migration 097): one line,
       -- its rooms listed, the booker as the guest.
-      SELECT gp.method, gp.amount, gp.reference, gp.notes, 'group', gp.recorded_at, gp.received_by,
+      SELECT gp.method, gp.amount, gp.reference, gp.notes, CASE WHEN gp.is_refund THEN 'group_refund' ELSE 'group' END, gp.recorded_at, gp.received_by,
              NULL, (SELECT 'Group · ' || string_agg(gu.name, ', ' ORDER BY gu.name) FROM bookings gb JOIN units gu ON gu.id = gb.unit_id
                     WHERE gb.reservation_group_id = gp.group_id AND gb.status NOT IN ('cancelled', 'no_show')),
              gg.name, gp.group_id

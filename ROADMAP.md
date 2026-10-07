@@ -472,6 +472,8 @@ Per-property tax and service charge rates, applied on folio and invoice.
 
 ### 13. Agent Accounts / Direct Billing (Company, Travel Agent, Wholesaler)
 
+> **2026-10-07 — Corrections pack COMPLETE, Session 3 done (migration 099):** fix agent billing on a checked-out stay, void an agent invoice (kept, re-invoice with a new number), refund to a group billed as a whole. Next agreed: accounting step 1 (account mapping + daily journal export); before it, make voiding an agent payment keep the record (it still deletes).
+>
 > **2026-10-07 — Corrections pack, Session 2 of 3 done (migration 098):** refund (a negative received payment on the refund day), undo / correct / move a received payment, void a Sales till sale; the generic payment update is locked to pending lines. Session 3 left: agent billing on a past stay, void an agent invoice, group refund.
 >
 > **2026-10-07 — Corrections pack, Session 1 of 3 done (no migration):** undo check-out, undo check-in, reinstate a cancelled booking / group room, edit details after check-out — owner or the new `corrections` permission, reason required. Scope widened to the original eight + refund / reverse a payment, move a payment, group refund. Session 2 = payments (refund, correct, move, void a Sales sale), Session 3 = agent billing on a past stay, void an agent invoice, group refund. Accounting step 1 (GL export) comes after. Write-up in `CLAUDE.md` ("Corrections pack").
@@ -1889,7 +1891,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 099
+## Next migration number: 100
 
 ---
 

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
 import PageHeader from '../components/PageHeader';
+import ReasonModal from '../components/ReasonModal';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
@@ -67,6 +68,7 @@ export default function GroupDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('details');
+  const [reinstating, setReinstating] = useState(null);   // cancelled room (booking row)
   const [cancellingGroup, setCancellingGroup] = useState(null);   // { reason, sure, busy, error }
   const [folio, setFolio] = useState(null);
   const [folioLoading, setFolioLoading] = useState(false);
@@ -83,18 +85,11 @@ export default function GroupDetail() {
 
   useEffect(() => { load(); }, [groupId]);
 
-  async function reinstateRoom(b) {
-    const reason = (window.prompt(`Put room ${b.unit_name} back into this group? It must still be free for its dates.
-
-Reason (required — goes into History):`) || '').trim();
-    if (!reason) return;
-    try {
-      await api.put(`/api/bookings/${b.id}/reinstate`, { reason });
-      setFolio(null);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not reinstate the room');
-    }
+  async function reinstateRoom(b, reason) {
+    await api.put(`/api/bookings/${b.id}/reinstate`, { reason });
+    setReinstating(null);
+    setFolio(null);
+    load();
   }
 
   async function loadFolio() {
@@ -557,7 +552,7 @@ Reason (required — goes into History):`) || '').trim();
                   )}
                   {canCorrect && b.status === 'cancelled' && (
                     <button className="btn btn-sm btn-secondary" title="Cancelled by mistake — put this room back if it is still free"
-                      onClick={() => reinstateRoom(b)}>↩ Reinstate</button>
+                      onClick={() => setReinstating(b)}>↩ Reinstate</button>
                   )}
                 </div>
               </div>
@@ -565,7 +560,7 @@ Reason (required — goes into History):`) || '').trim();
           </div>
 
           {data.bill && (
-            <GroupBillingCard groupId={groupId} bill={data.bill} rollup={rollup}
+            <GroupBillingCard groupId={groupId} bill={data.bill} rollup={rollup} canRefund={canCorrect}
               canPay={group.status !== 'cancelled'}
               onChanged={() => { load(); if (folio) loadFolio(); }} />
           )}
@@ -732,6 +727,12 @@ Reason (required — goes into History):`) || '').trim();
           onDone={async () => { setAmending(false); await load(); if (folio) loadFolio(); }} />
       )}
 
+      {reinstating && (
+        <ReasonModal title={`Put room ${reinstating.unit_name} back into the group?`} confirmLabel="Reinstate room"
+          onClose={() => setReinstating(null)} onConfirm={reason => reinstateRoom(reinstating, reason)}>
+          The cancelled room is booked again as part of this group, as long as nobody else has it for its dates. The group's bill grows by this room.
+        </ReasonModal>
+      )}
       {cancellingGroup && (() => {
         const toCancel = bookings.filter(b => ['pending', 'deposit_paid', 'confirmed'].includes(b.status));
         const inHouse = bookings.filter(b => b.status === 'checked_in');

@@ -122,4 +122,38 @@ async function voidPayment(client, { propertyId, groupId, paymentId, userId, rea
   return { ok: true };
 }
 
-module.exports = { GROUP_OWED_SQL, groupBill, listPayments, recordPayment, voidPayment, logToRooms };
+// Money given back to the group (migration 099): a group_payments row with a
+// NEGATIVE amount on the refund day (is_refund), so "received" and every
+// money report net it out. Never more than `refundable` — the group's credit
+// (received beyond its bill; everything received once the group is cancelled),
+// worked out by the caller from groupBill() before the transaction.
+async function refund(client, { propertyId, groupId, userId, amount, method, refundedAt, reference, reason, refundable }) {
+  const amt = round2(parseFloat(amount));
+  const why = String(reason || '').trim().slice(0, 500);
+  if (!why) return { status: 400, error: 'A reason is required', code: 'REASON_REQUIRED' };
+  if (!(amt > 0)) return { status: 400, error: 'Enter the amount given back' };
+  if (!method) return { status: 400, error: 'Choose how the money was given back' };
+  if (amt > refundable + 0.05) {
+    return { status: 409, code: 'OVER_CREDIT', refundable,
+      error: refundable > 0 ? `Only ${fmtIDR(refundable)} can be refunded — that is the group's credit`
+        : 'This group has no credit to refund. If its bill is wrong, correct it first (remove a room, Amend Dates, Edit Price).' };
+  }
+  const { rows: [pm] } = await client.query(
+    "SELECT id, label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true AND id <> 'ota_managed'",
+    [method, propertyId]);
+  if (!pm) return { status: 400, error: 'Unknown payment method' };
+  const { rows: [p] } = await client.query(
+    `INSERT INTO group_payments (property_id, group_id, amount, method, received_at, received_by, reference, notes, is_refund)
+     VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8, true) RETURNING *`,
+    [propertyId, groupId, -amt, method, refundedAt || null, userId,
+     String(reference || '').trim().slice(0, 120) || null, `Refund: ${why}`.slice(0, 500)]);
+  await recomputeGroupStatus(client, groupId);
+  // On every room, cancelled ones too (a cancelled group has no active room).
+  await client.query(
+    `INSERT INTO booking_events (booking_id, note, created_by)
+     SELECT id, $2, $3 FROM bookings WHERE reservation_group_id = $1`,
+    [groupId, `Group refund: ${fmtIDR(amt)} given back by ${pm.label}. Reason: ${why}`.slice(0, 1000), userId]);
+  return { payment: { ...p, amount: parseFloat(p.amount), method_label: pm.label } };
+}
+
+module.exports = { GROUP_OWED_SQL, groupBill, listPayments, recordPayment, voidPayment, logToRooms, refund };

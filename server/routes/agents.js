@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const svc = require('../services/agentStatementService');
 const { renderAgentInvoice } = require('../services/agentInvoicePdf');
+const { sendControlAlert } = require('../services/ownerAlerts');
 
 // Agent Accounts / Direct Billing — Slice C. Mounted at /api/agents behind
 // auth + moduleGuard('financial') in server/index.js; owner-only per handler.
@@ -69,10 +70,25 @@ router.post('/:agentId/invoices', ownerOnly, async (req, res) => {
   }
 });
 
+// DELETE /api/agents/invoices/:invoiceId { reason } — void an invoice issued
+// by mistake (kept, marked voided; its stays can be invoiced again).
+router.delete('/invoices/:invoiceId', ownerOnly, async (req, res) => {
+  try {
+    const result = await svc.voidInvoice(req.propertyId, req.params.invoiceId, req.body?.reason, req.user.id);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error, code: result.code });
+    sendControlAlert(req.propertyId, { bookingIds: result.bookings, userId: req.user.id, reason: String(req.body.reason).trim(),
+      headline: `🗑 Agent invoice ${result.invoice_number} voided — ${result.bookings.length} stay${result.bookings.length === 1 ? '' : 's'} un-invoiced` });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/invoices/:invoiceId/pdf', ownerOnly, async (req, res) => {
   try {
     const payload = await svc.invoicePayload(req.propertyId, req.params.invoiceId);
     if (!payload) return res.status(404).json({ error: 'Invoice not found' });
+    if (payload.invoice.voided_at) return res.status(409).json({ error: 'This invoice was voided', code: 'VOIDED' });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${payload.invoice.invoice_number}.pdf"`);

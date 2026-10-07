@@ -88,7 +88,7 @@ function transactions(rooms, groupPayments = []) {
   const map = new Map();
   for (const p of groupPayments.filter(x => !x.is_voided)) {
     map.set(p.id, { key: p.id, when: p.recorded_at || p.received_at, date: payDate(p), method: p.method_label, reference: p.reference,
-      by: p.received_by_name, notes: p.notes, parts: [{ room: null, type: 'Group payment', amount: parseFloat(p.amount) }], total: parseFloat(p.amount) });
+      by: p.received_by_name, notes: p.notes, parts: [{ room: null, type: p.is_refund ? 'Group refund' : 'Group payment', amount: parseFloat(p.amount) }], total: parseFloat(p.amount) });
   }
   for (const room of rooms) {
     for (const p of room.payments) {

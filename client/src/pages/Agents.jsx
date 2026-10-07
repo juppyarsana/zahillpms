@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import AgentFormModal from '../components/AgentFormModal';
+import ReasonModal from '../components/ReasonModal';
 import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, CITY_LEDGER, commissionText } from '../lib/agents';
 
 function fmtIDR(n) {
@@ -169,6 +170,7 @@ function AgentDetail({ agentId }) {
   const [toast, setToast] = useState(null);
   const [payOpen, setPayOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  const [voidingInv, setVoidingInv] = useState(null);   // invoice row
   const [editOpen, setEditOpen] = useState(false);
 
   function showToast(msg, type = 'success') {
@@ -184,6 +186,14 @@ function AgentDetail({ agentId }) {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [agentId]);
+
+  // Void an invoice: a window with what happens and a required reason.
+  async function voidInvoice(inv, reason) {
+    await api.delete(`/api/agents/invoices/${inv.id}`, { data: { reason } });
+    setVoidingInv(null);
+    showToast(`Invoice ${inv.invoice_number} voided`);
+    load();
+  }
 
   async function downloadInvoicePdf(invoiceId, number) {
     try {
@@ -324,11 +334,17 @@ function AgentDetail({ agentId }) {
       <Section title={`Invoices (${invoices.length})`}>
         {invoices.length === 0 ? <Empty>No invoices generated.</Empty> : invoices.map(inv => (
           <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '10px 0', borderBottom: '1px solid #F3F4F6' }}>
-            <div>
-              <strong>{inv.invoice_number}</strong>
-              <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(inv.issued_on)} · {inv.booking_count} booking(s) · {fmtIDR(inv.total)}</span>
+            <div style={inv.voided_at ? { opacity: 0.6 } : undefined}>
+              <strong style={inv.voided_at ? { textDecoration: 'line-through' } : undefined}>{inv.invoice_number}</strong>
+              <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(inv.issued_on)} · {inv.voided_at ? '' : `${inv.booking_count} booking(s) · `}{fmtIDR(inv.total)}</span>
+              {inv.voided_at && <div style={{ fontSize: 12, color: '#B91C1C' }}>Voided {fmtDate(inv.voided_at)} — {inv.void_reason}</div>}
             </div>
-            <button className="btn btn-sm btn-secondary" onClick={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>⬇ PDF</button>
+            {!inv.voided_at && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn btn-sm btn-secondary" onClick={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>⬇ PDF</button>
+                <button className="btn btn-sm btn-secondary" title="Issued by mistake — its stays can be invoiced again" onClick={() => setVoidingInv(inv)}>Void</button>
+              </div>
+            )}
           </div>
         ))}
       </Section>
@@ -350,6 +366,16 @@ function AgentDetail({ agentId }) {
 
       {editOpen && <AgentFormModal agent={agent} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); showToast('Saved'); load(); }} />}
       {payOpen && <RecordPaymentModal agentId={agentId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
+      {voidingInv && (
+        <ReasonModal title={`Void invoice ${voidingInv.invoice_number}?`} confirmLabel="Void invoice" danger
+          placeholder="e.g. wrong stays on it" onClose={() => setVoidingInv(null)} onConfirm={reason => voidInvoice(voidingInv, reason)}>
+          <b>{fmtIDR(voidingInv.total)}</b> · {voidingInv.booking_count} stay(s) · issued {fmtDate(voidingInv.issued_on)}.
+          <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
+            The invoice is kept on record, marked voided — its number is not used again. Its stays go back to "not invoiced" and can be put on a new invoice.
+            Payments the agent already made stay on the stays they paid.
+          </div>
+        </ReasonModal>
+      )}
       {invOpen && <GenerateInvoiceModal agentId={agentId} openItems={open_items.filter(i => i.folio_status === 'pending_agent_invoice')} onClose={() => setInvOpen(false)} onDone={(inv) => { setInvOpen(false); showToast(`Invoice ${inv.invoice_number} created`); downloadInvoicePdf(inv.id, inv.invoice_number); load(); }} onError={m => showToast(m, 'error')} />}
     </div>
   );

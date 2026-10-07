@@ -539,6 +539,42 @@ async function invoicePayload(propertyId, invoiceId) {
   return { invoice, agent: agent || {}, property: property || {}, lines, total, paid, balance: round2(total - paid), due_date, credit_terms_days: terms };
 }
 
+// Voids an agent invoice issued by mistake. The invoice is kept (number and
+// all, marked voided); its stays are un-invoiced again — back on the agent's
+// open items, ready for a new invoice. Payments the agent already made stay
+// allocated to the stays they paid (a stay fully paid stays "paid").
+async function voidInvoice(propertyId, invoiceId, reason, userId) {
+  const why = String(reason || '').trim().slice(0, 500);
+  if (!why) return { error: 'A reason is required', code: 'REASON_REQUIRED', status: 400 };
+  if (!isUuid(invoiceId)) return { error: 'Invoice not found', status: 404 };
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [inv] } = await client.query(
+      'SELECT * FROM agent_invoices WHERE id = $1 AND property_id = $2 FOR UPDATE', [invoiceId, propertyId]);
+    if (!inv) { await client.query('ROLLBACK'); return { error: 'Invoice not found', status: 404 }; }
+    if (inv.voided_at) { await client.query('ROLLBACK'); return { error: 'This invoice is already voided', status: 409 }; }
+    const { rows: stays } = await client.query(
+      'UPDATE bookings SET agent_invoice_id = NULL, updated_at = NOW() WHERE agent_invoice_id = $1 AND property_id = $2 RETURNING id',
+      [inv.id, propertyId]);
+    const ids = stays.map(r => r.id);
+    await reconcileBookingStatuses(client, propertyId, ids);   // invoiced → pending_agent_invoice (a paid stay stays paid)
+    await client.query('UPDATE agent_invoices SET voided_at = NOW(), voided_by = $1, void_reason = $2 WHERE id = $3', [userId || null, why, inv.id]);
+    if (ids.length) {
+      await client.query(
+        'INSERT INTO booking_events (booking_id, note, created_by) SELECT unnest($1::uuid[]), $2, $3',
+        [ids, `Agent invoice ${inv.invoice_number} voided — this stay can be invoiced again. Reason: ${why}`.slice(0, 1000), userId || null]);
+    }
+    await client.query('COMMIT');
+    return { ok: true, invoice_number: inv.invoice_number, bookings: ids };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function setCommissionStatus(propertyId, commissionId, status) {
   if (!['paid', 'unpaid'].includes(status)) return { error: 'status must be paid or unpaid' };
   const { rows: [row] } = await db.query(
@@ -552,5 +588,5 @@ async function setCommissionStatus(propertyId, commissionId, status) {
 
 module.exports = {
   bookingLedger, aging, statement, recordPayment, updatePayment, voidPayment,
-  createInvoice, invoicePayload, setCommissionStatus,
+  createInvoice, invoicePayload, setCommissionStatus, voidInvoice,
 };

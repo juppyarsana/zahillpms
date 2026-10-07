@@ -1417,6 +1417,54 @@ router.post('/group', auth, async (req, res) => {
   }
 });
 
+// What a group billed as a whole can be refunded: received beyond its bill
+// (a cancelled group has no bill left, so everything received).
+async function groupRefundable(groupId, propertyId) {
+  const bill = await groupBilling.groupBill(groupId, propertyId);
+  if (!bill) return null;
+  return { received: bill.received, bill: bill.total, amount: Math.max(0, round2(bill.received - bill.total)) };
+}
+
+// GET /api/bookings/group/:groupId/refundable
+router.get('/group/:groupId/refundable', auth, async (req, res) => {
+  try {
+    const r = await groupRefundable(req.params.groupId, req.propertyId);
+    if (!r) return res.status(409).json({ error: 'This group is paid room by room — refund on the room\'s own booking', code: 'NOT_GROUP_BILLED' });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/bookings/group/:groupId/refund { amount, method, refunded_at?, reference?, reason }
+// Money given back to a group billed as a whole (a correction: owner or the
+// `corrections` permission). Never more than the group's credit.
+router.post('/group/:groupId/refund', auth, requireOwnerOrMenu('corrections'), async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const can = await groupRefundable(req.params.groupId, req.propertyId);
+    if (!can) return res.status(409).json({ error: 'This group is paid room by room — refund on the room\'s own booking', code: 'NOT_GROUP_BILLED' });
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM reservation_groups WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.groupId, req.propertyId]);
+    const r = await groupBilling.refund(client, {
+      propertyId: req.propertyId, groupId: req.params.groupId, userId: req.user.id,
+      amount: req.body.amount, method: req.body.method, refundedAt: req.body.refunded_at || null,
+      reference: req.body.reference, reason: req.body.reason, refundable: can.amount,
+    });
+    if (r.error) { await client.query('ROLLBACK'); return res.status(r.status).json({ error: r.error, code: r.code, refundable: r.refundable }); }
+    const { rows: rooms } = await client.query('SELECT id FROM bookings WHERE reservation_group_id = $1', [req.params.groupId]);
+    await client.query('COMMIT');
+    sendControlAlert(req.propertyId, { bookingIds: rooms.map(x => x.id), userId: req.user.id, reason: String(req.body.reason).trim(),
+      headline: `💸 Group refund ${fmtIDR(-r.payment.amount)} (${r.payment.method_label})` });
+    res.status(201).json(r.payment);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // DELETE /api/bookings/group/:groupId  (cancel whole group — no hard delete)
 router.delete('/group/:groupId', auth, async (req, res) => {
   // A reason every time; a group with a guest in house can't be cancelled as

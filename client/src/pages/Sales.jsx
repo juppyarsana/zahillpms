@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { priceFactor, includesText } from '../lib/priceBasis';
 import PriceBasisHint from '../components/PriceBasisHint';
+import ReasonModal from '../components/ReasonModal';
 
 // Hotel extras sold from the front desk (migration 067). F&B ('food'/'drinks')
 // lives in the resto app / external POS and is deliberately hidden here;
@@ -67,6 +68,7 @@ let openLineSeq = 0;
 
 export default function Sales() {
   const { user, can } = useAuth();
+  const [voidingSale, setVoidingSale] = useState(null);   // sale row
   // Corrections (owner or the `corrections` permission): void a sale rung up by mistake.
   const canCorrect = user?.role === 'owner' || can('corrections');
   const { paymentMethods, branding } = useSettings();
@@ -94,18 +96,11 @@ export default function Sales() {
   const [historyModal, setHistoryModal] = useState(null); // { product, rows, loading, error }
 
   async function loadProducts() { const r = await api.get('/api/products'); setProducts(r.data.filter(p => CAT_BY_KEY[p.category])); }
-  async function voidSale(s) {
-    const reason = (window.prompt(`Void this sale (${s.items_summary || 'sale'})? Its line on the guest's bill and its payment are voided too, and the stock comes back.
-
-Reason (required):`) || '').trim();
-    if (!reason) return;
-    try {
-      await api.post(`/api/sales/${s.id}/void`, { reason });
-      loadSales();
-      loadProducts();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not void the sale');
-    }
+  async function voidSale(s, reason) {
+    await api.post(`/api/sales/${s.id}/void`, { reason });
+    setVoidingSale(null);
+    loadSales();
+    loadProducts();
   }
   async function loadSales() { const r = await api.get('/api/sales?scope=extras'); setSales(r.data); }
   async function loadInHouse() { const r = await api.get('/api/bookings?status=checked_in'); setInHouse(r.data); }
@@ -507,6 +502,16 @@ Reason (required):`) || '').trim();
         </div>
       )}
 
+      {voidingSale && (
+        <ReasonModal title="Void this sale?" confirmLabel="Void sale" danger placeholder="e.g. rung up for the wrong room"
+          onClose={() => setVoidingSale(null)} onConfirm={reason => voidSale(voidingSale, reason)}>
+          <b>{voidingSale.items_summary || 'Sale'}</b>
+          {voidingSale.guest_name ? <> · {voidingSale.guest_name} ({voidingSale.unit_name})</> : <> · walk-in</>}
+          <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
+            The sale stays in the history, marked voided. Its line on the guest's bill and the payment taken with it are voided too, and the stock comes back.
+          </div>
+        </ReasonModal>
+      )}
       {tab === 'history' && (
         <div className="card">
           <div className="table-wrap">
@@ -531,7 +536,7 @@ Reason (required):`) || '').trim();
                         <button className="btn btn-sm btn-secondary" onClick={() => openReceipt(s.id)} title="Paid directly — print a receipt">🖨 Receipt</button>
                       )}
                       {canCorrect && !s.voided_at && s.confirmation_status !== 'rejected' && s.order_source !== 'external_pos' && (
-                        <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6 }} onClick={() => voidSale(s)} title="Rung up by mistake — void it">Void</button>
+                        <button className="btn btn-sm btn-secondary" style={{ marginLeft: 6 }} onClick={() => setVoidingSale(s)} title="Rung up by mistake — void it">Void</button>
                       )}
                     </td>
                   </tr>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 
@@ -103,7 +103,90 @@ export function GroupPaymentModal({ groupId, balance, onClose, onSaved }) {
   );
 }
 
-export default function GroupBillingCard({ groupId, bill, rollup, canPay, onChanged }) {
+// Refund to a group billed as a whole (corrections): never more than its credit.
+export function GroupRefundModal({ groupId, onClose, onSaved }) {
+  const { paymentMethods = [] } = useSettings();
+  const methods = paymentMethods.filter(m => m.is_active && m.id !== 'ota_managed');
+  const [info, setInfo] = useState(null);
+  const [form, setForm] = useState({ amount: '', method: '', reference: '', reason: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get(`/api/bookings/group/${groupId}/refundable`)
+      .then(({ data }) => { setInfo(data); setForm(f => ({ ...f, amount: data.amount ? String(Math.round(data.amount)) : '' })); })
+      .catch(err => setError(err.response?.data?.error || 'Could not load the group\'s credit'));
+  }, [groupId]);
+  const method = form.method || methods[0]?.id || '';
+  const max = info?.amount || 0;
+  const amt = parseFloat(form.amount) || 0;
+  async function save() {
+    setBusy(true); setError('');
+    try {
+      await api.post(`/api/bookings/group/${groupId}/refund`, { amount: amt, method, reference: form.reference, reason: form.reason.trim() });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not record the refund');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">Refund to the group</div>
+          <button className="btn btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
+          {info && max <= 0 && (
+            <div className="alert alert-warning" style={{ marginBottom: 12 }}>
+              <div>
+                <b>Nothing can be refunded yet.</b> The group has paid {fmtIDR(info.received)} of a bill of {fmtIDR(info.bill)} — there is no money over to give back.
+                If rooms aren't coming, remove them (or cancel the group) first; what was paid beyond the new bill can then be refunded.
+                A payment recorded by mistake is not a refund — use Void on that payment.
+              </div>
+            </div>
+          )}
+          {info && max > 0 && (<>
+            <div style={{ marginBottom: 12, fontSize: 13 }}>Can be refunded: <b>{fmtIDR(max)}</b> <span className="text-muted">— paid {fmtIDR(info.received)}, bill {fmtIDR(info.bill)}</span></div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Amount given back (IDR)</label>
+                <input className="form-input" type="number" min="1" max={max} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Given back by</label>
+                <select className="form-select" value={method} onChange={e => setForm(f => ({ ...f, method: e.target.value }))}>
+                  {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Reference</label>
+              <input className="form-input" maxLength={120} value={form.reference} placeholder="Transfer ref" onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Reason (goes into History)</label>
+              <input className="form-input" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why is the money given back?" />
+            </div>
+          </>)}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          {max > 0 && (
+            <button className="btn btn-primary" onClick={save} disabled={busy || !form.reason.trim() || !(amt > 0) || amt > max + 0.05}>
+              {busy ? 'Saving…' : `Record refund ${amt > 0 ? fmtIDR(amt) : ''}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function GroupBillingCard({ groupId, bill, rollup, canPay, canRefund, onChanged }) {
+  const [refunding, setRefunding] = useState(false);
   const [paying, setPaying] = useState(false);
   const [voiding, setVoiding] = useState(null);       // payment row
   const [voidReason, setVoidReason] = useState('');
@@ -197,11 +280,15 @@ export default function GroupBillingCard({ groupId, bill, rollup, canPay, onChan
         </div>
       )}
 
-      {canPay && (
+      {(canPay || (canRefund && bill.received > 0)) && (
         <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={() => setPaying(true)}>💳 Record Group Payment</button>
+          {canPay && <button className="btn btn-primary" onClick={() => setPaying(true)}>💳 Record Group Payment</button>}
+          {canRefund && bill.received > 0 && (
+            <button className="btn btn-secondary" title="Give money back to the group (a credit, or a cancelled group)" onClick={() => setRefunding(true)}>💸 Refund</button>
+          )}
         </div>
       )}
+      {refunding && <GroupRefundModal groupId={groupId} onClose={() => setRefunding(false)} onSaved={() => { setRefunding(false); onChanged(); }} />}
 
       <div style={{ marginTop: 14 }}>
         <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>Payments received</div>
@@ -210,7 +297,7 @@ export default function GroupBillingCard({ groupId, bill, rollup, canPay, onChan
           <div key={p.id} className="flex-between" style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13, gap: 8, opacity: p.is_voided ? 0.6 : 1 }}>
             <div style={{ minWidth: 0 }}>
               <span style={{ textDecoration: p.is_voided ? 'line-through' : 'none' }}>
-                {fmtDay(p.received_at)} · <b>{p.method_label}</b>{p.reference ? ` · Ref ${p.reference}` : ''}
+                {fmtDay(p.received_at)} · {p.is_refund ? <b style={{ color: 'var(--color-danger, #dc2626)' }}>Refund · </b> : null}<b>{p.method_label}</b>{p.reference ? ` · Ref ${p.reference}` : ''}
               </span>
               <div className="text-muted" style={{ fontSize: 11 }}>
                 {p.received_by_name ? `by ${p.received_by_name}` : ''}{p.recorded_at ? ` · recorded ${fmtDay(p.recorded_at)} ${fmtTime(p.recorded_at)}` : ''}

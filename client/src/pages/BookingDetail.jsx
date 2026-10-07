@@ -6,6 +6,7 @@ import { useSettings, SourceBadge } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
+import ReasonModal from '../components/ReasonModal';
 import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
 import PageHeader from '../components/PageHeader';
 import RegistrationCardModal from '../components/RegistrationCardModal';
@@ -183,7 +184,10 @@ export default function BookingDetail() {
   // owner or the `corrections` permission; a reason every time.
   const canCorrect = isOwner || can('corrections');
   const [refunding, setRefunding] = useState(false);
+  const [voidingCharge, setVoidingCharge] = useState(null);   // folio line
+  const [correcting, setCorrecting] = useState(null);   // { step, title, text, confirmLabel }
   const [cancelling, setCancelling] = useState(null);   // { reason, sure, busy, error }
+  const [agentFix, setAgentFix] = useState(null);       // { agent (picker value), bill, reason, busy, error }
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -360,31 +364,19 @@ export default function BookingDetail() {
     setBookingActivity(true);
   }
 
-  async function voidCharge(charge) {
-    const chargeId = charge.id;
-    // A Pay-now line's payment stays on the folio (no refund flow yet).
-    // A typed reason, not a bare OK: a void was once clicked through by mistake.
-    const msg = `Void "${charge.description}"? It comes off the guest's bill.
-${charge.paid_method ? `
-It was already paid at the desk (${charge.paid_method}). The payment stays on the folio as a credit — return the money by hand if needed.
-` : ''}${booking.status === 'checked_out' ? `
-This guest has already checked out.
-` : ''}${charge.is_pos ? `
-This is a restaurant bill from the POS — the POS is told and reopens the bill there, to be paid another way or cancelled.
-` : ''}
-Type the reason to void it:`;
-    const reason = (prompt(msg) || '').trim();
-    if (!reason) return;
-    try {
-      const r = await api.delete(`/api/folio/charge/${chargeId}`, { data: { reason } });
-      if (r.data?.pos && !r.data.pos.told) {
-        alert(`Voided here, but the POS couldn't be told: ${r.data.pos.error}\n\nOpen "Voided lines" below and press "Tell the POS" once it's back.`);
-      }
-      loadFolio();
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to void charge');
+  // Void a folio line: a window with what happens and a required reason
+  // (a void was once clicked through by mistake).
+  function voidCharge(charge) {
+    setVoidingCharge(charge);
+  }
+  async function doVoidCharge(reason) {
+    const r = await api.delete(`/api/folio/charge/${voidingCharge.id}`, { data: { reason } });
+    setVoidingCharge(null);
+    if (r.data?.pos && !r.data.pos.told) {
+      alert(`Voided here, but the POS couldn't be told: ${r.data.pos.error}\n\nOpen "Voided lines" below and press "Tell the POS" once it's back.`);
     }
+    loadFolio();
+    load();
   }
 
   async function tellPos(charge) {
@@ -783,6 +775,24 @@ Type the reason to void it:`;
     }
   }
 
+  // Fix Agent Billing (after check-out): the agent, whether the stay is on
+  // the agent's bill, and the commission — decided again as at check-out.
+  function openAgentFix() {
+    setAgentFix({ agent: agentValueFromBooking(booking), bill: booking.folio_status === 'pending_agent_invoice', reason: '', busy: false, error: '' });
+  }
+  async function doAgentFix() {
+    setAgentFix(f => ({ ...f, busy: true, error: '' }));
+    try {
+      await api.put(`/api/bookings/${id}/agent-billing`, { ...agentBody(agentFix.agent), bill_to_agent: agentFix.bill && !!agentFix.agent.agent, reason: agentFix.reason.trim() });
+      setAgentFix(null);
+      setFolio(null);
+      setEstimate(null);
+      load();
+    } catch (err) {
+      setAgentFix(f => ({ ...f, busy: false, error: err.response?.data?.error || 'Could not correct the agent billing' }));
+    }
+  }
+
   // After a payment correction / refund: everything money-related reloads.
   function afterMoneyFix() {
     setRefunding(false);
@@ -792,19 +802,17 @@ Type the reason to void it:`;
   }
 
   // A correction: asks for the reason, then PUT /api/bookings/:id/<step>.
-  async function correct(step, question) {
-    const reason = (window.prompt(`${question}
-
-Reason (required — goes into Edit History):`) || '').trim();
-    if (!reason) return;
-    try {
-      await api.put(`/api/bookings/${id}/${step}`, { reason });
-      setFolio(null);
-      setEstimate(null);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not do that');
-    }
+  // A correction that only needs a reason (undo check-out / check-in,
+  // reinstate): opens a window saying what happens, then PUT /api/bookings/:id/<step>.
+  function correct(step, title, text, confirmLabel) {
+    setCorrecting({ step, title, text, confirmLabel });
+  }
+  async function doCorrect(reason) {
+    await api.put(`/api/bookings/${id}/${correcting.step}`, { reason });
+    setCorrecting(null);
+    setFolio(null);
+    setEstimate(null);
+    load();
   }
 
   async function callRoomAction() {
@@ -873,13 +881,13 @@ Reason (required — goes into Edit History):`) || '').trim();
       { label: 'Undo No-Show', icon: '↩️', onClick: undoNoShow, hint: 'The guest did arrive — put the booking back' },
     canCorrect && booking.status === 'checked_out' && !['invoiced', 'paid'].includes(booking.folio_status) &&
       { label: 'Undo Check-out', icon: '↩️', hint: 'Checked out by mistake — the guest is still here',
-        onClick: () => correct('undo-checkout', `Undo the check-out of ${booking.guest_name} (${booking.unit_name})? The stay is in house again; charges and payments stay as they are.`) },
+        onClick: () => correct('undo-checkout', `Undo the check-out of ${booking.guest_name}?`, `Room ${booking.unit_name} is occupied again and the stay is in house, exactly as it was. Charges and payments stay as they are.`, 'Undo check-out') },
     canCorrect && booking.status === 'checked_in' &&
       { label: 'Undo Check-in', icon: '↩️', hint: 'Checked in by mistake — the guest has not arrived',
-        onClick: () => correct('undo-checkin', `Undo the check-in of ${booking.guest_name} (${booking.unit_name})? The booking goes back to arriving and the room is free again. Nights already posted are voided (they post again after the real check-in).`) },
+        onClick: () => correct('undo-checkin', `Undo the check-in of ${booking.guest_name}?`, `The booking goes back to arriving and room ${booking.unit_name} is free again. Nights already posted are voided — they post again after the real check-in. Extras charged to the room stay.`, 'Undo check-in') },
     canCorrect && booking.status === 'cancelled' &&
       { label: 'Reinstate Booking', icon: '↩️', hint: 'Cancelled by mistake — book it again if the room is still free',
-        onClick: () => correct('reinstate', `Reinstate this cancelled booking for ${booking.guest_name} (${booking.unit_name})?`) },
+        onClick: () => correct('reinstate', `Reinstate the booking of ${booking.guest_name}?`, `The cancelled booking for room ${booking.unit_name} is booked again, as long as nobody else has the room for its dates. Its status follows its payments.`, 'Reinstate booking') },
     // A group room can have its own dates too (the group page moves them all).
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) &&
       { label: 'Amend Dates', icon: '📅', onClick: openAmend },
@@ -892,6 +900,8 @@ Reason (required — goes into Edit History):`) || '').trim();
     canEditPrice && !['cancelled', 'no_show'].includes(booking.status) &&
       !['invoiced', 'paid'].includes(booking.folio_status) && !booking.complimentary_scope &&
       { label: 'Edit Price', icon: '💰', onClick: openEditPrice },
+    canCorrect && booking.status === 'checked_out' && !['invoiced', 'paid'].includes(booking.folio_status) &&
+      { label: 'Fix Agent Billing', icon: '🧾', onClick: openAgentFix, hint: 'Wrong agent, billed to the agent by mistake (or not), wrong commission' },
     canCorrect && (booking.payments || []).some(p => p.status === 'received') &&
       { label: 'Refund', icon: '💸', onClick: () => setRefunding(true), hint: 'Give money back to the guest (a credit, or a cancelled booking)' },
     ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(booking.status) && !booking.folio_status &&
@@ -1776,6 +1786,68 @@ Reason (required — goes into Edit History):`) || '').trim();
           </div>
         );
       })()}
+
+      {agentFix && (() => {
+        const picked = agentFix.agent.agent;
+        const canBill = picked && CITY_LEDGER.includes(picked.payment_status);
+        return (
+          <div className="modal-backdrop">
+            <div className="modal">
+              <div className="modal-header">
+                <div className="modal-title">Fix Agent Billing — {booking.guest_name}</div>
+                <button className="btn btn-icon" onClick={() => setAgentFix(null)}>✕</button>
+              </div>
+              <div className="modal-body">
+                {agentFix.error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{agentFix.error}</div></div>}
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+                  This guest has checked out. Set what should have been decided at check-out: the agent, whether the stay goes on the agent's bill, and the commission.
+                </div>
+                <BookingAgentFields value={agentFix.agent} onChange={v => setAgentFix(f => ({ ...f, agent: v, bill: f.bill && !!v.agent && CITY_LEDGER.includes(v.agent.payment_status) }))}
+                  sourceType={sources.find(s => s.id === booking.source)?.source_type} />
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 14, margin: '4px 0 12px', cursor: canBill ? 'pointer' : 'default', opacity: canBill ? 1 : 0.55 }}>
+                  <input type="checkbox" style={{ marginTop: 3 }} disabled={!canBill} checked={agentFix.bill && !!canBill} onChange={e => setAgentFix(f => ({ ...f, bill: e.target.checked }))} />
+                  <span>
+                    Bill this stay to the agent
+                    <div className="text-muted" style={{ fontSize: 12 }}>
+                      {!picked ? 'No agent — the guest pays the hotel.'
+                        : canBill ? 'Ticked: the stay goes on the agent\'s bill (Agent Billing). Not ticked: the guest pays the hotel.'
+                        : `${picked.name} is not set up to be billed — the guest pays the hotel. Change how this agent pays in Agent Billing first.`}
+                    </div>
+                  </span>
+                </label>
+                <div className="form-group">
+                  <label className="form-label">Reason (required — goes into Edit History)</label>
+                  <input className="form-input" value={agentFix.reason} onChange={e => setAgentFix(f => ({ ...f, reason: e.target.value }))} placeholder="Why is the agent billing being corrected?" />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setAgentFix(null)}>Cancel</button>
+                <button className="btn btn-primary" onClick={doAgentFix} disabled={agentFix.busy || !agentFix.reason.trim()}>{agentFix.busy ? 'Saving…' : 'Save correction'}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {correcting && (
+        <ReasonModal title={correcting.title} confirmLabel={correcting.confirmLabel} onClose={() => setCorrecting(null)} onConfirm={doCorrect}>
+          {correcting.text}
+        </ReasonModal>
+      )}
+
+      {voidingCharge && (
+        <ReasonModal title="Void this line?" confirmLabel="Void line" danger placeholder="e.g. charged to the wrong room"
+          onClose={() => setVoidingCharge(null)} onConfirm={doVoidCharge}>
+          <b>{voidingCharge.description}</b> comes off the guest's bill. It can be restored from "Voided lines".
+          {voidingCharge.paid_method && (
+            <div style={{ marginTop: 6 }}>It was already paid at the desk ({voidingCharge.paid_method}). The payment stays on the folio as a credit — give it back with ⋮ → Refund if the money goes back.</div>
+          )}
+          {booking.status === 'checked_out' && <div style={{ marginTop: 6 }}>This guest has already checked out.</div>}
+          {voidingCharge.is_pos && (
+            <div style={{ marginTop: 6 }}>This is a restaurant bill from the POS — the POS is told and reopens the bill there, to be paid another way or cancelled.</div>
+          )}
+        </ReasonModal>
+      )}
 
       {refunding && <RefundModal bookingId={id} guestName={booking.guest_name} onClose={() => setRefunding(false)} onDone={afterMoneyFix} />}
 
