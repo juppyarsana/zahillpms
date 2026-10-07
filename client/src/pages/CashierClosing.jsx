@@ -89,8 +89,8 @@ export default function CashierClosing() {
         </div>
       </div>
 
-      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        <span className="text-muted" style={{ fontSize: 13 }}>User</span>
+      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+        <span className="text-muted" style={{ fontSize: 13 }}>Payments taken by</span>
         <select className="form-select" value={userId} onChange={e => setUserId(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
           <option value="">All users{data ? ` — ${idr(data.day_total)}` : ''}</option>
           {users.map(u => <option key={u.id} value={u.id}>{u.name}{u.id === user?.id ? ' (me)' : ''} — {idr(u.total)}</option>)}
@@ -100,20 +100,20 @@ export default function CashierClosing() {
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading ? <div className="text-muted">Loading…</div> : data && (<>
-        <div className="stat-grid" style={{ marginBottom: 12 }}>
+        <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
           <div className="stat-card">
             <div className="stat-label">Grand total</div>
             <div className="stat-value">{idr(data.total)}</div>
-            <div className="text-muted" style={{ fontSize: 12 }}>
+            <div className="stat-sub">
               {data.count} line{data.count === 1 ? '' : 's'}{userId ? ` · whole day ${idr(data.day_total)}` : ''}
-              {data.ledger_total > 0 && <div>Money received {idr(data.money_total)}</div>}
+              {data.ledger_total > 0 && ` · received ${idr(data.money_total)}`}
             </div>
           </div>
           {data.by_method.map(m => (
             <div className="stat-card" key={m.method}>
               <div className="stat-label">{m.method}</div>
               <div className="stat-value">{idr(m.amount)}</div>
-              <div className="text-muted" style={{ fontSize: 12 }}>{m.count} {m.ledger ? 'stay' : 'payment'}{m.count === 1 ? '' : 's'}{m.ledger ? ' · not received' : ''}</div>
+              <div className="stat-sub">{m.count} {m.ledger ? 'stay' : 'payment'}{m.count === 1 ? '' : 's'}{m.ledger ? ' · not received' : ''}</div>
             </div>
           ))}
         </div>
@@ -125,7 +125,7 @@ export default function CashierClosing() {
             </div>
           ) : (
             <div className="table-wrap">
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={TH}>Time</th><th style={TH}>Room</th><th style={TH}>Guest</th><th style={TH}>For</th>
@@ -149,10 +149,10 @@ export default function CashierClosing() {
                         <td style={TD}>{l.guest}</td>
                         <td style={TD}>{l.what}</td>
                         <td style={TD}>
-                          {l.reference || <span className="text-muted">—</span>}
-                          {l.notes && l.notes !== l.reference && <div className="text-muted" style={{ fontSize: 11 }}>{l.notes}</div>}
+                          {l.reference || (!l.notes && <span className="text-muted">—</span>)}
+                          {l.notes && l.notes !== l.reference && <div className="text-muted" style={{ fontSize: l.reference ? 11 : 12 }}>{l.notes}</div>}
                         </td>
-                        <td style={TD}>{l.user_name}</td>
+                        <td style={{ ...TD, whiteSpace: 'nowrap' }}>{l.user_name}</td>
                         <td style={{ ...TD, ...R }}>{idr(l.amount)}</td>
                       </tr>
                     )),
@@ -183,7 +183,7 @@ export default function CashierClosing() {
             <div className="card-title">By user</div>
             {data.by_user.map(u => (
               <div key={u.id || 'none'} className="flex-between" style={{ fontSize: 13, padding: '4px 0' }}>
-                <span>{u.name} <span className="text-muted">· {u.count} line{u.count === 1 ? '' : 's'}</span></span>
+                <span>{u.id ? u.name : 'User not recorded'} <span className="text-muted">· {u.count} line{u.count === 1 ? '' : 's'}</span></span>
                 <span style={{ fontWeight: 600 }}>{idr(u.total)}</span>
               </div>
             ))}
