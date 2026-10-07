@@ -130,7 +130,7 @@ function JournalTab() {
           <div className="alert alert-error"><div>Debits and credits are not equal for this period. Please tell support before using this journal.</div></div>
         )}
 
-        <div className="stat-grid" style={{ marginBottom: 12 }}>
+        <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
           <div className="stat-card">
             <div className="stat-label">Journal total</div>
             <div className="stat-value">{idr(data.totals.debit)}</div>
