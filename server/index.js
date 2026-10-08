@@ -27,16 +27,49 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) cb(null, true);
-    else cb(new Error('Not allowed by CORS'));
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    // Unknown origin: send no CORS headers (the browser blocks the response)
+    // instead of throwing — a thrown error became a 500 + a stack trace in the
+    // error log with no hint of which site was calling.
+    console.warn(`[CORS] blocked origin ${origin}`);
+    cb(null, false);
   },
   credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000, standardHeaders: true, legacyHeaders: false });
+// Rate limits. A hotel's front-desk PCs and every room tablet usually share ONE
+// public IP, so a single per-IP bucket for the whole API got used up by the
+// tablets' polling alone and then refused everything (production, 2026-10-08:
+// 8,651 × 429, FO dashboard "Failed to load").
+//  - Room Display / Kitchen Display (device token, poll every 10–15 s) are not limited.
+//  - Calls that carry a token get a bucket per token (each staff login / API key
+//    on its own), not per IP.
+//  - Calls without a token (login, public pages, guest QR) stay per IP.
+//  - Login: failed attempts only, per IP — brute-force guard.
+const crypto = require('crypto');
+const DEVICE_POLLING = /^\/api\/(display|kitchen)\//;
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => DEVICE_POLLING.test(req.originalUrl),
+  keyGenerator: (req) => {
+    const h = req.headers['authorization'];
+    return h ? 'tok:' + crypto.createHash('sha256').update(h).digest('hex') : 'ip:' + req.ip;
+  },
+});
 app.use('/api/', limiter);
+app.use('/api/auth/login', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many failed logins — try again in 15 minutes' },
+}));
 
 // Protected uploads (served only to authenticated users via separate route)
 const auth = require('./middleware/auth');

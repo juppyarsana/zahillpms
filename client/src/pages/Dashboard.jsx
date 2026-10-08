@@ -1301,30 +1301,40 @@ export default function Dashboard() {
   const [holidays,       setHolidays]      = useState([]);
   const [aiSummary,      setAiSummary]     = useState(null);
   const [guestRequests,  setGuestRequests] = useState([]);
+  const [loadError,      setLoadError]     = useState('');
 
   async function load() {
-    try {
-      const [summaryRes, tasksRes, competitorsRes, trendsRes, holidaysRes, aiSummaryRes] = await Promise.all([
-        api.get('/api/dashboard/summary'),
-        api.get('/api/tasks'),
-        api.get('/api/insights/competitors'),
-        api.get('/api/insights/trends'),
-        api.get('/api/insights/holidays?days=45'),
-        api.get('/api/insights/summary'),
-      ]);
-      setData(summaryRes.data);
-      setCompetitors(competitorsRes.data);
-      setTrends(trendsRes.data);
-      setHolidays(holidaysRes.data);
-      setAiSummary(aiSummaryRes.data);
-      const todayStr = propertyToday();
-      const todayTasks = tasksRes.data.filter(t => {
-        if (!t.due_time) return false;
-        return new Date(t.due_time).toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ }) === todayStr;
-      });
-      setTasks(todayTasks.slice(0, 5));
-      setGuestRequests(tasksRes.data.filter(t => t.type === 'guest_request' && t.status !== 'done'));
-    } catch {}
+    // Only the summary is needed to show the page. Tasks (operations module) and
+    // the Market cards (insights module) are extras: skipped when their module is
+    // off, and a failure of one of them never blanks the whole dashboard.
+    const insights = hasModule('insights');
+    const optional = (on, url) => (on ? api.get(url).then(r => r.data) : Promise.resolve(null));
+    const [summaryRes, tasksRes, competitorsRes, trendsRes, holidaysRes, aiSummaryRes] = await Promise.allSettled([
+      api.get('/api/dashboard/summary').then(r => r.data),
+      optional(hasModule('operations'), '/api/tasks'),
+      optional(insights, '/api/insights/competitors'),
+      optional(insights, '/api/insights/trends'),
+      optional(insights, '/api/insights/holidays?days=45'),
+      optional(insights, '/api/insights/summary'),
+    ]);
+    const val = (r, fallback) => (r.status === 'fulfilled' && r.value != null ? r.value : fallback);
+    if (summaryRes.status === 'fulfilled') { setData(summaryRes.value); setLoadError(''); }
+    else {
+      const e = summaryRes.reason;
+      setLoadError(e?.response ? `${e.response.status} ${e.response.data?.error || ''}`.trim() : (e?.message || 'no response from the server'));
+    }
+    setCompetitors(val(competitorsRes, []));
+    setTrends(val(trendsRes, {}));
+    setHolidays(val(holidaysRes, []));
+    setAiSummary(val(aiSummaryRes, null));
+    const allTasks = val(tasksRes, []);
+    const todayStr = propertyToday();
+    const todayTasks = allTasks.filter(t => {
+      if (!t.due_time) return false;
+      return new Date(t.due_time).toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ }) === todayStr;
+    });
+    setTasks(todayTasks.slice(0, 5));
+    setGuestRequests(allTasks.filter(t => t.type === 'guest_request' && t.status !== 'done'));
     setLoading(false);
   }
 
@@ -1350,7 +1360,7 @@ export default function Dashboard() {
   }
 
   if (loading) return <div style={{ padding: 60, textAlign: 'center', color: '#6B7280' }}>Loading dashboard…</div>;
-  if (!data)   return <div className="alert alert-error">Failed to load dashboard</div>;
+  if (!data)   return <div className="alert alert-error"><div>Failed to load dashboard{loadError ? ` (${loadError})` : ''}</div></div>;
 
   const { occupancy, arrivals_today, departures_today } = data;
   const isOwner = user?.role === 'owner';
@@ -1526,15 +1536,17 @@ export default function Dashboard() {
       {/* ── This Month — owner or month_summary permission ── */}
       {showMonth && <MonthSection isOwner={isOwner} />}
 
-      {/* ── Market ── */}
-      <div style={{ marginTop: 24 }}><SectionHeading title="Market" /></div>
-      <div className="grid-2" style={{ gap: 16 }}>
-        <CompetitorRatingsCard competitors={competitors} isOwner={user?.role === 'owner'} onChanged={load} />
-        <SearchTrendsCard trends={trends} isOwner={user?.role === 'owner'} />
-      </div>
-      <div style={{ marginTop: 16 }}>
-        <AiSummaryCard summary={aiSummary} />
-      </div>
+      {/* ── Market (insights module) ── */}
+      {hasModule('insights') && (<>
+        <div style={{ marginTop: 24 }}><SectionHeading title="Market" /></div>
+        <div className="grid-2" style={{ gap: 16 }}>
+          <CompetitorRatingsCard competitors={competitors} isOwner={user?.role === 'owner'} onChanged={load} />
+          <SearchTrendsCard trends={trends} isOwner={user?.role === 'owner'} />
+        </div>
+        <div style={{ marginTop: 16 }}>
+          <AiSummaryCard summary={aiSummary} />
+        </div>
+      </>)}
     </div>
   );
 }
