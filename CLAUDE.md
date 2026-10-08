@@ -772,9 +772,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - **Tick the `corrections` permission** (added 2026-10-07): Roles & Permissions → Front Desk → Corrections, for each role that should be able to undo / refund / void. No role has it by default (owners always do); those staff must log in again.
 - ~~Group billing move~~ — checked on production 2026-10-07: `moveGroupPayments.js` dry run = 0 groups left to move (7 skipped by design: their rooms are billed to an agent — BHARA TOUR BALI, BPKP Provinsi Bali ×4, KELANA DMC BALI, Smailing DMC — and stay paid room by room).
 - **The two parked group credits** (Rp 1.000.000 group in credit; Rp 700.000 received on a cancelled room): give back with the group page's 💸 Refund when the owner decides.
-- **Accounting (migrations 101–102, released to `main` 2026-10-08):** on the server `git pull`, `npm run migrate` in `server/`, rebuild the client, `pm2 restart zahill-pms`; then switch the `accounting` module on for the property in Superadmin, open Accounting → Accounts once (creates the standard chart), and tick the *Accounting* permission for the accountant's role if they get their own login.
-- **Rate-limit + Dashboard fix (2026-10-08, no migration):** `git pull`, `pm2 restart zahill-pms`, rebuild the client; then check new 429s stop (`grep ' 429 ' /var/log/nginx/access.log | tail`). Remove this line once done.
-- **`main` 2a47a53 (move a booking into / out of a group, released 2026-10-07, no migration):** on the server `git pull`, rebuild the client, `pm2 restart zahill-pms`; staff accept the app's update prompt. Remove this line once done.
+- **Accounting (migrations 101–102):** deployed to production 2026-10-08 (with `main` f34b707). Still to do: switch the `accounting` module on for the property in Superadmin, open Accounting → Accounts once (creates the standard chart), and tick the *Accounting* permission for the accountant's role if they get their own login.
 
 ---
 
