@@ -1651,6 +1651,10 @@ function datesSpan(q) {
 // new nights. Logs the change to Edit History. Shared by PUT /:id/dates and
 // the group version (PUT /group/:groupId/dates). Runs in the caller's txn.
 async function applyNewDates(client, { propertyId, booking, userId, checkIn, checkOut, quote, amount, charge, reason, notePrefix = '' }) {
+  // Room and meals are free: a typed price would put meals back on the bill.
+  if (amount !== 0 && ['room_meals', 'all'].includes(booking.complimentary_scope)) {
+    return { status: 409, error: { error: 'This stay is complimentary — change the dates without a charge, or remove complimentary first' } };
+  }
   await client.query(
     'UPDATE bookings SET check_in_date = $1, check_out_date = $2, updated_at = NOW() WHERE id = $3 AND property_id = $4',
     [checkIn, checkOut, booking.id, propertyId]
@@ -2978,7 +2982,24 @@ router.put('/:id', auth, async (req, res) => {
     // then re-post the folio nights.
     const planChanged = rate_plan_id && rate_plan_id !== before.rate_plan_id;
     const guestsChanged = num_guests !== undefined && parseInt(num_guests, 10) !== before.num_guests;
-    if (planChanged || guestsChanged) {
+    if (before.complimentary_scope) {
+      // A complimentary stay keeps its split (the plan can't change — see
+      // above). Meals free too: more guests cost nothing, so nothing to
+      // re-split. Room only: the meals are still paid, so they follow the
+      // guest count and the room stays free.
+      if (guestsChanged && before.complimentary_scope === 'room') {
+        const plan = await ratePlanService.resolveForBooking(req.propertyId, booking.rate_plan_id);
+        const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
+        const { divisor } = await grossFactor(client, req.propertyId);
+        const priced = await applyBookingPrice(client, {
+          propertyId: req.propertyId, before: booking, userId: req.user.id,
+          split: { roomNet: 0, mealNet: round2(ratePlanService.mealNetPerNight(plan, guests, divisor) * booking.nights) },
+          receivedWasTypo: false, balanceNote: 'Number of guests changed — meals',
+        });
+        if (priced.error) { await client.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
+        booking = priced.after;
+      }
+    } else if (planChanged || guestsChanged) {
       const plan = await ratePlanService.resolveForBooking(req.propertyId, booking.rate_plan_id);
       const guests = Math.max(1, parseInt(booking.num_guests, 10) || 1);
       const grossNet = round2(parseFloat(before.room_revenue ?? before.total_amount) + parseFloat(before.fnb_revenue || 0));

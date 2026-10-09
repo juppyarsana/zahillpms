@@ -216,6 +216,23 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
         <button className="btn btn-primary" onClick={close}>{canCancel ? 'Keep — normal price' : 'Close'}</button>
       </>
     );
+  } else if (result) {
+    body = mode === 'remove' ? (
+      <div className="alert alert-success"><div>No longer complimentary. The price is back to <strong>{fmtIDR(result.new_total)}</strong> — check it, and use Edit Price if the dates changed in between.</div></div>
+    ) : (
+      <>
+        <div className="alert alert-success" style={{ marginBottom: 12 }}><div>
+          🎁 The stay is now complimentary{result.approved_by ? `, approved by ${result.approved_by}${result.via_telegram ? ' on Telegram' : ''}` : ''}. The guest owes <strong>{fmtIDR(result.new_total)}</strong>
+          {result.value_net != null && <> (value given: {fmtIDR(result.value_net)} before tax)</>}.
+        </div></div>
+        {result.credit > 0 && (
+          <div className="alert alert-error"><div>
+            The guest has already paid <strong>{fmtIDR(result.credit)}</strong> more than they now owe. It shows as a credit on the folio — refund it by hand.
+          </div></div>
+        )}
+      </>
+    );
+    footer = <button className="btn btn-primary" onClick={close}>Done</button>;
   } else if (mode === 'remove') {
     body = (
       <>
