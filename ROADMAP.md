@@ -1,6 +1,58 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-09-28
+Last updated: 2026-10-11
+
+---
+
+## 🔖 Session handoff — 2026-10-11 — Reports vs journal, phone branding + install, room tablet alerts, displays that update themselves
+
+**Code:** `main` = `dev` = `ef0c8fb` (+ this docs commit). Migration **103**. Details of every item are in `CLAUDE.md`
+("Pending on the next production deploy", "Branding on phones + install banner", "Room tablet alerts + Room Display
+reliability"); this is the short version and what is still open.
+
+**On production and confirmed by the owner**
+- ✅ **Reports: a sale that is not on the guest's bill no longer counts** (`ded57c0`, no migration). Found reconciling
+  September's Accounting journal against the Reports page: voiding a sale's folio line by hand left the sale counted, and
+  so did a room charge that was never posted. One shared rule (`SALE_OFF_BILL_SQL`, `routes/reports.js`); Restore on the
+  folio counts it again. After deploy September's differences came out exactly as predicted.
+- ✅ **4 test orders of 9 Sep voided** (`f24c9a3`, `maintenance/voidOrphanTabs.js`) — old restaurant app, Take Order →
+  Takeaway with no payment method: an open tab with no table, which no screen could settle or cancel. `POST
+  /api/resto/orders` now refuses that. September's F&B difference is gone.
+- ✅ **Phones show the property's own name and logo, and offer to install** (`e63df5d`, no migration): login remembers
+  the property after any sign-in, logo + name in the phone menu, the installed app's name and icon come from the uploaded
+  logo (`/api/public/properties/:slug/manifest.webmanifest` + icons), Install banner on Android / Share hint on iPhone.
+
+**Pushed, deploy not confirmed (`ef0c8fb`)** — `bash deploy.sh` does all of it (migration 103, three builds, restart)
+- 🟡 **Room tablet alerts on Telegram** (migration 103, `services/tabletAlerts.js`, alert `alert_room_tablet`, housekeeping
+  by default): battery under 25% while not charging and again under 10%; offline after 15 minutes — sent once, never
+  repeated while it stays offline — and "back online"; tablets that drop together in one message. Kiosk-app tablets only.
+- 🟡 **Room Display does not get stuck:** a crashed screen restarts itself; requests time out and the state poll no longer
+  piles up; a "No connection" bar after 2 failed polls; new versions install by themselves when the tablet is idle; a
+  nightly reload (03:00–05:00).
+- 🟡 **TV Display updates itself** (`dist/version.json`, checked every 10 minutes) — no APK change.
+- 🟡 **Capacity with all 33 tablets** (read in code, not load-tested): the weather lookup no longer holds up every
+  tablet's request; the tablets' call stream is out of the shared per-IP rate limit.
+
+**To do after that deploy**
+- Tick *Room tablets (battery, offline)* for housekeeping's recipient in Settings → Reports & Alerts.
+- Expect one "offline" message ~20 minutes after the restart listing every old tablet row; "Remove tablet" on the
+  Dashboard for the ones that are gone.
+- Each room tablet needs one last manual Refresh to get onto the version that updates itself.
+- **Nothing here was run on a real tablet or TV.** Check: WiFi off 30 s → the orange bar comes and goes by itself; a
+  tablet under 25% unplugged → Telegram within ~2 minutes.
+
+**Left as they are (known, not bugs)**
+- September 2026 only: 5 free-text folio lines of 22–28 Sep (Rp 8.780.578,51 — 2 typed as Activity incl. 29 extra beds
+  for PLN in room 208, 3 typed as Sale) are in the journal and not in the Reports page. They were typed with the Add
+  Charge form removed on 2026-09-28; re-entering them would move them into October.
+- 5 × Nasi Goreng room charges of 6–8 Sep were never posted to a folio (old restaurant app, almost certainly tests).
+
+**Offered, not built**
+- Kiosk APK: WebView renderer crash, retry on an HTTP error page, start again after a reboot (a new APK on each tablet).
+- PMS client updating itself when idle (the owner asked for Room Display and TV only).
+- `ROADMAP.md`'s "Old F&B stack — retire" step 1: not confirmed done — check in Superadmin whether
+  `resto_ordering` is still on for Zahill. On 2026-10-11 the owner confirmed the restaurant and kitchen run on the POS and wants the old restaurant app removed
+  "later"; Kitchen Display is "not needed for now".
 
 ---
 
