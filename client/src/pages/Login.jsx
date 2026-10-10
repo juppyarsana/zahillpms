@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth, firstAllowedPath } from '../context/AuthContext';
 import api from '../services/api';
-
-const LAST_SLUG_KEY = 'lastPropertySlug';
+import InstallPrompt from '../components/InstallPrompt';
+import { applyPropertyBrand, rememberedSlug } from '../lib/pwaBrand';
 
 export default function Login() {
   const { login } = useAuth();
@@ -13,7 +13,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [slug, setSlug] = useState(slugParam || localStorage.getItem(LAST_SLUG_KEY) || '');
+  const [slug, setSlug] = useState(slugParam || rememberedSlug());
   const [branding, setBranding] = useState(null);
 
   async function fetchBranding(value) {
@@ -21,7 +21,7 @@ export default function Login() {
     try {
       const { data } = await api.get(`/api/public/properties/${value.trim()}/branding`);
       setBranding(data);
-      localStorage.setItem(LAST_SLUG_KEY, value.trim());
+      applyPropertyBrand(value.trim(), data.name);   // remembers the slug; installed app's name / icon
     } catch {
       setBranding(null);
     }
@@ -85,6 +85,8 @@ export default function Login() {
           </button>
         </form>
       </div>
+      {/* once the property is known — the installed app takes its name and icon */}
+      {branding && <InstallPrompt name={branding.name} />}
     </div>
   );
 }

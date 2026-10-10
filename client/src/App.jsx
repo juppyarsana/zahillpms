@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
-import { SettingsProvider } from './context/SettingsContext';
+import { SettingsProvider, useSettings } from './context/SettingsContext';
 import { CallProvider } from './context/CallContext';
 import Sidebar from './components/Sidebar';
 import UpdatePrompt from './components/UpdatePrompt';
+import InstallPrompt from './components/InstallPrompt';
 import CallBanner from './components/CallBanner';
 import CallRoomFab from './components/CallRoomFab';
 import Login from './pages/Login';
@@ -49,6 +50,7 @@ import AdminPropertyDetail from './pages/admin/PropertyDetail';
 
 function BottomNav() {
   const { user, logout, can, hasModule } = useAuth();
+  const { branding } = useSettings();
   const location = useLocation();
   const nav = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -148,7 +150,11 @@ function BottomNav() {
         <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)}>
           <div className="drawer" onClick={e => e.stopPropagation()}>
             <div className="drawer-header">
-              <span style={{ fontWeight: 700, fontSize: 15 }}>Menu</span>
+              {/* the property's logo and name — the sidebar that shows them is hidden on phones */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <img src={branding?.logo_url || '/logo.png'} alt="" style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0 }} />
+                <span style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{branding?.name || 'Menu'}</span>
+              </span>
               <button className="btn btn-icon" onClick={() => setDrawerOpen(false)}>✕</button>
             </div>
             {moreGroups.map((group, gi) => (
@@ -193,6 +199,7 @@ function BottomNav() {
 }
 
 function Layout({ children }) {
+  const { branding } = useSettings();
   return (
     <div className="app-shell">
       <Sidebar />
@@ -203,6 +210,8 @@ function Layout({ children }) {
         <BottomNav />
       </div>
       <UpdatePrompt />
+      {/* after the property's branding is in, so the installed app takes its name and icon */}
+      {branding && <InstallPrompt name={branding.name} />}
       <CallBanner />
       <CallRoomFab />
     </div>

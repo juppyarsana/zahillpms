@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import { applyPropertyBrand } from '../lib/pwaBrand';
 
 const SettingsContext = createContext({ sources: [], paymentMethods: [], branding: null, ratePlans: [], reload: () => {} });
 
@@ -19,6 +20,9 @@ export function SettingsProvider({ children }) {
       setSources(s.data);
       setPaymentMethods(p.data);
       setBranding(b.data);
+      // Remembered on this device: the login screen and the installed app
+      // then show this property's name and logo without anyone typing the slug.
+      applyPropertyBrand(b.data.slug, b.data.name);
     } catch {}
     // rate-plans is behind the reservations module — keep it off the critical path
     try {
