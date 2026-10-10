@@ -49,7 +49,11 @@ app.use(express.urlencoded({ extended: true }));
 //  - Calls without a token (login, public pages, guest QR) stay per IP.
 //  - Login: failed attempts only, per IP — brute-force guard.
 const crypto = require('crypto');
-const DEVICE_POLLING = /^\/api\/(display|kitchen)\//;
+// Also the room tablets' call stream + TURN credentials (/api/calls/room/…):
+// the stream carries its token in the URL, so it fell in the shared per-IP
+// bucket, and 33 tablets reconnecting on bad WiFi could use that up for
+// everyone behind the hotel's IP.
+const DEVICE_POLLING = /^\/api\/(display|kitchen|calls\/room)\//;
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3000,

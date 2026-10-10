@@ -15,9 +15,13 @@ import CallOverlay from './components/CallOverlay';
 import AlarmOverlay from './components/AlarmOverlay';
 import MessageOverlay from './components/MessageOverlay';
 import RoomCheckOverlay from './components/RoomCheckOverlay';
+import ConnectionBanner from './components/ConnectionBanner';
 import useResilientEventSource from './useResilientEventSource';
+import { setBusy, canRestart, runningFor } from './idle';
 
 const POLL_MS = 10_000;
+const STATE_TIMEOUT_MS = 8_000;
+const NIGHTLY_MIN_UPTIME_MS = 20 * 60 * 60 * 1000;
 const END_TOAST_MS = 2500;
 const MIC_TOAST_MS = 6000; // long enough to read the microphone message
 const DEBUG_CLICK_THRESHOLD = 5;
@@ -149,12 +153,24 @@ export default function App() {
     setDisplayToken(token);
   }, []);
 
+  // The state poll. One at a time (a slow one must not pile up behind the
+  // next), and it gives up after 8 s so a dead connection is noticed.
+  const fetchingRef = useRef(false);
+  const fetchAgainRef = useRef(false);
+  const fetchStateRef = useRef(() => {});
+  const failedPollsRef = useRef(0);
+  const [offline, setOffline] = useState(false);   // 2+ polls in a row failed → the banner
   const fetchState = useCallback(async () => {
     if (!roomId || !displayToken) return;
+    // Asked again while one is running (a tap, a push): run once more after it.
+    if (fetchingRef.current) { fetchAgainRef.current = true; return; }
+    fetchingRef.current = true;
     try {
-      const { data } = await api.get(`/display/room/${roomId}/state`);
+      const { data } = await api.get(`/display/room/${roomId}/state`, { timeout: STATE_TIMEOUT_MS });
       setState(data);
       setError(null);
+      failedPollsRef.current = 0;
+      setOffline(false);
 
       // Polling fallback for the calls SSE stream — adopts an incoming call
       // the poll found that we don't already know about, in case the calls
@@ -167,8 +183,34 @@ export default function App() {
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Connection error');
+      failedPollsRef.current += 1;
+      if (failedPollsRef.current >= 2) setOffline(true);
+    } finally {
+      fetchingRef.current = false;
+      if (fetchAgainRef.current) { fetchAgainRef.current = false; fetchStateRef.current(); }
     }
   }, [roomId, displayToken]);
+  fetchStateRef.current = fetchState;
+
+  // Nothing restarts the app (a new version, the nightly refresh) in the
+  // middle of a call, a ringing alarm or housekeeping's room check.
+  useEffect(() => {
+    setBusy(callState.status !== 'idle' || alarmRinging || showRoomCheck);
+  }, [callState.status, alarmRinging, showRoomCheck]);
+
+  // Nightly refresh: a page left open for weeks slowly gets heavier. Once it
+  // has run most of a day, load it again between 03:00 and 05:00 — only when
+  // the tablet is idle and the connection is fine (never reload into nothing).
+  useEffect(() => {
+    const id = setInterval(() => {
+      const hour = new Date().getHours();
+      if (hour < 3 || hour >= 5) return;
+      if (runningFor() < NIGHTLY_MIN_UPTIME_MS || !canRestart()) return;
+      if (failedPollsRef.current > 0 || navigator.onLine === false) return;
+      window.location.reload();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     fetchState();
@@ -469,6 +511,7 @@ export default function App() {
         />
         <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
         {showRoomCheck && <RoomCheckOverlay roomId={roomId} onClose={() => setShowRoomCheck(false)} onSent={fetchState} />}
+        <ConnectionBanner offline={offline} />
         <UpdatePrompt />
         <InstallPrompt />
       </>
@@ -520,6 +563,7 @@ export default function App() {
       <AlarmOverlay ringing={alarmRinging} time={alarmTime} onDismiss={handleDismissAlarm} />
       <MessageOverlay message={state.message} dismissing={dismissingMessage} onDismiss={handleDismissMessage} />
       {showRoomCheck && <RoomCheckOverlay roomId={roomId} onClose={() => setShowRoomCheck(false)} onSent={fetchState} />}
+      <ConnectionBanner offline={offline} />
       <UpdatePrompt />
       <InstallPrompt />
     </>

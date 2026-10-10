@@ -327,13 +327,16 @@ router.post('/room/:roomId/telemetry', authDisplay, async (req, res) => {
       'last_seen_at = NOW()',
       'updated_at = NOW()',
     ];
-    await db.query(
+    const { rows: [device] } = await db.query(
       `INSERT INTO room_display_devices (${insertCols.join(', ')})
        VALUES (${placeholders.join(', ')})
-       ON CONFLICT (property_id, controller_id) DO UPDATE SET ${setClauses.join(', ')}`,
+       ON CONFLICT (property_id, controller_id) DO UPDATE SET ${setClauses.join(', ')}
+       RETURNING battery_level, battery_charging, battery_alert_level`,
       [req.propertyId, roomId, ...vals]
     );
     res.json({ ok: true });
+    // Low battery / back online on Telegram (migration 103) — after the answer.
+    require('../services/tabletAlerts').afterTelemetry(req.propertyId, roomId, device);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

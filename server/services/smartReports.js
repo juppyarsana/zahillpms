@@ -74,6 +74,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_room_tablet: {
+    type: 'alert',
+    label: 'Room tablets (battery, offline)',
+    when: 'Instantly',
+    description: 'A room tablet under 25% battery while not charging (and again under 10%), or one that has stopped reporting for 15 minutes — and when it is back. Sent once, not repeated. Tablets with the kiosk app only.',
+    defaultRoles: ['housekeeping'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_restaurant_request: {
     type: 'alert',
     label: 'Restaurant requests from front desk',

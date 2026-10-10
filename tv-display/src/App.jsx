@@ -4,6 +4,33 @@ import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
 
 const POLL_MS = 15_000;
+const VERSION_CHECK_MS = 10 * 60 * 1000;
+
+// Auto-update. Nobody can press "refresh" on a TV, and a screen left on for
+// days never loads the page again by itself — so every 10 minutes ask the
+// server which build it has (dist/version.json, written at build) and load
+// the page again when it is not this one. The new address carries the build
+// (?v=…) so the TV can't answer from its own cache; tried once per build, so
+// a server that is mid-deploy can't make the screen reload in a loop.
+function useAutoUpdate() {
+  useEffect(() => {
+    async function check() {
+      try {
+        const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const { commit } = await res.json();
+        if (!commit || commit === __APP_COMMIT__) return;
+        if (sessionStorage.getItem('updateTried') === commit) return;
+        sessionStorage.setItem('updateTried', commit);
+        const url = new URL(window.location.href);
+        url.searchParams.set('v', commit);
+        window.location.replace(url.toString());
+      } catch { /* offline, or not a build (dev server): try again later */ }
+    }
+    const id = setInterval(check, VERSION_CHECK_MS);
+    return () => clearInterval(id);
+  }, []);
+}
 
 function useClock() {
   const [time, setTime] = useState(new Date());
@@ -352,6 +379,8 @@ export default function App() {
 
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
+
+  useAutoUpdate();
 
   useEffect(() => {
     if (queryRoom) localStorage.setItem('roomId', queryRoom);

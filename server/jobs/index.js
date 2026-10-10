@@ -140,6 +140,15 @@ function registerJobs() {
 
   console.log('[Jobs] Smart Reports scheduled — Daily Close 00:30, Morning Brief 07:00, Tomorrow Preview 19:00, Weekly Mon 08:00, Monthly 1st 08:00 WITA');
 
+  // Room tablets that stopped reporting — every 5 minutes (services/tabletAlerts.js).
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await require('../services/tabletAlerts').checkOffline();
+    } catch (err) {
+      console.error('[Jobs] Tablet offline check failed:', err.message);
+    }
+  });
+
   // Telegram Connect links still waiting for a Start press survive a restart.
   require('../services/telegramLink').ensurePolling();
 

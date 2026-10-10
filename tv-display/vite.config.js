@@ -12,7 +12,18 @@ export default defineConfig({
   define: {
     __APP_COMMIT__: JSON.stringify(commitHash),
   },
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    // dist/version.json — which build is on the server. A TV that has been on
+    // for days asks for it and loads the page again when it changed (App.jsx).
+    {
+      name: 'build-version',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ commit: commitHash }) });
+      },
+    },
+  ],
   server: {
     port: 5176,
     host: true,

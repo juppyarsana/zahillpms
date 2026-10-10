@@ -5,20 +5,27 @@ const LAT      = process.env.WEATHER_LAT  || '-8.2386';  // Kintamani default
 const LON      = process.env.WEATHER_LON  || '115.3697';
 const CACHE_MS = 30 * 60 * 1000; // 30 minutes
 
+const TIMEOUT_MS = 8000;
+const RETRY_MS = 5 * 60 * 1000; // after a failed fetch, don't ask again for 5 minutes
+
 let cache = null;
 let cacheTime = 0;
+let refreshing = false;
+let lastTryAt = 0;
 
 function fetchFromAPI() {
   return new Promise((resolve, reject) => {
     if (!API_KEY) return resolve(null);
     const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${LAT}&lon=${LON}&units=metric&cnt=16&appid=${API_KEY}`;
-    https.get(url, res => {
+    const req = https.get(url, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try { resolve(JSON.parse(data)); } catch { resolve(null); }
       });
-    }).on('error', () => resolve(null));
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(TIMEOUT_MS, () => req.destroy());   // → 'error' → null
   });
 }
 
@@ -33,12 +40,25 @@ function pickIcon(main) {
   return 'partly_cloudy_day';
 }
 
+// Never waits for the weather service: every room tablet asks for its state
+// every 10 seconds and this is part of the answer, so a slow or dead weather
+// API used to hold up every tablet at once (and each of them started its own
+// fetch when the cache ran out). Answers with what is cached — possibly a
+// little old, or nothing yet — and refreshes in the background, one fetch at
+// a time.
 async function getWeather() {
   if (!API_KEY) return null;
-  if (cache && Date.now() - cacheTime < CACHE_MS) return cache;
+  if (!(cache && Date.now() - cacheTime < CACHE_MS) && !refreshing && Date.now() - lastTryAt > RETRY_MS) {
+    refreshing = true;
+    lastTryAt = Date.now();
+    refresh().catch(() => {}).finally(() => { refreshing = false; });
+  }
+  return cache;
+}
 
+async function refresh() {
   const data = await fetchFromAPI();
-  if (!data || !data.list || data.list.length === 0) return cache; // return stale on error
+  if (!data || !data.list || data.list.length === 0) return; // keep what we have
 
   const now       = data.list[0];
   // Find first entry roughly 24h ahead for tomorrow
