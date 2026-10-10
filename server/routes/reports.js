@@ -47,6 +47,19 @@ const NIGHTS_CTE = `
 // A sale charged to a room whose stay is complimentary for everything.
 const COMP_SALE_SQL = `(s.payment_method = 'room_charge' AND s.booking_id IN (SELECT id FROM bookings WHERE complimentary_scope = 'all'))`;
 
+// A sale whose one-off items are not on the guest's bill: its folio line was
+// voided by hand (the sale itself stays as it was), or it was charged to a
+// room and never posted. Not revenue — the journal leaves it out too.
+// Per-night lines have no line of their own here (their nights post as
+// 'addon' lines), so only 'sale' lines are looked at.
+const SALE_OFF_BILL_SQL = `(
+  NOT EXISTS (SELECT 1 FROM folio_charges fl WHERE fl.sale_id = s.id AND fl.type = 'sale' AND fl.is_voided = false)
+  AND (EXISTS (SELECT 1 FROM folio_charges fv WHERE fv.sale_id = s.id AND fv.type = 'sale')
+       OR (s.payment_method = 'room_charge'
+           AND (s.order_source = 'external_pos'
+                OR EXISTS (SELECT 1 FROM sale_items sx WHERE sx.sale_id = s.id AND NOT sx.per_night))))
+)`;
+
 // Sales by the WITA day they were made, with each sale's lines split
 // (migration 074): `pn` = per-night lines (extra bed) — NOT counted here,
 // they're counted night by night from booking_addons (ADDON_NIGHTS_SQL);
@@ -67,7 +80,8 @@ const SALES_SQL = `
     FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = s.id
   ) li ON true
   WHERE s.property_id = $3 AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date
-    AND s.confirmation_status IS DISTINCT FROM 'rejected'`;
+    AND s.confirmation_status IS DISTINCT FROM 'rejected'
+    AND NOT ${SALE_OFF_BILL_SQL}`;
 
 // Per-night stay extras (extra bed, migration 074), one row per add-on night
 // inside the period and inside its booking's stay (Amend Dates / early
@@ -84,7 +98,12 @@ const ADDON_NIGHTS_SQL = `
   WHERE a.property_id = $3 AND a.status = 'active'
     AND b.status NOT IN ('cancelled', 'no_show')
     AND a.service_date BETWEEN $1::date AND $2::date
-    AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date`;
+    AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+    -- a night whose line was voided by hand on a stay that has checked out
+    -- (nothing posts it again) is off the bill
+    AND NOT (b.status = 'checked_out'
+             AND EXISTS (SELECT 1 FROM folio_charges fv WHERE fv.addon_id = a.id)
+             AND NOT EXISTS (SELECT 1 FROM folio_charges fl WHERE fl.addon_id = a.id AND fl.is_voided = false))`;
 
 // Activities (migration 037) on the day they take place, once confirmed or
 // completed (a request isn't a sale yet; cancelled / no-show aren't). NET:
@@ -473,6 +492,7 @@ module.exports.revenueCsv = revenueCsv;
 // Excel / PDF exports) — same rules, so every figure matches getReport().
 module.exports.NIGHTS_CTE = NIGHTS_CTE;
 module.exports.SALES_SQL = SALES_SQL;
+module.exports.SALE_OFF_BILL_SQL = SALE_OFF_BILL_SQL;
 module.exports.ADDON_NIGHTS_SQL = ADDON_NIGHTS_SQL;
 module.exports.ACTIVITY_SQL = ACTIVITY_SQL;
 module.exports.resolvePeriod = resolvePeriod;

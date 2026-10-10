@@ -29,7 +29,7 @@ const EXPENSE_CATEGORIES = {
 const r2 = n => round2(parseFloat(n) || 0);
 
 async function buildFullReport(propertyId, from, to) {
-  const { getReport, NIGHTS_CTE, ADDON_NIGHTS_SQL, ACTIVITY_SQL } = require('../routes/reports');   // lazy: route file
+  const { getReport, NIGHTS_CTE, ADDON_NIGHTS_SQL, ACTIVITY_SQL, SALE_OFF_BILL_SQL } = require('../routes/reports');   // lazy: route file
   const { collected } = require('./dailyClose');
   const { aging } = require('./agentStatementService');
   const { bookingsMade } = require('./bookingPickup');
@@ -51,6 +51,7 @@ async function buildFullReport(propertyId, from, to) {
       FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN products p ON p.id = si.product_id
       WHERE s.property_id = $3 AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $1::date AND $2::date
         AND s.confirmation_status IS DISTINCT FROM 'rejected' AND ${notComp}
+        AND NOT ${SALE_OFF_BILL_SQL}
         AND NOT si.per_night AND p.category NOT IN ('food', 'drinks')
       GROUP BY p.category`, P),
     // Per-night extras (extra bed) by category, night by night.
