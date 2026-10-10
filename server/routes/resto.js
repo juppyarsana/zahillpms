@@ -96,6 +96,11 @@ router.post('/orders', auth, gate, async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items required' });
   }
+  // An open tab is paid from its table's Settle — with no table it could
+  // never be settled (or cancelled) and stayed in the reports for good.
+  if (!table_id && (!payment_method || payment_method === 'unpaid')) {
+    return res.status(400).json({ error: 'A takeaway order is paid right away — choose how it is paid, or choose a table to open a tab', code: 'TAKEAWAY_NEEDS_PAYMENT' });
+  }
   try {
     const productIds = items.map(i => i.product_id);
     const { rows: products } = await db.query(
