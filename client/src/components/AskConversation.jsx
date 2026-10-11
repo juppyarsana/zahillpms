@@ -75,18 +75,18 @@ function ForecastCard({ card, onNavigate }) {
         {fmtDay(card.from)} → {fmtDay(card.to)} · average occupancy <b>{card.average_occupancy_pct}%</b>
       </div>
       <div className="table-wrap">
-        <table style={{ minWidth: card.with_money ? 520 : 400, fontSize: 12 }}>
+        <table style={{ minWidth: card.with_money ? 600 : 470, fontSize: 12 }}>
           <thead>
             <tr>
-              <th>Day</th><th style={{ textAlign: 'right' }}>Sold</th><th style={{ textAlign: 'right' }}>Free</th>
-              <th style={{ textAlign: 'right' }}>Occ.</th><th style={{ textAlign: 'right' }}>Arr.</th><th style={{ textAlign: 'right' }}>Dep.</th>
+              <th className="ask-pin">Day</th><th style={{ textAlign: 'right' }}>Sold</th><th style={{ textAlign: 'right' }}>Free</th>
+              <th style={{ textAlign: 'right' }}>Occupancy</th><th style={{ textAlign: 'right' }}>Arriving</th><th style={{ textAlign: 'right' }}>Departing</th>
               {card.with_money && <th style={{ textAlign: 'right' }}>Revenue</th>}
             </tr>
           </thead>
           <tbody>
             {card.rows.map(r => (
               <tr key={r.date} title={types.map(t => `${t}: ${r.free_by_type[t]} free`).join(' · ')}>
-                <td style={{ whiteSpace: 'nowrap' }}>
+                <td className="ask-pin" style={{ whiteSpace: 'nowrap' }}>
                   {fmtDay(r.date)}
                   {r.holiday && <div className="text-muted" style={{ fontSize: 10 }}>{r.holiday}</div>}
                 </td>
@@ -116,14 +116,14 @@ function RatesCard({ card }) {
         <table style={{ minWidth: 160 + dates.length * 96, fontSize: 12 }}>
           <thead>
             <tr>
-              <th>Room type</th>
+              <th className="ask-pin">Room type</th>
               {dates.map(d => <th key={d} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtDay(d)}</th>)}
             </tr>
           </thead>
           <tbody>
             {card.room_types.map(t => (
               <tr key={t.name}>
-                <td style={{ fontWeight: 600 }}>{t.name}</td>
+                <td className="ask-pin" style={{ fontWeight: 600 }}>{t.name}</td>
                 {t.nights.map(n => (
                   <td key={n.date} style={{ textAlign: 'right', whiteSpace: 'nowrap' }} title={n.period || 'Normal rate'}>
                     {fmtIDR(n.rate)}

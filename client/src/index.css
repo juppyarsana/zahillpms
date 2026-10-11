@@ -229,6 +229,9 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
   background: #fff;
   flex-shrink: 0;
 }
+/* First column of a table in an Ask card (the day / the room type) stays in view
+   while the table is scrolled sideways. */
+.ask-pin { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 var(--border); }
 .ask-panel-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; }
 .ask-panel-input { flex-shrink: 0; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); background: #fff; }
 @media (max-width: 768px) {

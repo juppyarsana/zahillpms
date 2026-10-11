@@ -26,8 +26,13 @@ function addDays(ymd, n) {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
+// "24 Dec" — with the year when it is not this year, so the "Looked up" line
+// shows which September was meant.
 function fmtShort(ymd) {
-  return new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const thisYear = new Date(Date.now() + 8 * 3600 * 1000).getUTCFullYear();   // WITA
+  const opts = { day: 'numeric', month: 'short', timeZone: 'UTC' };
+  if (+ymd.slice(0, 4) !== thisYear) opts.year = 'numeric';
+  return new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-GB', opts);
 }
 function weekday(ymd) {
   return new Date(ymd + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
