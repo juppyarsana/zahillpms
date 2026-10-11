@@ -2,7 +2,7 @@ const ratePlanService = require('./ratePlanService');
 const roomCharge = require('./roomChargeService');
 const { computeFolioTotals, round2 } = require('./folioService');
 const { recomputeBookingStatus } = require('./paymentStatusService');
-const { priceBasis } = require('./priceBasis');
+const { priceBasis, basisFrom } = require('./priceBasis');
 const { stayNights } = require('./folioService');
 const nightRates = require('./nightRates');
 
@@ -14,8 +14,15 @@ function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('i
 // Gross-up factor F = (1 + service_charge_rate/100) * (1 + tax_rate/100),
 // plus how prices are entered (divisor: F when they include tax, else 1 —
 // migration 079; pass it to ratePlanService.mealNetPerNight).
-async function grossFactor(client, propertyId) {
-  const b = await priceBasis(propertyId, client);
+// With a booking whose bill has its own rates (migration 081: stamped at
+// checkout or when the property's rates changed), those rates are used — the
+// folio adds service + tax at them, so a price split at today's rates would
+// not add back up to the price typed.
+async function grossFactor(client, propertyId, booking = null) {
+  let b = await priceBasis(propertyId, client);
+  if (booking?.bill_tax_rate != null) {
+    b = basisFrom({ tax_rate: booking.bill_tax_rate, service_charge_rate: booking.bill_service_charge_rate ?? 0, prices_include_tax: b.include });
+  }
   return { F: b.F, tax_rate: b.tax_rate, service_charge_rate: b.service_charge_rate, divisor: b.divisor, include: b.include };
 }
 
@@ -83,7 +90,7 @@ function snapPayable(computed, typed) {
 //     (undefined) = keep how the stay is shared between its nights now.
 async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null, nightShares }) {
   const reqBody = { received_was_typo: receivedWasTypo };
-  const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId);
+  const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId, before);
   let discountAmount = 0;
   let roomNet, mealNet;
   if (split) {
