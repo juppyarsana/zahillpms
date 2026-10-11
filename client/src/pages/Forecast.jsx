@@ -44,6 +44,8 @@ export default function Forecast() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showMoney, setShowMoney] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let off = false;
@@ -57,7 +59,31 @@ export default function Forecast() {
 
   const openDay = can('guest_lists') ? date => nav(`/guest-lists?date=${date}`) : null;
   const t = data?.totals;
-  const money = data?.with_money;
+  const hasMoney = data?.with_money;
+  const money = hasMoney && showMoney;
+
+  // Prints what is on the screen: the same days, with or without the room
+  // types and the revenue columns.
+  async function downloadPdf() {
+    setDownloading(true);
+    try {
+      const r = await api.get('/api/forecast/pdf', {
+        params: { from, days, ...(byType ? { by_type: 1 } : {}), ...(money ? {} : { money: 0 }) }, responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `forecast-${data.from}_to_${data.to}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError('Could not make the PDF');
+    } finally {
+      setDownloading(false);
+    }
+  }
   const outNow = data?.rows?.[0]?.out_of_order || 0;
   const peakBreakfast = data ? data.rows.reduce((a, r) => (r.breakfast > a.breakfast ? r : a), data.rows[0]) : null;
 
@@ -75,6 +101,9 @@ export default function Forecast() {
           <input className="form-input" type="date" value={from} onChange={e => e.target.value && setFrom(e.target.value)} style={{ width: 170 }} aria-label="First day" />
           <button className="btn btn-secondary" onClick={() => setFrom(d => addDaysYmd(d, days))} aria-label="Later">→</button>
           {from !== today && <button className="btn btn-secondary" onClick={() => setFrom(today)}>Today</button>}
+          <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !data || downloading}>
+            {downloading ? 'Generating…' : '⬇ Download PDF'}
+          </button>
         </div>
       </div>
 
@@ -85,6 +114,11 @@ export default function Forecast() {
         {data?.room_types?.length > 1 && (
           <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={byType} onChange={e => setByType(e.target.checked)} /> Rooms sold by room type
+          </label>
+        )}
+        {hasMoney && (
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showMoney} onChange={e => setShowMoney(e.target.checked)} /> Revenue
           </label>
         )}
       </div>

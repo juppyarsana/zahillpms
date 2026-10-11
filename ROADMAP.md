@@ -14,7 +14,7 @@ Last updated: 2026-10-11
 - ✅ **Edit Price on a stay with its own bill rates** (`233a9f0`, deployed): split at today's rates left a false credit
   on stays checked out at 0%. `maintenance/checkBillSplit.js` run on production: 8 found, re-saved, 0 left.
 - 🟡 **Forecast page** (no migration; on `dev`, not released): `/forecast`, new `forecast` permission — see CLAUDE.md
-  "Forecast". On the books only. Next if wanted: PDF / Excel, pickup (needs a daily snapshot), a real projection.
+  "Forecast". On the books only, with a PDF download. Next if wanted: pickup (needs a daily snapshot), a real projection.
 
 ## 🔖 Session handoff — 2026-10-11 — Reports vs journal, phone branding + install, room tablet alerts, displays that update themselves
 
