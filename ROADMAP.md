@@ -4,6 +4,18 @@ Last updated: 2026-10-11
 
 ---
 
+## 🔖 Session handoff — 2026-10-11 (laptop, afternoon) — September vs VHP, bill-rate fix, Forecast page
+
+- ✅ **September compared with the old VHP guest list** (room by room, night by night): from 16 Sept (go-live) 287 of 291
+  room-nights match. Found 12 stays where FO had typed ONE night's price as the whole-stay price (before the 26 Sept
+  price check) — corrected by the owner on production with Edit Price. Still open for the owner: the Rofiq group
+  (701–704), three VHP stays not in our report (108 Anne Schelde 16–18 Sept, 305 Jero Dika 17 Sept, 108 Mark
+  Rijkelijkhuizen 22 Sept), test bookings "Juppy" / Putu Widya Snicaya 4–7 Sept still counted as revenue.
+- ✅ **Edit Price on a stay with its own bill rates** (`233a9f0`, deployed): split at today's rates left a false credit
+  on stays checked out at 0%. `maintenance/checkBillSplit.js` run on production: 8 found, re-saved, 0 left.
+- 🟡 **Forecast page** (no migration; on `dev`, not released): `/forecast`, new `forecast` permission — see CLAUDE.md
+  "Forecast". On the books only. Next if wanted: PDF / Excel, pickup (needs a daily snapshot), a real projection.
+
 ## 🔖 Session handoff — 2026-10-11 — Reports vs journal, phone branding + install, room tablet alerts, displays that update themselves
 
 **Code:** `main` = `dev` = `ef0c8fb` (+ this docs commit). Migration **103**. Details of every item are in `CLAUDE.md`

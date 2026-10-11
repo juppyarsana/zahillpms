@@ -18,6 +18,7 @@ import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
+import Forecast from './pages/Forecast';
 import Restaurant from './pages/Restaurant';
 import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
@@ -74,6 +75,7 @@ function BottomNav() {
     { label: 'Front Desk', items: [
       can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
       can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
+      can('forecast') && hasModule('reservations') && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
       can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
@@ -290,6 +292,7 @@ export default function App() {
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guest-lists"      element={<RequireMenu menuKey="guest_lists"><RequireModule moduleName="reservations"><GuestLists /></RequireModule></RequireMenu>} />
+                  <Route path="/forecast"         element={<RequireMenu menuKey="forecast"><RequireModule moduleName="reservations"><Forecast /></RequireModule></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />
