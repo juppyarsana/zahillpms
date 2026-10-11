@@ -4,12 +4,20 @@ Last updated: 2026-10-11
 
 ---
 
+## 🔖 Session handoff — 2026-10-11 (PC, night) — Events: the meeting room (stage 1 of packages)
+
+- **Built on `dev`, NOT committed:** Events (`/events`), migration 106, module `events` (off by default). Venue calendar + list, an event with its own bill / payments / meals / history, pro forma, invoice and function sheet PDFs, a link to a group booking, a Telegram alert, the new revenue line in every report, event payments in Daily Close / Cashier Closing / the journal, and the API the POS will call. Full write-up in `CLAUDE.md` ("Events — the meeting room in the PMS").
+- **The plan (owner):** stage 1 = this. Stage 2 = packages priced per person (meeting room + bedrooms + coffee breaks + lunch / dinner) with a quotation and one merged bill. Stage 3 = fixed packages on the booking engine (`ROADMAP.md` Phase C item 6 is still only an outline).
+- **2026-10-12, same PC:** the POS repo is now cloned here too (`C:\zahillpos`, GitHub `juppyarsana/separuh`, branch `pms-integration`; local database `zahillpos_dev`, server on port 4100, Owner PIN 1234; workspace file `C:\Users\dj03p\zahill.code-workspace`). Built and tested end to end: agreed meal prices in the PMS (migration 107) and the POS side (event meals on FO requests, charge a bill to an event). See `CLAUDE.md` "Events — agreed meal prices + the POS side". Both repos: NOT committed.
+- Also uncommitted from the same evening: nothing else — Ask and the complimentary early check-out fix were released (`main` 345c636).
+- Next migration number: **109**.
+
 ## 🔖 Session handoff — 2026-10-11 (PC, evening) — Ask: talk to the PMS
 
 - **Built on `dev`, not committed by the session unless the owner asked:** Ask (a floating 🎙 button on every page that opens a panel; also `/ask`), migration 105, module `assistant` (off by default). Voice or typed questions in Indonesian / English → a short answer + cards from three read-only lookups (availability + price, occupancy forecast, rates). Optional spoken replies. Full write-up in `CLAUDE.md` ("Ask — talk to the PMS").
 - **Tried with the real model through the service** (15 questions, Indonesian / English / mixed, about 5 s each) — `ANTHROPIC_API_KEY` is now in this PC's `server/.env` (gitignored; the laptop needs its own). The page in a browser and voice on phones were not tried.
 - **Next:** try the page (typed, then Android + iPhone voice); then more lookups (Guest Lists, Kitchen / breakfast, departures) for other departments; server-side transcription if the phones' own voice input is not good enough.
-- Next migration number: **106**.
+- Next migration number at that point: 106 (now 107, see above).
 
 ## 🔖 Session handoff — 2026-10-11 (laptop, afternoon) — September vs VHP, bill-rate fix, Forecast page
 
@@ -1992,7 +2000,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 106
+## Next migration number: 109
 
 ---
 

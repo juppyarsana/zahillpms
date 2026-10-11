@@ -66,7 +66,11 @@ router.post('/alerts', gate, async (req, res) => {
 //         OR gross_amount (all-in: what the guest pays — the PMS takes its own
 //         service + tax out), description, external_ref (the POS transaction
 //         id — makes retries safe) }
-router.post('/transactions', gate, async (req, res) => {
+router.post('/transactions', gate, async (req, res, next) => {
+  // A bill charged to an event (meeting room) instead of a room: { event_id,
+  // meal_id?, amount | gross_amount, description, external_ref } → a line on
+  // the event's bill. Handled below (needs the `events` module).
+  if (req.body?.event_id) return next();
   const { room, booking_id, amount, gross_amount, description, external_ref } = req.body || {};
   try {
     const result = await pos.postTransaction(req.propertyId, {
@@ -79,11 +83,62 @@ router.post('/transactions', gate, async (req, res) => {
   }
 });
 
+// ── Events (meeting room — migration 106) ───────────────────────
+// The restaurant learns from the PMS that a meeting has meals, rings each one
+// up and charges the bill to the event; the company pays the hotel one invoice.
+const eventsGate = [...gate, moduleGuard('events')];
+const ev = require('../services/eventService');
+const evErr = (res, err) => {
+  if (err instanceof ev.EventError) {
+    const { status, message, ...extra } = err;
+    return res.status(status).json({ error: message, ...extra });
+  }
+  res.status(500).json({ error: err.message });
+};
+
+// POST /api/pos/transactions with event_id (see above) → 201
+// { event_charge_id, event_id, amount, gross_amount, balance_due, replayed:false }
+// (200 + replayed:true for a retry of the same external_ref).
+// The POS must report such a bill as CHARGED (like a room charge), not as paid
+// at the restaurant, in its session summary — the PMS counts it as F&B from
+// this line.
+router.post('/transactions', eventsGate, async (req, res) => {
+  const { event_id, meal_id, amount, gross_amount, description, external_ref } = req.body || {};
+  try {
+    const r = await ev.posCharge(req.propertyId, { eventId: event_id, mealId: meal_id, amount, grossAmount: gross_amount, description, externalRef: external_ref });
+    res.status(r.replayed ? 200 : 201).json(r);
+  } catch (err) { evErr(res, err); }
+});
+
+// GET /api/pos/events?from=&to= (today by default, up to 31 days) — confirmed
+// events with the meals to prepare: [{ event_id, event_no, name, company,
+// venue, date, end_date, start_time, end_time, pax, notes, meals: [{ id, kind,
+// label, service_date, service_time, pax, note, status, done_by, done_at }] }]
+router.get('/events', eventsGate, async (req, res) => {
+  try {
+    const { todayWITA } = require('../services/roomChargeService');
+    const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+    const from = ok(req.query.from) ? req.query.from : todayWITA();
+    const to = ok(req.query.to) ? req.query.to : from;
+    if (to < from || (Date.parse(to) - Date.parse(from)) / 864e5 > 31) return res.status(400).json({ error: 'from/to: up to 31 days' });
+    res.json(await ev.posEvents(req.propertyId, from, to));
+  } catch (err) { evErr(res, err); }
+});
+
+// POST /api/pos/events/meals/:id/status { status: 'done'|'open', by } — the
+// restaurant handled the meal (or undid it).
+router.post('/events/meals/:id/status', eventsGate, async (req, res) => {
+  try {
+    res.json(await ev.posMealStatus(req.propertyId, req.params.id, req.body?.status, req.body?.by));
+  } catch (err) { evErr(res, err); }
+});
+
 // POST /api/pos/sessions — a restaurant session's summary (Breakfast / Lunch /
 // Dinner) sent from the POS Transactions page. Stored per business day +
 // session; sending again replaces it. Body: { business_date, session, label,
 // started_at, ended_at, bills, outlet: { bills, net, service, tax, total },
-// room_charges: { bills, total, list }, by_method, categories, discounts,
+// room_charges: { bills, total, list }, event_charges: { bills, total, list }
+// (bills charged to an event — on the event's bill, not a folio), by_method, categories, discounts,
 // open_bills, breakfast: { rooms_expected, pax_expected, rooms_came, pax_came,
 // not_came } | null, sent_by }. outlet.net → F&B revenue in the reports.
 router.post('/sessions', gate, async (req, res) => {

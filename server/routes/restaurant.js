@@ -36,6 +36,8 @@ const sessionRow = s => ({
   started_at: s.started_at, ended_at: s.ended_at, bills: s.bills,
   outlet_bills: s.outlet_bills, outlet_net: r2(s.outlet_net), outlet_service: r2(s.outlet_service), outlet_tax: r2(s.outlet_tax),
   outlet_total: r2(s.outlet_total), room_charge_total: r2(s.room_charge_total),
+  // Bills charged to an event (meeting room): in the summary only — no column.
+  event_charge_total: r2(s.summary?.event_charges?.total || 0), event_charge_bills: s.summary?.event_charges?.bills || 0,
   breakfast_pax_expected: s.breakfast_pax_expected, breakfast_pax_came: s.breakfast_pax_came,
   sent_by: s.sent_by, sent_at: s.sent_at, first_sent_at: s.first_sent_at, send_count: s.send_count,
   comp_bills: s.summary?.complimentary?.bills || 0, comp_value: r2(s.summary?.complimentary?.value || 0),
@@ -76,19 +78,35 @@ async function roomChargesByDay(propertyId, from, to) {
   return new Map(rows.map(r => [ymd(r.day), { bills: r.bills, net: r2(r.net), gross: r2(r.gross) }]));
 }
 
-// Paid at the restaurant (from sessions) + charged to rooms (from sales), over a period.
+// Restaurant bills charged to an event (meeting room), from the events' bills:
+// NET and as the client pays it, by the WITA day the POS charged it.
+async function eventChargesTotal(propertyId, from, to) {
+  const { rows: [r] } = await db.query(
+    `SELECT COUNT(*)::int AS bills, COALESCE(SUM(c.amount), 0) AS net,
+            COALESCE(SUM(COALESCE(c.shown_total,
+              c.amount * (1 + COALESCE(e.bill_service_charge_rate, 0) / 100.0) * (1 + COALESCE(e.bill_tax_rate, 0) / 100.0))), 0) AS gross
+       FROM event_charges c JOIN events e ON e.id = c.event_id
+      WHERE c.property_id = $1 AND c.type = 'pos' AND c.is_voided = false
+        AND (c.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date`, [propertyId, from, to]);
+  return { bills: r.bills, net: r2(r.net), gross: r2(r.gross) };
+}
+
+// Paid at the restaurant (from sessions) + charged to rooms (from sales) + charged to events, over a period.
 async function takings(propertyId, from, to) {
   const { rows: [s] } = await db.query(
     `SELECT COALESCE(SUM(outlet_net), 0) AS net, COALESCE(SUM(outlet_total), 0) AS gross, COALESCE(SUM(outlet_bills), 0)::int AS bills
        FROM pos_sessions WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [propertyId, from, to]);
   const rc = await roomChargesByDay(propertyId, from, to);
   const room = [...rc.values()].reduce((a, v) => ({ bills: a.bills + v.bills, net: a.net + v.net, gross: a.gross + v.gross }), { bills: 0, net: 0, gross: 0 });
-  const bills = s.bills + room.bills;
+  const ev = await eventChargesTotal(propertyId, from, to);
+  const bills = s.bills + room.bills + ev.bills;
+  const gross = parseFloat(s.gross) + room.gross + ev.gross;
   return {
     outlet: { bills: s.bills, net: r2(s.net), gross: r2(s.gross) },
     rooms: { bills: room.bills, net: r2(room.net), gross: r2(room.gross) },
-    net: r2(parseFloat(s.net) + room.net), gross: r2(parseFloat(s.gross) + room.gross), bills,
-    average_bill: bills ? r2((parseFloat(s.gross) + room.gross) / bills) : null,
+    events: ev,
+    net: r2(parseFloat(s.net) + room.net + ev.net), gross: r2(gross), bills,
+    average_bill: bills ? r2(gross / bills) : null,
   };
 }
 
@@ -203,7 +221,7 @@ router.get('/sessions/:id', gate, async (req, res) => {
       ...sessionRow(s),
       by_method: sum.by_method || [], categories: sum.categories || [], discounts: sum.discounts || 0,
       open_bills: sum.open_bills || null, breakfast: sum.breakfast || null, complimentary: sum.complimentary || null,
-      room_charges: sum.room_charges?.list || [], bill_list: sum.bill_list || null,
+      room_charges: sum.room_charges?.list || [], event_charges: sum.event_charges?.list || [], bill_list: sum.bill_list || null,
       versions: versions.map(v => ({ version: v.version, sent_by: v.sent_by, sent_at: v.sent_at, changes: v.changes,
         outlet_total: r2(v.outlet_total), bills: v.bills })),
     });
@@ -249,14 +267,22 @@ router.get('/room-charges', gate, async (req, res) => {
           AND (s.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
         ORDER BY s.created_at DESC`, [req.propertyId, p.from, p.to]);
     const { rows: sess } = await db.query(
-      `SELECT business_date, session_key, summary->'room_charges'->'list' AS list FROM pos_sessions
+      `SELECT business_date, session_key, summary->'room_charges'->'list' AS list,
+              summary->'event_charges'->'list' AS events FROM pos_sessions
         WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [req.propertyId, p.from, p.to]);
     const inSession = new Map();
     for (const s of sess) for (const rc of (s.list || [])) inSession.set(rc.id, { date: ymd(s.business_date), session: LABEL[s.session_key], total: r2(rc.total), room: rc.room, guest: rc.guest });
+    // Bills the POS says it charged to an event: flagged below if the event's bill never got them.
+    for (const s of sess) for (const ec of (s.events || [])) inSession.set(ec.id, { date: ymd(s.business_date), session: LABEL[s.session_key], total: r2(ec.total), room: ec.event, guest: ec.name });
     // A bill charged to a room again after the hotel voided it carries
     // "<POS bill id>~<n>" (migration 095); the POS session lists the bill id.
     const base = ref => String(ref || '').replace(/~\d+$/, '');
     const refs = new Set(rows.map(r => base(r.external_ref)).filter(Boolean));
+    // A bill charged to an event (meeting room, migration 106) is listed by the
+    // POS session like a room charge but lives on the event's bill, not in sales.
+    const { rows: eventRefs } = await db.query(
+      `SELECT external_ref FROM event_charges WHERE property_id = $1 AND type = 'pos' AND external_ref IS NOT NULL`, [req.propertyId]);
+    for (const e of eventRefs) refs.add(base(e.external_ref));
     const charges = rows.map(r => {
       const sessionHit = r.external_ref && !r.is_voided ? inSession.get(base(r.external_ref)) : null;
       const problems = [];

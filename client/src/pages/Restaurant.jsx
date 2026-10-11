@@ -125,7 +125,7 @@ function TodayTab({ date, onOpenSession, onTab }) {
             <div className="stat-label">{s.label}</div>
             {s.sent_at ? (
               <>
-                <div className="stat-value" style={{ fontSize: 20 }}>{fmtIDR(s.outlet_total + s.room_charge_total)}</div>
+                <div className="stat-value" style={{ fontSize: 20 }}>{fmtIDR(s.outlet_total + s.room_charge_total + (s.event_charge_total || 0))}</div>
                 <div className="stat-sub">{plural(s.bills, 'bill')} · sent {fmtTime(s.sent_at)}{s.sent_by ? ` by ${s.sent_by}` : ''}{s.send_count > 1 ? ` · ${s.send_count} sends` : ''}</div>
               </>
             ) : <div className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>Not sent yet</div>}
@@ -135,7 +135,7 @@ function TodayTab({ date, onOpenSession, onTab }) {
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <Stat label={`F&B takings · ${date === d.today ? 'today' : fmtShort(date)}`} value={fmtIDR(d.day.gross)}
-          sub={<>{fmtIDR(d.day.outlet.gross)} paid here · {fmtIDR(d.day.rooms.gross)} to rooms</>} />
+          sub={<>{fmtIDR(d.day.outlet.gross)} paid here · {fmtIDR(d.day.rooms.gross)} to rooms{d.day.events?.bills > 0 && <> · {fmtIDR(d.day.events.gross)} to events</>}</>} />
         <Stat label="Bills" value={d.day.bills ? plural(d.day.bills, 'bill') : '—'}
           sub={<>{d.day.bills ? `Average ${fmtIDR(d.day.average_bill)}` : 'No bills'}{d.last_week.bills
             ? <> · vs same day last week {vs(d.day.gross, d.last_week.gross)}</> : ' · none the same day last week'}</>} />
@@ -225,7 +225,8 @@ function SessionsTab({ selected, onOpen, onClose }) {
                   <td>{s.label}</td>
                   <td style={{ textAlign: 'right' }}>{s.bills}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(s.outlet_total)}<div className="text-muted" style={{ fontSize: 11 }}>{fmtIDR(s.outlet_net)} before tax</div></td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(s.room_charge_total)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(s.room_charge_total)}
+                    {s.event_charge_total > 0 && <div className="text-muted" style={{ fontSize: 11 }}>+ {fmtIDR(s.event_charge_total)} to events</div>}</td>
                   <td>{s.session === 'breakfast' && s.breakfast_pax_expected != null ? `${s.breakfast_pax_came} / ${s.breakfast_pax_expected} came` : ''}
                     {s.comp_bills > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)' }}>🎁 {s.comp_bills} complimentary · {fmtIDR(s.comp_value)}</div>}</td>
                   <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtWhen(s.sent_at)}{s.sent_by ? ` · ${s.sent_by}` : ''}
@@ -270,6 +271,8 @@ function SessionDetail({ id, onClose }) {
             <div className="stat-grid">
               <Stat label="Paid at the restaurant" value={fmtIDR(s.outlet_total)} sub={`${fmtIDR(s.outlet_net)} before service & tax → F&B`} />
               <Stat label="Charged to rooms" value={fmtIDR(s.room_charge_total)} sub="Already on the folios" />
+              {s.event_charge_total > 0 && <Stat label="Charged to events" value={fmtIDR(s.event_charge_total)}
+                sub={(s.event_charges || []).map(e => `${e.event || ''}${e.name ? ` · ${e.name}` : ''}`).join(', ') || "Already on the events' bills"} />}
               {s.breakfast && <Stat label="Breakfast came" value={`${s.breakfast.pax_came} / ${s.breakfast.pax_expected}`}
                 sub={<>{!s.breakfast.pax_expected ? 'No guests with breakfast'
                   : s.breakfast.not_came?.length ? `Didn't come: ${s.breakfast.not_came.map(r => r.room).join(', ')}` : 'Everyone came'}

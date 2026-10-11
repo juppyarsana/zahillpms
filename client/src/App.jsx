@@ -17,6 +17,8 @@ import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import Availability from './pages/Availability';
 import Ask from './pages/Ask';
+import Events from './pages/Events';
+import EventDetail from './pages/EventDetail';
 import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
@@ -79,6 +81,7 @@ function BottomNav() {
       can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
       can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('forecast') && hasModule('reservations') && { to: '/forecast', icon: '🔭', label: 'Forecast' },
+      can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
       can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
       can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
       can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
@@ -293,6 +296,8 @@ export default function App() {
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
                   <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Availability /></RequireModule></RequireMenu>} />
+                  <Route path="/events"           element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><Events /></RequireModule></RequireMenu>} />
+                  <Route path="/events/:id"       element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><EventDetail /></RequireModule></RequireMenu>} />
                   <Route path="/ask"              element={<RequireMenu menuKey="assistant"><RequireModule moduleName="assistant"><Ask /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/new"element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />

@@ -14,7 +14,7 @@ const { PAID_AT_DESK_SQL, billRates, computeFolioTotals, round2 } = require('./f
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
-const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund', group_refund: 'Group refund' };
+const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund', group_refund: 'Group refund', event: 'Event payment', event_refund: 'Event refund' };
 
 async function load(propertyId, date, { userId = null } = {}) {
   const { rows } = await db.query(`
@@ -87,12 +87,34 @@ async function load(propertyId, date, { userId = null } = {}) {
     ORDER BY method_label, money.at NULLS FIRST, room
   `, [propertyId, date]);
 
+  // Payments for events (meeting room — migration 106), same shape.
+  const { rows: eventRows } = await db.query(`
+    SELECT ep.method, ep.amount, ep.reference, ep.notes, CASE WHEN ep.is_refund THEN 'event_refund' ELSE 'event' END AS kind,
+           ep.recorded_at AS at, ep.received_by AS user_id, NULL AS booking_id,
+           'Event #' || e.event_no AS room,
+           COALESCE(NULLIF(e.company_name, ''), a.name, e.contact_name, e.name) AS guest, NULL AS group_id, e.id AS event_id,
+           COALESCE(pm.label, ep.method, 'Other') AS method_label, us.name AS user_name,
+           to_char(ep.recorded_at AT TIME ZONE ${TZ}, 'HH24:MI') AS time,
+           to_char(ep.recorded_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS recorded_on
+    FROM event_payments ep
+    JOIN events e ON e.id = ep.event_id
+    LEFT JOIN agents a ON a.id = e.agent_id
+    LEFT JOIN payment_methods pm ON pm.id = ep.method AND pm.property_id = $1
+    LEFT JOIN users us ON us.id = ep.received_by
+    WHERE ep.property_id = $1 AND NOT ep.is_voided
+      AND (ep.received_at AT TIME ZONE ${TZ})::date = $2::date
+    ORDER BY ep.recorded_at`, [propertyId, date]);
+  if (eventRows.length) {
+    rows.push(...eventRows);
+    rows.sort((x, y) => String(x.method_label).localeCompare(String(y.method_label)) || (x.at ? new Date(x.at).getTime() : 0) - (y.at ? new Date(y.at).getTime() : 0));
+  }
+
   const all = rows.map(r => ({
     method: r.method_label,
     // the time is only shown when the payment was recorded on this same day
     time: r.kind === 'agent' ? null : (r.recorded_on === date ? r.time : null),
     recorded_on: r.recorded_on && r.recorded_on !== date && r.kind !== 'agent' ? r.recorded_on : null,
-    room: r.room, guest: r.guest, booking_id: r.booking_id, group_id: r.group_id || null,
+    room: r.room, guest: r.guest, booking_id: r.booking_id, group_id: r.group_id || null, event_id: r.event_id || null,
     what: WHAT[r.kind] || (r.kind === 'sale' ? 'Sale' : r.kind === 'activity' ? 'Activity' : 'Agent payment'),
     reference: r.reference || null,
     notes: r.notes || null,

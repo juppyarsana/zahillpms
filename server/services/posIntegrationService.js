@@ -181,6 +181,7 @@ function sessionChanges(prev, next) {
   }
   const tot = [['Bills', x => x.bills], ['Paid at the restaurant', x => money2(x.outlet?.total)],
     ['Before service & tax', x => money2(x.outlet?.net)], ['Charged to rooms', x => money2(x.room_charges?.total)],
+    ['Charged to events', x => (x.event_charges ? money2(x.event_charges.total) : null)],
     ['Breakfast came', x => (x.breakfast ? x.breakfast.pax_came : null)]];
   for (const [label, f] of tot) {
     const a = f(prev), b = f(next);
@@ -257,6 +258,7 @@ function sessionAlertText(b, result) {
   const label = String(b.label || b.session || '').slice(0, 30);
   const o = b.outlet || {};
   const rc = b.room_charges || {};
+  const ec = b.event_charges || {};
   const bills = parseInt(b.bills, 10) || 0;
   // Sections separated by a blank line; one fact per line.
   const sections = [];
@@ -266,12 +268,13 @@ function sessionAlertText(b, result) {
       result.send_count > 1 ? `<i>Sent again (${result.send_count}×)${b.sent_by ? ` by ${h(String(b.sent_by).slice(0, 60))}` : ''}</i>`
         : b.sent_by ? `<i>Sent by ${h(String(b.sent_by).slice(0, 60))}</i>` : '');
 
-  add(`💰 <b>Total ${rp((Number(o.total) || 0) + (Number(rc.total) || 0))}</b> · ${plural(bills, 'bill')}`,
+  add(`💰 <b>Total ${rp((Number(o.total) || 0) + (Number(rc.total) || 0) + (Number(ec.total) || 0))}</b> · ${plural(bills, 'bill')}`,
       `• Paid at the restaurant: ${rp(o.total)}`,
       `   <i>${rp(o.net)} before service &amp; tax</i>`,
-      Number(rc.total) ? `• Charged to rooms: ${rp(rc.total)} · ${plural(rc.bills || 0, 'bill')}` : '');
+      Number(rc.total) ? `• Charged to rooms: ${rp(rc.total)} · ${plural(rc.bills || 0, 'bill')}` : '',
+      Number(ec.total) ? `• Charged to events: ${rp(ec.total)} · ${plural(ec.bills || 0, 'bill')}` : '');
 
-  const methods = (b.by_method || []).filter(m => Number(m.total) && m.method !== 'Room Charge');
+  const methods = (b.by_method || []).filter(m => Number(m.total) && !['Room Charge', 'Event Charge'].includes(m.method));
   if (methods.length) add('💳 <b>Payment</b>', ...methods.map(m => `• ${h(m.method)}: ${rp(m.total)}`));
 
   if (b.breakfast) {
@@ -299,7 +302,7 @@ function sessionAlertText(b, result) {
     if (counts.length) lines.push(`• ${counts.join(', ')}`);
     const money = t => !['Bills', 'Breakfast came'].includes(t.label);
     const val = (t, v) => (v == null ? '—' : money(t) ? rp(v) : v);
-    for (const t of (ch.totals || []).slice(0, 4)) lines.push(`• ${h(t.label)}: ${val(t, t.from)} → ${val(t, t.to)}`);
+    for (const t of (ch.totals || []).slice(0, 5)) lines.push(`• ${h(t.label)}: ${val(t, t.from)} → ${val(t, t.to)}`);
     if (lines.length) add('🔄 <b>Changes since last send</b>', ...lines);
   }
   return sections.join('\n\n');

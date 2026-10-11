@@ -142,8 +142,9 @@ export default function CashierClosing() {
                     ...g.lines.map((l, i) => (
                       <tr key={`${g.method}-${i}`}
                         onClick={openBooking && l.booking_id ? () => openBooking(l.booking_id)
-                          : openBooking && l.group_id ? () => nav(`/reservations/group/${l.group_id}`) : undefined}
-                        style={openBooking && (l.booking_id || l.group_id) ? { cursor: 'pointer' } : undefined}>
+                          : openBooking && l.group_id ? () => nav(`/reservations/group/${l.group_id}`)
+                          : l.event_id ? () => nav(`/events/${l.event_id}`) : undefined}
+                        style={(openBooking && (l.booking_id || l.group_id)) || l.event_id ? { cursor: 'pointer' } : undefined}>
                         <td style={{ ...TD, whiteSpace: 'nowrap' }}>{l.time || (l.recorded_on ? <span className="text-muted" title="Recorded on another day">{l.recorded_on.slice(5).split('-').reverse().join('/')}</span> : '—')}</td>
                         <td style={{ ...TD, fontWeight: 600 }}>{l.room || '—'}</td>
                         <td style={TD}>{l.guest}</td>

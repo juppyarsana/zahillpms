@@ -89,6 +89,10 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, _indent: true })),
     { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, _group: true },
     ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${a.pax} pax`, amount: a.amount, _indent: true })),
+    ...(rev.events?.total ? [
+      { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, _group: true },
+      ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${ev.pax} pax`].filter(Boolean).join(' · '), amount: ev.amount, _indent: true })),
+    ] : []),
   ].map(r => ({ ...r, share: share(r.amount) }));
   table(ws1, 'Revenue breakdown', [
     { header: 'Item', key: 'item' }, { header: 'Detail', key: 'detail' },
@@ -215,13 +219,13 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
   titleBlock(ws5, 'Daily breakdown', meta);
   const daily = (report.daily || []).map(d => ({
     date: String(d.date).slice(0, 10), room: +d.room_revenue, fnb: +d.fnb_revenue, extras: +d.ancillary_revenue,
-    activities: +(d.activity_revenue || 0), total: +d.total_revenue, nights: +d.nights_sold, expenses: +(d.expenses || 0),
+    activities: +(d.activity_revenue || 0) + +(d.event_revenue || 0), total: +d.total_revenue, nights: +d.nights_sold, expenses: +(d.expenses || 0),
   }));
   const sum = k => daily.reduce((s, d) => s + d[k], 0);
   table(ws5, null, [
     { header: 'Date', key: 'date' }, { header: 'Rooms (Rp)', key: 'room', fmt: IDR, align: 'right' },
     { header: 'F&B (Rp)', key: 'fnb', fmt: IDR, align: 'right' }, { header: 'Extras (Rp)', key: 'extras', fmt: IDR, align: 'right' },
-    { header: 'Activities (Rp)', key: 'activities', fmt: IDR, align: 'right' }, { header: 'Total (Rp)', key: 'total', fmt: IDR, align: 'right' },
+    { header: 'Activities & events (Rp)', key: 'activities', fmt: IDR, align: 'right' }, { header: 'Total (Rp)', key: 'total', fmt: IDR, align: 'right' },
     { header: 'Room-nights', key: 'nights', fmt: INT, align: 'right' }, { header: 'Expenses (Rp)', key: 'expenses', fmt: IDR, align: 'right' },
   ], daily, { date: 'Total', room: sum('room'), fnb: sum('fnb'), extras: sum('extras'), activities: sum('activities'), total: sum('total'),
     nights: sum('nights'), expenses: sum('expenses') });

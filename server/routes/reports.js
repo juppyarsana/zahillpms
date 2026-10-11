@@ -126,6 +126,21 @@ const ACTIVITY_SQL = `
 // Shared by GET /revenue and GET /revenue/export (CSV) so the two never
 // drift — the export must show exactly what the page shows. `from`/`to` are
 // inclusive YYYY-MM-DD dates (a whole month, a single day, any range).
+// Events (migration 106): the bill lines of CONFIRMED events, NET, on each
+// line's service_date. `venue` = venue hire and other lines → their own
+// revenue line; `pos` = restaurant bills the POS charged to an event → F&B
+// outlets (the POS reports such a bill as charged, not as paid at the
+// restaurant, so it is in no POS session's outlet figure).
+const EVENT_SQL = `
+  SELECT c.service_date AS day,
+         COALESCE(SUM(c.amount) FILTER (WHERE c.type <> 'pos'), 0) AS venue,
+         COALESCE(SUM(c.amount) FILTER (WHERE c.type = 'pos'), 0) AS pos,
+         COUNT(DISTINCT c.event_id) AS events
+  FROM event_charges c JOIN events e ON e.id = c.event_id
+  WHERE c.property_id = $3 AND e.status = 'confirmed' AND NOT c.is_voided
+    AND c.service_date BETWEEN $1::date AND $2::date
+  GROUP BY c.service_date`;
+
 async function getReport(propertyId, from, to) {
     // Room / F&B revenue, bookings, and nights are all night-based: a
     // booking contributes only the nights that actually fall in the
@@ -220,6 +235,7 @@ async function getReport(propertyId, from, to) {
     WHERE property_id = $3 AND business_date BETWEEN $1::date AND $2::date
     GROUP BY 1
   `, [from, to, propertyId]);
+  const eventsQ = db.query(EVENT_SQL, [from, to, propertyId]);
   const expensesDailyQ = db.query(`
     SELECT incurred_on AS date, COALESCE(SUM(amount), 0) AS amount
     FROM expenses
@@ -259,6 +275,7 @@ async function getReport(propertyId, from, to) {
     await Promise.all([roomQ, ancillaryQ, dailyQ, sourceQ, expensesQ, addonQ, activityQ]);
   const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }, { rows: actDaily }, { rows: posDaily }] =
     await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ, activityDailyQ, posSessionsQ]);
+  const { rows: eventDaily } = await eventsQ;
   const dayKey = d => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
   const ancByDay = new Map(ancDaily.map(r => [dayKey(r.date), r]));
   const addonByDay = new Map(addonDaily.map(r => [dayKey(r.date), r]));
@@ -266,16 +283,21 @@ async function getReport(propertyId, from, to) {
   const actByDay = new Map(actDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
   const posByDay = new Map(posDaily.map(r => [dayKey(r.date), parseFloat(r.net)]));
   const posSessionsNet = posDaily.reduce((sum, r) => sum + parseFloat(r.net), 0);
+  const eventByDay = new Map(eventDaily.map(r => [dayKey(r.day), r]));
+  const eventRev = eventDaily.reduce((sum, r) => sum + parseFloat(r.venue), 0);
+  const eventPos = eventDaily.reduce((sum, r) => sum + parseFloat(r.pos), 0);
   for (const d of daily) {
     const sa = ancByDay.get(dayKey(d.date));
     const ad = addonByDay.get(dayKey(d.date));
     d.fnb_rate_plan = parseFloat(d.fnb_revenue);
     d.fnb_extras = (sa ? parseFloat(sa.meal) : 0) + (ad ? parseFloat(ad.meal) : 0);
-    d.fnb_outlets = (sa ? parseFloat(sa.outlet) : 0) + (posByDay.get(dayKey(d.date)) || 0);
+    const evd = eventByDay.get(dayKey(d.date));
+    d.fnb_outlets = (sa ? parseFloat(sa.outlet) : 0) + (posByDay.get(dayKey(d.date)) || 0) + (evd ? parseFloat(evd.pos) : 0);
     d.fnb_revenue = d.fnb_rate_plan + d.fnb_extras + d.fnb_outlets;
     d.ancillary_revenue = (sa ? parseFloat(sa.amount) : 0) + (ad ? parseFloat(ad.extra) : 0);
     d.activity_revenue = actByDay.get(dayKey(d.date)) || 0;
-    d.total_revenue = parseFloat(d.room_revenue) + d.fnb_revenue + d.ancillary_revenue + d.activity_revenue;
+    d.event_revenue = evd ? parseFloat(evd.venue) : 0;
+    d.total_revenue = parseFloat(d.room_revenue) + d.fnb_revenue + d.ancillary_revenue + d.activity_revenue + d.event_revenue;
     d.expenses = expByDay.get(dayKey(d.date)) || 0;
   }
 
@@ -284,11 +306,11 @@ async function getReport(propertyId, from, to) {
   // (extra bed nights, items with a breakfast part) + restaurant / POS sales.
   const fnbRatePlan = parseFloat(room.fnb_revenue);
   const fnbExtras = parseFloat(ancillary.sales_meal_revenue) + parseFloat(addon.meal);
-  const fnbOutlets = parseFloat(ancillary.outlet_revenue) + posSessionsNet;
+  const fnbOutlets = parseFloat(ancillary.outlet_revenue) + posSessionsNet + eventPos;
   const fnbRev = fnbRatePlan + fnbExtras + fnbOutlets;
   const ancRev = parseFloat(ancillary.ancillary_revenue) + parseFloat(addon.extra);
   const activityRev = parseFloat(activity.revenue);
-  const totalRevenue = roomRev + fnbRev + ancRev + activityRev;
+  const totalRevenue = roomRev + fnbRev + ancRev + activityRev + eventRev;
   const expensesTotal = parseFloat(expenses.total);
   return {
     from, to,
@@ -297,12 +319,15 @@ async function getReport(propertyId, from, to) {
     // outlets = restaurant / POS: bills charged to rooms (sales) + bills paid at
     // the restaurant (POS sessions, `outlets_paid_at_outlet`).
     fnb_breakdown: { rate_plan: round2(fnbRatePlan), extras: round2(fnbExtras), outlets: round2(fnbOutlets),
-                     outlets_paid_at_outlet: round2(posSessionsNet) },
+                     outlets_paid_at_outlet: round2(posSessionsNet), outlets_events: round2(eventPos) },
     // ancillary_revenue = hotel extras (Sales items, extra bed nights) only;
     // activities are their own line.
     ancillary_revenue: ancRev,
     activity_revenue: activityRev,
     activity_count: parseInt(activity.count),
+    // Meeting room & events: venue hire and other lines of confirmed events
+    // (their restaurant bills are in F&B outlets).
+    event_revenue: round2(eventRev),
     total_revenue: totalRevenue,
     expenses_total: expensesTotal,
     net_income: totalRevenue - expensesTotal,
@@ -457,6 +482,7 @@ function revenueCsv(data) {
     `  F&B - restaurant / POS,${data.fnb_breakdown?.outlets ?? ''}`,
     `Extras Revenue,${data.ancillary_revenue}`,
     `Activities Revenue,${data.activity_revenue ?? 0}`,
+    `Meeting Room & Events Revenue,${data.event_revenue ?? 0}`,
     `Total Revenue,${data.total_revenue}`,
     `Expenses,${data.expenses_total}`,
     `Net Income,${data.net_income}`,
@@ -495,4 +521,5 @@ module.exports.SALES_SQL = SALES_SQL;
 module.exports.SALE_OFF_BILL_SQL = SALE_OFF_BILL_SQL;
 module.exports.ADDON_NIGHTS_SQL = ADDON_NIGHTS_SQL;
 module.exports.ACTIVITY_SQL = ACTIVITY_SQL;
+module.exports.EVENT_SQL = EVENT_SQL;
 module.exports.resolvePeriod = resolvePeriod;

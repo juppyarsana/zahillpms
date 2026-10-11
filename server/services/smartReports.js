@@ -83,6 +83,14 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_event: {
+    type: 'alert',
+    label: 'Events (meeting room)',
+    when: 'Instantly',
+    description: 'An event in the meeting room is confirmed, changed or cancelled, or its meals change — venue, day and time, how many people, the meals to prepare and the set-up notes.',
+    defaultRoles: ['manager', 'kitchen', 'housekeeping'],
+    channels: ['telegram'],
+  },
   alert_restaurant_request: {
     type: 'alert',
     label: 'Restaurant requests from front desk',

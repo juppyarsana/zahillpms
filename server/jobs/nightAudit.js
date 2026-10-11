@@ -359,7 +359,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   const fnbRevenue = day.fnb_revenue;
   // Extras + activities (migration 078) together — the audit keeps one
   // "other revenue" figure (night_audit_runs.ancillary_revenue).
-  const ancillaryRevenue = day.ancillary_revenue + (day.activity_revenue || 0);
+  const ancillaryRevenue = day.ancillary_revenue + (day.activity_revenue || 0) + (day.event_revenue || 0);
 
   // 5+6. The new day's balances to collect from guests leaving, and its
   // arrivals — the same lists as Balance Due / Guest Lists (and the Daily

@@ -83,10 +83,24 @@ async function tellPosVoid(propertyId, saleId, { reason, by }) {
   return { told: !error, error };
 }
 
+// The same, for a restaurant bill charged to an EVENT (migration 108): no
+// `sales` row there, so the POS is told by the bill's reference alone and the
+// caller records the result on its own line. → { told, error }. Never throws.
+async function tellPosVoidRef(propertyId, externalRef, { reason, by }) {
+  const cfg = await config(propertyId);
+  if (!cfg.url || !cfg.key) {
+    return { told: false, error: 'The POS link is not set up (Property Details → POS Integration → Room tablet orders)' };
+  }
+  try {
+    await call(cfg, 'POST', '/api/hotel/room-charges/void', { external_ref: externalRef, reason, by });
+    return { told: true, error: null };
+  } catch (err) { return { told: false, error: err.message }; }
+}
+
 // Settings → "Test": the menu call with the address / key just typed.
 async function test(url, key) {
   const m = await call({ url: String(url || '').trim().replace(/\/+$/, ''), key }, 'GET', '/api/hotel/menu');
   return { ok: true, status: m.status, items: (m.menu || []).length };
 }
 
-module.exports = { PosError, config, linked, menu, placeOrder, ordersFor, test, tellPosVoid };
+module.exports = { PosError, config, linked, menu, placeOrder, ordersFor, test, tellPosVoid, tellPosVoidRef };

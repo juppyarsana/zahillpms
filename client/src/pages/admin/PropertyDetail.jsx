@@ -20,6 +20,7 @@ const MODULE_LABELS = {
   pos_integration: 'POS Integration',
   accounting:      'Accounting',
   assistant:       'Ask (voice assistant)',
+  events:          'Events (meeting room)',
   channel_manager: 'Channel Manager',
   yield_management: 'Yield Management',
 };

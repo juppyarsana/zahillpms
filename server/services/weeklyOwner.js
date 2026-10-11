@@ -35,7 +35,7 @@ async function weekFigures(propertyId, from, to, sellable) {
   const capacity = sellable * days;
   return {
     from, to,
-    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: r.activity_revenue || 0, total: r.total_revenue,
+    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: (r.activity_revenue || 0) + (r.event_revenue || 0), total: r.total_revenue,
     fnb_rate_plan: r.fnb_breakdown?.rate_plan ?? r.fnb_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights,
@@ -210,7 +210,7 @@ function weeklyOwnerEmail(b) {
     </table>` : `<div style="font-size:13px;color:#9ca3af;">${empty}</div>`;
   const sub = t => `<div style="font-size:12px;line-height:17px;color:#6b7280;margin-top:2px;">${t}</div>`;
 
-  const revRows = [['Room', w.room, p.room], ['F&B', w.fnb, p.fnb], ['Extras', w.extras, p.extras], ['Activities', w.activities, p.activities]]
+  const revRows = [['Room', w.room, p.room], ['F&B', w.fnb, p.fnb], ['Extras', w.extras, p.extras], ['Activities & events', w.activities, p.activities]]
     .filter(([, a, c]) => a || c).map(([k, a, c]) => [k, esc(fmtIDR(a)), esc(fmtIDR(c))]);
   revRows.push(['<b>Total revenue</b>', `<b>${esc(fmtIDR(w.total))}</b>`, esc(fmtIDR(p.total))]);
   if (b.has_expenses) {

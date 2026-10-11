@@ -62,12 +62,19 @@ function GroupHistory({ events }) {
 
 export default function GroupDetail() {
   const { groupId } = useParams();
-  const { user, can } = useAuth();
+  const { user, can, hasModule } = useAuth();
   // Corrections (owner or the `corrections` permission): put a cancelled room back.
   const canCorrect = user?.role === 'owner' || can('corrections');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('details');
+  // Events (meeting room) linked to this group — migration 106.
+  const [linkedEvents, setLinkedEvents] = useState([]);
+  const seesEvents = hasModule('events') && can('events');
+  useEffect(() => {
+    if (!seesEvents) return;
+    api.get('/api/events', { params: { group_id: groupId, status: 'active' } }).then(r => setLinkedEvents(r.data)).catch(() => {});
+  }, [groupId, seesEvents]);
   const [reinstating, setReinstating] = useState(null);   // cancelled room (booking row)
   const [cancellingGroup, setCancellingGroup] = useState(null);   // { reason, sure, busy, error }
   const [folio, setFolio] = useState(null);
@@ -484,6 +491,13 @@ export default function GroupDetail() {
         <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Master Folio</button>
       </div>
 
+      {linkedEvents.map(ev => (
+        <div key={ev.id} className="alert alert-info"><div>
+          🗓 Meeting / event of this group: <Link to={`/events/${ev.id}`} style={{ fontWeight: 600 }}>#{ev.event_no} {ev.name}</Link>
+          {' '}· {ev.venue_name} · {new Date(ev.event_date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} {ev.start_time}–{ev.end_time} · {ev.pax} people
+          {ev.balance_due > 0 && <> · event balance <b>{fmtIDR(ev.balance_due)}</b></>}
+        </div></div>
+      ))}
       {tab === 'details' && (
         <>
           <div className="card mb-3">

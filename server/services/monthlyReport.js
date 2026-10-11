@@ -34,7 +34,7 @@ async function monthFigures(propertyId, y, m, sellable) {
   const capacity = sellable * days;
   return {
     y, m, from, to, label: monthName(y, m), report: r,
-    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: r.activity_revenue || 0, total: r.total_revenue,
+    room: r.room_revenue, fnb: r.fnb_revenue, extras: r.ancillary_revenue, activities: (r.activity_revenue || 0) + (r.event_revenue || 0), total: r.total_revenue,
     fnb_rate_plan: r.fnb_breakdown?.rate_plan ?? r.fnb_revenue,
     expenses: r.expenses_total, net_income: r.net_income,
     rooms_sold: r.total_nights, bookings: r.bookings_count,
@@ -84,7 +84,7 @@ function monthlyPdf(b) {
     row(['Room revenue', fmtIDR(cm.room), fmtIDR(pm.room), ly ? fmtIDR(ly.room) : '—']);
     row(['F&B', fmtIDR(cm.fnb), fmtIDR(pm.fnb), ly ? fmtIDR(ly.fnb) : '—']);
     row(['Extras', fmtIDR(cm.extras), fmtIDR(pm.extras), ly ? fmtIDR(ly.extras) : '—']);
-    row(['Activities', fmtIDR(cm.activities), fmtIDR(pm.activities), ly ? fmtIDR(ly.activities) : '—']);
+    row(['Activities & events', fmtIDR(cm.activities), fmtIDR(pm.activities), ly ? fmtIDR(ly.activities) : '—']);
     row(['Total revenue', fmtIDR(cm.total), fmtIDR(pm.total), ly ? fmtIDR(ly.total) : '—'], { bold: true });
     if (b.has_expenses) {
       row(['Expenses', fmtIDR(cm.expenses), fmtIDR(pm.expenses), ly ? fmtIDR(ly.expenses) : '—']);
@@ -187,7 +187,7 @@ function monthlyTelegram(b) {
       `• Room: ${e(fmtIDR(c.room))}`,
       c.fnb ? `• F&amp;B: ${e(fmtIDR(c.fnb))}` : '',
       c.extras ? `• Extras: ${e(fmtIDR(c.extras))}` : '',
-      c.activities ? `• Activities: ${e(fmtIDR(c.activities))}` : '');
+      c.activities ? `• Activities & events: ${e(fmtIDR(c.activities))}` : '');
 
   if (b.has_expenses) {
     add(`🧾 <b>Net income ${e(fmtIDR(c.net_income))}</b>`, `• Expenses: ${e(fmtIDR(c.expenses))}`);
@@ -223,7 +223,7 @@ function monthlyEmail(b) {
   const cols = [{ label: '' }, { label: esc(c.label), right: true }, { label: esc(b.prev.label), right: true }, ...(b.last_year ? [{ label: esc(b.last_year.label), right: true }] : [])];
   const line = (k, f) => [k, esc(f(c)), esc(f(b.prev)), ...(b.last_year ? [esc(f(b.last_year))] : [])];
   const rows = [
-    line('Room', x => fmtIDR(x.room)), line('F&B', x => fmtIDR(x.fnb)), line('Extras', x => fmtIDR(x.extras)), line('Activities', x => fmtIDR(x.activities)),
+    line('Room', x => fmtIDR(x.room)), line('F&B', x => fmtIDR(x.fnb)), line('Extras', x => fmtIDR(x.extras)), line('Activities & events', x => fmtIDR(x.activities)),
     line('<b>Total revenue</b>', x => fmtIDR(x.total)),
     ...(b.has_expenses ? [line('Expenses', x => fmtIDR(x.expenses)), line('<b>Net income</b>', x => fmtIDR(x.net_income))] : []),
     line('Occupancy', x => `${x.occupancy}%`), line('ADR', x => fmtIDR(x.adr)), line('RevPAR', x => fmtIDR(x.revpar)),

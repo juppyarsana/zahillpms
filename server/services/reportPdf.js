@@ -95,7 +95,7 @@ function buildReportPdf(report, property) {
     // ── Revenue ──
     heading('Revenue', label);
     // Summary boxes
-    const boxes = [['Rooms', rev.room], ['Food & beverage', rev.fnb.total], ['Extras', rev.extras.total], ['Activities', rev.activities.total], ['Total revenue', total]];
+    const boxes = [['Rooms', rev.room], ['Food & beverage', rev.fnb.total], ['Extras', rev.extras.total], [rev.events?.total ? 'Activities & events' : 'Activities', rev.activities.total + (rev.events?.total || 0)], ['Total revenue', total]];
     ensure(56);
     const bw = (W - 4 * 6) / 5, by = doc.y;
     boxes.forEach(([t, v], i) => {
@@ -121,6 +121,10 @@ function buildReportPdf(report, property) {
       ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, _indent: true })),
       { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, _group: true },
       ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${num(a.pax)} pax`, amount: a.amount, _indent: true })),
+      ...(rev.events?.total ? [
+        { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, _group: true },
+        ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${num(ev.pax)} pax`].filter(Boolean).join(' · '), amount: ev.amount, _indent: true })),
+      ] : []),
     ], { total: { item: 'Total revenue', amount: total } });
     if (rev.complimentary.nights > 0 || rev.complimentary.value > 0) {
       doc.font('Helvetica').fontSize(8.5).fillColor('#374151')
@@ -262,13 +266,13 @@ function buildReportPdf(report, property) {
       table([
         { label: 'Date', w: 0.14, get: r => r._label || new Date(`${String(r.date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) },
         { label: 'Rooms', w: 0.15, align: 'right', get: r => fmtIDR(r.room_revenue) }, { label: 'F&B', w: 0.13, align: 'right', get: r => fmtIDR(r.fnb_revenue) },
-        { label: 'Extras', w: 0.12, align: 'right', get: r => fmtIDR(r.ancillary_revenue) }, { label: 'Activities', w: 0.12, align: 'right', get: r => fmtIDR(r.activity_revenue) },
+        { label: 'Extras', w: 0.12, align: 'right', get: r => fmtIDR(r.ancillary_revenue) }, { label: 'Activ. & events', w: 0.12, align: 'right', get: r => fmtIDR((Number(r.activity_revenue) || 0) + (Number(r.event_revenue) || 0)) },
         { label: 'Total', w: 0.16, align: 'right', get: r => fmtIDR(r.total_revenue) }, { label: 'Room-nights', w: 0.09, align: 'right', get: r => num(r.nights_sold) },
         { label: 'Expenses', w: 0.09, align: 'right', get: r => (Number(r.expenses) ? fmtIDR(r.expenses) : '—') },
       ], daily, {
         size: 7.5,
         total: { _label: 'Total', room_revenue: sum('room_revenue'), fnb_revenue: sum('fnb_revenue'), ancillary_revenue: sum('ancillary_revenue'),
-          activity_revenue: sum('activity_revenue'), total_revenue: sum('total_revenue'), nights_sold: sum('nights_sold'), expenses: sum('expenses') },
+          activity_revenue: sum('activity_revenue'), event_revenue: sum('event_revenue'), total_revenue: sum('total_revenue'), nights_sold: sum('nights_sold'), expenses: sum('expenses') },
       });
     }
 

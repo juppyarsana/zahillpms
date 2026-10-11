@@ -24,6 +24,8 @@ export const MENU_DEFS = [
   // or check-in, reinstate a cancelled booking, edit a stay after check-out
   // (reason required, logged, owner alerted). Owners always can.
   { key: 'corrections',      label: 'Corrections (undo check-out / check-in, reinstate, edit after check-out, refund / undo / move a payment, void a sale)', group: 'Front Desk' },
+  // Events: the meeting room's calendar, an event's bill, payments and meals.
+  { key: 'events',           label: 'Events (meeting room)', group: 'Front Desk' },
   // The Ask page: ask by voice or typing. It only answers from the pages this
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },

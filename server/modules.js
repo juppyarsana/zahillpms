@@ -47,6 +47,10 @@ module.exports = {
   // voice or typing and get the answer from the PMS's own read-only lookups
   // (availability, forecast, rates). Owner or the `assistant` permission.
   assistant:       { label: 'Ask (voice assistant)', routes: ['assistant'] },
+  // Default OFF — add-on (migration 106). Events: the meeting room booked for
+  // a date and time, with its own bill, payments and the meals the restaurant
+  // prepares. Owner or the `events` permission.
+  events:          { label: 'Events (meeting room)', routes: ['events'] },
 };
 
 // Core routes — always on, no module guard:

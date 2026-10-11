@@ -194,11 +194,22 @@ async function buildFullReport(propertyId, from, to) {
   }
   const activitiesByName = [...actMap.values()].map(a => ({ ...a, amount: r2(a.amount) })).sort((a, b) => b.amount - a.amount);
 
+  // Meeting room & events: confirmed events' own lines (not their restaurant bills), per event.
+  const { rows: eventRows } = await db.query(`
+    SELECT e.event_no, e.name, COALESCE(NULLIF(e.company_name, ''), a.name, e.contact_name) AS customer, e.pax, SUM(c.amount) AS amount
+    FROM event_charges c JOIN events e ON e.id = c.event_id LEFT JOIN agents a ON a.id = e.agent_id
+    WHERE c.property_id = $3 AND e.status = 'confirmed' AND NOT c.is_voided AND c.type <> 'pos'
+      AND c.service_date BETWEEN $1::date AND $2::date
+    GROUP BY e.id, a.name ORDER BY SUM(c.amount) DESC`, P);
+  const eventsByName = eventRows.map(e => ({ name: `#${e.event_no} ${e.name}`, customer: e.customer, pax: parseInt(e.pax), amount: r2(parseFloat(e.amount)) }));
+
   const revenue = {
     room: r2(base.room_revenue),
     fnb: { total: r2(base.fnb_revenue), ...base.fnb_breakdown },
     extras: { total: r2(base.ancillary_revenue), by_category: extrasByCategory },
     activities: { total: r2(base.activity_revenue), bookings: base.activity_count, by_activity: activitiesByName },
+    // Meeting room & events (migration 106): venue hire + other lines of confirmed events.
+    events: { total: r2(base.event_revenue || 0), by_event: eventsByName },
     total: r2(base.total_revenue),
     complimentary: { nights: base.comp_nights, value: r2(base.comp_value) },
   };
@@ -260,12 +271,12 @@ async function buildFullReport(propertyId, from, to) {
 
   // ── Money ──
   // Service charge + tax on this period's revenue, at today's rates: every
-  // net line the folio taxes (rooms, F&B, extras, activities priced before
-  // tax) + the parts inside tax-included activities. An estimate — a rate
+  // net line the folio taxes (rooms, F&B, extras, events, activities priced
+  // before tax) + the parts inside tax-included activities. An estimate — a rate
   // changed mid-period isn't re-applied, and extras paid directly were
   // taxed at the rate of their sale day.
   const ps = settingsRows[0] || {};
-  const taxableNet = base.room_revenue + base.fnb_revenue + base.ancillary_revenue + actAddedNet;
+  const taxableNet = base.room_revenue + base.fnb_revenue + base.ancillary_revenue + actAddedNet + (base.event_revenue || 0);
   const t = computeFolioTotals(taxableNet, ps.tax_rate, ps.service_charge_rate);
   const pendingBy = Object.fromEntries(owedGuests.map(g => [g.stage, { bookings: parseInt(g.bookings), amount: r2(g.amount) }]));
   const agentRows = agents.filter(a => a.total_outstanding > 0.004 || a.unpaid_commission > 0.004)

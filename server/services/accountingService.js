@@ -32,6 +32,7 @@ const DEFAULT_CHART = [
   ['4360', 'Minibar', 'revenue'],
   ['4390', 'Other revenue', 'revenue'],
   ['4410', 'Activities', 'revenue'],
+  ['4420', 'Meeting room & events', 'revenue'],
   ['6110', 'Agent commission', 'expense'],
   ['6210', 'Utilities', 'expense'],
   ['6220', 'Laundry cost', 'expense'],
@@ -56,6 +57,7 @@ const MAP_KEYS = [
   ['revenue.extra.minibar', 'Extras — minibar', 'Revenue', '4360'],
   ['revenue.extra.other', 'Extras — other', 'Revenue', '4390'],
   ['revenue.activities', 'Activities', 'Revenue', '4410'],
+  ['revenue.events', 'Meeting room & events (venue hire and other event lines)', 'Revenue', '4420'],
   ['tax.service', 'Service charge collected', 'Service charge & tax', '2120'],
   ['tax.pb1', 'Tax collected (PB1)', 'Service charge & tax', '2130'],
   ['ledger.guest', 'Guest ledger — what guests who have arrived owe (or have paid ahead)', 'Guests & agents', '1210'],
@@ -91,7 +93,17 @@ function defaultCodeForMethod(id, label) {
 // Gives a property the standard chart the first time accounting is opened.
 async function ensureChart(propertyId) {
   const { rows: [c] } = await db.query('SELECT COUNT(*)::int AS n FROM gl_accounts WHERE property_id = $1', [propertyId]);
-  if (c.n > 0) return;
+  if (c.n > 0) {
+    // A chart made before migration 106 gets the Meeting room & events account
+    // (only when its code is still free — a renumbered chart is left alone
+    // and the mapping screen shows the item as having no account).
+    await db.query(
+      `INSERT INTO gl_accounts (property_id, code, name, type)
+       SELECT $1, '4420', 'Meeting room & events', 'revenue'
+       WHERE EXISTS (SELECT 1 FROM property_modules WHERE property_id = $1 AND module = 'events' AND is_enabled)
+       ON CONFLICT (property_id, code) DO NOTHING`, [propertyId]);
+    return;
+  }
   for (const [code, name, type] of DEFAULT_CHART) {
     await db.query(
       `INSERT INTO gl_accounts (property_id, code, name, type) VALUES ($1, $2, $3, $4)

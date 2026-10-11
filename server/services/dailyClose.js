@@ -39,7 +39,7 @@ async function dayFigures(propertyId, date, sellable) {
     room: r.room_revenue,
     fnb: r.fnb_revenue,
     extras: r.ancillary_revenue,
-    activities: r.activity_revenue || 0,
+    activities: (r.activity_revenue || 0) + (r.event_revenue || 0),
     total: r.total_revenue,
     rooms_sold: roomsSold,
     occupancy: sellable > 0 ? Math.round((roomsSold / sellable) * 100) : 0,
@@ -89,6 +89,12 @@ async function collected(propertyId, from, to = from) {
       FROM group_payments gp
       WHERE gp.property_id = $1 AND NOT gp.is_voided
         AND (gp.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
+      UNION ALL
+      -- Payments for events (meeting room — migration 106)
+      SELECT ep.method, ep.amount
+      FROM event_payments ep
+      WHERE ep.property_id = $1 AND NOT ep.is_voided
+        AND (ep.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
     )
     SELECT COALESCE(pm.label, money.method, 'Other') AS method, SUM(money.amount) AS amount
     FROM money
@@ -232,7 +238,7 @@ function dailyCloseTelegram(b) {
       `• Room: ${e(fmtIDR(t.room))}`,
       t.fnb ? `• F&amp;B: ${e(fmtIDR(t.fnb))}` : '',
       t.extras ? `• Extras: ${e(fmtIDR(t.extras))}` : '',
-      t.activities ? `• Activities: ${e(fmtIDR(t.activities))}` : '');
+      t.activities ? `• Activities & events: ${e(fmtIDR(t.activities))}` : '');
 
   add(`🛏 <b>Occupancy ${t.occupancy}%</b> · ${t.rooms_sold} of ${b.sellable} rooms${b.change.occupancy_pts ? ` <i>(${b.change.occupancy_pts > 0 ? '▲' : '▼'} ${Math.abs(b.change.occupancy_pts)} pts)</i>` : ''}`,
       t.rooms_sold > 0 ? `• ADR: ${e(fmtIDR(t.adr))}` : '',
@@ -283,7 +289,7 @@ function dailyCloseEmail(b) {
     </table>` : `<div style="font-size:13px;color:#9ca3af;">${empty}</div>`;
 
   const revRows = [
-    ['Room', t.room, lw.room], ['F&B', t.fnb, lw.fnb], ['Extras', t.extras, lw.extras], ['Activities', t.activities, lw.activities],
+    ['Room', t.room, lw.room], ['F&B', t.fnb, lw.fnb], ['Extras', t.extras, lw.extras], ['Activities & events', t.activities, lw.activities],
   ].filter(([, a, c]) => a || c).map(([k, a, c]) => [k, esc(fmtIDR(a)), esc(fmtIDR(c))]);
   revRows.push([`<b>Total</b>`, `<b>${esc(fmtIDR(t.total))}</b>`, esc(fmtIDR(lw.total))]);
 

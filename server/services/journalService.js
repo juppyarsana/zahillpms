@@ -301,6 +301,56 @@ async function collectPosts(propertyId, from, to) {
     }
   }
 
+  // ── Events (meeting room — migration 106) ──
+  // The lines of a CONFIRMED event on their service_date: revenue + service +
+  // tax against the guest ledger (a restaurant bill charged to the event → F&B
+  // restaurant). Its payments: Advance deposits until the event's first day,
+  // the guest ledger from then on — and what was paid before moves over on
+  // that day. Money for an event that is not confirmed stays in Advance deposits.
+  {
+    const [{ rows: eventLines }, { rows: eventPays }, { rows: eventMoves }] = await Promise.all([
+      db.query(`
+        SELECT c.type, c.amount, c.shown_total, c.description, ${ymd('c.service_date')} AS day,
+               e.event_no, e.name, e.bill_tax_rate, e.bill_service_charge_rate
+        FROM event_charges c JOIN events e ON e.id = c.event_id
+        WHERE c.property_id = $3 AND e.status = 'confirmed' AND NOT c.is_voided
+          AND c.service_date BETWEEN $1::date AND $2::date`, P),
+      db.query(`
+        SELECT ep.amount, ep.method, ep.is_refund, ep.reference, ${ymd(dayOf('ep.received_at'))} AS day,
+               e.event_no, e.name, e.status, ${ymd('e.event_date')} AS event_day
+        FROM event_payments ep JOIN events e ON e.id = ep.event_id
+        WHERE ep.property_id = $3 AND NOT ep.is_voided AND ${dayOf('ep.received_at')} BETWEEN $1::date AND $2::date`, P),
+      db.query(`
+        SELECT e.event_no, e.name, ${ymd('e.event_date')} AS day, SUM(ep.amount) AS amount
+        FROM events e
+        JOIN event_payments ep ON ep.event_id = e.id AND NOT ep.is_voided AND ${dayOf('ep.received_at')} < e.event_date
+        WHERE e.property_id = $3 AND e.status = 'confirmed' AND e.event_date BETWEEN $1::date AND $2::date
+        GROUP BY e.id HAVING SUM(ep.amount) <> 0`, P),
+    ]);
+    const evRef = x => `Event #${x.event_no} · ${x.name}`;
+    for (const c of eventLines) {
+      const net = num(c.amount);
+      const t = computeFolioTotals(net, c.bill_tax_rate, c.bill_service_charge_rate);
+      // the line's own total is what was agreed (a price typed incl. service & tax)
+      const total = c.shown_total != null ? num(c.shown_total) : t.total;
+      const sc = t.service_charge_amount, tax = round2(total - net - sc);
+      post(c.day, 'charges', c.type === 'pos' ? 'revenue.fnb_outlet' : 'revenue.events', -net, evRef(c), c.description);
+      post(c.day, 'charges', 'tax.service', -sc, evRef(c));
+      post(c.day, 'charges', 'tax.pb1', -tax, evRef(c));
+      post(c.day, 'charges', 'ledger.guest', total, evRef(c));
+    }
+    for (const p of eventPays) {
+      const memo = [p.is_refund ? 'Event refund' : 'Event payment', p.reference].filter(Boolean).join(' · ');
+      const started = p.status === 'confirmed' && p.day >= p.event_day;
+      post(p.day, 'receipts', `pay.${p.method || 'other'}`, num(p.amount), evRef(p), memo);
+      post(p.day, 'receipts', started ? 'ledger.guest' : 'ledger.deposits', -num(p.amount), evRef(p), memo);
+    }
+    for (const m of eventMoves) {
+      post(m.day, 'deposits', 'ledger.deposits', num(m.amount), evRef(m), 'Paid before the event');
+      post(m.day, 'deposits', 'ledger.guest', -num(m.amount), evRef(m), 'Paid before the event');
+    }
+  }
+
   // ── Money received from guests ──
   const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', refund: 'Refund' };
   for (const p of payments) {
@@ -486,6 +536,7 @@ async function buildJournal(propertyId, from, to, { withDetail = false } = {}) {
     ['F&B', credited(k => k.startsWith('revenue.fnb')), report.fnb_revenue],
     ['Extras', credited(k => k.startsWith('revenue.extra.')), report.ancillary_revenue],
     ['Activities', credited(k => k === 'revenue.activities'), report.activity_revenue],
+    ['Meeting room & events', credited(k => k === 'revenue.events'), report.event_revenue || 0],
   ].map(([label, journal, reports]) => ({ label, journal, reports: round2(reports), difference: round2(journal - reports) }));
 
   const result = {

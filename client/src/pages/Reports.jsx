@@ -388,6 +388,10 @@ export default function Reports() {
           ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, ...sub })),
           { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, ...group },
           ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${num(a.pax)} pax`, amount: a.amount, ...sub })),
+          ...(rev.events?.total ? [
+            { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, ...group },
+            ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${num(ev.pax)} pax`].filter(Boolean).join(' · '), amount: ev.amount, ...sub })),
+          ] : []),
         ];
         const natRows = allNationalities ? rooms.by_nationality : rooms.by_nationality.slice(0, 10);
         const owed = money.owed_now;
@@ -413,7 +417,7 @@ export default function Reports() {
             {/* ── 1. Revenue ── */}
             <Section id="revenue" title="Revenue" subtitle={label}>
               <div className="grid-4" style={{ marginBottom: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
-                {[['Rooms', rev.room, '#2563EB'], ['Food & beverage', rev.fnb.total, '#0D9488'], ['Extras', rev.extras.total, '#D97706'], ['Activities', rev.activities.total, '#7C3AED']].map(([l, v, c]) => (
+                {[['Rooms', rev.room, '#2563EB'], ['Food & beverage', rev.fnb.total, '#0D9488'], ['Extras', rev.extras.total, '#D97706'], ['Activities', rev.activities.total, '#7C3AED'], ...(rev.events?.total ? [['Meeting room & events', rev.events.total, '#DB2777']] : [])].map(([l, v, c]) => (
                   <div key={l} className="stat-card" style={{ borderTop: `3px solid ${c}` }}>
                     <div className="stat-label">{l}</div>
                     <div className="stat-value" style={AMOUNT}>{fmtIDR(v)}</div>

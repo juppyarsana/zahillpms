@@ -177,7 +177,7 @@ export default function AgentFormModal({ agent, initialName = '', initialType = 
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : editing ? 'Save' : 'Add agent'}</button>
+          <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : editing ? 'Save' : form.agent_type === 'company' ? 'Add company' : form.agent_type === 'wholesaler' ? 'Add wholesaler' : 'Add agent'}</button>
         </div>
       </div>
     </div>
