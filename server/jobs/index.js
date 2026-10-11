@@ -149,6 +149,23 @@ function registerJobs() {
     }
   });
 
+  // Forecast snapshot — 00:50 WITA, after the night audit (no-shows marked)
+  // and the Daily Close: what is on the books for the next 120 nights, kept
+  // for pickup (services/forecastSnapshot.js). One read + one insert per
+  // property. A server that was down then catches up a minute after it starts.
+  cron.schedule('50 0 * * *', async () => {
+    try {
+      await require('../services/forecastSnapshot').snapshotAllProperties();
+    } catch (err) {
+      console.error('[Jobs] Forecast snapshot cron failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+  setTimeout(() => {
+    require('../services/forecastSnapshot').snapshotAllProperties({ onlyMissing: true })
+      .then(n => { if (n) console.log(`[Jobs] Forecast snapshot caught up for ${n} propert${n === 1 ? 'y' : 'ies'}`); })
+      .catch(err => console.error('[Jobs] Forecast snapshot catch-up failed:', err.message));
+  }, 60 * 1000).unref();
+
   // Telegram Connect links still waiting for a Start press survive a restart.
   require('../services/telegramLink').ensurePolling();
 

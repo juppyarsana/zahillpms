@@ -13,8 +13,10 @@ Last updated: 2026-10-11
   Rijkelijkhuizen 22 Sept), test bookings "Juppy" / Putu Widya Snicaya 4–7 Sept still counted as revenue.
 - ✅ **Edit Price on a stay with its own bill rates** (`233a9f0`, deployed): split at today's rates left a false credit
   on stays checked out at 0%. `maintenance/checkBillSplit.js` run on production: 8 found, re-saved, 0 left.
-- 🟡 **Forecast page** (no migration; on `dev`, not released): `/forecast`, new `forecast` permission — see CLAUDE.md
-  "Forecast". On the books only, with a PDF download. Next if wanted: pickup (needs a daily snapshot), a real projection.
+- ✅ **Forecast page + PDF + nightly snapshots** (migration **104**; released to `main`): `/forecast`, new `forecast` permission — see CLAUDE.md
+  "Forecast". On the books only, with a PDF download. `forecast_snapshots` is filled every night at 00:50 WITA from the
+  deploy on. **Next (from about 2 weeks after the deploy):** pickup columns on the page ("since yesterday", "last 7
+  days"); later a real projection. Owner must tick the `forecast` permission for the manager's role.
 
 ## 🔖 Session handoff — 2026-10-11 — Reports vs journal, phone branding + install, room tablet alerts, displays that update themselves
 
@@ -1969,7 +1971,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 104
+## Next migration number: 105
 
 ---
 
