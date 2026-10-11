@@ -6,6 +6,20 @@ Last updated: 2026-10-11
 
 ## 🔖 Session handoff — 2026-10-11 (laptop, afternoon) — September vs VHP, bill-rate fix, Forecast page
 
+**Code:** `main` = `dev` = `604d46b` (+ docs commits). Migration **104**. **Production is on `604d46b`** (deployed and
+confirmed by the owner the same day). Details in `CLAUDE.md` ("Forecast", "Pending on the next production deploy").
+
+**Start here next time**
+- **Pickup on the Forecast page** — from about **2026-10-25**, once production has two weeks of `forecast_snapshots`:
+  "since yesterday" and "last 7 days" columns (rooms gained / lost per night), read from two snapshot days. After a few
+  months: a projection (on the books + typical pickup by weekday and days ahead); from Sept 2027 same time last year.
+- **For the owner, on production:** tick the `forecast` permission for the manager's role (re-login); check the Rofiq
+  group's price (701–704, was 850.000 for 5 nights vs 4.250.000 in VHP); the three VHP stays missing from our September
+  report; cancel the September test bookings if they were tests. The two Excel files used for the comparison are in the
+  repo folder on the laptop, untracked (guest data — never commit them).
+- Also possible on the Forecast page: Excel download.
+
+**Done this session**
 - ✅ **September compared with the old VHP guest list** (room by room, night by night): from 16 Sept (go-live) 287 of 291
   room-nights match. Found 12 stays where FO had typed ONE night's price as the whole-stay price (before the 26 Sept
   price check) — corrected by the owner on production with Edit Price. Still open for the owner: the Rofiq group
