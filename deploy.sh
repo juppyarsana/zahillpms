@@ -1,5 +1,17 @@
 #!/bin/bash
+# Deploy the PMS from the folder this script is in (production: /var/www/zahill).
+#
+#   cd /var/www/zahill && bash deploy.sh
+#
+# Steps: database backup → pull → install → migrate → build every app → restart.
+# Stops at the first error — a failed backup stops the deploy before anything changes.
+#
+#   bash deploy.sh --backup-only     only take the backup, then stop
+#   SKIP_BACKUP=1 bash deploy.sh     deploy without a backup (e.g. a dev server)
+#   BACKUP_DIR=/some/dir             where backups go (default /var/backups/<folder>-pms)
+#   BACKUP_KEEP_DAYS=14              backups older than this are deleted
 set -e
+set -o pipefail
 
 # Everything lives inside main() and runs via `main "$@"` at the very bottom.
 # Why: this script does `git pull` on itself partway through. Bash reads a
@@ -16,6 +28,51 @@ echo ""
 echo "══════════════════════════════════════"
 echo "  Zahill PMS — Deploy"
 echo "══════════════════════════════════════"
+
+# ── Database backup ──────────────────────────────────────────────────────────
+# Before anything changes: the database named in this copy's own server/.env,
+# compressed, with the date and time in its name. Old backups are deleted so
+# the disk cannot fill up. Uploaded files (server/uploads) are not included.
+if [ "${SKIP_BACKUP:-}" = "1" ]; then
+  echo ""
+  echo "▸ Database backup skipped (SKIP_BACKUP=1)"
+else
+  echo ""
+  echo "▸ Backing up the database..."
+  DB_URL="$(grep -E '^DATABASE_URL=' server/.env | head -1 | cut -d= -f2- | tr -d '"'"'"'\r')"
+  if [ -z "$DB_URL" ]; then
+    echo "✗ DATABASE_URL not found in $(pwd)/server/.env — nothing was changed."
+    exit 1
+  fi
+  BACKUP_DIR="${BACKUP_DIR:-/var/backups/$(basename "$(pwd)")-pms}"
+  BACKUP_KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
+  if ! mkdir -p "$BACKUP_DIR" 2>/dev/null || [ ! -w "$BACKUP_DIR" ]; then
+    echo "✗ Cannot write to $BACKUP_DIR — nothing was changed."
+    echo "  Choose another folder:  BACKUP_DIR=\$HOME/backups bash deploy.sh"
+    exit 1
+  fi
+  BACKUP_FILE="$BACKUP_DIR/pms-$(date +%Y-%m-%d_%H%M%S).sql.gz"
+  if ! pg_dump "$DB_URL" | gzip > "$BACKUP_FILE"; then
+    rm -f "$BACKUP_FILE"
+    echo "✗ The backup failed (see the message above) — nothing was changed."
+    exit 1
+  fi
+  # A dump that stopped half way still leaves a file: check it reached its end.
+  if ! gunzip -c "$BACKUP_FILE" | tail -n 5 | grep -q "PostgreSQL database dump complete"; then
+    rm -f "$BACKUP_FILE"
+    echo "✗ The backup is not complete — nothing was changed."
+    exit 1
+  fi
+  echo "  ✓ $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+  find "$BACKUP_DIR" -name "pms-*.sql.gz" -mtime +"$BACKUP_KEEP_DAYS" -delete
+  echo "  Backups kept (older than $BACKUP_KEEP_DAYS days are deleted): $(find "$BACKUP_DIR" -name "pms-*.sql.gz" | wc -l | tr -d ' '), $(du -sh "$BACKUP_DIR" | cut -f1) in $BACKUP_DIR"
+  echo "  Disk: $(df -h "$BACKUP_DIR" | awk 'NR==2 {print $4 " free of " $2 " (" $5 " used)"}')"
+fi
+if [ "${1:-}" = "--backup-only" ]; then
+  echo ""
+  echo "  Backup only — nothing was deployed."
+  exit 0
+fi
 
 # ── Git ──────────────────────────────────────────────────────────────────────
 echo ""
