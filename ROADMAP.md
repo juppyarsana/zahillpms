@@ -4,6 +4,13 @@ Last updated: 2026-10-11
 
 ---
 
+## 🔖 Session handoff — 2026-10-11 (PC, evening) — Ask: talk to the PMS
+
+- **Built on `dev`, not committed by the session unless the owner asked:** Ask (a floating 🎙 button on every page that opens a panel; also `/ask`), migration 105, module `assistant` (off by default). Voice or typed questions in Indonesian / English → a short answer + cards from three read-only lookups (availability + price, occupancy forecast, rates). Optional spoken replies. Full write-up in `CLAUDE.md` ("Ask — talk to the PMS").
+- **Tried with the real model through the service** (15 questions, Indonesian / English / mixed, about 5 s each) — `ANTHROPIC_API_KEY` is now in this PC's `server/.env` (gitignored; the laptop needs its own). The page in a browser and voice on phones were not tried.
+- **Next:** try the page (typed, then Android + iPhone voice); then more lookups (Guest Lists, Kitchen / breakfast, departures) for other departments; server-side transcription if the phones' own voice input is not good enough.
+- Next migration number: **106**.
+
 ## 🔖 Session handoff — 2026-10-11 (laptop, afternoon) — September vs VHP, bill-rate fix, Forecast page
 
 **Code:** `main` = `dev` = `604d46b` (+ docs commits). Migration **104**. **Production is on `604d46b`** (deployed and
@@ -1985,7 +1992,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 105
+## Next migration number: 106
 
 ---
 

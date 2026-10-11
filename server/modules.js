@@ -43,6 +43,10 @@ module.exports = {
   // mapping and the daily journal (Excel) built from folios, payments, POS
   // sessions and expenses. Owner or the `accounting` permission.
   accounting:      { label: 'Accounting',      routes: ['accounting'] },
+  // Default OFF — paid add-on (migration 105). Ask: staff ask a question by
+  // voice or typing and get the answer from the PMS's own read-only lookups
+  // (availability, forecast, rates). Owner or the `assistant` permission.
+  assistant:       { label: 'Ask (voice assistant)', routes: ['assistant'] },
 };
 
 // Core routes — always on, no module guard:

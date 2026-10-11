@@ -126,6 +126,7 @@ app.use('/api/reports', auth, moduleGuard('financial'), require('./routes/report
 app.use('/api/night-audit', auth, moduleGuard('financial'), require('./routes/nightAudit'));
 app.use('/api/cashier-closing', auth, moduleGuard('financial'), require('./routes/cashierClosing'));
 app.use('/api/forecast', auth, moduleGuard('reservations'), require('./routes/forecast'));
+app.use('/api/assistant', auth, moduleGuard('assistant'), require('./middleware/requireOwnerOrMenu')('assistant'), require('./routes/assistant'));
 app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));
 app.use('/api/agent-directory', auth, moduleGuard('reservations'), require('./routes/agentDirectory'));

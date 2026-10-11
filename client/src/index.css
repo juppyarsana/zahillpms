@@ -186,6 +186,57 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
   .call-fab { bottom: 76px; right: 16px; } /* clear the bottom nav bar */
 }
 
+/* Floating "Ask" button — stacked above the call button (in its place when
+   the property has no calling) — and the panel it opens. */
+.ask-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  /* A fixed dark neutral, not the brand colour: the call button under it takes the
+     property's brand colour, and the two must not look alike for any brand. */
+  background: #1F2937;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.28);
+  z-index: 150; /* under modals (200) and the phone menu (300) */
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.ask-fab-solo { bottom: 20px; }
+.ask-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.32); }
+.ask-fab:active { transform: translateY(0); }
+.ask-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 420px;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--ask-panel-bg, #F6F1EA);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 30px rgba(0,0,0,0.18);
+  z-index: 190; /* over the page and the floating buttons, under modals (200) */
+}
+.ask-panel-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+  flex-shrink: 0;
+}
+.ask-panel-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; }
+.ask-panel-input { flex-shrink: 0; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); background: #fff; }
+@media (max-width: 768px) {
+  .ask-fab { bottom: 140px; right: 16px; } /* above the call button, which clears the bottom nav bar */
+  .ask-fab-solo { bottom: 76px; }
+  .ask-panel { left: 0; width: auto; border-left: none; z-index: 250; } /* full screen, over the bottom nav bar */
+}
+
 .sidebar-footer {
   flex-shrink: 0;
   padding: 14px 16px;

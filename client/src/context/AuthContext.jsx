@@ -10,6 +10,7 @@ const ORDERED_PATHS = [
   { key: 'checkin_full',  path: '/checkin' },
   { key: 'guest_lists',   path: '/guest-lists' },
   { key: 'forecast',      path: '/forecast' },
+  { key: 'assistant',     path: '/ask' },
   { key: 'cashier_closing', path: '/cashier-closing' },
   { key: 'guests',        path: '/guests' },
   { key: 'operations',    path: '/operations' },

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import BackLink from '../components/BackLink';
 import api from '../services/api';
-
 // Check Availability: a guest asks "do you have a room for these dates?" —
 // FO types the dates and party size and sees, per room type, how many rooms
 // are free and what the stay costs, then ticks rooms and continues straight
@@ -26,11 +25,24 @@ const REASON = {
 export default function Availability() {
   const nav = useNavigate();
   const today = ymd(new Date());
-  const [checkIn, setCheckIn] = useState(today);
-  const [nights, setNights] = useState('1');
-  const [checkOut, setCheckOut] = useState(addDays(today, 1));
-  const [guests, setGuests] = useState('2');
-  const [roomsWanted, setRoomsWanted] = useState('1');
+  // Opened from the Ask page with a search already made: ?check_in=&check_out=&guests=&rooms=
+  const [start] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const ok = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+    const ci = q.get('check_in'), co = q.get('check_out');
+    const dated = ok(ci) && ok(co) && co > ci;
+    return {
+      checkIn: dated ? ci : today,
+      checkOut: dated ? co : addDays(today, 1),
+      guests: String(Math.max(1, parseInt(q.get('guests'), 10) || 2)),
+      rooms: String(Math.max(1, parseInt(q.get('rooms'), 10) || 1)),
+    };
+  });
+  const [checkIn, setCheckIn] = useState(start.checkIn);
+  const [nights, setNights] = useState(String(nightsBetween(start.checkIn, start.checkOut)));
+  const [checkOut, setCheckOut] = useState(start.checkOut);
+  const [guests, setGuests] = useState(start.guests);
+  const [roomsWanted, setRoomsWanted] = useState(start.rooms);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -118,8 +130,7 @@ export default function Availability() {
         <div>
           <div className="page-title">Check Availability</div>
           <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
-        </div>
-      </div>
+        </div>      </div>
 
       <div className="card mb-3">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, alignItems: 'end' }}>

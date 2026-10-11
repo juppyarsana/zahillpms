@@ -19,6 +19,7 @@ const MODULE_LABELS = {
   smart_reports:   'Smart Reports',
   pos_integration: 'POS Integration',
   accounting:      'Accounting',
+  assistant:       'Ask (voice assistant)',
   channel_manager: 'Channel Manager',
   yield_management: 'Yield Management',
 };

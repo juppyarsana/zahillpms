@@ -8,12 +8,15 @@ import UpdatePrompt from './components/UpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
 import CallBanner from './components/CallBanner';
 import CallRoomFab from './components/CallRoomFab';
+import AskFab from './components/AskFab';
+import { AskProvider } from './context/AskContext';
 import Login from './pages/Login';
 import RoomCheckPublic from './pages/RoomCheckPublic';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import Availability from './pages/Availability';
+import Ask from './pages/Ask';
 import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
@@ -203,20 +206,23 @@ function BottomNav() {
 function Layout({ children }) {
   const { branding } = useSettings();
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <div className="app-main">
-        <main className="main-content">
-          <div className="page-wrap">{children}</div>
-        </main>
-        <BottomNav />
+    <AskProvider>
+      <div className="app-shell">
+        <Sidebar />
+        <div className="app-main">
+          <main className="main-content">
+            <div className="page-wrap">{children}</div>
+          </main>
+          <BottomNav />
+        </div>
+        <UpdatePrompt />
+        {/* after the property's branding is in, so the installed app takes its name and icon */}
+        {branding && <InstallPrompt name={branding.name} />}
+        <CallBanner />
+        <AskFab />
+        <CallRoomFab />
       </div>
-      <UpdatePrompt />
-      {/* after the property's branding is in, so the installed app takes its name and icon */}
-      {branding && <InstallPrompt name={branding.name} />}
-      <CallBanner />
-      <CallRoomFab />
-    </div>
+    </AskProvider>
   );
 }
 
@@ -287,7 +293,8 @@ export default function App() {
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
                   <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Availability /></RequireModule></RequireMenu>} />
-                  <Route path="/reservations/new" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
+                  <Route path="/ask"              element={<RequireMenu menuKey="assistant"><RequireModule moduleName="assistant"><Ask /></RequireModule></RequireMenu>} />
+                  <Route path="/reservations/new"element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
