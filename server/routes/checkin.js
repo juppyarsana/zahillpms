@@ -407,6 +407,11 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       if (ed.charge === 'custom' && !(Number.isFinite(custom) && custom >= 0)) {
         return res.status(400).json({ error: 'amount required for a custom charge' });
       }
+      // A complimentary stay has nothing to re-price: a typed amount would put
+      // the free room / meals back on the bill.
+      if (b.complimentary_scope && ed.charge === 'custom') {
+        return res.status(409).json({ error: 'This stay is complimentary — choose "nights used" or "full booking", or remove complimentary first', code: 'COMPLIMENTARY' });
+      }
       const newCo = new Date(dayMs(ci) + stayedNights * 86400000).toISOString().slice(0, 10);
       const c = await db.pool.connect();
       try {
@@ -440,11 +445,20 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
           const newTotal = ed.charge === 'stayed'
             ? round2(oldTotal * ratio)
             : round2(custom + newDiscount);
+          // Complimentary: the split is kept, not worked out again from the
+          // rate plan (that charged the meals of a stay whose meals are free —
+          // price Rp 0 → meals × guests × nights). The room stays free; meals
+          // stay free too, or, on a room-only complimentary stay, are charged
+          // for the nights used.
+          const compSplit = moved.complimentary_scope
+            ? { roomNet: 0, mealNet: moved.complimentary_scope === 'room' ? round2(parseFloat(moved.fnb_revenue || 0) * ratio) : 0 }
+            : null;
           const priced = await applyBookingPrice(c, {
             propertyId: req.propertyId, before: moved, newTotal, userId: req.user.id,
             keepDiscount: true, receivedWasTypo: false,
             balanceNote: 'Early departure — amount due',
             nightShares: carried ? carried.shares : undefined,
+            ...(compSplit ? { split: compSplit } : {}),
           });
           if (priced.error) { await c.query('ROLLBACK'); return res.status(priced.status).json(priced.error); }
           charged = priced.payable;
