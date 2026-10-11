@@ -1,8 +1,18 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-10-11
+Last updated: 2026-10-12
 
 ---
+
+## 🔖 Session handoff — 2026-10-12 (PC, night) — Events released with the POS side; deploy.sh backs up
+
+- **Released, both repos pushed:** PMS `dev` = `main` (Events, migrations 106–108, then `deploy.sh` with a database backup). POS `pms-integration` at `1d2ad2b` (hotel events, Event Charge, order sources). **Whether production was deployed is not confirmed** — ask the owner; the checklist is in `CLAUDE.md` → "Pending on the next production deploy".
+- **Since the note below was written (which says "not committed" — it is now):** agreed meal prices (107); the POS side built in `C:\zahillpos` (FO requests lists events and meals, Ring up at the agreed price, Charge to Event); voiding a restaurant line on an event tells the POS (108); event bills shown and sent as *Event Charge*, apart from room charges, in both apps; POS Transactions tags bills TABLET / QR with a Source filter and a summary of orders from room tablets and table QR codes; a tablet bill names who accepted it (`cashierName.js`) everywhere. Write-ups: `CLAUDE.md` (Events sections) and the POS `README.md` ("Events" section).
+- **`deploy.sh` (PMS):** now backs up the database first to `/var/backups/zahill-pms/` (14 days kept). The first run on the server needs `git pull` before `bash deploy.sh`. Not yet run on the server.
+- **Deploy PMS and POS in the same sitting** (the POS session summary sends `event_charges`, which an older PMS ignores).
+- **Not clicked through by hand:** the POS till (Ring up → Charge to Event), the PMS meal window / bill card / "POS not told", the POS "Send to hotel" button with an event bill, POS Transactions against production's bill history.
+- **Outdated test expectations, not faults** (scratch tests only, not in the repo): the POS event list now carries agreed prices; a list search returns 3 test events, not 2.
+- Next: stage 2 (packages per person + quotation + one merged bill). Next migration number: **109**.
 
 ## 🔖 Session handoff — 2026-10-11 (PC, night) — Events: the meeting room (stage 1 of packages)
 
