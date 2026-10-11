@@ -4,6 +4,34 @@ Last updated: 2026-10-12
 
 ---
 
+## 🔖 Planned, not built — import of the old PMS's (VHP) forward reservations (noted 2026-10-12, PC)
+
+The owner has an Excel file from the old system, `RESERVATION ZAHILL RESORT KINTAMANI.xlsx`, with the reservations made outside the PMS, and wants them put in. **Nothing is built or imported.** The file is NOT in git and must never be (guest emails, phones, birth dates) — copy it to the machine by hand and keep it out of commits (`.git/info/exclude`).
+
+**The file** (made about 2026-10-04): sheets `OCT - DEC 2026` (294 lines), `JAN - DEC 2027` (134), `JAN - DEC 2028` (13) = 441 lines, 207 reservation numbers. Row 1 headings, row 2 a "=====" ruler, data from row 3; the 2028 sheet has one more column (Flight and Time apart) — map by heading. Read it with `exceljs` from `server/node_modules`. On 2026-10-12: 62 lines already departed, 19 in house, 360 arriving later.
+
+**How to read it** (mine unless the owner confirms):
+- **RmNo** — 234 lines have a real room (production's 33 rooms). 87 are empty = one room, not assigned. 120 have a small number (2–12), read as *that many rooms of the category* (it never exceeds the category's rooms); their sum is 601, so the import makes about 920 room bookings. To confirm.
+- **RmCat** — DLPD / DLP = Deluxe Pool View · DLGD / DLG = Deluxe Garden View · TNTD / TNT = Glamping · SUTD / SUTT / SUT = Suite · VLAD / VLA = room 801 only (about 3,3–3,5 jt) · 1VLD / 1VL = 802–804 (about 1,6–2,1 jt); all four are one type "Villa" in the PMS. Last letter D / T = double / twin (bed preference).
+- **RoomRate** — per night; Excel dropped trailing zeros: text with commas ("1,150,000") or a number where `950` = 950.000 and `901.983` = 901.983 (a number under 10.000 × 1000). 76 lines are 0 (2 complimentary, the rest agent series). Whether rates include service & tax: to confirm.
+- **Arrangement** — all RB (room with breakfast) → the BB rate plan. **A/C** — adults / children, "2/0" on 408 lines; 4 cells turned into dates in Excel. **Segment** — FIT-TA-DOM 187, OTA 114, FIT 112, CORPORATE 10, GOVM 10, WEB 5, COMPLIMENT 2, GIT-TA-DOM 1 → booking source. **Company/TA** — cut at 14 characters, about 35 distinct plus "[INDIVIDUAL RE" (no company) and "[HOTEL WEBSITE"; needs a hand-made table → agent / source.
+- **Guests** — "Last, First", sometimes a title; many placeholders (TBA, group and series names); email on 76 lines, phone on 88, nationality unknown on 134. **Remarks** (115 lines) → special requests; the "Special Request" column holds stray numbers, ignore.
+- Nights always equal the dates; no room is double-booked inside the file; 86 reservations have 2+ lines (largest 24) → groups; two have lines with different dates (a change of room type night by night).
+- **Not in the file:** deposits, payments, totals, status, ID numbers.
+
+**Plan:**
+1. `server/maintenance/importVhpReservations.js` — `--property zahill --file <path>`, dry run by default, `--apply` writes, `--from <date>` (default: arrivals after today), backup JSON to `maintenance/backups/` first.
+2. A mapping (no guest data): RmCat → room type, Segment → source, Company/TA prefix → agent. Unmatched = reported in the dry run, never guessed.
+3. Per line: find the guest (email, then phone, then exact name) or create; room = the one given, else a free room of the type for the dates (`occupiedUntilSql`); price = rate × nights through the code New Booking uses (`bookingPriceService`: room / meal split, payment lines, nett prices); status pending, no deposit; 2+ rooms on one reservation number → a group.
+4. Duplicates first, against production: same room + overlapping dates, or same guest + same dates → "already in the PMS", skipped; room taken by another guest → clash, listed, not imported.
+5. Tag each booking's internal notes `IMPORT:vhp-2026-10 · ResNo <n>` + an Edit History line: the import can be listed or undone, and a second run imports nothing twice.
+6. Write through the services, not the HTTP routes: no "new booking" Telegram alerts or confirmation emails for 900+ bookings.
+7. Order: restore a production backup locally (`/var/backups/zahill-pms/pms-*.sql.gz`) → dry run → owner reads the report → apply on the copy → check Reservations, Forecast, a group page → on production: `bash deploy.sh --backup-only`, dry run, `--apply`.
+
+**Owner still to answer:** (1) is the small RmNo number the number of rooms? (2) are rates all-in per night? (3) import from tomorrow's arrivals only (recommended)? (4) rate-0 lines: import at Rp 0 or leave out? (5) a production backup file to test against; (6) 801 vs 802–804: one "Villa" type fine? (7) the PMS source for each segment, and the company → agent table. 1, 2 and 5 block the build.
+
+---
+
 ## 🔖 Session handoff — 2026-10-12 (PC, night) — Events released with the POS side; deploy.sh backs up
 
 - **Released, both repos pushed:** PMS `dev` = `main` (Events, migrations 106–108, then `deploy.sh` with a database backup). POS `pms-integration` at `1d2ad2b` (hotel events, Event Charge, order sources). **Deployed to production the same night (2026-10-12) with the new `deploy.sh`; the owner confirmed it worked.** Not yet confirmed: whether the POS was deployed in the same sitting, and the by-hand steps after the deploy (module on, venue, permissions, alert recipients) — the checklist is in `CLAUDE.md` → "Pending on the next production deploy".
