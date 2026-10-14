@@ -1,8 +1,17 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-10-12
+Last updated: 2026-10-15
 
 ---
+
+## 🔖 Session handoff — 2026-10-15 (PC, night) — VHP import done on production; continue tomorrow
+
+- **Released + deployed:** `main` = `dev` = 5918ace (+ docs 316f583 on `dev`): VHP import script, migration 109 "To check", `bookingCreateService`, same-type Change Room keeps the price, Group Booking Confirmed template can be saved. Next migration number: **110**.
+- **On production:** Nov–Dec 2026 imported (45 reservations, 19 groups, 132 rooms, Rp 200.212.413); Group 18 (14334, 28 Nov) not imported — FO enters it by hand. **Undo:** see CLAUDE.md "HOW TO UNDO the VHP import" (run file `maintenance/backups/vhp-import-zahill-2026-10-14T17-52-45-370Z.json` on the server).
+- **For FO (owner's Documents folder, not in git, contain guest data):** `Panduan FO - Reservasi dari VHP.docx` (the guide, Bahasa — current) and `Cek Reservasi VHP - FO.docx` (the earlier question form).
+- **Owner still to confirm on production:** one test booking (single + group) after the deploy, then cancel it; Group Booking Confirmed switched off (untick Active → Save).
+- **Open:** Group 18 / 28 Nov (13 rooms for 12); deposits paid in VHP (FO records them with the date paid); agents' contract rates for the 2027 rate-0 series; then import 2027–2028 (same command, other `--from` / `--to`; `--from 2027-01-01`).
+- **On this PC only:** local database `zahill_prod_copy` (production backup of 15 Oct + the Nov–Dec import; bot / email / POS / recipients switched off; holds guest data — drop it when no longer needed: `dropdb zahill_prod_copy`), the backup file `C:\pms-backups\pms-2026-10-15_004036.sql.gz`, the Excel file `C:\zahill_pms\RESERVATION ZAHILL RESORT KINTAMANI.xlsx` (excluded from git).
 
 ## 🔖 Import of the old PMS's (VHP) forward reservations — Nov–Dec 2026 imported on production 2026-10-15 (PC)
 
