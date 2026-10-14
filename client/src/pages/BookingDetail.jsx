@@ -1021,6 +1021,28 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {/* "To check" (migration 109): points left by the VHP import for FO */}
+      {Array.isArray(booking.to_check) && booking.to_check.length > 0 && (
+        booking.to_check_done_at ? (
+          <div className="text-muted mb-3" style={{ fontSize: 12 }}>
+            ✓ Checked by {booking.to_check_done_by_name || '—'} on {new Date(booking.to_check_done_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            {' · '}<a href="#" onClick={async e => { e.preventDefault(); await api.put(`/api/bookings/${id}/to-check/done`, { undo: true }); load(); }}>put back on the list</a>
+          </div>
+        ) : (
+          <div className="alert alert-warn mb-3" style={{ alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ To check</div>
+              {booking.to_check.map((p, i) => <div key={i} style={{ fontSize: 13 }}>• {p}</div>)}
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
+                Fix what is listed (Change Room, Edit Details, Edit Price, Change Guest), then press Checked.
+              </div>
+            </div>
+            <button className="btn btn-sm btn-primary" style={{ flexShrink: 0 }}
+              onClick={async () => { await api.put(`/api/bookings/${id}/to-check/done`); load(); }}>✓ Checked</button>
+          </div>
+        )
+      )}
+
       <div className="tab-bar">
         <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
         <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Folio</button>
@@ -2183,7 +2205,9 @@ export default function BookingDetail() {
         const diff = q && priceOk ? Math.round((newPrice - q.current.total) * 100) / 100 : 0;
         const edited = q && priceOk && Math.abs(newPrice - q.next.total) >= 1;
         const charge = chargeMode === 'complimentary' ? 0 : diff;
-        const canSave = !!q && !quoteLoading && changeReason.trim().length > 0 && (chargeMode === 'complimentary' || priceOk);
+        // Same room type at the same price = a room assignment: no reason needed.
+        const reasonNeeded = !(q?.same_type && (chargeMode === 'complimentary' || Math.abs(diff) < 1));
+        const canSave = !!q && !quoteLoading && (!reasonNeeded || changeReason.trim().length > 0) && (chargeMode === 'complimentary' || priceOk);
         const fmtStay = (a, b) => `${fmtShortDate(a)} – ${fmtShortDate(b)}`;
         return (
           <div className="modal-backdrop">
@@ -2255,7 +2279,11 @@ export default function BookingDetail() {
                         style={{ maxWidth: 160, padding: '4px 8px', textAlign: 'right' }} aria-label="New room price for the stay" />
                     </div>
                     <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>
-                      {edited
+                      {q.same_type
+                        ? (edited
+                          ? <>Booked price {fmtIDR(q.next.total)} · <a href="#" onClick={e => { e.preventDefault(); setCustomAmount(String(Math.round(q.next.total))); }}>keep the booked price</a></>
+                          : 'Same room type — the booked price stays. Type another price only to change it.')
+                        : edited
                         ? <>Normal rate {fmtIDR(q.next.total)} · <a href="#" onClick={e => { e.preventDefault(); setCustomAmount(String(Math.round(q.next.total))); }}>use normal rate</a></>
                         : 'Normal rate — type another price for a special rate'}
                       {q.meals > 0 && !edited && <div>Room {fmtIDR(q.next.room_total)} + meal plan {fmtIDR(q.meals)}</div>}
@@ -2281,9 +2309,9 @@ export default function BookingDetail() {
                 )}
 
                 <div className="form-group">
-                  <label className="form-label">Reason *</label>
+                  <label className="form-label">{reasonNeeded ? 'Reason *' : 'Reason (optional)'}</label>
                   <input className="form-input" value={changeReason} onChange={e => setChangeReason(e.target.value)}
-                    placeholder="e.g. Guest requested a villa for their anniversary / AC broken" />
+                    placeholder={reasonNeeded ? 'e.g. Guest requested a villa for their anniversary / AC broken' : 'e.g. Room assigned / guest asked for a higher floor'} />
                 </div>
 
                 {q && (

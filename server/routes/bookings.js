@@ -13,6 +13,7 @@ const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL }
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
 const nightRatesSvc = require('../services/nightRates');
+const bookingCreate = require('../services/bookingCreateService');
 const { stayNights: stayNightList } = require('../services/folioService');
 const { nightlyRoomRates } = require('../services/pricingService');
 const { priceBasis } = require('../services/priceBasis');
@@ -954,6 +955,52 @@ router.get('/groups', auth, async (req, res) => {
   }
 });
 
+// GET /api/bookings/to-check — bookings with points front desk still has to
+// look at (migration 109; written by the VHP import), not cancelled / no-show,
+// not checked off yet. ?done=1 lists the ones already checked (last 200).
+router.get('/to-check', auth, async (req, res) => {
+  const done = req.query.done === '1';
+  try {
+    const { rows } = await db.query(`
+      SELECT b.id, b.check_in_date, b.check_out_date, b.status, b.num_guests, b.to_check,
+             b.to_check_done_at, du.name AS to_check_done_by_name, b.reservation_group_id,
+             g.name AS guest_name, u.name AS unit_name, u.type AS room_type_name,
+             ag.name AS agent_name,
+             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label
+      FROM bookings b
+      JOIN guests g ON g.id = b.guest_id
+      JOIN units u ON u.id = b.unit_id
+      LEFT JOIN agents ag ON ag.id = b.agent_id
+      LEFT JOIN users du ON du.id = b.to_check_done_by
+      WHERE b.property_id = $1 AND jsonb_array_length(COALESCE(b.to_check, '[]'::jsonb)) > 0
+        AND b.status NOT IN ('cancelled', 'no_show')
+        AND b.to_check_done_at IS ${done ? 'NOT NULL' : 'NULL'}
+      ORDER BY ${done ? 'b.to_check_done_at DESC LIMIT 200' : 'b.check_in_date, u.name'}`, [req.propertyId]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/:id/to-check/done — FO has looked at the points.
+// { undo: true } puts them back on the list.
+router.put('/:id/to-check/done', auth, async (req, res) => {
+  const undo = req.body?.undo === true;
+  try {
+    const { rows: [b] } = await db.query(
+      `UPDATE bookings SET to_check_done_at = ${undo ? 'NULL' : 'NOW()'}, to_check_done_by = $3, updated_at = NOW()
+       WHERE id = $1 AND property_id = $2 AND to_check IS NOT NULL
+       RETURNING id, to_check, to_check_done_at`, [req.params.id, req.propertyId, undo ? null : req.user.id]);
+    if (!b) return res.status(404).json({ error: 'Nothing to check on this booking' });
+    const points = Array.isArray(b.to_check) ? b.to_check : [];
+    await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id,
+      (undo ? 'Put back on the To check list.' : `Checked: ${points.join('; ')}`).slice(0, 1000), req.user.id]);
+    res.json(b);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/bookings/group/:groupId
 router.get('/group/:groupId', auth, async (req, res) => {
   try {
@@ -1071,6 +1118,7 @@ router.get('/:id', auth, async (req, res) => {
              (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
                WHERE apa.booking_id = b.id) AS agent_paid_amount,
              (SELECT name FROM users cu WHERE cu.id = b.complimentary_by) AS complimentary_by_name,
+             (SELECT name FROM users tu WHERE tu.id = b.to_check_done_by) AS to_check_done_by_name,
              EXISTS (SELECT 1 FROM complimentary_requests cr WHERE cr.booking_id = b.id
                        AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending,
              -- Publish Rate off (OTA / agent, migration 065): invoices get a guest copy without the room rate
@@ -1119,110 +1167,20 @@ router.get('/:id', auth, async (req, res) => {
 
 // POST /api/bookings
 router.post('/', auth, async (req, res) => {
-  const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, discount_type, discount_value, rate_plan_id, bed_preference, room_revenue } = req.body;
-  if (!guest_id || !unit_id || !check_in_date || !check_out_date) {
-    return res.status(400).json({ error: 'guest_id, unit_id, check_in_date, check_out_date required' });
-  }
-  const commission = agentService.parseBookingCommission(req.body);
-  if (commission.error) return res.status(400).json({ error: commission.error });
-  if (bed_preference && !BED_PREFS.includes(bed_preference)) {
-    return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
-  }
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-
-    const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = $1 AND property_id = $2', [unit_id, req.propertyId]);
-    if (!unitRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Unit not found' }); }
-    const { rows: guestRows } = await client.query('SELECT id, name FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
-    if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
-    const agentPick = await agentService.agentForBooking(client, req.propertyId, { agentId: req.body.agent_id, source: source || 'direct' });
-    if (agentPick.error) { await client.query('ROLLBACK'); return res.status(404).json({ error: agentPick.error }); }
-
-    // Check availability
-    const conflict = await client.query(`
-      SELECT id FROM bookings
-      WHERE unit_id = $1
-        AND property_id = $4
-        AND status NOT IN ('cancelled','no_show')
-        AND check_in_date < $3
-        AND ${occupiedUntilSql('')} > $2
-    `, [unit_id, check_in_date, check_out_date, req.propertyId]);
-    if (conflict.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Unit is not available for the selected dates' });
-    }
-
-    // A price per night (migration 090): the total is then the nights' sum.
-    const nightPrices = nightRatesSvc.parseNightPrices(req.body.night_prices, stayNightList(check_in_date, check_out_date));
-    if (nightPrices?.error) { await client.query('ROLLBACK'); return res.status(400).json(nightPrices); }
-    const total = nightPrices ? nightPrices.total : parseFloat(total_amount || 0);
-
-    // Compute discount
-    const dType  = discount_type || null;
-    const dValue = parseFloat(discount_value || 0);
-    let discountAmount = 0;
-    if (dType === 'fixed')      discountAmount = Math.min(dValue, total);
-    if (dType === 'percentage') discountAmount = Math.round(total * dValue / 100);
-
-    // Rate plan + room/F&B net split
-    const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
-    const guests = Math.max(1, parseInt(num_guests, 10) || 1);
-    const ratePlan = await ratePlanService.resolveForBooking(req.propertyId, rate_plan_id || null);
-    const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
-    const { roomNet, mealNet } = splitRevenue({
-      grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, divisor, clientRoomRevenue: room_revenue,
-      tax_rate, service_charge_rate,
-    });
-    // Store total_amount consistently with the split (pre-discount gross rack);
-    // the price typed when the split lands within a few cents of it.
-    const payable = room_revenue != null && room_revenue !== ''
-      ? computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total
-      : snapPayable(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total, total - discountAmount);
-    const storedTotal = round2(payable + discountAmount);
-
-    const net = payable;
-    const depositAmount = deposit_amount !== undefined
-      ? Math.min(parseFloat(deposit_amount), net)
-      : Math.round(net * 0.5); // default deposit 50% (same as New Booking)
-    const balanceAmount = round2(net - depositAmount);
-
-    const { rows } = await client.query(
-      `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
-      [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet,
-       agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
-    );
-    const booking = rows[0];
-    if (nightPrices?.shares) {
-      const saved = await nightRatesSvc.saveNightRates(client, {
-        bookingId: booking.id, nights: stayNightList(check_in_date, check_out_date), shares: nightPrices.shares, roomNet, mealNet });
-      if (saved.error) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
-      }
-    }
-    if (depositAmount > 0) {
-      await client.query(
-        'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)',
-        [booking.id, 'deposit', depositAmount]
-      );
-    }
-    if (balanceAmount > 0) {
-      await client.query(
-        'INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)',
-        [booking.id, 'balance', balanceAmount]
-      );
-    }
-
+    const made = await bookingCreate.createBooking(client, { propertyId: req.propertyId, userId: req.user.id, input: req.body });
+    if (made.error) { await client.query('ROLLBACK'); return res.status(made.status).json(made.error); }
     await client.query('COMMIT');
+    const { booking } = made;
 
     // Fire and forget — don't await, don't fail the booking if email fails
     sendBookingEmail(req.propertyId, booking.id, 'booking_confirmed')
       .catch(err => console.error('Email trigger failed:', err));
     telegramService.sendAlert(req.propertyId, 'alert_new_booking',
-      newBookingAlert({ title: 'New booking', guest: guestRows[0].name, rooms: [unitRows[0].name],
-        checkIn: check_in_date, checkOut: check_out_date, guests: booking.num_guests,
+      newBookingAlert({ title: 'New booking', guest: made.guest.name, rooms: [made.unit.name],
+        checkIn: booking.check_in_date, checkOut: booking.check_out_date, guests: booking.num_guests,
         total: parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0), by: req.user?.name }),
       { html: true }
     ).catch(() => {});
@@ -1251,159 +1209,13 @@ async function syncGroupSpan(client, groupId) {
 }
 
 router.post('/group', auth, async (req, res) => {
-  const {
-    guest_id, check_in_date, check_out_date, source, status,
-    special_requests, internal_notes,
-    group_discount_type, group_discount_value, group_deposit_amount,
-    rooms,
-  } = req.body;
-
-  if (!guest_id || !check_in_date || !check_out_date || !Array.isArray(rooms) || rooms.length < 2) {
-    return res.status(400).json({ error: 'guest_id, check_in_date, check_out_date, and at least 2 rooms are required' });
-  }
-  const commission = agentService.parseBookingCommission(req.body);
-  if (commission.error) return res.status(400).json({ error: commission.error });
-  const unitIds = rooms.map(r => r.unit_id);
-  if (unitIds.some(id => !id) || new Set(unitIds).size !== unitIds.length) {
-    return res.status(400).json({ error: 'Each room needs a unit_id, and units must not repeat' });
-  }
-  // Each room can have its own dates (check_in_date / check_out_date on the
-  // room); without them it takes the group's.
-  const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
-  for (const r of rooms) {
-    r.ci = r.check_in_date || check_in_date;
-    r.co = r.check_out_date || check_out_date;
-    if (!ymdRe.test(String(r.ci)) || !ymdRe.test(String(r.co)) || r.co <= r.ci) {
-      return res.status(400).json({ error: 'Every room needs a check-out date after its check-in date' });
-    }
-  }
-
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-
-    const { rows: guestRows } = await client.query('SELECT id FROM guests WHERE id = $1 AND property_id = $2', [guest_id, req.propertyId]);
-    if (!guestRows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Guest not found' }); }
-    // One agent for the whole group (and its commission, per room)
-    const agentPick = await agentService.agentForBooking(client, req.propertyId, { agentId: req.body.agent_id, source: source || 'direct' });
-    if (agentPick.error) { await client.query('ROLLBACK'); return res.status(404).json({ error: agentPick.error }); }
-
-    const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = ANY($1::uuid[]) AND property_id = $2', [unitIds, req.propertyId]);
-    if (unitRows.length !== unitIds.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'One or more units not found' }); }
-
-    for (const r of rooms) {
-      const conflict = await client.query(`
-        SELECT id FROM bookings
-        WHERE unit_id = $1 AND property_id = $4
-          AND status NOT IN ('cancelled','no_show')
-          AND check_in_date < $3 AND ${occupiedUntilSql('')} > $2
-      `, [r.unit_id, r.ci, r.co, req.propertyId]);
-      if (conflict.rows.length > 0) {
-        await client.query('ROLLBACK');
-        const unitName = unitRows.find(u => u.id === r.unit_id)?.name || r.unit_id;
-        return res.status(409).json({ error: `Room ${unitName} is not available for ${r.ci} to ${r.co}` });
-      }
-    }
-
-    if (rooms.some(r => r.bed_preference && !BED_PREFS.includes(r.bed_preference))) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: `bed_preference must be one of ${BED_PREFS.join(', ')}` });
-    }
-
-    const nightsOf = r => Math.max(1, Math.round((new Date(r.co) - new Date(r.ci)) / 86400000));
-    const spanIn = rooms.reduce((m, r) => (r.ci < m ? r.ci : m), rooms[0].ci);
-    const spanOut = rooms.reduce((m, r) => (r.co > m ? r.co : m), rooms[0].co);
-    const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, req.propertyId);
-
-    // A price per night for a room (migration 090): its total is the nights' sum.
-    for (const r of rooms) {
-      const np = nightRatesSvc.parseNightPrices(r.night_prices, stayNightList(r.ci, r.co));
-      if (np?.error) { await client.query('ROLLBACK'); return res.status(400).json(np); }
-      if (np) { r.total_amount = np.total; r.nightShares = np.shares; }
-    }
-    const groupTotal = rooms.reduce((s, r) => s + parseFloat(r.total_amount || 0), 0);
-
-    const gdType = group_discount_type || null;
-    const gdValue = parseFloat(group_discount_value || 0);
-    let groupDiscountAmount = 0;
-    if (gdType === 'fixed')      groupDiscountAmount = Math.min(gdValue, groupTotal);
-    if (gdType === 'percentage') groupDiscountAmount = Math.round(groupTotal * gdValue / 100);
-    const groupNet = groupTotal - groupDiscountAmount;
-    const groupDepositAmount = Math.min(parseFloat(group_deposit_amount || 0), groupNet);
-
-    // Prorate discount/deposit per room by each room's share of the group total.
-    // The last room absorbs the rounding remainder so both sums stay exact.
-    let discountRemaining = groupDiscountAmount;
-    let depositRemaining = groupDepositAmount;
-    const shares = rooms.map((room, i) => {
-      const isLast = i === rooms.length - 1;
-      const roomTotal = parseFloat(room.total_amount || 0);
-      const discountShare = isLast ? discountRemaining : Math.round(groupDiscountAmount * roomTotal / (groupTotal || 1));
-      discountRemaining -= discountShare;
-      const roomNet = roomTotal - discountShare;
-      return { room, roomTotal, discountShare, roomNet, isLast };
-    });
-    // Second pass for deposit share, since it's proportional to roomNet / groupNet
-    shares.forEach(s => {
-      s.depositShare = s.isLast ? depositRemaining : Math.round(groupDepositAmount * s.roomNet / (groupNet || 1));
-      depositRemaining -= s.depositShare;
-      s.balanceShare = s.roomNet - s.depositShare;
-    });
-
-    // Billed as a whole (migration 097): one bill and one payment record for
-    // the group, no deposit / balance lines on its rooms — except a group
-    // billed to a city-ledger agent, which keeps per-room agent billing.
-    let groupBilled = true;
-    if (agentPick.agentId) {
-      const { rows: [ag] } = await client.query('SELECT payment_status FROM agents WHERE id = $1', [agentPick.agentId]);
-      if (agentBilling.CITY_LEDGER.includes(ag?.payment_status)) groupBilled = false;
-    }
-    const billingMode = req.body.billing_mode === 'everything' ? 'everything' : 'room_meals';
-
-    const { rows: [group] } = await client.query(
-      `INSERT INTO reservation_groups (property_id, primary_guest_id, check_in_date, check_out_date, group_discount_type, group_discount_value, group_discount_amount, group_deposit_amount, special_requests, internal_notes, created_by, group_billing, billing_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [req.propertyId, guest_id, spanIn, spanOut, gdType, gdValue, groupDiscountAmount, groupDepositAmount, special_requests, internal_notes, req.user.id, groupBilled, billingMode]
-    );
-
-    const bookings = [];
-    for (const s of shares) {
-      // Child bookings store the GROUP's discount_type/discount_value verbatim
-      // (so BookingDetail.jsx's existing discount box renders unchanged) but
-      // their own prorated discount_amount/deposit_amount — that amount won't
-      // self-reconcile if recomputed against this one room's total in
-      // isolation, which is intentional, not a bug to "fix" later.
-      const roomGuests = Math.max(1, parseInt(s.room.num_guests, 10) || 1);
-      const roomPlan = await ratePlanService.resolveForBooking(req.propertyId, s.room.rate_plan_id || null);
-      const { roomNet: roomRevNet, mealNet } = splitRevenue({
-        grossNet: s.roomNet, nights: nightsOf(s.room), ratePlan: roomPlan, numGuests: roomGuests, F, divisor, tax_rate, service_charge_rate,
-      });
-      const roomStoredTotal = round2(snapPayable(computeFolioTotals(roomRevNet + mealNet, tax_rate, service_charge_rate).total, s.roomNet) + s.discountShare);
-
-      const { rows: [booking] } = await client.query(
-        `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, reservation_group_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
-        [guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, groupBilled ? 0 : s.depositShare, gdType, gdValue, s.discountShare, special_requests, internal_notes, status || 'pending', req.user.id, req.propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
-         agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
-      );
-      if (s.room.nightShares) {
-        const saved = await nightRatesSvc.saveNightRates(client, {
-          bookingId: booking.id, nights: stayNightList(s.room.ci, s.room.co), shares: s.room.nightShares, roomNet: roomRevNet, mealNet });
-        if (saved.error) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
-        }
-      }
-      if (!groupBilled && s.depositShare > 0) {
-        await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', s.depositShare]);
-      }
-      if (!groupBilled && s.balanceShare > 0) {
-        await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', s.balanceShare]);
-      }
-      bookings.push(booking);
-    }
-
+    const made = await bookingCreate.createGroup(client, { propertyId: req.propertyId, userId: req.user.id, input: req.body });
+    if (made.error) { await client.query('ROLLBACK'); return res.status(made.status).json(made.error); }
     await client.query('COMMIT');
+    const { group, bookings } = made;
 
     sendGroupBookingEmail(req.propertyId, group.id)
       .catch(err => console.error('Group email trigger failed:', err));
@@ -2658,11 +2470,16 @@ async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   const curTotal = nights ? whole(bookedGross / stayNights * nights) : 0;
   const meals = nights ? whole(curTotal * (1 - roomShare)) : 0;
   const curNormal = nights ? whole(gross(cur.room_total)) + meals : 0;
-  const nextTotal = nights ? whole(gross(next.room_total)) + meals : 0;
+  const nextNormal = nights ? whole(gross(next.room_total)) + meals : 0;
+  // A move to another room of the SAME room type is a room assignment, not an
+  // upgrade: the booked price stays (an agent / OTA rate below the normal rate
+  // used to show as a charge, and "Complimentary" then alerted the owner).
+  const sameType = !!cur.unit.room_type_id && cur.unit.room_type_id === next.unit.room_type_id;
+  const nextTotal = sameType ? curTotal : nextNormal;
   return {
-    from, to: co, nights, meals,
+    from, to: co, nights, meals, same_type: sameType,
     current: { unit_id: cur.unit.id, name: cur.unit.name, type: cur.unit.type, total: curTotal, normal_total: curNormal },
-    next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal, room_total: nextTotal - meals },
+    next: { unit_id: next.unit.id, name: next.unit.name, type: next.unit.type, total: nextTotal, room_total: nextTotal - meals, normal_total: nextNormal },
     difference: nextTotal - curTotal,
   };
 }
@@ -2691,13 +2508,13 @@ router.get('/:id/change-room/quote', auth, async (req, res) => {
 // revenue (applyBookingPrice with keepDiscount — the charge isn't
 // discounted), so the folio, pending balance lines, reports and Balance Due
 // all follow. In house: the old room is freed and flagged for cleaning, both
-// rooms' tablets refresh. Logged to Edit History with the reason.
+// rooms' tablets refresh. Logged to Edit History with the reason (optional
+// for a move within the same room type at the same price — a room assignment).
 router.put('/:id/change-room', auth, async (req, res) => {
   const { unit_id, charge = 'difference', reason: rawReason } = req.body;
   const reason = String(rawReason || '').trim();
   if (!unit_id) return res.status(400).json({ error: 'unit_id required' });
   if (!['difference', 'complimentary', 'custom'].includes(charge)) return res.status(400).json({ error: 'charge must be difference, complimentary or custom' });
-  if (!reason) return res.status(400).json({ error: 'A reason is required' });
   const custom = parseFloat(req.body.amount);
   if (charge === 'custom' && !Number.isFinite(custom)) return res.status(400).json({ error: 'amount required for a custom charge' });
 
@@ -2725,6 +2542,10 @@ router.put('/:id/change-room', auth, async (req, res) => {
     const quote = await changeRoomQuote(client, { propertyId: req.propertyId, booking: before, targetUnitId: unit_id });
     if (!quote) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Room not found' }); }
     const amount = charge === 'complimentary' ? 0 : charge === 'custom' ? round2(custom) : quote.difference;
+    if (!reason && !(quote.same_type && amount === 0)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'A reason is required' });
+    }
     if (amount !== 0 && ['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This stay is already on an agent invoice — change the room without a charge, or correct it through Agent Billing' });
@@ -2759,11 +2580,12 @@ router.put('/:id/change-room', auth, async (req, res) => {
 
     const label = u => `${u.name}${u.type ? ` (${u.type})` : ''}`;
     let note = `Room changed: ${label(oldUnit)} → ${label(newUnit)}.`;
-    if (charge === 'complimentary') note += ` Complimentary — no charge (normal difference ${fmtIDR(quote.difference)}).`;
+    if (quote.same_type && amount === 0) note += ' Same room type — price unchanged.';
+    else if (charge === 'complimentary') note += ` Complimentary — no charge (normal difference ${fmtIDR(quote.difference)}).`;
     else if (amount > 0) note += ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''} for ${quote.nights} night${quote.nights === 1 ? '' : 's'}.`;
     else if (amount < 0) note += ` Credit ${fmtIDR(-amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
     if (priced?.credit > 0) note += ` Guest overpaid ${fmtIDR(priced.credit)} — to be refunded.`;
-    note += ` Reason: ${reason}`;
+    if (reason) note += ` Reason: ${reason}`;
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [before.id, note.slice(0, 1000), req.user.id]);
     await client.query('COMMIT');
 

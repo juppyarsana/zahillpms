@@ -172,6 +172,69 @@ function GroupsView({ nav }) {
   );
 }
 
+// "To check" view: bookings with points front desk still has to look at
+// (migration 109 — written by the VHP import: a room picked by the import,
+// an agent not found, no rate, placeholder names…). Click a row to open the
+// booking; "Checked" there takes it off this list.
+function ToCheckView({ nav, onCount }) {
+  const [done, setDone] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    api.get('/api/bookings/to-check', { params: done ? { done: 1 } : {} })
+      .then(r => { setRows(r.data); if (!done) onCount?.(r.data.length); })
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [done]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="card">
+      <div className="flex-between mb-3" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div className="text-muted" style={{ fontSize: 13 }}>
+          {done ? 'Bookings already checked (latest 200).' : 'Bookings with points to look at — open one, fix what is listed, then press Checked.'}
+        </div>
+        <div className="flex gap-2">
+          <button className={`btn btn-sm ${!done ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDone(false)}>To check</button>
+          <button className={`btn btn-sm ${done ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDone(true)}>Checked</button>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Arrival</th><th>Room</th><th>Guest</th><th>Source / agent</th><th>To check</th>{done && <th>Checked by</th>}</tr>
+          </thead>
+          <tbody>
+            {!loading && rows.map(b => (
+              <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/reservations/${b.id}`)}>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {fmtYmd(b.check_in_date?.slice(0, 10))}
+                  <div className="text-muted" style={{ fontSize: 11 }}>→ {fmtYmd(b.check_out_date?.slice(0, 10))}</div>
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {b.unit_name}<div className="text-muted" style={{ fontSize: 11 }}>{b.room_type_name}</div>
+                </td>
+                <td style={{ fontWeight: 600 }}>{b.guest_name}<GroupTag groupId={b.reservation_group_id} nav={nav} /></td>
+                <td style={{ fontSize: 12 }}>{b.agent_name || b.source_label || '—'}</td>
+                <td style={{ fontSize: 12 }}>
+                  {(Array.isArray(b.to_check) ? b.to_check : []).map((p, i) => <div key={i}>• {p}</div>)}
+                </td>
+                {done && <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{b.to_check_done_by_name || '—'}<div className="text-muted" style={{ fontSize: 11 }}>{b.to_check_done_at && new Date(b.to_check_done_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROPERTY_TZ })}</div></td>}
+              </tr>
+            ))}
+            {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>Loading…</td></tr>}
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                {done ? 'Nothing checked yet' : '✓ Nothing left to check'}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // "Booked on" view: reservations by the day they were MADE (any stay date) —
 // "how many reservations did we take today?". A group is one row. Same
 // numbers as the Dashboard's "New reservations" and the Daily Close
@@ -344,8 +407,13 @@ export default function Reservations() {
   const [rates, setRates]   = useState({});
   // ?view=booked (e.g. from the Dashboard's "New reservations" box).
   const [params] = useSearchParams();
-  const [view, setView]     = useState(['list', 'groups', 'booked'].includes(params.get('view')) ? params.get('view') : 'calendar');
+  const [view, setView]     = useState(['list', 'groups', 'booked', 'tocheck'].includes(params.get('view')) ? params.get('view') : 'calendar');
   const calScrollRef        = useRef(null);
+  // Bookings still "to check" (migration 109) — the button only shows when there are any.
+  const [toCheckCount, setToCheckCount] = useState(0);
+  useEffect(() => {
+    api.get('/api/bookings/to-check').then(r => setToCheckCount(r.data.length)).catch(() => {});
+  }, []);
 
   // List view filters — kept separate from the calendar's month/year-driven
   // `bookings` fetch above, so switching between views never contaminates
@@ -647,7 +715,8 @@ export default function Reservations() {
         <div>
           <div className="page-title">Reservations</div>
           <div className="page-subtitle">
-            {view === 'booked' ? `${units.length} units · By the day they were booked` : <>{monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}</>}
+            {view === 'tocheck' ? 'Bookings with points front desk still has to look at'
+              : view === 'booked' ? `${units.length} units · By the day they were booked` : <>{monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}</>}
           </div>
         </div>
         <div className="flex gap-2">
@@ -657,7 +726,7 @@ export default function Reservations() {
       </div>
 
       <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        {view !== 'groups' && view !== 'booked' && (
+        {view !== 'groups' && view !== 'booked' && view !== 'tocheck' && (
           <>
             <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
             <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
@@ -691,6 +760,12 @@ export default function Reservations() {
           <button className={`btn btn-sm ${view === 'groups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('groups')}>👥 Groups</button>
           <button className={`btn btn-sm ${view === 'booked' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('booked')}
             title="Reservations by the day they were made — e.g. how many we took today">🆕 Booked on</button>
+          {(toCheckCount > 0 || view === 'tocheck') && (
+            <button className={`btn btn-sm ${view === 'tocheck' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('tocheck')}
+              title="Bookings with points to look at (e.g. imported from the old system)">
+              ⚠ To check{toCheckCount > 0 ? ` (${toCheckCount})` : ''}
+            </button>
+          )}
         </div>
       </div>
 
@@ -794,6 +869,8 @@ export default function Reservations() {
         <GroupsView nav={nav} />
       ) : view === 'booked' ? (
         <BookedView nav={nav} />
+      ) : view === 'tocheck' ? (
+        <ToCheckView nav={nav} onCount={setToCheckCount} />
       ) : (
         /* List view */
         <>

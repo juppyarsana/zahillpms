@@ -4,9 +4,11 @@ Last updated: 2026-10-12
 
 ---
 
-## 🔖 Planned, not built — import of the old PMS's (VHP) forward reservations (noted 2026-10-12, PC)
+## 🔖 Import of the old PMS's (VHP) forward reservations — built 2026-10-15, not run on production yet (PC)
 
-The owner has an Excel file from the old system, `RESERVATION ZAHILL RESORT KINTAMANI.xlsx`, with the reservations made outside the PMS, and wants them put in. **Nothing is built or imported.** The file is NOT in git and must never be (guest emails, phones, birth dates) — copy it to the machine by hand and keep it out of commits (`.git/info/exclude`).
+**Status (2026-10-15):** built on `dev` — `server/maintenance/importVhpReservations.js` + `importVhpMapping.js`, migration 109 ("To check"), booking creation moved to `services/bookingCreateService.js`, same-type Change Room keeps the price. Tried on a copy of production for Nov–Dec 2026: 45 reservations / 132 rooms / Rp 200.212.413, 6 already in the PMS, Group 18 (28 Nov) doesn't fit. Production steps: CLAUDE.md → "Pending on the next production deploy". Full write-up: CLAUDE.md → "Import of the old PMS's (VHP) forward reservations". Next migration number: **110**. Still open: Group 18 / 28 Nov in VHP, agents' contract rates for the 2027 rate-0 series, deposits paid in VHP, then the rest of the file (2027–2028).
+
+The owner has an Excel file from the old system, `RESERVATION ZAHILL RESORT KINTAMANI.xlsx`, with the reservations made outside the PMS, and wants them put in. The text below is the original plan (2026-10-12). The file is NOT in git and must never be (guest emails, phones, birth dates) — copy it to the machine by hand and keep it out of commits (`.git/info/exclude`).
 
 **The file** (made about 2026-10-04): sheets `OCT - DEC 2026` (294 lines), `JAN - DEC 2027` (134), `JAN - DEC 2028` (13) = 441 lines, 207 reservation numbers. Row 1 headings, row 2 a "=====" ruler, data from row 3; the 2028 sheet has one more column (Flight and Time apart) — map by heading. Read it with `exceljs` from `server/node_modules`. On 2026-10-12: 62 lines already departed, 19 in house, 360 arriving later.
 
@@ -29,6 +31,14 @@ The owner has an Excel file from the old system, `RESERVATION ZAHILL RESORT KINT
 7. Order: restore a production backup locally (`/var/backups/zahill-pms/pms-*.sql.gz`) → dry run → owner reads the report → apply on the copy → check Reservations, Forecast, a group page → on production: `bash deploy.sh --backup-only`, dry run, `--apply`.
 
 **Owner still to answer:** (1) is the small RmNo number the number of rooms? (2) are rates all-in per night? (3) import from tomorrow's arrivals only (recommended)? (4) rate-0 lines: import at Rp 0 or leave out? (5) a production backup file to test against; (6) 801 vs 802–804: one "Villa" type fine? (7) the PMS source for each segment, and the company → agent table. 1, 2 and 5 block the build.
+
+**Answers + decisions (2026-10-14, PC):**
+- Rates **include** service & tax (Zahill is nett → stay price = rate × nights). Production has its own room type for 801 ("Villa 3 Bedroom" — exact name from the backup) and "Villa" for 802–804. No guest emails are switched on in production (recheck before the full import — the 10:00 pre-arrival job would mail imported guests).
+- **First run = arrivals 1 Nov – 31 Dec 2026 only, as a test:** 114 lines, 52 reservations; 75 lines with a real room, 31 empty, 8 with a small number (14334 "12" DLPD Group 18, 18657 "10", 18483 "5" + "2", 17873–17875 "5", 18759 "2"); one rate-0 line (Manumadi, complimentary).
+- Still open: (1) asked again with those examples — owner said RmNo is "the room number that will be assigned", the small numbers are not rooms; (4) agents' contract rates for rate-0 lines (not needed for Nov–Dec); deposits paid in VHP (owner to ask); the source / agent table for Nov–Dec's 21 companies (explained: KLIKNBOOK / MG Jarvis source, what TRAVASS LIFE is, agents matched against Agent Billing in the dry run); the backup file (steps given: `deploy.sh --backup-only` on the server, `scp` to `C:\pms-backups\`, outside the repo).
+- **Unassigned rooms — option 1 agreed (owner, 2026-10-14):** a booking always has a room. The import picks a free room of the type (one room free for the whole stay; a stay no single room can take is reported in the dry run, never overbooked) and FO moves it later with Change Room. True unassigned bookings with type-level availability (Opera / Mews style) are NOT built — same choice later for channel-manager reservations, which arrive by room type: pick a room on arrival + "to check".
+- **"To check" instead of a draft status** (a draft that holds no room would let the room be sold again; one that holds a room is just a booking): imported bookings are normal pending bookings carrying a list of points for FO (room picked automatically, agent not found — VHP name, no rate, placeholder guest names, guests guessed, check the deposit in VHP). Reservations → *To check (N)*, a yellow box on the booking page with **Checked ✓** (who / when → Edit History), maybe a Dashboard count. Needs migration 109. Reusable for the channel manager.
+- **Change Room within the same room type keeps the price** (done 2026-10-14, see the CLAUDE.md Change Room note): a room move used to suggest "normal rate − booked price" as a charge and alert the owner when FO chose Complimentary.
 
 ---
 

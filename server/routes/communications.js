@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const { sendBookingEmail } = require('../services/mailer');
+const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
 
-const TRIGGERS = ['booking_confirmed', 'pre_arrival', 'post_checkout'];
+// Same list as the email_templates CHECK (migration 033).
+const TRIGGERS = ['booking_confirmed', 'pre_arrival', 'post_checkout', 'group_booking_confirmed'];
 
 // GET /api/communications/templates
 router.get('/templates', auth, async (req, res) => {
@@ -75,9 +76,14 @@ router.post('/test/:trigger', auth, async (req, res) => {
   if (!booking_id) return res.status(400).json({ error: 'booking_id required' });
 
   try {
-    const { rows: [booking] } = await db.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
+    const { rows: [booking] } = await db.query('SELECT id, reservation_group_id FROM bookings WHERE id = $1 AND property_id = $2', [booking_id, req.propertyId]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
+    // The group email goes to the group's booker, for the whole group.
+    if (trigger === 'group_booking_confirmed') {
+      if (!booking.reservation_group_id) return res.status(400).json({ error: 'Pick a booking that is part of a group booking' });
+      return res.json(await sendGroupBookingEmail(req.propertyId, booking.reservation_group_id));
+    }
     const result = await sendBookingEmail(req.propertyId, booking_id, trigger);
     res.json(result);
   } catch (err) {
