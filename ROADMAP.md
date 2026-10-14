@@ -4,7 +4,9 @@ Last updated: 2026-10-12
 
 ---
 
-## 🔖 Import of the old PMS's (VHP) forward reservations — built 2026-10-15, not run on production yet (PC)
+## 🔖 Import of the old PMS's (VHP) forward reservations — Nov–Dec 2026 imported on production 2026-10-15 (PC)
+
+**Production (2026-10-15):** `main` 5918ace deployed; Nov–Dec imported (45 reservations / 132 rooms, Group 18 left for FO). FO is correcting through Reservations → ⚠ To check with the Indonesian checklist. Next: 2027–2028 once contract rates / deposits are known.
 
 **Status (2026-10-15):** built on `dev` — `server/maintenance/importVhpReservations.js` + `importVhpMapping.js`, migration 109 ("To check"), booking creation moved to `services/bookingCreateService.js`, same-type Change Room keeps the price. Tried on a copy of production for Nov–Dec 2026: 45 reservations / 132 rooms / Rp 200.212.413, 6 already in the PMS, Group 18 (28 Nov) doesn't fit. Production steps: CLAUDE.md → "Pending on the next production deploy". Full write-up: CLAUDE.md → "Import of the old PMS's (VHP) forward reservations". Next migration number: **110**. Still open: Group 18 / 28 Nov in VHP, agents' contract rates for the 2027 rate-0 series, deposits paid in VHP, then the rest of the file (2027–2028).
 
