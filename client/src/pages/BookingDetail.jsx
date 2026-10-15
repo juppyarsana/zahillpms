@@ -26,6 +26,7 @@ import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentB
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
+import { otaName, roomPending } from '../lib/otaDue';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -172,6 +173,32 @@ function NotChargedYet({ rows, rates }) {
 }
 
 function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+
+// OTA booking (e.g. Agoda): what of the balance is the OTA's to pay and what
+// the guest pays at the desk — so FO doesn't ask the guest for the room.
+function OtaNote({ ota, amount }) {
+  return (
+    <div style={{ fontSize: 12, marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'var(--cream)', border: '1px solid var(--border)', lineHeight: 1.45 }}>
+      🌐 {fmtIDR(amount)} is paid to the hotel by <b>{ota}</b> — the guest paid {ota}. <b>Don't collect it from the guest.</b>{' '}
+      Mark it received when {ota} pays the hotel.
+    </div>
+  );
+}
+
+function OtaSplit({ ota, amount, due }) {
+  const guest = Math.max(0, due - amount);
+  return (
+    <div style={{ fontSize: 13, marginTop: 6 }}>
+      <div className="flex-between">
+        <span className="text-muted">🌐 Room — paid by {ota}, not the guest</span><span>{fmtIDR(Math.min(amount, Math.max(due, 0)))}</span>
+      </div>
+      <div className="flex-between" style={{ fontWeight: 700 }}>
+        <span>Guest pays at the desk</span>
+        <span style={{ color: guest >= 1 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>{fmtIDR(guest)}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function BookingDetail() {
   const { id } = useParams();
@@ -862,6 +889,9 @@ export default function BookingDetail() {
   const roomPaymentLines = (booking.payments || []).filter(p => (p.type === 'deposit' || p.type === 'balance') && parseFloat(p.amount) > 0);
   const roomPaid = roomPaymentLines.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
   const bookingNet = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
+  // OTA booking: the open room lines are the OTA's to pay, not the guest's.
+  const ota = otaName(sources, booking.source);
+  const otaOpen = ota && !['cancelled', 'no_show'].includes(booking.status) ? roomPending(booking.payments) : 0;
   const pendingBalance = roomPaymentLines
     .filter(p => p.type === 'balance' && p.status !== 'received')
     .reduce((s, p) => s + parseFloat(p.amount), 0);
@@ -1285,10 +1315,11 @@ export default function BookingDetail() {
             {Math.abs(bookingNet - roomPaid) >= 1 && (
               <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
                 color: roomPaid > bookingNet ? 'var(--color-danger, #dc2626)' : undefined }}>
-                <span>{roomPaid > bookingNet ? 'Room overpaid — refund to guest' : 'Room still to pay'}</span>
+                <span>{roomPaid > bookingNet ? 'Room overpaid — refund to guest' : otaOpen >= 1 ? `Room still to pay — by ${ota}` : 'Room still to pay'}</span>
                 <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
               </div>
             )}
+            {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} />}
           </>
         )}
         {!['cancelled', 'no_show'].includes(booking.status) && (
@@ -1402,6 +1433,7 @@ export default function BookingDetail() {
                       {fmtIDR(shownTotal(estimate.balance_due, estimate))}
                     </span>
                   </div>
+                  {otaOpen >= 1 && <OtaSplit ota={ota} amount={otaOpen} due={shownTotal(estimate.balance_due, estimate)} />}
                   {estimate.group ? (
                     <div style={{ fontSize: 12, marginTop: 6 }}>
                       {fmtIDR(shownTotal(estimate.group.group_total, estimate))} of it is on the{' '}
@@ -1602,6 +1634,7 @@ export default function BookingDetail() {
                     <div className="flex-between" style={{ fontWeight: 700, fontSize: 16, borderTop: '2px solid var(--border)', paddingTop: 6 }}>
                       <span>Balance due</span><span style={{ color }}>{fmtIDR(due)}</span>
                     </div>
+                    {otaOpen >= 1 && <OtaSplit ota={ota} amount={otaOpen} due={due} />}
                   </div>
                 );
               })()}

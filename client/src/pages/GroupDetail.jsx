@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import ReasonModal from '../components/ReasonModal';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
+import { otaName, roomPending } from '../lib/otaDue';
 import { useAuth } from '../context/AuthContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import MasterFolio from '../components/MasterFolio';
@@ -150,7 +151,7 @@ export default function GroupDetail() {
   // Group payment: one payment from the group (e.g. the booker's single
   // transfer) marks several rooms' deposit/balance lines received at once;
   // each room's status updates like "Mark Received" on the room itself.
-  const { paymentMethods } = useSettings();
+  const { paymentMethods, sources } = useSettings();
   const payMethods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const [paying, setPaying] = useState(false);
@@ -379,6 +380,11 @@ export default function GroupDetail() {
   if (!data) return <div className="alert alert-error">Group not found</div>;
 
   const { group, bookings, rollup } = data;
+  // OTA rooms (e.g. Agoda): their open room lines are the OTA's to pay, not
+  // the guest's — shown apart so FO doesn't ask the guest for them.
+  const otaOpenOf = b => (!data.bill && otaName(sources, b.source) && !['cancelled', 'no_show'].includes(b.status)) ? roomPending(b.payments) : 0;
+  const otaOpenTotal = bookings.reduce((s, b) => s + otaOpenOf(b), 0);
+  const otaNames = [...new Set(bookings.filter(b => otaOpenOf(b) >= 1).map(b => otaName(sources, b.source)))].join(' / ');
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
   const assignableRooms = bookings.filter(b => !['cancelled', 'no_show', 'checked_out'].includes(b.status));
   const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
@@ -552,6 +558,13 @@ export default function GroupDetail() {
                       .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status !== 'received' && parseFloat(p.amount) > 0)
                       .reduce((s, p) => s + parseFloat(p.amount), 0);
                     if (unpaid <= 0 || ['cancelled', 'no_show'].includes(b.status)) return null;
+                    const ota = otaName(sources, b.source);
+                    if (ota && otaOpenOf(b) >= unpaid - 0.5) return (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}
+                        title={`The guest paid ${ota}; ${ota} pays the hotel. Nothing to collect from the guest for the room.`}>
+                        🌐 {fmtIDR(unpaid)} by {ota}
+                      </span>
+                    );
                     return (
                       <>
                         <span style={{ fontSize: 12, color: 'var(--color-danger, #dc2626)', fontWeight: 600 }}>{fmtIDR(unpaid)} unpaid</span>
@@ -601,6 +614,22 @@ export default function GroupDetail() {
                 {fmtIDR(rollup.balance_due)}
               </span>
             </div>
+            {otaOpenTotal >= 1 && (
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                <div className="flex-between">
+                  <span className="text-muted">🌐 Rooms — paid by {otaNames}, not the guests</span>
+                  <span>{fmtIDR(Math.min(otaOpenTotal, Math.max(rollup.balance_due, 0)))}</span>
+                </div>
+                <div className="flex-between" style={{ fontWeight: 700 }}>
+                  <span>Guests pay at the desk</span>
+                  <span>{fmtIDR(Math.max(0, rollup.balance_due - otaOpenTotal))}</span>
+                </div>
+                <div className="text-muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
+                  The guests paid {otaNames}; {otaNames} pays the hotel. Mark each room's line received when that money comes in.
+                  Extras (restaurant, extra bed…) are on each room's folio.
+                </div>
+              </div>
+            )}
             {rollup.paid_on_cancelled > 0 && (
               <div className="alert alert-error" style={{ fontSize: 12, marginTop: 8 }}>
                 {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
