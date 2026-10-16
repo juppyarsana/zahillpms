@@ -18,10 +18,21 @@ const DEFAULT_CHART = [
   ['1210', 'Guest ledger', 'asset'],
   ['1220', 'Agent & company receivables', 'asset'],
   ['1230', 'OTA receivables', 'asset'],
+  ['1310', 'Inventory', 'asset'],
+  ['1410', 'Prepaid expenses', 'asset'],
+  ['1510', 'Fixed assets — buildings & equipment', 'asset'],
+  ['1590', 'Accumulated depreciation', 'asset'],
   ['2110', 'Advance deposits', 'liability'],
   ['2120', 'Service charge payable', 'liability'],
   ['2130', 'Hotel & restaurant tax payable (PB1)', 'liability'],
   ['2140', 'Agent commission payable', 'liability'],
+  ['2150', 'Accounts payable — suppliers', 'liability'],
+  ['2160', 'Salaries & wages payable', 'liability'],
+  ['2170', 'Taxes payable — PPh', 'liability'],
+  ['2190', 'Other payables', 'liability'],
+  ['3110', "Owner's capital", 'equity'],
+  ['3120', 'Retained earnings', 'equity'],
+  ['3190', 'Opening balance equity', 'equity'],
   ['4110', 'Room revenue', 'revenue', 'rev.rooms'],
   ['4210', 'F&B revenue — meal plans', 'revenue', 'rev.fnb'],
   ['4220', 'F&B revenue — restaurant', 'revenue', 'rev.fnb'],
@@ -159,6 +170,11 @@ async function loadMapping(propertyId) {
     // The account behind a key; an unknown payment method (deleted since)
     // falls back to "other receipts".
     resolve(key) {
+      // A line of a journal entry names its account itself (glEntryService).
+      if (key.startsWith('acct.')) {
+        const a = byId.get(key.slice(5));
+        return { key, label: a ? a.name : 'Account no longer in the chart', account: a || null };
+      }
       const k = map.get(key);
       if (k) return { key, label: k.label, account: k.account };
       if (key.startsWith('pay.')) return { key, label: key.slice(4), account: byCode.get('1150') || null };

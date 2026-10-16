@@ -22,7 +22,7 @@
 ## Asal angka
 
 - **Pendapatan**: tagihan tamu, per malam — sama dengan Daily journal.
-- **Biaya**: yang diinput di [Back Office → Expenses](/back-office), ditambah komisi agen. Biaya yang belum diinput belum masuk Laba Rugi.
+- **Biaya**: [Back Office → Expenses](/back-office), komisi agen, dan [jurnal manual](/guide/journal-entries) akuntan (gaji, penyusutan, sewa…). Biaya yang tidak diinput di salah satunya belum masuk Laba Rugi.
 - Angka sebulan baru final setelah hari-harinya ditutup (**Daily journal → Close days**). Sebelum itu, koreksi akan mengubah angkanya.
 
 ## Memindah akun ke baris lain

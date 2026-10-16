@@ -46,6 +46,8 @@ const ENTRIES = [
   ['agent_paid', 'Money received from agents'],
   ['commission', 'Agent commission'],
   ['expenses', 'Expenses'],
+  ['opening', 'Opening balances'],
+  ['manual', 'Journal entries'],
   ['adjust', 'Corrections to closed days'],
 ];
 const ENTRY_LABEL = Object.fromEntries(ENTRIES);
@@ -55,6 +57,7 @@ const isMoney = p => MONEY_ENTRIES.includes(p.of_entry || p.entry) && p.key.star
 const LOOKBACK_DAYS = 366;   // how far back closed days are checked for changes
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const MAX_DAYS = 92;
+const entryNo = n => `JE-${String(n).padStart(4, '0')}`;
 
 // A sold line's net amount by revenue key. `items` = the sale's lines
 // (category, subtotal, meal) — per-night lines are left out, they post night
@@ -435,6 +438,17 @@ async function collectPosts(propertyId, from, to) {
     post(e.day, 'expenses', `pay.${e.payment_method || 'other'}`, -num(e.amount), '', memo);
   }
 
+  // ── The accountant's own entries (migration 111): stored, each line on its account ──
+  const { rows: manual } = await db.query(`
+    SELECT ${ymd('e.entry_date')} AS day, e.kind, e.entry_no, e.memo AS entry_memo, l.account_id, l.debit, l.credit, l.memo
+    FROM gl_entries e JOIN gl_entry_lines l ON l.entry_id = e.id
+    WHERE e.property_id = $3 AND e.is_voided = false AND e.entry_date BETWEEN $1::date AND $2::date
+    ORDER BY e.entry_no, l.line_no`, P);
+  for (const l of manual) {
+    post(l.day, l.kind === 'opening' ? 'opening' : 'manual', `acct.${l.account_id}`, num(l.debit) - num(l.credit),
+      entryNo(l.entry_no), l.memo || l.entry_memo);
+  }
+
   return { posts, mapping };
 }
 
@@ -654,7 +668,8 @@ async function closingStatus(propertyId) {
       return { ref: p.ref, what: ENTRY_LABEL[p.of_entry] || p.of_entry, account_code: r.account?.code || '—', account_name: r.account?.name || r.label, ...side(p.amount) };
     }),
   }));
-  return { closed_from: pending.first, closed_through: pending.last, corrections };
+  const { rows: [gs] } = await db.query(`SELECT ${ymd('books_start')} AS d FROM gl_settings WHERE property_id = $1`, [propertyId]);
+  return { closed_from: pending.first, closed_through: pending.last, books_start: gs?.d || null, corrections };
 }
 
 // Closes every day from the day after the last closed one (or `start`, the
@@ -668,7 +683,15 @@ async function closeDays(propertyId, upTo, userId, { start = null, today } = {})
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`gl_close:${propertyId}`]);
     const pending = await pendingCorrections(propertyId, client);
-    const from = pending.last ? addDays(pending.last, 1) : start;
+    // The first close starts on the first day of the books (gl_settings,
+    // migration 111) — set by this close when it isn't set yet.
+    const { rows: [setting] } = await client.query(
+      `SELECT ${ymd('books_start')} AS books_start FROM gl_settings WHERE property_id = $1`, [propertyId]);
+    const booksStart = setting?.books_start || null;
+    if (!pending.last && booksStart && start && start !== booksStart) {
+      return await fail(`The books start on ${booksStart} — the first close starts on that day`);
+    }
+    const from = pending.last ? addDays(pending.last, 1) : (booksStart || start);
     if (!from) return await fail('Choose the first day of the books');
     if (upTo < from) return await fail(pending.last ? `The books are already closed through ${pending.last}` : 'The last day must be on or after the first day');
     const span = Math.round((Date.parse(upTo) - Date.parse(from)) / 86400000) + 1;
@@ -691,6 +714,12 @@ async function closeDays(propertyId, upTo, userId, { start = null, today } = {})
       await client.query(
         'INSERT INTO gl_closed_days (property_id, business_date, closed_by, postings) VALUES ($1, $2, $3, $4)',
         [propertyId, d, userId || null, JSON.stringify(rows)]);
+    }
+    if (!booksStart) {
+      await client.query(
+        `INSERT INTO gl_settings (property_id, books_start, updated_by) VALUES ($1, $2, $3)
+         ON CONFLICT (property_id) DO UPDATE SET books_start = EXCLUDED.books_start, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+        [propertyId, from, userId || null]);
     }
     await client.query('COMMIT');
     return { closed: span, from, through: upTo, corrections: pending.posts.length };

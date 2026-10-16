@@ -10,6 +10,11 @@
 //   DELETE /closing/last        open the last closed day again (owner)
 //   GET  /pl?month=YYYY-MM      Profit & Loss: the month, the month before, year to date
 //   GET  /pl/xlsx | /pl/pdf     the same as Excel / PDF
+//   GET|PUT /settings           { books_start } the first day of the books
+//   GET  /entries  POST /entries  GET /entries/:id
+//   POST /entries/:id/void { reason }  /entries/:id/reverse { date, memo? }
+//   GET|PUT /opening            { balances: [{ account_id, amount }] } opening balances
+//   GET  /trial-balance?from=&to= (+ /xlsx)   GET /balance-sheet?date= (+ /xlsx, /pdf)
 // Owner, or the `accounting` permission (an accountant's login).
 const router = require('express').Router();
 const db = require('../db');
@@ -151,6 +156,83 @@ router.get('/journal/xlsx', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ── Journal entries, opening balances, first day of the books (migration 111) ──
+const gl = require('../services/glEntryService');
+const userOf = req => req.user.userId || req.user.id;
+const reply = (res, r, okStatus = 200) => (r.error ? res.status(r.status || 400).json({ error: r.error }) : res.status(okStatus).json(r));
+const wrap = fn => async (req, res) => {
+  try { await fn(req, res); } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+router.get('/settings', wrap(async (req, res) => res.json(await gl.settings(req.propertyId))));
+router.put('/settings', wrap(async (req, res) => reply(res, await gl.setBooksStart(req.propertyId, userOf(req), String(req.body?.books_start || ''), todayWITA()))));
+
+router.get('/entries', wrap(async (req, res) => res.json(await gl.listEntries(req.propertyId, {
+  from: req.query.from, to: req.query.to, q: req.query.q ? String(req.query.q).slice(0, 100) : '', voided: req.query.voided === '1',
+}))));
+router.post('/entries', wrap(async (req, res) => reply(res, await gl.createEntry(req.propertyId, userOf(req), req.body || {}, todayWITA()), 201)));
+router.get('/entries/:id', wrap(async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Entry not found' });
+  const e = await gl.getEntry(req.propertyId, req.params.id);
+  return e ? res.json(e) : res.status(404).json({ error: 'Entry not found' });
+}));
+router.post('/entries/:id/void', wrap(async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Entry not found' });
+  reply(res, await gl.voidEntry(req.propertyId, req.params.id, userOf(req), req.body?.reason));
+}));
+router.post('/entries/:id/reverse', wrap(async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Entry not found' });
+  reply(res, await gl.reverseEntry(req.propertyId, req.params.id, userOf(req), req.body || {}, todayWITA()), 201);
+}));
+
+router.get('/opening', wrap(async (req, res) => res.json(await gl.openingView(req.propertyId))));
+router.put('/opening', wrap(async (req, res) => reply(res, await gl.saveOpening(req.propertyId, userOf(req), req.body?.balances))));
+
+// ── Trial balance + balance sheet (migration 111) ──
+const ledger = require('../services/ledgerService');
+async function sendFile(res, buf, type, name) {
+  res.setHeader('Content-Type', type);
+  res.setHeader('Content-Disposition', `${type === 'application/pdf' ? 'inline' : 'attachment'}; filename="${name}"`);
+  res.send(Buffer.from(buf));
+}
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+async function tbFor(req, res) {
+  const p = period(req, res);
+  if (!p) return null;
+  const tb = await ledger.trialBalance(req.propertyId, p.from, p.to);
+  if (tb.error) { res.status(tb.status || 400).json({ error: tb.error }); return null; }
+  return tb;
+}
+router.get('/trial-balance', wrap(async (req, res) => { const tb = await tbFor(req, res); if (tb) res.json(tb); }));
+router.get('/trial-balance/xlsx', wrap(async (req, res) => {
+  const tb = await tbFor(req, res);
+  if (!tb) return;
+  const { buildTrialBalanceXlsx } = require('../services/ledgerExport');
+  await sendFile(res, await buildTrialBalanceXlsx(tb, await propertyFor(req.propertyId)), XLSX, `trial-balance-${tb.from}_to_${tb.to}.xlsx`);
+}));
+
+async function bsFor(req, res) {
+  const date = String(req.query.date || todayWITA());
+  if (!DATE_RE.test(date) || isNaN(Date.parse(date))) { res.status(400).json({ error: 'date must be YYYY-MM-DD' }); return null; }
+  const bs = await ledger.balanceSheet(req.propertyId, date);
+  if (bs.error) { res.status(bs.status || 400).json({ error: bs.error }); return null; }
+  return bs;
+}
+router.get('/balance-sheet', wrap(async (req, res) => { const bs = await bsFor(req, res); if (bs) res.json(bs); }));
+router.get('/balance-sheet/xlsx', wrap(async (req, res) => {
+  const bs = await bsFor(req, res);
+  if (!bs) return;
+  const { buildBalanceSheetXlsx } = require('../services/ledgerExport');
+  await sendFile(res, await buildBalanceSheetXlsx(bs, await propertyFor(req.propertyId)), XLSX, `balance-sheet-${bs.date}.xlsx`);
+}));
+router.get('/balance-sheet/pdf', wrap(async (req, res) => {
+  const bs = await bsFor(req, res);
+  if (!bs) return;
+  const { buildBalanceSheetPdf } = require('../services/ledgerExport');
+  await sendFile(res, await buildBalanceSheetPdf(bs, await propertyFor(req.propertyId)), 'application/pdf', `balance-sheet-${bs.date}.pdf`);
+}));
 
 // ── Profit & Loss (migration 110) ──
 async function plFor(req, res) {

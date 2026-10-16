@@ -6,6 +6,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { propertyToday } from '../lib/propertyTime';
 import { useAuth } from '../context/AuthContext';
+import { EntriesTab, BalanceSheetTab, TrialBalanceTab } from './accounting/LedgerTabs';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const amt = n => (n ? Math.round(Number(n)).toLocaleString('id-ID') : '');
@@ -25,7 +26,10 @@ const KINDS = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenu
 
 const TABS = [
   { key: 'journal', label: '📒 Daily journal' },
+  { key: 'entries', label: '✍ Journal entries' },
   { key: 'pl', label: '📊 Profit & Loss' },
+  { key: 'bs', label: '⚖ Balance sheet' },
+  { key: 'tb', label: '🧮 Trial balance' },
   { key: 'accounts', label: '🗂 Accounts' },
 ];
 
@@ -37,7 +41,7 @@ export default function Accounting() {
       <div className="page-header">
         <div>
           <div className="page-title">Accounting</div>
-          <div className="page-subtitle">The daily journal and the Profit & Loss, made from what the PMS already records</div>
+          <div className="page-subtitle">The books: the daily journal from what the PMS records, your own entries, the Profit &amp; Loss and the balance sheet</div>
         </div>
       </div>
       <div className="tab-bar">
@@ -45,7 +49,8 @@ export default function Accounting() {
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
-      {tab === 'journal' ? <JournalTab /> : tab === 'pl' ? <PlTab /> : <AccountsTab />}
+      {tab === 'journal' ? <JournalTab /> : tab === 'entries' ? <EntriesTab /> : tab === 'pl' ? <PlTab />
+        : tab === 'bs' ? <BalanceSheetTab /> : tab === 'tb' ? <TrialBalanceTab /> : <AccountsTab />}
     </div>
   );
 }
@@ -137,7 +142,7 @@ function PlTab() {
         <div className="card">
           <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
             Net amounts — service charge (paid to staff) and tax are not revenue. Revenue is counted night by night as it is posted to guests' bills;
-            costs come from <b>Back Office → Expenses</b> and agent commission.{' '}
+            costs from <b>Back Office → Expenses</b>, agent commission and the <b>journal entries</b>.{' '}
             {cols.period.partial && <>{cols.period.label} is the month so far. </>}
             {data.closed_through ? <>Days up to {fmtLong(data.closed_through)} are closed; later days can still change.</> : <>No day is closed yet, so every figure can still change.</>}
             {' '}% is of total revenue, or of the department's own revenue for its expenses and profit. Click a line to see its accounts.{' '}
@@ -460,7 +465,7 @@ function ClosingCard({ version, onChanged }) {
         setSt(r.data);
         const yesterday = shiftDate(r.data.today, -1);
         setThrough(t => t || yesterday);
-        setStart(s0 => s0 || yesterday.slice(0, 8) + '01');
+        setStart(s0 => r.data.books_start || s0 || yesterday.slice(0, 8) + '01');
       })
       .catch(err => { if (!off) setError(err.response?.data?.error || 'Failed to load'); });
     return () => { off = true; };
@@ -507,10 +512,12 @@ function ClosingCard({ version, onChanged }) {
       {error && <div className="alert alert-error" style={{ marginTop: 8 }}><div>{error}</div></div>}
 
       <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-        {!st.closed_through && (<>
+        {!st.closed_through && (st.books_start ? (
+          <span style={{ fontSize: 13 }}>Books start {fmtLong(st.books_start)} ·</span>
+        ) : (<>
           <span style={{ fontSize: 13 }}>First day of the books</span>
           <input className="form-input" type="date" value={start} max={yesterday} onChange={e => { setStart(e.target.value); setStep(null); }} style={{ width: 160 }} />
-        </>)}
+        </>))}
         <span style={{ fontSize: 13 }}>Close {st.closed_through ? `from ${fmtLong(firstOpen)} ` : ''}up to</span>
         <input className="form-input" type="date" value={through} min={firstOpen || undefined} max={yesterday}
           onChange={e => { setThrough(e.target.value); setStep(null); }} style={{ width: 160 }} />

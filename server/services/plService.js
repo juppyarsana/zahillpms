@@ -43,6 +43,16 @@ function periods(month, today) {
 async function buildPl(propertyId, month, today) {
   const p = periods(month, today);
   if (p.error) return p;
+  // Year to date starts on the first day of the books when that is later in
+  // the year (earlier figures are in the old system's books) — so it equals
+  // the balance sheet's "Profit this year".
+  const { rows: [gs] } = await db.query(`SELECT to_char(books_start, 'YYYY-MM-DD') AS d FROM gl_settings WHERE property_id = $1`, [propertyId]);
+  const booksStart = gs?.d || null;
+  if (booksStart && booksStart > p.ytd.from && booksStart <= p.ytd.to) {
+    p.ytd.from = booksStart;
+    const f = (d, o) => new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', o);
+    p.ytd.label = `${f(booksStart, { day: 'numeric', month: 'short' })} – ${f(p.ytd.to, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  }
   const from = p.previous.from < p.ytd.from ? p.previous.from : p.ytd.from;
   const [{ posts }, { rows: accounts }, { rows: [closing] }] = await Promise.all([
     postingsFor(propertyId, from, p.period.to),
@@ -145,6 +155,7 @@ async function buildPl(propertyId, month, today) {
     off_pl: accountsOn(NONE),
     unmapped: [...unmapped],
     closed_through: closing?.through || null,
+    books_start: booksStart,
   };
 }
 

@@ -20,6 +20,7 @@ export const GROUPS = [
   ] },
   { label: { id: 'Akuntansi', en: 'Accounting' }, chapters: [
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
+    { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },
   ] },
 ];
 
