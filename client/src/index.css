@@ -973,6 +973,10 @@ tr:hover td { background: #FAFAF8; }
 .detail-header.tone-blue  { --dh-tone: var(--info); }
 .detail-header.tone-red   { --dh-tone: var(--danger); }
 .detail-header.tone-gray  { --dh-tone: #9CA3AF; }
+/* booking / group: the Dashboard room board's colours (lib/stayTone.js, Dashboard TILE_BG) */
+.detail-header.tone-arriving  { --dh-tone: #3B82F6; }
+.detail-header.tone-occupied  { --dh-tone: #DC2626; }
+.detail-header.tone-departing { --dh-tone: #9333EA; }
 .dh-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; padding: 18px 20px 14px; }
 .dh-titles { flex: 1 1 260px; min-width: 0; }
 .dh-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }

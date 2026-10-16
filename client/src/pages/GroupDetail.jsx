@@ -4,6 +4,7 @@ import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
+import { stayTone } from '../lib/stayTone';
 import ReasonModal from '../components/ReasonModal';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
@@ -446,7 +447,9 @@ export default function GroupDetail() {
         back={{ to: '/reservations', label: 'Reservations' }}
         kind="Group booking"
         title={group.guest_name}
-        tone={groupState.color}
+        tone={groupState.label === 'Upcoming' ? 'arriving'
+          : groupState.label.startsWith('In house') ? stayTone('checked_in', group.check_out_date)
+          : 'gray'}
         facts={[
           { label: 'Stay', value: `${fmtDate(group.check_in_date)} → ${fmtDate(group.check_out_date, true)}`,
             sub: `${groupNights} night${groupNights === 1 ? '' : 's'}` },

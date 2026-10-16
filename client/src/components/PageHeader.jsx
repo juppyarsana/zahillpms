@@ -14,7 +14,8 @@ import BackLink from './BackLink';
 // kind:    'Booking #…'    what this page is, next to the back link
 // title:   the name people know it by (guest, company…)
 // badge:   status pill after the title
-// tone:    'amber' | 'green' | 'blue' | 'gray' | 'red' — the card's left edge (follow the status)
+// tone:    the card's left edge — booking / group: lib/stayTone.js (arriving / occupied / departing / gray,
+//          the Dashboard room board's colours); event: its status colour (amber / green / red / gray)
 // facts:   [{ label, value, sub? }] — the key facts strip (falsy skipped)
 // meta:    [node, …] — older one-line facts, joined with dots (when no `facts`)
 // actions: node — right side: labeled outline buttons, the primary button, then the More menu

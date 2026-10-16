@@ -11,6 +11,7 @@ import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
 import { JoinGroupModal, LeaveGroupModal } from '../components/GroupMove';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
+import { stayTone } from '../lib/stayTone';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
@@ -1005,7 +1006,7 @@ export default function BookingDetail() {
         back={{ to: '/reservations', label: 'Reservations' }}
         kind={`Booking #${id.slice(0, 8).toUpperCase()}`}
         title={booking.guest_name}
-        tone={STATUS_BADGE[booking.status] || 'gray'}
+        tone={stayTone(booking.status, booking.check_out_date)}
         facts={[
           { label: 'Room', value: booking.unit_name, sub: booking.room_type_name },
           { label: 'Stay', value: `${fmtShortDate(booking.check_in_date)} → ${fmtShortDate(booking.check_out_date)} ${String(booking.check_out_date).slice(0, 4)}`,
