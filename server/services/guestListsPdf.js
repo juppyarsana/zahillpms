@@ -45,7 +45,8 @@ function cells(list, r, isToday) {
   const due = parseFloat(r.balance_due) || 0;
   return {
     room: [r.unit_name, r.unit_type].filter(Boolean).join('\n'),
-    guest: [r.guest_name, [r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · ')].filter(Boolean).join('\n'),
+    guest: [r.guest_name, [r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · '),
+      (r.other_guests || []).length ? `+ ${r.other_guests.map(g => g.name).join(', ')}` : null].filter(Boolean).join('\n'),
     pax: String(r.num_guests ?? '') + (r.extra_beds > 0 ? `+${r.extra_beds}` : ''),
     // Standard PDF Helvetica has no arrow glyph — a dash renders everywhere.
     stay: `${fmtShort(r.check_in_date)} – ${fmtShort(r.check_out_date)}\n${r.nights} night${r.nights === 1 ? '' : 's'}`,

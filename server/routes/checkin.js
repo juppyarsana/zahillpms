@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const { otherGuestsFor } = require('../services/otherGuests');
 const auth = require('../middleware/auth');
 const agentBilling = require('../services/agentBillingService');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
@@ -275,6 +276,9 @@ async function loadRegCardData(where, params) {
     const bf = d.includes_breakfast, lu = d.includes_lunch, di = d.includes_dinner;
     d.rate_includes = !meals ? null : bf && lu && di ? 'full board' : bf && di ? 'half board' : bf && !lu && !di ? 'breakfast' : 'meals';
   }
+  // Other guests in the room (migration 112) — a line each on the card.
+  const others = await otherGuestsFor(db, rows.map(d => d.booking_id));
+  for (const d of rows) d.other_guests = others.get(d.booking_id) || [];
   return rows;
 }
 

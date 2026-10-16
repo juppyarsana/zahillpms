@@ -8,6 +8,7 @@ import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
+import OtherGuests from '../components/OtherGuests';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
@@ -569,6 +570,7 @@ export default function CheckIn() {
                           You can skip the photo and add it later from the guest profile if needed.
                         </div>
                       )}
+                      <OtherGuests bookingId={selected.id} compact />
                     </>
                   )}
 

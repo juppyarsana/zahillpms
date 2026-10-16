@@ -41,14 +41,16 @@ function gridRow(doc, { x = 50, width = 495, height = 38, cells }) {
   const y = doc.y;
   const totalWeight = cells.reduce((sum, c) => sum + (c.weight || 1), 0);
   let cx = x;
+  const short = height < 36;   // a short row (other guests): label and value closer together
+  const labelY = short ? 4 : 6, valueY = short ? 16 : 19;
   cells.forEach(cell => {
     const w = width * (cell.weight || 1) / totalWeight;
     doc.lineWidth(0.75).strokeColor('#000').rect(cx, y, w, height).stroke();
     doc.font('Helvetica').fontSize(8).fillColor('#555')
-      .text(cell.label.toUpperCase() + ' :', cx + 6, y + 6, { width: w - 12 });
+      .text(cell.label.toUpperCase() + ' :', cx + 6, y + labelY, { width: w - 12 });
     if (cell.value) {
       doc.font('Helvetica-Bold').fontSize(10).fillColor('#000')
-        .text(cell.value, cx + 6, y + 19, { width: w - 12, height: height - 23, ellipsis: true });
+        .text(cell.value, cx + 6, y + valueY, { width: w - 12, height: Math.max(height - valueY - 3, 12), ellipsis: true });
     }
     cx += w;
   });
@@ -102,13 +104,28 @@ function renderRegistrationCard(doc, { property, data }) {
       { label: 'Nationality', value: data.nationality },
     ],
   });
+  // With other guests in the room (migration 112) Membership joins this row,
+  // and each other guest gets a slightly shorter row — so up to three still
+  // leave room to sign on the same page.
+  const others = data.other_guests || [];
   gridRow(doc, {
     cells: [
       { label: 'Mobile No.', value: data.mobile },
       { label: 'Payment Method', value: data.payment_method_label },
+      ...(others.length ? [{ label: 'Membership', value: data.membership }] : []),
     ],
   });
-  gridRow(doc, { cells: [{ label: 'Membership', value: data.membership }] });
+  if (!others.length) gridRow(doc, { cells: [{ label: 'Membership', value: data.membership }] });
+  for (const g of others) {
+    gridRow(doc, {
+      height: 32,
+      cells: [
+        { label: 'Other Guest', value: g.name, weight: 2 },
+        { label: 'Passport / ID No.', value: g.id_number, weight: 1.4 },
+        { label: 'Nationality', value: g.nationality, weight: 1.2 },
+      ],
+    });
+  }
 
   doc.y += 12;
 
@@ -138,7 +155,7 @@ function renderRegistrationCard(doc, { property, data }) {
   const BOTTOM_TABLE_H = 38 + 38 + 44;
   const PAGE_BOTTOM = doc.page.height - 50;
   let sigH = PAGE_BOTTOM - BOTTOM_TABLE_H - 16 - doc.y;
-  if (sigH < 70) { doc.addPage(); sigH = 150; }
+  if (sigH < 60) { doc.addPage(); sigH = 150; }
   sigH = Math.min(sigH, 280);
   const SIG_W = 240;
   const sigX = (doc.page.width - SIG_W) / 2;

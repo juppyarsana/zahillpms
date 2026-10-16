@@ -113,6 +113,7 @@ app.use('/api/display', require('./routes/display'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/complimentary'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/corrections'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/stayAddons'));
+app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/bookingGuests'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/restaurantRequests'));
 app.use('/api/bookings', auth, moduleGuard('reservations'), require('./routes/bookings'));
 app.use('/api/checkin', auth, moduleGuard('front_desk'), require('./routes/checkin'));

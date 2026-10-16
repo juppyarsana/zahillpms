@@ -63,21 +63,32 @@ router.get('/:id', auth, async (req, res) => {
       LEFT JOIN loyalty_tiers lt ON g.loyalty_tier_id = lt.id
       WHERE g.id = $1 AND g.property_id = $2`, [req.params.id, req.propertyId]);
     const prefsQ = db.query('SELECT * FROM guest_preferences WHERE guest_id = $1 ORDER BY category', [req.params.id]);
+    // Their own bookings, plus stays where they were another guest in the
+    // room (migration 112) — those carry with_guest_name and don't count
+    // towards their nights / spend (the booking is someone else's).
     const staysQ = db.query(`
-      SELECT b.*, u.name as unit_name
+      SELECT b.*, u.name as unit_name, NULL::text AS with_guest_name
       FROM bookings b
       JOIN units u ON b.unit_id = u.id
       WHERE b.guest_id = $1 AND b.property_id = $2
-      ORDER BY b.check_in_date DESC`, [req.params.id, req.propertyId]);
+      UNION ALL
+      SELECT b.*, u.name as unit_name, mg.name AS with_guest_name
+      FROM booking_guests bg
+      JOIN bookings b ON b.id = bg.booking_id
+      JOIN units u ON b.unit_id = u.id
+      JOIN guests mg ON mg.id = b.guest_id
+      WHERE bg.guest_id = $1 AND bg.property_id = $2
+      ORDER BY check_in_date DESC`, [req.params.id, req.propertyId]);
 
-    const [{ rows: [guest] }, { rows: prefs }, { rows: stays }] = await Promise.all([guestQ, prefsQ, staysQ]);
+    const [{ rows: [guest] }, { rows: allStays }, { rows: prefs }] = await Promise.all([guestQ, staysQ, prefsQ]);
     if (!guest) return res.status(404).json({ error: 'Guest not found' });
+    const stays = allStays.filter(s => !s.with_guest_name);
 
     const totalNights = stays.reduce((sum, s) => sum + (s.nights || 0), 0);
     const totalSpend = stays.reduce((sum, s) =>
       sum + parseFloat(s.room_revenue ?? s.total_amount ?? 0) + parseFloat(s.fnb_revenue || 0), 0);
 
-    res.json({ ...guest, preferences: prefs, stay_history: stays, lifetime: { stays: stays.length, nights: totalNights, spend: totalSpend } });
+    res.json({ ...guest, preferences: prefs, stay_history: allStays, lifetime: { stays: stays.length, nights: totalNights, spend: totalSpend } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -149,6 +160,11 @@ router.delete('/:id', auth, async (req, res) => {
     );
     if (bookings.length > 0) {
       return res.status(409).json({ error: 'Cannot delete guest with existing bookings' });
+    }
+    const { rows: shared } = await db.query(
+      'SELECT 1 FROM booking_guests WHERE guest_id = $1 AND property_id = $2 LIMIT 1', [req.params.id, req.propertyId]);
+    if (shared.length > 0) {
+      return res.status(409).json({ error: 'Cannot delete guest — they are listed as another guest on a booking' });
     }
     const { rows } = await db.query('DELETE FROM guests WHERE id = $1 AND property_id = $2 RETURNING id', [req.params.id, req.propertyId]);
     if (!rows[0]) return res.status(404).json({ error: 'Guest not found' });

@@ -13,7 +13,9 @@ bills (AP) → D — bank reconciliation (bank CSV import, matching; QRIS / card
 Booking.com payout matching. Before C–E: ask the accountant for payroll (totals or calculated?), a bank CSV per
 bank, an OTA payout report, their VHP P&L + chart, and the cut-off date (= first day of the books) with VHP's
 balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss" and "Accounting — journal entries".
-Next migration number: **112**.
+
+**Other guests in the room (migration 112, 2026-10-16, on `dev`):** FO asked to add a second guest to a room, optional — booking page Guest card and Check-in step 2, ID upload per guest, printed on the Registration Card and the police guest report. Details: CLAUDE.md → "Other guests in the room".
+Next migration number: **113**.
 
 ---
 
@@ -2072,7 +2074,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 112
+## Next migration number: 113
 
 ---
 

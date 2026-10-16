@@ -15,6 +15,7 @@ export const GROUPS = [
     { id: 'about', icon: '📘', title: { id: 'Tentang panduan ini', en: 'About this guide' } },
   ] },
   { label: { id: 'Front Desk', en: 'Front Desk' }, chapters: [
+    { id: 'other-guests', icon: '👥', title: { id: 'Tamu lain di kamar', en: 'Other guests in the room' } },
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
   ] },

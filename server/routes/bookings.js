@@ -24,6 +24,7 @@ const telegramService = require('../services/telegramService');
 const { sendControlAlert } = require('../services/ownerAlerts');
 const sse = require('../sse');
 const { renderGuestReport } = require('../services/guestReportPdf');
+const { otherGuestsFor } = require('../services/otherGuests');
 const { renderGuestLists, fmtLongDate } = require('../services/guestListsPdf');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { renderBalanceDue } = require('../services/balanceDuePdf');
@@ -231,7 +232,13 @@ router.get('/guest-report/pdf', auth, async (req, res) => {
 
     // A police report lists guests who actually stay: cancelled / no-show
     // bookings are left out unless that status was asked for explicitly.
-    const rows = req.query.status ? all : all.filter(b => !['cancelled', 'no_show'].includes(b.status));
+    const kept = req.query.status ? all : all.filter(b => !['cancelled', 'no_show'].includes(b.status));
+    // One line per person: the other guests in the room (migration 112) follow
+    // the booking's main guest.
+    const others = await otherGuestsFor(db, kept.map(b => b.id));
+    const rows = kept.flatMap(b => [b, ...(others.get(b.id) || []).map(g => ({
+      ...b, guest_name: g.name, nationality: g.nationality, id_number: g.id_number, other_guest: true,
+    }))]);
 
     const { date_from, date_to, month, year } = req.query;
     // Filename must stay ASCII-only (an en-dash or similar in a
@@ -475,7 +482,10 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
     // (the night audit only no-shows on the arrival day itself). Kept out of the three
     // lists and the counts, listed separately so someone cleans them up.
     const neverArrived = [];
+    // Other guests in the room (migration 112), shown under the main guest.
+    const others = await otherGuestsFor(db, rows.map(r => r.id));
     for (const r of rows) {
+      r.other_guests = (others.get(r.id) || []).map(g => ({ id: g.id, name: g.name, nationality: g.nationality }));
       // Same whole-stay figure as the Balance Due tab / the Folio Pro Forma
       // (nights + extras charged to the room + tax − payments), so the two
       // lists can never disagree. A credit shows as nothing owed.
@@ -1244,7 +1254,9 @@ router.get('/:id', auth, async (req, res) => {
       to_check_points = toCheck.points(f);
       to_check_bucket = toCheck.bucket(f);
     }
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket });
+    // Other guests in the room (migration 112).
+    const other_guests = (await otherGuestsFor(db, [booking.id])).get(booking.id) || [];
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

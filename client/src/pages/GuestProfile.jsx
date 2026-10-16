@@ -157,14 +157,17 @@ export default function GuestProfile() {
             <tbody>
               {(guest.stay_history||[]).map(s => (
                 <tr key={s.id}>
-                  <td style={{ fontWeight: 600 }}>{s.unit_name}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    {s.unit_name}
+                    {s.with_guest_name && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>Other guest · booked by {s.with_guest_name}</div>}
+                  </td>
                   <td>{s.check_in_date?.slice(0,10)}</td>
                   <td>{s.check_out_date?.slice(0,10)}</td>
                   <td>{s.nights}</td>
                   <td>
                     <SourceBadge sourceId={s.source} />
                   </td>
-                  <td style={{ fontWeight: 600 }}>{fmtIDR(s.total_amount)}</td>
+                  <td style={{ fontWeight: 600 }}>{s.with_guest_name ? '—' : fmtIDR(s.total_amount)}</td>
                   <td>
                     <span className={`badge ${STATUS_CLASS[s.status] || 'badge-gray'}`}>
                       {STATUS_LABEL[s.status] || s.status}

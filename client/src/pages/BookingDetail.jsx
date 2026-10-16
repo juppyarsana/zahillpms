@@ -15,6 +15,7 @@ import { stayTone } from '../lib/stayTone';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
+import OtherGuests from '../components/OtherGuests';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import ComplimentaryModal from '../components/ComplimentaryModal';
 import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
@@ -1125,6 +1126,8 @@ export default function BookingDetail() {
             <Link to={`/guests/${booking.guest_id}`} className="btn btn-sm btn-secondary">View Profile</Link>
           </div>
           <GuestIdDocument guestId={booking.guest_id} hasDocument={!!booking.guest_has_id_document} onChanged={load} compact />
+          <OtherGuests bookingId={booking.id} guests={booking.other_guests} onChanged={load} compact
+            readOnly={['cancelled', 'no_show'].includes(booking.status)} />
         </div>
 
         <div className="card">

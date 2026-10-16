@@ -55,6 +55,9 @@ function GuestCell({ r }) {
       <div className="text-muted" style={{ fontSize: 11 }}>
         {[r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · ')}
       </div>
+      {(r.other_guests || []).length > 0 && (
+        <div style={{ fontSize: 12 }}>+ {r.other_guests.map(g => g.name).join(', ')}</div>
+      )}
     </>
   );
 }
