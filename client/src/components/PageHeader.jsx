@@ -7,8 +7,8 @@ import BackLink from './BackLink';
 //   ▌ Lia Fadlia  [Pending]
 //   ▌ ROOM        STAY                   GUESTS   SOURCE    BALANCE DUE
 //   ▌ 103 · Delx  16 Oct → 17 Oct · 1 n  2        Direct    Rp 869.946
-//   ├──────────────────────────────────────────────────────────────────
-//   │ Details   Folio   Activities
+//   └──────────────────────────────────────────────────────────────────
+//     Details   Folio   Activities      ← under the card, pinned while scrolling
 //
 // back:    { to, label }   small back link (BackLink: back to where the user came from)
 // kind:    'Booking #…'    what this page is, next to the back link
@@ -18,12 +18,13 @@ import BackLink from './BackLink';
 // facts:   [{ label, value, sub? }] — the key facts strip (falsy skipped)
 // meta:    [node, …] — older one-line facts, joined with dots (when no `facts`)
 // actions: node — right side: labeled outline buttons, the primary button, then the More menu
-// tabs:    node — the page's tab buttons, attached to the bottom of the card
+// tabs:    node — the page's tab buttons, under the card, pinned to the top while scrolling
 // (List pages keep the plain `.page-header` — this card is for detail pages only.)
 export default function PageHeader({ back, kind, title, badge, tone = 'gray', facts = [], meta = [], actions, tabs }) {
   const strip = facts.filter(Boolean);
   const line = meta.filter(Boolean);
   return (
+    <>
     <div className={`detail-header tone-${tone}`}>
       <div className="dh-top">
         <div className="dh-titles">
@@ -57,7 +58,10 @@ export default function PageHeader({ back, kind, title, badge, tone = 'gray', fa
           ))}
         </div>
       )}
-      {tabs && <div className="dh-tabs">{tabs}</div>}
     </div>
+    {/* The tabs sit under the card, right above the content they switch, and
+        stay pinned at the top while a long page scrolls (owner, 2026-10-16). */}
+    {tabs && <div className="dh-tabs">{tabs}</div>}
+    </>
   );
 }
