@@ -823,6 +823,39 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
 
+### ▶ Handoff 2026-10-16 (PC → laptop): the run sheet for the next production session
+
+`dev` = `main` = 2373973, everything pushed. **No new migration since 109**, so the deploy is code only. The details of each step are in the items below.
+
+**On the laptop first:** `git pull` on `dev`, `npm install` in `client/` and `server/`, `npm run migrate` in `server/` (the laptop's local DB may not have 109 yet: "Booking not found" on a booking page means it doesn't). **The 2027–2028 Excel is NOT in git** (guest data). It is `C:\zahill_pms\Pick Up Booking 2027 & 2028.xlsx` on the PC. Copy it to the laptop (USB / Drive), or straight to the server, e.g. `scp "Pick Up Booking 2027 & 2028.xlsx" <user>@<server>:/var/www/zahill/server/maintenance/backups/`, a gitignored folder.
+
+**Production, in this order:**
+1. **Deploy.** `cd /var/www/zahill && bash deploy.sh`. It takes a backup itself. What it brings:
+   - To check per reservation and Set Prices (b680734).
+   - groupBillingToAgent script (2ac1ba1).
+   - Bill to agent = remaining balance (3840ee6).
+   - "Paid before check-out" label and hints (b84f76b).
+   - 📘 Guide / Panduan at `/guide` (f5ffe2d).
+   - New detail page header with pinned tabs and the stay-coloured edge (1e58d30…2373973).
+   - VHP import script fixes (4495016, 4cb21be, f72d79f).
+2. **Switch EXO TRAVEL, ALTAI INDONESIA and PT BALI DORADA TOURS & TRAVEL to "bill to agent".** Agent Billing → Edit → How they pay. Owner only.
+3. **Groups to per-room agent billing. Must be done before 18 Oct**, because the EXO group checks out on 17 Oct. Run `cd /var/www/zahill/server && node maintenance/groupBillingToAgent.js --property zahill` (dry run). On the copy it listed 11 groups and Rp 17.000.000 of group payments to move. If EXO / Bali Dorada are missing, step 2 isn't done. Then run it again with `--apply`. It skips N Purnama Aritonang (overpaid Rp 198.000): FO checks that price in VHP.
+4. **Void the Bali Dirt Bikes invoice** that holds room 107: Agent Billing → invoice → Void, reason "paid before check-out". Optional: Fix Agent Billing on the 16 stays that still say "Not invoiced yet" (cosmetic only).
+5. **Import 2027–2028:**
+   1. `bash deploy.sh --backup-only`.
+   2. Dry run: `cd server && node maintenance/importVhpReservations.js --property zahill --file "<path>/Pick Up Booking 2027 & 2028.xlsx" --from 2027-01-01 --to 2028-12-31 --create-agents`.
+   3. Expect about 106 reservations, 79 groups, 622 rooms, Rp 335.034.237, 12 agents created, nothing refused, and no warning about "guest pays" agents (if there is one, go back to step 2).
+   4. Run the same command with `--apply`.
+   5. **Write down the run file path it prints** (`maintenance/backups/vhp-import-zahill-<time>.json`). It is the only way to `--undo`.
+   6. Update this item and the "HOW TO UNDO" note with the real numbers and the path.
+6. **Tell FO:**
+   - Reservations → ⚠ To check, using 📘 Guide → To check list.
+   - The 384 Rp 0 rooms get their contract price with **Set Prices** on the group page (or Edit Price).
+   - After the import, the owner adds contacts and credit terms to the 12 new agents in Agent Billing. Adding a contact also clears that To check point.
+7. **Check after deploy:** a booking and a group page open (new header), `/guide` opens, and Agent Billing statements for BPKP / Smailing / Bali Dirt Bikes show 0.
+
+**Still open (not production):** the remaining guide chapters (order to be agreed with the owner; list under Important Conventions). The earlier Claude Doc guide can be deleted now that the guide is in the PMS (owner hasn't answered).
+
 - **VHP reservation import, Nov–Dec 2026 — DONE on production 2026-10-15** (`main` 5918ace deployed, migration 109; dry run = the copy's result exactly: 45 reservations, 19 groups, 132 rooms, Rp 200.212.413, 6 already in the PMS, Group 18 skipped). Run file on the server: `/var/www/zahill/server/maintenance/backups/vhp-import-zahill-2026-10-14T17-52-45-370Z.json` (for `--undo` — full steps under "HOW TO UNDO the VHP import" in the Frontend section). FO now works Reservations → ⚠ To check with the checklist `Cek Reservasi VHP - FO.docx` (owner's Documents folder, not in git); Group 18 (14334, 28 Nov) to be entered by hand once checked in VHP; VHP deposits recorded with the date actually paid. Not confirmed yet: the test booking (single + group) through New Booking after the deploy, and Group Booking Confirmed switched off. Next: the rest of the file (2027–2028) once agents' contract rates and deposits are known — the same command with another `--from` / `--to`.
 - **VHP import 2027–2028 — NOT run on production yet.** New file from the owner, `Pick Up Booking 2027 & 2028.xlsx` (sheets 2027 / 2028, repo root on the PC, kept out of git via `.git/info/exclude` — guest data). Dry run on the 15 Oct production copy (2026-10-16): 106 reservations, 79 groups, 622 rooms, 647 room-nights, Rp 335.034.237; 4 already in the PMS; nothing refused. Script change released for it: lines of one ResNo that continue each other (same type and rate, one starting the day another ends) are joined into one booking, and a group never gets the same room twice (ResNo 18450 was refused before). **Decided (2026-10-16):** the 384 rooms at Rp 0 (Khiri, Wicked, Bali Dorada, EXO 2028, Altai, Happy Trails, Manumadi, Gung Gek Trisna) are imported at Rp 0 and FO sets the contract price with Edit Price (it is on each booking's To check); the 12 agents not in the PMS are created by the script (`--create-agents`: Bali Profond, Khiri Travel, Wicked Adventures, Happy Trails, Manumadi Tours, MG Jarvis, Jans Tour, Golden Kris Tours, Asia Evolution, Eagle Voyages, BB Travel, Pacto — **billed to the agent** (city ledger: the hotel's team said every agent reservation is paid by the agent later), no commission, travel agent; the owner adds contacts / credit terms in Agent Billing; `--undo` removes them while unused). **Before `--apply`, switch EXO TRAVEL, ALTAI INDONESIA and PT BALI DORADA TOURS & TRAVEL to "bill to agent" in Agent Billing** (all three are "guest pays" on production; the dry run now warns about any agent it uses that isn't billed) — a group's billing is fixed when it is created: billed agent → one bill per room for the agent, else one bill for the group. Dry run with them switched (on the copy): same 106 / 622, nothing refused. Not checked: the Nov–Dec groups already imported under those agents were made as one bill for the group, and switching the agent does not change an existing group. Still needed: a fresh production backup (`deploy.sh --backup-only`) and a dry run on production itself. Command: `node maintenance/importVhpReservations.js --property zahill --file "<path>/Pick Up Booking 2027 & 2028.xlsx" --from 2027-01-01 --to 2028-12-31 --create-agents` (dry run), then the same with `--apply`; the run file it writes is what `--undo` needs.
 
