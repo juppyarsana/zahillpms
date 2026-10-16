@@ -4,7 +4,7 @@ Last updated: 2026-10-16
 
 ---
 
-## 🟡 Accounting step 2 — the accountant moves off VHP (started 2026-10-16)
+## 🟡 Accounting step 2 — the accountant moves off VHP (started 2026-10-16, PAUSED — continue when the owner says, after the accountant answers the questions below)
 
 The accountant asked for a P&L and bank reconciliation, and will move the whole back office (payroll totals,
 supplier bills) from VHP into the PMS. Order: **A — Profit & Loss ✅** and **B — journal entries, opening
