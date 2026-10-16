@@ -1231,6 +1231,15 @@ export default function BookingDetail() {
             style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
           {' '}for the whole stay.
         </div>
+        {/* Agent pays the hotel (city ledger): where its money is recorded. */}
+        {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status) && (
+          <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 12 }}><div>
+            {booking.folio_status
+              ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Agent Billing → Record Payment</b>, not here.</>
+              : <><b>{booking.agent_name}</b> pays the hotel. Money the agent sends <b>before check-out</b> (e.g. H-7) is recorded here — Mark Received, with the transfer reference.
+                  At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Agent Billing.</>}
+          </div></div>
+        )}
         {booking.night_prices?.length > 1 && (
           <div style={{ fontSize: 12, marginBottom: 10 }}>
             <span className="text-muted">Price per night{parseFloat(booking.discount_amount) > 0 ? ' (before discount)' : ''}: </span>

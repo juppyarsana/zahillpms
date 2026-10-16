@@ -276,7 +276,7 @@ function AgentDetail({ agentId }) {
         </div>
       </div>
 
-      <AgentBookings bookings={bookings} agent={agent} />
+      <AgentBookings bookings={bookings} agent={agent} owedIds={new Set(open_items.map(i => i.booking_id))} />
 
       <Section title={`Open Items (${open_items.length})`}>
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (
@@ -406,18 +406,25 @@ const STAGES = [
   ['cancelled', 'Cancelled / no-show', b => ['cancelled', 'no_show'].includes(b.status)],
 ];
 
-function billingText(b, billedMode) {
+function billingText(b, billedMode, owedIds) {
   if (b.status === 'checked_out') {
     if (b.folio_status === 'paid') return ['Paid by agent', 'badge-green'];
     if (b.folio_status === 'invoiced') return [`Invoiced${b.invoice_number ? ` · ${b.invoice_number}` : ''}`, 'badge-blue'];
+    // On the bill but nothing left to pay (paid on the reservation before
+    // check-out) — not an open item of the statement.
+    if (b.folio_status === 'pending_agent_invoice' && owedIds && !owedIds.has(b.id)) return ['Paid before check-out', 'badge-green'];
     if (b.folio_status === 'pending_agent_invoice') return ['On the bill · not invoiced', 'badge-amber'];
+    // A billed agent's stay checked out with nothing on the agent's bill was
+    // paid before check-out (on the reservation, usually H-7) — check-out
+    // only bills what is still owed.
+    if (billedMode) return ['Paid before check-out', 'badge-green'];
     return ['Guest paid (not on the agent\'s bill)', 'badge-gray'];
   }
   if (['cancelled', 'no_show'].includes(b.status)) return [b.status === 'no_show' ? 'No-show' : 'Cancelled', 'badge-gray'];
-  return billedMode ? ['Billed to the agent at check-out', 'badge-blue'] : ['Guest pays the hotel', 'badge-gray'];
+  return billedMode ? ['Unpaid part billed to the agent at check-out', 'badge-blue'] : ['Guest pays the hotel', 'badge-gray'];
 }
 
-function AgentBookings({ bookings, agent }) {
+function AgentBookings({ bookings, agent, owedIds }) {
   const nav = useNavigate();
   const counts = Object.fromEntries(STAGES.map(([k, , f]) => [k, bookings.filter(f).length]));
   const [stage, setStage] = useState(() => (STAGES.find(([k]) => counts[k] > 0) || STAGES[0])[0]);
@@ -441,7 +448,7 @@ function AgentBookings({ bookings, agent }) {
             </tr></thead>
             <tbody>
               {rows.map(b => {
-                const [text, badge] = billingText(b, billedMode);
+                const [text, badge] = billingText(b, billedMode, owedIds);
                 return (
                   <tr key={b.id} style={{ borderBottom: '1px solid #F3F4F6', cursor: 'pointer' }} onClick={() => nav(`/reservations/${b.id}`)}
                     onMouseEnter={e => { e.currentTarget.style.background = '#F9FAFB'; }} onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
@@ -462,7 +469,7 @@ function AgentBookings({ bookings, agent }) {
           </table></div>
           {stage === 'checked_out' && billedMode && rows.some(b => !b.folio_status) && (
             <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
-              "Guest paid" stays were checked out as normal guest stays (e.g. before this agent was set to be billed), so they're not on its bill.
+              "Paid before check-out" stays were fully paid on the reservation before the guest left, so nothing went on the agent's bill — check-out only bills what is still owed.
             </div>
           )}
         </>
@@ -536,6 +543,10 @@ function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, 
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          <div className="alert alert-info mb-3" style={{ fontSize: 12 }}><div>
+            For stays <b>already checked out</b> and on this agent's bill. Money the agent sends <b>before</b> the guest checks out
+            (e.g. H-7) is recorded on the reservation instead — Room Payment → Mark Received, or Record Group Payment on the group.
+          </div></div>
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Amount received *</label>
