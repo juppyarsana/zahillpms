@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import Icon from './Icon';
 
 // Generic dropdown menu — defaults to a "⋮ more actions" trigger, but pass
 // `label` (e.g. "Download") to render a labeled button instead, or `bare` to
@@ -9,6 +10,8 @@ import { useState, useRef, useEffect } from 'react';
 // out, so conditionally-shown actions can just be written as
 // `condition && {...}`) — an item can also be `{ divider: true }` to draw a
 // separating rule (e.g. before a "danger zone" group of destructive actions).
+// `label` + an Icon as `icon` = a labeled outline button with a chevron (detail
+// page headers: "Documents", "More").
 export default function ActionMenu({ items, icon = '⋮', label, ariaLabel = 'More actions', bare = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -35,12 +38,12 @@ export default function ActionMenu({ items, icon = '⋮', label, ariaLabel = 'Mo
   return (
     <div ref={ref} style={{ position: 'relative', ...(bare ? { display: 'flex' } : {}) }}>
       <button
-        className={bare ? '' : label ? 'btn btn-outline btn-sm' : 'btn btn-icon'}
+        className={bare ? '' : label ? 'btn btn-secondary btn-sm' : 'btn btn-icon'}
         onClick={() => setOpen(o => !o)}
         aria-label={ariaLabel}
         style={bare ? { height: '100%' } : label ? { display: 'flex', alignItems: 'center', gap: 6 } : { fontSize: 16, lineHeight: 1 }}
       >
-        {icon}{label && <>{label} ▾</>}
+        {icon}{label && <>{label}<Icon name="chevronDown" size={14} style={{ opacity: 0.7 }} /></>}
       </button>
       {open && (
         <div style={{

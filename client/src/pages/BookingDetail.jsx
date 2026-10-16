@@ -10,6 +10,7 @@ import ReasonModal from '../components/ReasonModal';
 import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
 import { JoinGroupModal, LeaveGroupModal } from '../components/GroupMove';
 import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import GuestPicker from '../components/GuestPicker';
 import GuestIdDocument from '../components/GuestIdDocument';
@@ -375,6 +376,12 @@ export default function BookingDetail() {
   }
 
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
+  // The header's Balance due: the same whole-stay estimate, refreshed whenever
+  // the booking reloads (a payment, a price change…). Financial module off → none.
+  useEffect(() => {
+    if (!booking?.id || !hasModule('financial')) return;
+    api.get(`/api/folio/${id}/estimate`).then(r => setEstimate(r.data)).catch(() => {});
+  }, [booking]); // eslint-disable-line react-hooks/exhaustive-deps
   const notCharged = notChargedRows(folio, estimate, booking);
 
   async function loadActivityBookings() {
@@ -962,47 +969,71 @@ export default function BookingDetail() {
     ...dangerItems,
   ];
 
+  // The one filled button in the header: Check In / Check Out / Confirm Booking.
+  const primaryAction = (() => {
+    const isOTA = sources.find(s => s.id === booking.source)?.is_ota;
+    const canCheckin = isOTA
+      ? ['pending','deposit_paid','confirmed'].includes(booking.status)
+      : booking.status === 'confirmed';
+    if (canCheckin) return <button className="btn btn-primary" onClick={() => nav(`/checkin?checkin=${id}`)}><Icon name="login" />Check In</button>;
+    if (booking.status === 'checked_in') return <button className="btn btn-primary" onClick={openCheckout}><Icon name="logout" />Check Out</button>;
+    if (booking.status === 'pending' && parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0) {
+      return <button className="btn btn-primary" onClick={confirmBooking}><Icon name="check" />Confirm Booking</button>;
+    }
+    return null;
+  })();
+
+  // Balance due for the header: the whole-stay estimate (the Folio tab's
+  // "Estimated Balance Due"). Not shown for cancelled / no-show, nor when the
+  // estimate isn't available (Financial module off).
+  const headerBalance = (() => {
+    if (!estimate || ['cancelled', 'no_show'].includes(booking.status)) return null;
+    const due = parseFloat(estimate.balance_due) || 0;
+    if (booking.folio_status) return { value: 'On agent bill', sub: booking.agent_name || undefined };
+    // OTA booking: its open room lines are the OTA's to pay, not the guest's (lib/otaDue).
+    if (otaOpen > 0.5) {
+      const guestDue = Math.max(0, due - otaOpen);
+      return { value: guestDue >= 1 ? fmtIDR(guestDue) : 'Guest owes nothing', sub: `${fmtIDR(Math.min(otaOpen, due))} to come from ${ota}` };
+    }
+    if (due < 1) return { value: 'Paid', sub: booking.group_billed ? 'room paid by the group' : undefined };
+    return { value: fmtIDR(due), sub: booking.group_billed ? 'own extras · room on the group bill' : 'whole stay' };
+  })();
+
   return (
     <div style={{ maxWidth: 880, margin: '0 auto' }}>
       <PageHeader
         back={{ to: '/reservations', label: 'Reservations' }}
         kind={`Booking #${id.slice(0, 8).toUpperCase()}`}
         title={booking.guest_name}
-        meta={[
-          `Room ${booking.unit_name}`,
-          `${fmtShortDate(booking.check_in_date)} → ${fmtShortDate(booking.check_out_date)} ${String(booking.check_out_date).slice(0, 4)}`,
-          `${booking.nights} night${booking.nights === 1 ? '' : 's'}`,
-          `${booking.num_guests} guest${booking.num_guests === 1 ? '' : 's'}`,
+        tone={STATUS_BADGE[booking.status] || 'gray'}
+        facts={[
+          { label: 'Room', value: booking.unit_name, sub: booking.room_type_name },
+          { label: 'Stay', value: `${fmtShortDate(booking.check_in_date)} → ${fmtShortDate(booking.check_out_date)} ${String(booking.check_out_date).slice(0, 4)}`,
+            sub: `${booking.nights} night${booking.nights === 1 ? '' : 's'}` },
+          { label: 'Guests', value: booking.num_guests, sub: booking.rate_plan_name || undefined },
+          { label: booking.agent_name ? agentRoleLabel(booking) : 'Source', value: booking.agent_name || booking.source_label || booking.source,
+            sub: booking.agent_name ? booking.source_label : undefined },
+          headerBalance && { label: 'Balance due', value: headerBalance.value, sub: headerBalance.sub },
         ]}
         badge={<span className={`badge badge-${STATUS_BADGE[booking.status] || 'gray'}`}>{STATUS_LABEL[booking.status] || booking.status}</span>}
+        tabs={
+          <div className="tab-bar">
+            <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
+            <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Folio</button>
+            {hasModule('activities') && <button className={`tab-bar-item${tab === 'activities' ? ' active' : ''}`} onClick={() => setTab('activities')}>Activities</button>}
+          </div>
+        }
         actions={<>
-          {(() => {
-            const isOTA = sources.find(s => s.id === booking.source)?.is_ota;
-            const canCheckin = isOTA
-              ? ['pending','deposit_paid','confirmed'].includes(booking.status)
-              : booking.status === 'confirmed';
-            return canCheckin && (
-              <button className="btn btn-primary" onClick={() => nav(`/checkin?checkin=${id}`)}>Check In</button>
-            );
-          })()}
-          {booking.status === 'checked_in' && (
-            <button className="btn btn-primary" onClick={openCheckout}>Check Out</button>
+          {hasModule('calling') && (
+            <button className="btn btn-secondary btn-sm" title="Call the room's tablet" onClick={callRoomAction}><Icon name="phone" />Call room</button>
           )}
-          {booking.status === 'pending' &&
-            parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0) === 0 && (
-            <button className="btn btn-primary" onClick={confirmBooking}>Confirm Booking</button>
+          <button className="btn btn-secondary btn-sm" title="Send a message to the room's tablet" onClick={openMessage}><Icon name="message" />Message</button>
+          {booking.guest_whatsapp && (
+            <button className="btn btn-secondary btn-sm" title="WhatsApp the guest" onClick={waLink}><Icon name="whatsapp" />WhatsApp</button>
           )}
-          <div className="icon-group">
-            {hasModule('calling') && (
-              <button title="Call Room" onClick={callRoomAction}>📞</button>
-            )}
-            <button title="Send Message" onClick={openMessage}>✉️</button>
-            {booking.guest_whatsapp && (
-              <button title="WhatsApp Guest" onClick={waLink}>💬</button>
-            )}
             <ActionMenu
-              bare
-              icon="⬇"
+              icon={<Icon name="file" />}
+              label="Documents"
               ariaLabel="Download documents"
               items={[
                 { label: 'Registration Card', icon: '📝', hint: 'Printable check-in form for the guest to sign', onClick: () => setShowRegCard(true) },
@@ -1038,9 +1069,8 @@ export default function BookingDetail() {
                 ]),
               ]}
             />
-          </div>
-          {moreItems.filter(Boolean).length > 0 && <div className="header-divider" />}
-          {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} />}
+          {primaryAction}
+          {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} icon={<Icon name="more" />} label="More" />}
         </>}
       />
 
@@ -1080,12 +1110,6 @@ export default function BookingDetail() {
           </div>
         )
       )}
-
-      <div className="tab-bar">
-        <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
-        <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Folio</button>
-        {hasModule('activities') && <button className={`tab-bar-item${tab === 'activities' ? ' active' : ''}`} onClick={() => setTab('activities')}>Activities</button>}
-      </div>
 
       {tab === 'details' && (
       <>

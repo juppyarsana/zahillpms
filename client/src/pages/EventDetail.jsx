@@ -3,11 +3,12 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import ActionMenu from '../components/ActionMenu';
 import ReasonModal from '../components/ReasonModal';
 import EventFormModal from '../components/EventFormModal';
 import { StatusBadge } from './Events';
-import { MEAL_KINDS, mealLabel, fmtIDR, fmtDay, whenText, ymd, downloadPdf } from '../lib/events';
+import { MEAL_KINDS, mealLabel, fmtIDR, fmtDay, whenText, ymd, downloadPdf, STATUS } from '../lib/events';
 
 // One event (migration 106): its details, the meals the restaurant prepares,
 // its bill (venue hire, other lines, restaurant bills the POS charges to it),
@@ -276,19 +277,22 @@ export default function EventDetail() {
     <div style={{ maxWidth: 920, margin: '0 auto' }}>
       <PageHeader
         back={{ to: '/events', label: 'Events' }} kind={`Event #${e.event_no}`} title={e.name}
-        meta={[e.customer, whenText(e), e.venue_name, `${e.pax} people`]}
+        tone={STATUS[e.status]?.badge || 'gray'}
+        facts={[
+          { label: 'For', value: e.customer || '—', sub: e.contact_name || undefined },
+          { label: 'When', value: whenText(e) },
+          { label: 'Venue', value: e.venue_name, sub: `${e.pax} people` },
+          !cancelled && bill && { label: 'Balance due', value: bill.balance_due >= 1 ? fmtIDR(bill.balance_due) : bill.balance_due <= -1 ? `Credit ${fmtIDR(-bill.balance_due)}` : 'Paid' },
+        ]}
         badge={<StatusBadge event={e} />}
         actions={<>
-          {primary}
-          <div className="icon-group">
-            <ActionMenu bare icon="⬇" ariaLabel="Download" items={[
+            <ActionMenu icon={<Icon name="file" />} label="Documents" ariaLabel="Download" items={[
               { label: 'Pro Forma', onClick: () => pdf('proforma'), hint: 'An estimate to send the client' },
               { label: 'Invoice', onClick: () => pdf('invoice') },
               { label: 'Function sheet', onClick: () => pdf('function-sheet'), hint: 'For kitchen, housekeeping and front desk — no prices' },
             ]} />
-          </div>
-          <span className="header-divider" />
-          <ActionMenu items={menu} />
+          {primary}
+          <ActionMenu items={menu} icon={<Icon name="more" />} label="More" />
         </>}
       />
 

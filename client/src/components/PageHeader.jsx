@@ -1,44 +1,63 @@
 import { Fragment } from 'react';
 import BackLink from './BackLink';
 
-// Standard page header for detail pages:
-//   ← Reservations · GROUP BOOKING        [primary] [icons] | [⋮]
-//   PT Telkom
-//   1 Oct → 3 Oct 2026 · 2 nights · 3 rooms  [Upcoming]
-// back:    { to, label }        — small back link above the title: goes back to
-//                                the page the user came from (BackLink); `to`
-//                                is where it goes when the page was opened directly
-// kind:    'Group booking'      — what this page is, next to the back link
+// Header card for detail pages (booking, group, event):
+//
+//   ▌ ← Reservations · BOOKING #880BDFB2         [Call] [Message] [Documents ▾] [Check In] [More ▾]
+//   ▌ Lia Fadlia  [Pending]
+//   ▌ ROOM        STAY                   GUESTS   SOURCE    BALANCE DUE
+//   ▌ 103 · Delx  16 Oct → 17 Oct · 1 n  2        Direct    Rp 869.946
+//   ├──────────────────────────────────────────────────────────────────
+//   │ Details   Folio   Activities
+//
+// back:    { to, label }   small back link (BackLink: back to where the user came from)
+// kind:    'Booking #…'    what this page is, next to the back link
 // title:   the name people know it by (guest, company…)
-// meta:    [node, …]            — key facts, joined with dots (falsy skipped)
-// badge:   node                 — status pill after the facts
-// actions: node                 — right side; wraps under the title when narrow
-export default function PageHeader({ back, kind, title, meta = [], badge, actions }) {
-  const facts = meta.filter(Boolean);
+// badge:   status pill after the title
+// tone:    'amber' | 'green' | 'blue' | 'gray' | 'red' — the card's left edge (follow the status)
+// facts:   [{ label, value, sub? }] — the key facts strip (falsy skipped)
+// meta:    [node, …] — older one-line facts, joined with dots (when no `facts`)
+// actions: node — right side: labeled outline buttons, the primary button, then the More menu
+// tabs:    node — the page's tab buttons, attached to the bottom of the card
+// (List pages keep the plain `.page-header` — this card is for detail pages only.)
+export default function PageHeader({ back, kind, title, badge, tone = 'gray', facts = [], meta = [], actions, tabs }) {
+  const strip = facts.filter(Boolean);
+  const line = meta.filter(Boolean);
   return (
-    <div className="page-header">
-      <div>
-        {(back || kind) && (
-          <div className="page-eyebrow">
-            {back && <BackLink to={back.to} label={back.label} />}
-            {back && kind && <span className="dot">·</span>}
-            {kind && <span>{kind}</span>}
-          </div>
-        )}
-        <div className="page-title">{title}</div>
-        {(facts.length > 0 || badge) && (
-          <div className="page-meta">
-            {facts.map((f, i) => (
-              <Fragment key={i}>
-                {i > 0 && <span className="dot">·</span>}
-                <span>{f}</span>
-              </Fragment>
-            ))}
+    <div className={`detail-header tone-${tone}`}>
+      <div className="dh-top">
+        <div className="dh-titles">
+          {(back || kind) && (
+            <div className="page-eyebrow">
+              {back && <BackLink to={back.to} label={back.label} />}
+              {back && kind && <span className="dot">·</span>}
+              {kind && <span>{kind}</span>}
+            </div>
+          )}
+          <div className="dh-title-row">
+            <h1 className="dh-title">{title}</h1>
             {badge}
           </div>
-        )}
+          {!strip.length && line.length > 0 && (
+            <div className="page-meta">
+              {line.map((f, i) => <Fragment key={i}>{i > 0 && <span className="dot">·</span>}<span>{f}</span></Fragment>)}
+            </div>
+          )}
+        </div>
+        {actions && <div className="dh-actions">{actions}</div>}
       </div>
-      {actions && <div>{actions}</div>}
+      {strip.length > 0 && (
+        <div className="dh-facts">
+          {strip.map((f, i) => (
+            <div key={i} className="dh-fact">
+              <div className="dh-fact-label">{f.label}</div>
+              <div className="dh-fact-value">{f.value}</div>
+              {f.sub && <div className="dh-fact-sub">{f.sub}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {tabs && <div className="dh-tabs">{tabs}</div>}
     </div>
   );
 }

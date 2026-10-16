@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import ActionMenu from '../components/ActionMenu';
 import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import ReasonModal from '../components/ReasonModal';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
@@ -445,41 +446,48 @@ export default function GroupDetail() {
         back={{ to: '/reservations', label: 'Reservations' }}
         kind="Group booking"
         title={group.guest_name}
-        meta={[
-          `${fmtDate(group.check_in_date)} → ${fmtDate(group.check_out_date, true)}`,
-          `${groupNights} night${groupNights === 1 ? '' : 's'}`,
-          `${rollup.room_count} room${rollup.room_count === 1 ? '' : 's'}`,
-          `${groupPax} guest${groupPax === 1 ? '' : 's'}`,
-          groupAgents.length > 0 && `Agent: ${groupAgents.join(', ')}`,
-        ].filter(Boolean)}
+        tone={groupState.color}
+        facts={[
+          { label: 'Stay', value: `${fmtDate(group.check_in_date)} → ${fmtDate(group.check_out_date, true)}`,
+            sub: `${groupNights} night${groupNights === 1 ? '' : 's'}` },
+          { label: 'Rooms', value: rollup.room_count, sub: `${groupPax} guest${groupPax === 1 ? '' : 's'}` },
+          groupAgents.length > 0 && { label: 'Agent', value: groupAgents.join(', ') },
+          group.status !== 'cancelled' && { label: 'Balance due', value: (() => {
+            const due = data.bill ? parseFloat(data.bill.balance_due) : parseFloat(rollup.balance_due);
+            return due >= 1 ? fmtIDR(due) : due <= -1 ? `Credit ${fmtIDR(-due)}` : 'Paid';
+          })(), sub: data.bill ? 'group bill' : 'rooms' },
+        ]}
         badge={<span className={`badge badge-${groupState.color}`}>{groupState.label}</span>}
+        tabs={
+          <div className="tab-bar">
+            <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
+            <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Master Folio</button>
+          </div>
+        }
         actions={<>
-          {anyEligibleForCheckin && (
-            <button className="btn btn-primary" onClick={checkInGroup} disabled={checkingIn}>
-              {checkingIn ? 'Checking in…' : 'Check In Group'}
-            </button>
-          )}
           {roomsWithBooker > 0 && (
-            <button className="btn btn-secondary" onClick={openAssign} title="Rooms still under the booker's name">
-              👥 Assign Guests <span className="badge badge-amber" style={{ marginLeft: 4 }}>{roomsWithBooker}</span>
+            <button className="btn btn-secondary btn-sm" onClick={openAssign} title="Rooms still under the booker's name">
+              <Icon name="users" />Assign Guests <span className="badge badge-amber" style={{ marginLeft: 2 }}>{roomsWithBooker}</span>
             </button>
           )}
-          <div className="icon-group">
-            {group.guest_whatsapp && (
-              <button title={`WhatsApp ${group.guest_name}`} onClick={whatsappBooker}>💬</button>
-            )}
+          {group.guest_whatsapp && (
+            <button className="btn btn-secondary btn-sm" title={`WhatsApp ${group.guest_name}`} onClick={whatsappBooker}><Icon name="whatsapp" />WhatsApp</button>
+          )}
             <ActionMenu
-              bare
-              icon="⬇"
+              icon={<Icon name="file" />}
+              label="Documents"
               ariaLabel="Download documents"
               items={[
                 data.bill && { label: 'Group Invoice', icon: '🧾', hint: 'The group\'s one bill — charges posted so far, group payments, balance', onClick: () => downloadGroupPdf('invoice') },
                 { label: data.bill ? 'Group Pro Forma' : 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma },
               ].filter(Boolean)}
             />
-          </div>
-          {groupMenu.length > 0 && <div className="header-divider" />}
-          {groupMenu.length > 0 && <ActionMenu items={groupMenu} />}
+          {anyEligibleForCheckin && (
+            <button className="btn btn-primary" onClick={checkInGroup} disabled={checkingIn}>
+              <Icon name="login" />{checkingIn ? 'Checking in…' : 'Check In Group'}
+            </button>
+          )}
+          {groupMenu.length > 0 && <ActionMenu items={groupMenu} icon={<Icon name="more" />} label="More" />}
         </>}
       />
 
@@ -534,10 +542,6 @@ export default function GroupDetail() {
         </div>
       ) : null)}
 
-      <div className="tab-bar">
-        <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
-        <button className={`tab-bar-item${tab === 'folio' ? ' active' : ''}`} onClick={() => setTab('folio')}>Master Folio</button>
-      </div>
 
       {linkedEvents.map(ev => (
         <div key={ev.id} className="alert alert-info"><div>

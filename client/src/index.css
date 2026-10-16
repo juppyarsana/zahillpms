@@ -961,3 +961,44 @@ tr:hover td { background: #FAFAF8; }
   body { background: #fff !important; }
   .guide-table table { min-width: 0; }
 }
+
+/* ── Detail page header card (components/PageHeader.jsx: booking, group, event) ── */
+.detail-header {
+  background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); margin-bottom: 18px;   /* no overflow:hidden — the Documents / More menus open over the card edge */
+  border-left: 4px solid var(--dh-tone, var(--border));
+}
+.detail-header.tone-amber { --dh-tone: var(--warning); }
+.detail-header.tone-green { --dh-tone: var(--success); }
+.detail-header.tone-blue  { --dh-tone: var(--info); }
+.detail-header.tone-red   { --dh-tone: var(--danger); }
+.detail-header.tone-gray  { --dh-tone: #9CA3AF; }
+.dh-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; padding: 18px 20px 14px; }
+.dh-titles { flex: 1 1 260px; min-width: 0; }
+.dh-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.dh-title { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; color: var(--text); line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
+.dh-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.dh-actions .btn-secondary { background: var(--white); }
+.dh-actions .btn svg { opacity: 0.85; }
+.dh-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px 20px;
+  padding: 12px 20px 14px; border-top: 1px solid var(--border); background: var(--bg-subtle);
+}
+.dh-fact { min-width: 0; }
+.dh-fact-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+.dh-fact-value { font-size: var(--text-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.dh-fact-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.dh-tabs { border-top: 1px solid var(--border); padding: 0 12px; }
+.dh-tabs .tab-bar { margin-bottom: 0; box-shadow: none; }
+.dh-tabs .tab-bar-item { padding: 12px 14px; }
+@media (max-width: 768px) {
+  .dh-top { padding: 14px 14px 12px; }
+  .dh-actions { justify-content: flex-start; width: 100%; }
+  .dh-actions .btn-primary { order: -1; flex: 1 1 100%; justify-content: center; }
+  .dh-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 14px 12px; }
+  .dh-tabs { padding: 0 4px; }
+}
+@media print { .detail-header { display: none !important; } }
+/* the last band (facts or tabs) follows the card's rounded bottom corners */
+.detail-header > :last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+.detail-header .dh-top { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
