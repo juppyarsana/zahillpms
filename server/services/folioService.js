@@ -90,6 +90,33 @@ function chargeTotals(charges, taxRate, serviceChargeRate) {
 const PAID_AT_DESK_SQL = `(fc.paid_payment_id IS NOT NULL
     OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))
     OR EXISTS (SELECT 1 FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id AND ab.payment_method <> 'room_charge'))`;
+// Billed to an agent (city ledger) = what is still owed on the stay: the
+// agent-billable lines (above) MINUS money already received on the stay —
+// the agent usually pays before arrival and FO records it on the room. One
+// rule, used by the agent ledger / statement / invoice, the invoiced→paid
+// check, the Cashier Closing's Agent ledger line and the journal (2026-10-16;
+// before, the whole bill went to the agent and money on the room was asked
+// again). Counted: received deposit / balance / extras payments and refunds
+// (negative) — not a payment for a line paid at the desk (a Pay-now sale, an
+// activity paid directly, lines or extra-bed nights paid on their own), since
+// those lines are already left off the agent's bill. Needs bookings as `b`.
+const AGENT_PREPAID_SQL = `COALESCE((SELECT SUM(p.amount) FROM payments p
+    WHERE p.booking_id = b.id AND p.status = 'received'
+      AND NOT EXISTS (SELECT 1 FROM payments q WHERE q.id = COALESCE(p.refund_of, p.id)
+        AND (q.sale_id IS NOT NULL OR q.activity_booking_id IS NOT NULL
+             OR EXISTS (SELECT 1 FROM folio_charges pf WHERE pf.paid_payment_id = q.id)
+             OR EXISTS (SELECT 1 FROM booking_addons pa WHERE pa.paid_payment_id = q.id)))), 0)`;
+
+// { billable, prepaid, due } for a row carrying charge_subtotal /
+// untaxed_subtotal (agent-billable NET lines, see the queries) and prepaid
+// (AGENT_PREPAID_SQL), at the booking's bill rates.
+function agentDue(row, rates) {
+  const billable = round2(computeFolioTotals(parseFloat(row.charge_subtotal) || 0, rates.tax_rate, rates.service_charge_rate).total
+    + (parseFloat(row.untaxed_subtotal) || 0));
+  const prepaid = round2(parseFloat(row.prepaid) || 0);
+  return { billable, prepaid, due: settleCents(Math.max(0, round2(billable - prepaid))) };
+}
+
 // How a paid-at-desk line was paid ("Cash", "QRIS"…), NULL when charged to
 // the room — shown on the Folio tab and the invoice so it doesn't read as owed.
 const PAID_METHOD_SQL = `COALESCE(
@@ -390,4 +417,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };

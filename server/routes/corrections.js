@@ -213,9 +213,14 @@ router.put('/:id/agent-billing', auth, canCorrect, correction(async (client, b, 
   const now = await snapshot(agentId);
   const money = n => (n == null ? 'none' : 'Rp ' + Math.round(parseFloat(n)).toLocaleString('id-ID'));
   const wasBilled = b.folio_status === 'pending_agent_invoice';
+  // Billing to the agent puts only what is still owed on the agent's bill —
+  // a stay already paid in full is not billed (settleCheckout).
+  const isBilled = settled.folio_status === 'pending_agent_invoice';
   const changes = [
     (was.agent_name || null) !== (now.agent_name || null) ? `agent ${was.agent_name || 'none'} → ${now.agent_name || 'none'}` : '',
-    wasBilled !== billToAgent ? (billToAgent ? `now billed to ${now.agent_name}` : 'no longer billed to the agent — the guest pays') : '',
+    wasBilled === isBilled ? ''
+      : billToAgent && !isBilled ? `taken off ${now.agent_name}'s bill — the stay is already paid in full`
+      : isBilled ? `now billed to ${now.agent_name}` : 'no longer billed to the agent — the guest pays',
     money(was.commission) !== money(now.commission) ? `commission ${money(was.commission)} → ${money(now.commission)}` : '',
   ].filter(Boolean);
   if (!changes.length) return { status: 400, error: 'Nothing was changed' };

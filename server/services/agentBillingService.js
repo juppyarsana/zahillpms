@@ -1,5 +1,5 @@
 const db = require('../db');
-const { loadFolio, round2 } = require('./folioService');
+const { loadFolio, round2, agentDue, billRates, AGENT_PREPAID_SQL, PAID_AT_DESK_SQL } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice B (see ROADMAP.md #13).
 //
@@ -65,11 +65,27 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
     if (!CITY_LEDGER.includes(paymentStatus)) {
       return { error: `${agent.name} is not set up to be billed (city ledger) — change it in Agent Billing` };
     }
-    await client.query(
-      "UPDATE bookings SET folio_status = 'pending_agent_invoice', updated_at = NOW() WHERE id = $1 AND property_id = $2",
-      [bookingId, propertyId]
-    );
-    folio_status = 'pending_agent_invoice';
+    // Only what is still owed goes to the agent (folioService.agentDue): a
+    // stay the agent already paid (usually before arrival, recorded on the
+    // room) is not put on the agent's bill at all. Read through `client` —
+    // the check-out's own transaction may just have posted the last nights.
+    const { rows: [due] } = await client.query(
+      `SELECT b.bill_tax_rate, b.bill_service_charge_rate, ps.tax_rate AS ps_tax_rate, ps.service_charge_rate AS ps_service_charge_rate,
+              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
+                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+              ${AGENT_PREPAID_SQL} AS prepaid
+       FROM bookings b LEFT JOIN property_settings ps ON ps.property_id = b.property_id
+       WHERE b.id = $1`, [bookingId]);
+    const rates = billRates(due, { tax_rate: due.ps_tax_rate, service_charge_rate: due.ps_service_charge_rate });
+    if (agentDue(due, rates).due > 0.005) {
+      await client.query(
+        "UPDATE bookings SET folio_status = 'pending_agent_invoice', updated_at = NOW() WHERE id = $1 AND property_id = $2",
+        [bookingId, propertyId]
+      );
+      folio_status = 'pending_agent_invoice';
+    }
   }
 
   let commission_posted = false;

@@ -10,7 +10,7 @@
 // (as FO's old closing had it): they settle the guest's bill, so they are in
 // the grand total, but nothing was received — `money_total` leaves them out.
 const db = require('../db');
-const { PAID_AT_DESK_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
+const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, billRates, round2 } = require('./folioService');
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
@@ -133,7 +133,8 @@ async function load(propertyId, date, { userId = null } = {}) {
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal
+                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+           ${AGENT_PREPAID_SQL} AS prepaid
     FROM bookings b
     JOIN units u ON u.id = b.unit_id
     JOIN guests g ON g.id = b.guest_id
@@ -146,7 +147,8 @@ async function load(propertyId, date, { userId = null } = {}) {
     ORDER BY cr.checkout_time`, [propertyId, date]);
   for (const r of billed) {
     const rates = billRates(r, settings || {});
-    const amount = round2(computeFolioTotals(parseFloat(r.charge_subtotal), rates.tax_rate, rates.service_charge_rate).total + parseFloat(r.untaxed_subtotal));
+    // what went onto the agent's bill: the rest after money already received (folioService.agentDue)
+    const amount = agentDue(r, rates).due;
     if (!(amount > 0.005)) continue;
     all.push({
       method: LEDGER, ledger: true, time: r.time, recorded_on: null,

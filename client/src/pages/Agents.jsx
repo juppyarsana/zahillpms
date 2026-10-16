@@ -295,7 +295,14 @@ function AgentDetail({ agentId }) {
                   </td>
                   <td style={TD}>{fmtDate(it.check_in_date)} → {fmtDate(it.check_out_date)}</td>
                   <td style={TD}><span className={`badge ${it.folio_status === 'invoiced' ? 'badge-blue' : 'badge-amber'}`}>{it.folio_status === 'invoiced' ? 'Invoiced' : 'Un-invoiced'}</span></td>
-                  <td style={{ ...TD, textAlign: 'right' }}>{fmtIDR(it.folio_total)}</td>
+                  <td style={{ ...TD, textAlign: 'right' }}>
+                    {fmtIDR(it.folio_total)}
+                    {it.paid_on_stay > 0.5 && (
+                      <div style={{ fontSize: 11, color: '#9CA3AF', whiteSpace: 'nowrap' }} title="Already received on the stay before check-out — not billed to the agent again">
+                        stay {fmtIDR(it.billable_total)} − paid {fmtIDR(it.paid_on_stay)}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ ...TD, textAlign: 'right', color: '#6B7280' }}>{it.allocated > 0 ? fmtIDR(it.allocated) : '—'}</td>
                   <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{fmtIDR(it.balance)}</td>
                   <td style={{ ...TD, textAlign: 'right', whiteSpace: 'nowrap', color: it.age_days > 60 ? '#DC2626' : it.age_days > 0 ? '#D97706' : '#6B7280' }}>

@@ -27,7 +27,7 @@
 // between the day rebuilt from today's data and what was kept; that difference
 // is posted as "Corrections to closed days" in the next day that is closed.
 const db = require('../db');
-const { PAID_AT_DESK_SQL, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
+const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
 const { loadMapping, EXTRA_CATEGORIES } = require('./accountingService');
 
 const TZ = `'Asia/Makassar'`;
@@ -217,7 +217,8 @@ async function collectPosts(propertyId, from, to) {
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal
+                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+             ${AGENT_PREPAID_SQL} AS prepaid
       FROM bookings b
       JOIN units u ON u.id = b.unit_id
       JOIN guests g ON g.id = b.guest_id
@@ -410,7 +411,9 @@ async function collectPosts(propertyId, from, to) {
   // ── Agents ──
   for (const r of billed) {
     const rates = billRates(r, settings || {});
-    const amount = round2(computeFolioTotals(num(r.charge_subtotal), rates.tax_rate, rates.service_charge_rate).total + num(r.untaxed_subtotal));
+    // what went onto the agent's bill: the rest after money already received (folioService.agentDue)
+    const amount = agentDue(r, rates).due;
+    if (!(amount > 0.005)) continue;
     const ref = who(r.room, r.guest);
     post(r.day, 'agent_billed', 'ledger.agent', amount, ref, r.agent);
     post(r.day, 'agent_billed', 'ledger.guest', -amount, ref, r.agent);

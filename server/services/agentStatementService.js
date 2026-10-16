@@ -1,5 +1,5 @@
 const db = require('../db');
-const { round2, computeFolioTotals, PAID_AT_DESK_SQL, billRates } = require('./folioService');
+const { round2, PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, billRates } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice C.
 //
@@ -57,7 +57,9 @@ async function bookingLedger(propertyId, { agentId } = {}) {
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations
-                      WHERE booking_id = b.id), 0) AS allocated
+                      WHERE booking_id = b.id), 0) AS allocated,
+            -- money already received on the stay (paid before check-out) — not billed again
+            ${AGENT_PREPAID_SQL} AS prepaid
      FROM bookings b
      JOIN guests g ON g.id = b.guest_id
      JOIN units u ON u.id = b.unit_id
@@ -74,9 +76,9 @@ async function bookingLedger(propertyId, { agentId } = {}) {
 
   return items.map(r => {
     const rates = billRates(r, settings);   // the booking's own bill rates (081)
-    const folio_total = round2(computeFolioTotals(
-      parseFloat(r.charge_subtotal), rates.tax_rate, rates.service_charge_rate
-    ).total + parseFloat(r.untaxed_subtotal));
+    // folio_total = what is billed to the agent: the stay's agent-billable
+    // total less money already received on it (folioService.agentDue).
+    const { billable, prepaid, due: folio_total } = agentDue(r, rates);
     const allocated = round2(parseFloat(r.allocated));
     const balance = round2(folio_total - allocated);
     // Due = invoiced (or checked out, not invoiced yet) + the agent's credit
@@ -91,7 +93,7 @@ async function bookingLedger(propertyId, { agentId } = {}) {
       check_out_date: String(r.check_out_date).slice(0, 10),
       folio_status: r.folio_status, agent_invoice_id: r.agent_invoice_id,
       invoice_number: r.invoice_number || null,
-      folio_total, allocated, balance,
+      folio_total, billable_total: billable, paid_on_stay: prepaid, allocated, balance,
       due_date, credit_terms_days: r.credit_terms_days, age_days: ageDays(due_date),
     };
   }).filter(r => r.balance > 0.005);
@@ -251,12 +253,14 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
        WHERE fc.booking_id = $1 AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}`,
       [id]
     );
+    const { rows: [{ prepaid }] } = await client.query(
+      `SELECT ${AGENT_PREPAID_SQL} AS prepaid FROM bookings b WHERE b.id = $1`, [id]);
     const { rows: [{ allocated }] } = await client.query(
       'SELECT COALESCE(SUM(amount), 0) AS allocated FROM agent_payment_allocations WHERE booking_id = $1',
       [id]
     );
     const rates = billRates(b, settings);
-    const total = round2(computeFolioTotals(parseFloat(subtotal), rates.tax_rate, rates.service_charge_rate).total + parseFloat(untaxed));
+    const total = agentDue({ charge_subtotal: subtotal, untaxed_subtotal: untaxed, prepaid }, rates).due;
     const covered = parseFloat(allocated) + 0.005 >= total && total > 0;
     const next = covered ? 'paid' : (b.agent_invoice_id ? 'invoiced' : 'pending_agent_invoice');
     if (next !== b.folio_status) {
@@ -540,7 +544,8 @@ async function invoicePayload(propertyId, invoiceId) {
             -- activity lines priced with tax included / no tax (migration 078): no service/tax added
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
-            COALESCE((SELECT SUM(amount) FROM agent_payment_allocations WHERE booking_id = b.id), 0) AS allocated
+            COALESCE((SELECT SUM(amount) FROM agent_payment_allocations WHERE booking_id = b.id), 0) AS allocated,
+            ${AGENT_PREPAID_SQL} AS prepaid
      FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
      WHERE b.agent_invoice_id = $1 AND b.property_id = $2
      ORDER BY b.check_out_date, b.id`,
@@ -549,13 +554,13 @@ async function invoicePayload(propertyId, invoiceId) {
 
   const lines = bookings.map(b => {
     const rates = billRates(b, property);
-    const total = round2(computeFolioTotals(parseFloat(b.charge_subtotal), rates.tax_rate, rates.service_charge_rate).total + parseFloat(b.untaxed_subtotal));
+    const { billable, prepaid, due: total } = agentDue(b, rates);
     return {
       booking_id: b.booking_id,
       guest_name: b.guest_name, unit_name: b.unit_name,
       check_in_date: String(b.check_in_date).slice(0, 10),
       check_out_date: String(b.check_out_date).slice(0, 10),
-      amount: total,
+      amount: total, stay_total: billable, paid_on_stay: prepaid,
       paid: round2(parseFloat(b.allocated)),
     };
   });

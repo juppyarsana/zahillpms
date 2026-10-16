@@ -51,7 +51,9 @@ function renderAgentInvoice(doc, { property, agent, invoice, lines, total, paid,
     y += 14;
     // En dash, not "→" (U+2192) — pdfkit's built-in Helvetica only supports
     // WinAnsiEncoding, which doesn't include that arrow (renders as garbage).
-    doc.fillColor('#888').fontSize(8).text(`${l.check_in_date}  –  ${l.check_out_date}`, colX.desc, y, { width: 380 });
+    // Part of the stay paid before check-out: the line is the rest (agentDue).
+    const paidBefore = l.paid_on_stay > 0.5 ? `  ·  stay ${fmtIDR(l.stay_total)} less ${fmtIDR(l.paid_on_stay)} already paid` : '';
+    doc.fillColor('#888').fontSize(8).text(`${l.check_in_date}  –  ${l.check_out_date}${paidBefore}`, colX.desc, y, { width: 380 });
     doc.fillColor('#000').fontSize(10);
     y += 16;
   }
