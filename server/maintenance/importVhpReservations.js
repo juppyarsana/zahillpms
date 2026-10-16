@@ -42,6 +42,7 @@ const bookingCreate = require('../services/bookingCreateService');
 const M = require('./importVhpMapping');
 
 const TAG = 'IMPORT:vhp-2026-10';
+const guestPaysAgents = new Set();   // existing agents used by the file that are not billed to the agent
 const args = process.argv.slice(2);
 const flag = n => args.includes(n);
 const opt = n => { const i = args.indexOf(n); return i > -1 ? args[i + 1] : null; };
@@ -216,15 +217,15 @@ async function run() {
     let found = wanted ? agents.filter(a => keyOf(a.name) === keyOf(wanted)) : [];
     if (!found.length) found = agents.filter(a => { const ak = keyOf(a.name); return ak && k && (ak.startsWith(k) || k.startsWith(ak)); });
     let res;
-    if (found.length === 1) res = { agent: found[0] };
+    if (found.length === 1) { res = { agent: found[0] }; if (found[0].payment_status !== 'city_ledger') guestPaysAgents.add(found[0].name); }
     else if (found.length > 1) res = { point: `Agent: several match "${company}" (${found.map(a => a.name).join(', ')}) — choose it in Edit Details` };
     else if (CREATE_AGENTS) {
       const name = wanted || company.replace(/\b\w+/g, w => w[0] + w.slice(1).toLowerCase());
       const { rows: [a] } = await client.query(
-        `INSERT INTO agents (property_id, name, agent_type, payment_status, created_by) VALUES ($1, $2, $3, 'normal', $4) RETURNING id, name, payment_status`,
+        `INSERT INTO agents (property_id, name, agent_type, payment_status, created_by) VALUES ($1, $2, $3, 'city_ledger', $4) RETURNING id, name, payment_status`,
         [pid, name, M.AGENT_TYPE_FOR_SOURCE[sourceId] || 'travel_agent', user.id]);
       agents.push(a); created.agents.push(a.id);
-      res = { agent: a, point: `Agent "${a.name}" was created by the import — add its contact / billing terms in Agent Billing` };
+      res = { agent: a, point: `Agent "${a.name}" was created by the import (billed to the agent) — add its contact / credit terms in Agent Billing` };
     } else res = { point: `Agent not in the PMS — VHP: "${company}". Add it in Agent Billing, then choose it in Edit Details` };
     agentCache.set(k, res);
     return res;
@@ -500,6 +501,10 @@ function printReport(report, created) {
   console.log('\n══ SUMMARY ═══════════════════════════════════════════════════════');
   console.log(`Reservations imported: ${imp.length} (${imp.filter(x => x.rooms.length > 1).length} groups) · ${rooms} rooms · ${nights} room-nights · ${rp(value)} incl. service & tax`);
   console.log(`Not imported: ${report.skipped.filter(s => !s.quiet).length} to look at · ${quiet.length} already in the PMS`);
+  if (guestPaysAgents.size) console.log(`
+⚠ Agents set to "guest pays" in the PMS: ${[...guestPaysAgents].join(', ')}.
+  If the agent pays the hotel, switch each to "bill to agent" in Agent Billing BEFORE --apply:
+  a group is set up at import as one bill for the group (guest pays) or one bill per room for the agent.`);
   console.log(`New guests: ${created.guests.length} · new agents: ${created.agents.length} · new sources: ${created.sources.join(', ') || 'none'}`);
   console.log('\n"To check" points on the imported bookings (rooms):');
   for (const [k, n] of [...withPoints.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(4)} × ${k}`);
