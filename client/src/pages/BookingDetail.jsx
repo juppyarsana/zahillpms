@@ -1238,6 +1238,7 @@ export default function BookingDetail() {
               ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Agent Billing → Record Payment</b>, not here.</>
               : <><b>{booking.agent_name}</b> pays the hotel. Money the agent sends <b>before check-out</b> (e.g. H-7) is recorded here — Mark Received, with the transfer reference.
                   At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Agent Billing.</>}
+            {' '}<Link to="/guide/agent-payments">📘 Guide</Link>
           </div></div>
         )}
         {booking.night_prices?.length > 1 && (

@@ -914,3 +914,50 @@ tr:hover td { background: #FAFAF8; }
   }
   .drawer-item:active { background: #f3f4f6; }
 }
+
+/* ── Guide / Panduan (pages/Guide.jsx, components/GuideMarkdown.jsx) ── */
+.guide-page { max-width: 1100px; margin: 0 auto; }
+.guide-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; align-items: start; }
+.guide-nav { position: sticky; top: 12px; }
+.guide-nav-select { display: none; }
+.guide-nav-group { margin-bottom: 14px; }
+.guide-nav-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 0 6px 8px; }
+.guide-nav-item { display: flex; gap: 8px; padding: 7px 10px; border-radius: 8px; font-size: 14px; color: inherit; text-decoration: none; }
+.guide-nav-item:hover { background: var(--cream); }
+.guide-nav-item.active { background: var(--green-dark); color: #fff; font-weight: 600; }
+.guide-article { padding: 24px 28px; min-width: 0; }
+.guide-toc { font-size: 13px; padding: 8px 12px; background: var(--cream); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; line-height: 1.7; }
+.guide-body { font-size: 15px; line-height: 1.65; }
+.guide-body h2.guide-h1 { font-size: 24px; margin: 0 0 12px; }
+.guide-body h3.guide-h2 { font-size: 18px; margin: 26px 0 8px; padding-top: 14px; border-top: 1px solid var(--border); scroll-margin-top: 16px; }
+.guide-body h4.guide-h3 { font-size: 15px; margin: 18px 0 6px; }
+.guide-p { margin: 0 0 12px; }
+.guide-list { margin: 0 0 14px 22px; }
+.guide-list li { margin: 3px 0; }
+.guide-list ul { margin: 4px 0 4px 20px; }
+.guide-note { background: #EEF5FF; border-left: 3px solid #3B82F6; padding: 10px 14px; border-radius: 6px; margin: 0 0 14px; font-size: 14px; }
+.guide-table { margin: 0 0 16px; }
+.guide-table table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 480px; }
+.guide-table th, .guide-table td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.guide-table th { font-size: 12px; text-transform: uppercase; color: var(--text-muted); background: var(--cream); }
+.guide-code { font-family: ui-monospace, monospace; font-size: 13px; background: var(--cream); padding: 1px 5px; border-radius: 4px; }
+.guide-hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+@media (max-width: 768px) {
+  .guide-layout { grid-template-columns: 1fr; gap: 12px; }
+  .guide-nav { position: static; }
+  .guide-nav-select { display: block; width: 100%; }
+  .guide-nav-list { display: none; }
+  .guide-article { padding: 16px; }
+}
+@media print {
+  .sidebar, .bottom-nav, .call-fab, .ask-fab, .guide-noprint, .page-header { display: none !important; }
+  .guide-layout { display: block; }
+  .guide-article { box-shadow: none; border: none; padding: 0; }
+  /* a printed page is narrower than the phone breakpoint: undo the phone
+     layout's fixed height / inner scroll, or only the first page prints */
+  html, body, #root, .app-shell, .main-content { height: auto !important; overflow: visible !important; }
+  .app-shell { display: block !important; }
+  .page-wrap { padding: 0 !important; }
+  body { background: #fff !important; }
+  .guide-table table { min-width: 0; }
+}

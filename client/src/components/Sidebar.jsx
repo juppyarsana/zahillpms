@@ -133,6 +133,8 @@ export default function Sidebar() {
         {can('accounting') && hasModule('accounting') && (
           <SidebarLink to="/accounting" icon="📒" label="Accounting" />
         )}
+        {/* How to use the PMS — every signed-in user (pages/Guide.jsx) */}
+        <SidebarLink to="/guide" icon="📘" label="Guide / Panduan" />
       </nav>
 
       {hasSettings && (

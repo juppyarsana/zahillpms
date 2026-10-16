@@ -24,6 +24,7 @@ import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
 import Forecast from './pages/Forecast';
+import Guide from './pages/Guide';
 import Restaurant from './pages/Restaurant';
 import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
@@ -113,6 +114,9 @@ function BottomNav() {
       isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
       isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
       can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
+    ]},
+    { label: 'Help', items: [
+      { to: '/guide', icon: '📘', label: 'Guide / Panduan' },
     ]},
     { label: 'Settings · Access', items: [
       can('users') && { to: '/users', icon: '👥', label: 'Users' },
@@ -304,6 +308,8 @@ export default function App() {
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guest-lists"      element={<RequireMenu menuKey="guest_lists"><RequireModule moduleName="reservations"><GuestLists /></RequireModule></RequireMenu>} />
+                  <Route path="/guide"            element={<Guide />} />
+                  <Route path="/guide/:chapter"   element={<Guide />} />
                   <Route path="/forecast"         element={<RequireMenu menuKey="forecast"><RequireModule moduleName="reservations"><Forecast /></RequireModule></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />

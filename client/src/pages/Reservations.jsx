@@ -251,7 +251,7 @@ function ToCheckView({ nav, onCount }) {
   return (
     <div className="card">
       <div className="flex-between mb-3" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <div className="text-muted" style={{ fontSize: 13, maxWidth: 640 }}>{intro}</div>
+        <div className="text-muted" style={{ fontSize: 13, maxWidth: 640 }}>{intro} <Link to="/guide/to-check">📘 Guide</Link></div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'open' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('open')}>To check</button>
           <button className={`btn btn-sm ${tab === 'names' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('names')}>Waiting for guest names</button>

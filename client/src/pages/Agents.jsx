@@ -546,6 +546,7 @@ function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, 
           <div className="alert alert-info mb-3" style={{ fontSize: 12 }}><div>
             For stays <b>already checked out</b> and on this agent's bill. Money the agent sends <b>before</b> the guest checks out
             (e.g. H-7) is recorded on the reservation instead — Room Payment → Mark Received, or Record Group Payment on the group.
+            {' '}<a href="/guide/agent-payments" target="_blank" rel="noreferrer">📘 Guide</a>
           </div></div>
           <div className="form-row">
             <div className="form-group">
