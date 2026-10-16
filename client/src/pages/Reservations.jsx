@@ -172,60 +172,152 @@ function GroupsView({ nav }) {
   );
 }
 
+// A group counts once — the To check badge and tabs count reservations.
+function countReservations(rows) {
+  return new Set(rows.map(r => r.reservation_group_id || r.id)).size;
+}
+
+// The rows of one reservation folded into one line: a group's rooms together,
+// each open point once with the rooms it is on.
+function foldReservations(rows) {
+  const byRes = new Map();
+  for (const b of rows) {
+    const key = b.reservation_group_id || b.id;
+    if (!byRes.has(key)) byRes.set(key, { key, groupId: b.reservation_group_id, rows: [] });
+    byRes.get(key).rows.push(b);
+  }
+  return [...byRes.values()].map(r => {
+    const first = r.rows[0];
+    const points = new Map();
+    for (const b of r.rows) for (const p of (b.points || [])) {
+      if (!points.has(p.text)) points.set(p.text, { ...p, rooms: [], done: 0 });
+      const e = points.get(p.text);
+      e.rooms.push(b.unit_name);
+      if (p.resolved) e.done += 1;
+    }
+    return {
+      ...r,
+      arrival: r.rows.reduce((m, b) => (b.check_in_date < m ? b.check_in_date : m), first.check_in_date),
+      departure: r.rows.reduce((m, b) => (b.check_out_date > m ? b.check_out_date : m), first.check_out_date),
+      name: r.groupId ? (first.group_booker || first.guest_name) : first.guest_name,
+      source: first.agent_name || first.source_label || '—',
+      points: [...points.values()],
+      doneBy: first.to_check_done_by_name, doneAt: first.to_check_done_at,
+    };
+  });
+}
+
 // "To check" view: bookings with points front desk still has to look at
 // (migration 109 — written by the VHP import: a room picked by the import,
-// an agent not found, no rate, placeholder names…). Click a row to open the
-// booking; "Checked" there takes it off this list.
+// an agent not found, no rate, placeholder names…), one line per reservation
+// (a group's rooms together). A point FO has fixed (price edited, guest
+// assigned, room changed…) is struck through by itself; Checked takes the
+// reservation off the list. Bookings waiting only for their guest names have
+// their own tab, so they don't hide the ones with work to do.
 function ToCheckView({ nav, onCount }) {
-  const [done, setDone] = useState(false);
+  const [tab, setTab] = useState('open');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
+  const load = () => {
     setLoading(true);
-    api.get('/api/bookings/to-check', { params: done ? { done: 1 } : {} })
-      .then(r => { setRows(r.data); if (!done) onCount?.(r.data.length); })
+    return api.get('/api/bookings/to-check', { params: { view: tab } })
+      .then(r => { setRows(r.data); if (tab === 'open') onCount?.(countReservations(r.data)); })
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [done]);   // eslint-disable-line react-hooks/exhaustive-deps
+  };
+  useEffect(() => { load(); }, [tab]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const check = async (res, undo = false) => {
+    setBusy(res.key); setErr('');
+    try {
+      if (res.groupId) await api.put(`/api/bookings/group/${res.groupId}/to-check/done`, undo ? { undo: true } : {});
+      else await api.put(`/api/bookings/${res.rows[0].id}/to-check/done`, undo ? { undo: true } : {});
+      await load();
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Could not save — try again');
+    } finally { setBusy(null); }
+  };
+
+  const list = foldReservations(rows);
+  const open = (res) => nav(res.groupId ? `/reservations/group/${res.groupId}` : `/reservations/${res.rows[0].id}`);
+  const intro = {
+    open: 'One line per reservation (a group\'s rooms together). Open it, fix what is listed — a point you fix is struck through by itself — then press Checked. Guest names can wait: once checked, a reservation that only needs its guest names moves to "Waiting for guest names".',
+    names: 'Reservations where only the guest names are missing — they leave this list by themselves once the guests are assigned (Assign Guests on the group page, Change Guest on a room).',
+    done: 'Reservations with nothing left to check (latest 200). "Put back" returns one to the To check list.',
+  }[tab];
 
   return (
     <div className="card">
       <div className="flex-between mb-3" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <div className="text-muted" style={{ fontSize: 13 }}>
-          {done ? 'Bookings already checked (latest 200).' : 'Bookings with points to look at — open one, fix what is listed, then press Checked.'}
-        </div>
-        <div className="flex gap-2">
-          <button className={`btn btn-sm ${!done ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDone(false)}>To check</button>
-          <button className={`btn btn-sm ${done ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDone(true)}>Checked</button>
+        <div className="text-muted" style={{ fontSize: 13, maxWidth: 640 }}>{intro}</div>
+        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${tab === 'open' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('open')}>To check</button>
+          <button className={`btn btn-sm ${tab === 'names' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('names')}>Waiting for guest names</button>
+          <button className={`btn btn-sm ${tab === 'done' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('done')}>Done</button>
         </div>
       </div>
+      {err && <div className="alert alert-error mb-3"><div>{err}</div></div>}
+      {!loading && list.length > 0 && (
+        <div className="text-muted mb-2" style={{ fontSize: 12 }}>
+          {list.length} reservation{list.length === 1 ? '' : 's'} · {rows.length} room{rows.length === 1 ? '' : 's'}
+        </div>
+      )}
       <div className="table-wrap">
-        <table>
+        <table style={{ minWidth: 720 }}>
           <thead>
-            <tr><th>Arrival</th><th>Room</th><th>Guest</th><th>Source / agent</th><th>To check</th>{done && <th>Checked by</th>}</tr>
+            <tr><th>Arrival</th><th>Reservation</th><th>Source / agent</th><th>To check</th><th></th></tr>
           </thead>
           <tbody>
-            {!loading && rows.map(b => (
-              <tr key={b.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/reservations/${b.id}`)}>
+            {!loading && list.map(res => (
+              <tr key={res.key} style={{ cursor: 'pointer', verticalAlign: 'top' }} onClick={() => open(res)}>
                 <td style={{ whiteSpace: 'nowrap' }}>
-                  {fmtYmd(b.check_in_date?.slice(0, 10))}
-                  <div className="text-muted" style={{ fontSize: 11 }}>→ {fmtYmd(b.check_out_date?.slice(0, 10))}</div>
+                  {fmtYmd(res.arrival?.slice(0, 10))}
+                  <div className="text-muted" style={{ fontSize: 11 }}>→ {fmtYmd(res.departure?.slice(0, 10))}</div>
                 </td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  {b.unit_name}<div className="text-muted" style={{ fontSize: 11 }}>{b.room_type_name}</div>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{res.name}</div>
+                  <div className="text-muted" style={{ fontSize: 11 }}>
+                    {res.groupId ? `👥 Group · ${res.rows.length} room${res.rows.length === 1 ? '' : 's'}: ` : ''}
+                    {res.rows.map(b => b.unit_name).join(', ')}
+                  </div>
                 </td>
-                <td style={{ fontWeight: 600 }}>{b.guest_name}<GroupTag groupId={b.reservation_group_id} nav={nav} /></td>
-                <td style={{ fontSize: 12 }}>{b.agent_name || b.source_label || '—'}</td>
+                <td style={{ fontSize: 12 }}>{res.source}</td>
                 <td style={{ fontSize: 12 }}>
-                  {(Array.isArray(b.to_check) ? b.to_check : []).map((p, i) => <div key={i}>• {p}</div>)}
+                  {res.points.map(p => {
+                    const allDone = p.done === p.rooms.length;
+                    const roomsTxt = res.rows.length > 1 && p.rooms.length < res.rows.length ? ` (${p.rooms.join(', ')})` : '';
+                    return (
+                      <div key={p.text} style={allDone ? { textDecoration: 'line-through', color: 'var(--text-muted)' } : undefined}>
+                        {allDone ? '✓' : '•'} {p.text}{roomsTxt}
+                        {!allDone && p.done > 0 && <span className="text-muted"> — {p.done} of {p.rooms.length} done</span>}
+                      </div>
+                    );
+                  })}
+                  {tab === 'done' && res.doneBy && (
+                    <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                      Checked by {res.doneBy}{res.doneAt && ` · ${new Date(res.doneAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROPERTY_TZ })}`}
+                    </div>
+                  )}
                 </td>
-                {done && <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{b.to_check_done_by_name || '—'}<div className="text-muted" style={{ fontSize: 11 }}>{b.to_check_done_at && new Date(b.to_check_done_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROPERTY_TZ })}</div></td>}
+                <td style={{ whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
+                  {tab === 'open' && (
+                    <button className="btn btn-sm btn-secondary" disabled={busy === res.key} onClick={() => check(res)}
+                      title={res.groupId ? 'Mark every room of this group as checked' : 'Mark this booking as checked'}>
+                      {busy === res.key ? '…' : res.groupId ? '✓ Checked whole group' : '✓ Checked'}
+                    </button>
+                  )}
+                  {tab === 'done' && res.doneBy && (
+                    <button className="btn btn-sm btn-secondary" disabled={busy === res.key} onClick={() => check(res, true)}>Put back</button>
+                  )}
+                </td>
               </tr>
             ))}
-            {loading && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>Loading…</td></tr>}
-            {!loading && rows.length === 0 && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
-                {done ? 'Nothing checked yet' : '✓ Nothing left to check'}
+            {loading && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>Loading…</td></tr>}
+            {!loading && list.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 32 }}>
+                {tab === 'open' ? '✓ Nothing left to check' : tab === 'names' ? 'No reservation is waiting for guest names' : 'Nothing done yet'}
               </td></tr>
             )}
           </tbody>
@@ -410,9 +502,13 @@ export default function Reservations() {
   const [view, setView]     = useState(['list', 'groups', 'booked', 'tocheck'].includes(params.get('view')) ? params.get('view') : 'calendar');
   const calScrollRef        = useRef(null);
   // Bookings still "to check" (migration 109) — the button only shows when there are any.
+  // Counted in reservations (a group = 1). Also shown while bookings only
+  // wait for their guest names, so that list stays reachable.
   const [toCheckCount, setToCheckCount] = useState(0);
+  const [namesWaiting, setNamesWaiting] = useState(0);
   useEffect(() => {
-    api.get('/api/bookings/to-check').then(r => setToCheckCount(r.data.length)).catch(() => {});
+    api.get('/api/bookings/to-check').then(r => setToCheckCount(countReservations(r.data))).catch(() => {});
+    api.get('/api/bookings/to-check', { params: { view: 'names' } }).then(r => setNamesWaiting(countReservations(r.data))).catch(() => {});
   }, []);
 
   // List view filters — kept separate from the calendar's month/year-driven
@@ -760,7 +856,7 @@ export default function Reservations() {
           <button className={`btn btn-sm ${view === 'groups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('groups')}>👥 Groups</button>
           <button className={`btn btn-sm ${view === 'booked' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('booked')}
             title="Reservations by the day they were made — e.g. how many we took today">🆕 Booked on</button>
-          {(toCheckCount > 0 || view === 'tocheck') && (
+          {(toCheckCount > 0 || namesWaiting > 0 || view === 'tocheck') && (
             <button className={`btn btn-sm ${view === 'tocheck' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('tocheck')}
               title="Bookings with points to look at (e.g. imported from the old system)">
               ⚠ To check{toCheckCount > 0 ? ` (${toCheckCount})` : ''}

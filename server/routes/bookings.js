@@ -34,6 +34,7 @@ const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
 const { TODAY_WITA_SQL, checkoutDaySql, occupiedUntilSql, overdueSql } = require('../services/occupancySql');
+const toCheck = require('../services/toCheck');
 
 // A booking can carry more than one 'balance' payment line: a price
 // correction (PUT /:id/price) that raises an already fully-paid booking adds a
@@ -955,30 +956,77 @@ router.get('/groups', auth, async (req, res) => {
   }
 });
 
-// GET /api/bookings/to-check — bookings with points front desk still has to
-// look at (migration 109; written by the VHP import), not cancelled / no-show,
-// not checked off yet. ?done=1 lists the ones already checked (last 200).
+// GET /api/bookings/to-check?view=open|names|done — bookings with points
+// front desk still has to look at (migration 109; written by the VHP import),
+// not cancelled / no-show. Each row carries `points` [{ text, kind, resolved }]
+// — a point FO has since fixed (price edited, guest assigned, room changed…)
+// is resolved by itself (services/toCheck.js). open = still to check; names =
+// only the guest name left (waiting for the agent's list); done = nothing left
+// (latest 200). ?done=1 = view=done (older screens). The screen folds a
+// group's rooms into one line (group_*).
 router.get('/to-check', auth, async (req, res) => {
-  const done = req.query.done === '1';
+  const view = req.query.done === '1' ? 'done' : (['open', 'names', 'done'].includes(req.query.view) ? req.query.view : 'open');
   try {
     const { rows } = await db.query(`
       SELECT b.id, b.check_in_date, b.check_out_date, b.status, b.num_guests, b.to_check,
              b.to_check_done_at, du.name AS to_check_done_by_name, b.reservation_group_id,
              g.name AS guest_name, u.name AS unit_name, u.type AS room_type_name,
-             ag.name AS agent_name,
-             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label
+             ag.name AS agent_name, b.updated_at,
+             (SELECT bs.label FROM booking_sources bs WHERE bs.id = b.source AND bs.property_id = b.property_id) AS source_label,
+             gg.name AS group_booker,
+             ${toCheck.FLAGS_SQL}
       FROM bookings b
       JOIN guests g ON g.id = b.guest_id
       JOIN units u ON u.id = b.unit_id
       LEFT JOIN agents ag ON ag.id = b.agent_id
       LEFT JOIN users du ON du.id = b.to_check_done_by
+      LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
+      LEFT JOIN guests gg ON gg.id = rg.primary_guest_id
       WHERE b.property_id = $1 AND jsonb_array_length(COALESCE(b.to_check, '[]'::jsonb)) > 0
         AND b.status NOT IN ('cancelled', 'no_show')
-        AND b.to_check_done_at IS ${done ? 'NOT NULL' : 'NULL'}
-      ORDER BY ${done ? 'b.to_check_done_at DESC LIMIT 200' : 'b.check_in_date, u.name'}`, [req.propertyId]);
-    res.json(rows);
+      ORDER BY b.check_in_date, u.name`, [req.propertyId]);
+    let out = rows.filter(r => toCheck.bucket(r) === view);
+    if (view === 'done') {
+      out.sort((a, b) => String(b.to_check_done_at ? new Date(b.to_check_done_at).toISOString() : new Date(b.updated_at).toISOString())
+        .localeCompare(a.to_check_done_at ? new Date(a.to_check_done_at).toISOString() : new Date(a.updated_at).toISOString()));
+      out = out.slice(0, 200);
+    }
+    res.json(out.map(r => {
+      const o = { ...r, points: toCheck.points(r) };
+      for (const k of Object.keys(o)) if (k.startsWith('tc_')) delete o[k];
+      return o;
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/bookings/group/:groupId/to-check/done — every room of the group
+// with points still to check is marked checked in one go (each room gets
+// its own Edit History line, like the single Checked). { undo: true } puts
+// the group's checked rooms back on the list.
+router.put('/group/:groupId/to-check/done', auth, async (req, res) => {
+  const undo = req.body?.undo === true;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE bookings SET to_check_done_at = ${undo ? 'NULL' : 'NOW()'}, to_check_done_by = $3, updated_at = NOW()
+       WHERE reservation_group_id = $1 AND property_id = $2 AND to_check IS NOT NULL
+         AND status NOT IN ('cancelled', 'no_show') AND to_check_done_at IS ${undo ? 'NOT NULL' : 'NULL'}
+       RETURNING id, to_check`, [req.params.groupId, req.propertyId, undo ? null : req.user.id]);
+    for (const b of rows) {
+      const points = Array.isArray(b.to_check) ? b.to_check : [];
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [b.id,
+        (undo ? 'Put back on the To check list (whole group).' : `Checked (whole group): ${points.join('; ')}`).slice(0, 1000), req.user.id]);
+    }
+    await client.query('COMMIT');
+    res.json({ rooms: rows.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -1011,7 +1059,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
     if (!group) return res.status(404).json({ error: 'Group not found' });
 
     const { rows: bookings } = await db.query(`
-      SELECT b.*, u.name as unit_name,
+      SELECT b.*, u.name as unit_name, u.type AS room_type_name,
              g.name AS guest_name, g.nationality AS guest_nationality, g.id_number AS guest_id_number,
              (SELECT name FROM agents ag WHERE ag.id = b.agent_id) AS agent_name,
              (SELECT checkin_time FROM checkin_records cr WHERE cr.booking_id = b.id) as checkin_time,
@@ -1067,7 +1115,34 @@ router.get('/group/:groupId', auth, async (req, res) => {
       ORDER BY be.created_at DESC, un.name
       LIMIT 500`, [req.params.groupId, req.propertyId]);
 
+    // "To check" across the group's rooms (services/toCheck.js): per room its
+    // list, and the open points with how many rooms each — for the group card.
+    let to_check = null;
+    if (bookings.some(b => Array.isArray(b.to_check) && b.to_check.length && !inactive.has(b.id))) {
+      const { rows: tc } = await db.query(
+        `SELECT b.id, b.to_check, b.to_check_done_at, u.name AS unit_name, ${toCheck.FLAGS_SQL}
+         FROM bookings b JOIN units u ON u.id = b.unit_id LEFT JOIN agents ag ON ag.id = b.agent_id
+         WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND b.to_check IS NOT NULL
+           AND b.status NOT IN ('cancelled', 'no_show')
+         ORDER BY u.name`, [req.params.groupId, req.propertyId]);
+      const rooms = tc.map(r => ({ booking_id: r.id, unit_name: r.unit_name, bucket: toCheck.bucket(r), points: toCheck.points(r) }));
+      const open = new Map();   // point text → rooms (only rooms still to check)
+      for (const r of rooms.filter(x => x.bucket === 'open')) {
+        for (const p of r.points.filter(x => !x.resolved)) {
+          if (!open.has(p.text)) open.set(p.text, { text: p.text, kind: p.kind, rooms: [] });
+          open.get(p.text).rooms.push(r.unit_name);
+        }
+      }
+      to_check = {
+        rooms,
+        open_rooms: rooms.filter(r => r.bucket === 'open').length,
+        names_rooms: rooms.filter(r => r.bucket === 'names').length,
+        open_points: [...open.values()],
+      };
+    }
+
     res.json({
+      to_check,
       group,
       bookings: bookingsWithPayments,
       events,
@@ -1159,7 +1234,17 @@ router.get('/:id', auth, async (req, res) => {
     // (migration 090) — [] otherwise.
     const night_prices = nightRatesSvc.nightPrices(booking,
       stayNightList(booking.check_in_date, booking.check_out_date), await nightRatesSvc.loadNightRates(db, booking.id));
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices });
+    // "To check" points with which are already done (services/toCheck.js) —
+    // only for a booking that has any.
+    let to_check_points = null, to_check_bucket = null;
+    if (Array.isArray(booking.to_check) && booking.to_check.length) {
+      const { rows: [f] } = await db.query(
+        `SELECT b.to_check, b.to_check_done_at, ${toCheck.FLAGS_SQL}
+         FROM bookings b LEFT JOIN agents ag ON ag.id = b.agent_id WHERE b.id = $1`, [booking.id]);
+      to_check_points = toCheck.points(f);
+      to_check_bucket = toCheck.bucket(f);
+    }
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1722,6 +1807,94 @@ router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res
     }
 
     res.json({ old_total: oldNet, new_total: payable, received, credit, received_corrected: receivedFixes.length > 0 });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT /api/bookings/group/:groupId/price — Set Prices: Edit Price for several
+// rooms of a group at once (e.g. an agent series imported at Rp 0).
+// { rooms: [{ booking_id, total_amount }], reason } — total_amount as in Edit
+// Price (whole stay, tax included, before discount). Each room goes through
+// the same checks and applyBookingPrice as PUT /:id/price, with the same
+// "Price corrected:" Edit History line; all rooms or none. A room priced
+// night by night goes back to the same price every night. A room whose
+// received money is above its new price is refused (use Edit Price on that
+// room — it asks what the received amount was). Same permission as Edit Price.
+router.put('/group/:groupId/price', auth, requireOwnerOrMenu('edit_price'), async (req, res) => {
+  const reason = String(req.body.reason || '').trim();
+  const roomsIn = Array.isArray(req.body.rooms) ? req.body.rooms : [];
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  if (!roomsIn.length) return res.status(400).json({ error: 'Choose at least one room' });
+  if (new Set(roomsIn.map(r => r?.booking_id)).size !== roomsIn.length) return res.status(400).json({ error: 'A room is listed twice' });
+  for (const r of roomsIn) {
+    const t = parseFloat(r?.total_amount);
+    if (!r?.booking_id || !Number.isFinite(t) || t < 0) return res.status(400).json({ error: 'Each room needs a price of 0 or more' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [group] } = await client.query(
+      'SELECT id FROM reservation_groups WHERE id = $1 AND property_id = $2', [req.params.groupId, req.propertyId]);
+    if (!group) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Group not found' }); }
+
+    const done = [];
+    for (const r of roomsIn) {
+      const newTotal = round2(parseFloat(r.total_amount));
+      const { rows: [before] } = await client.query(
+        `SELECT b.*, u.name AS unit_name FROM bookings b JOIN units u ON u.id = b.unit_id
+         WHERE b.id = $1 AND b.property_id = $2 AND b.reservation_group_id = $3 FOR UPDATE OF b`,
+        [r.booking_id, req.propertyId, req.params.groupId]);
+      const fail = (status, error) => ({ status, error });
+      let err = null;
+      if (!before) err = fail(404, 'A room is not in this group');
+      else if (['cancelled', 'no_show'].includes(before.status)) err = fail(409, `Room ${before.unit_name} is ${before.status.replace('_', '-')}`);
+      else if (['invoiced', 'paid'].includes(before.folio_status)) err = fail(409, `Room ${before.unit_name} is already on an agent invoice — correct it through Agent Billing`);
+      else if (before.complimentary_scope) err = fail(409, `Room ${before.unit_name} is complimentary — remove complimentary first to set a price`);
+      if (err) { await client.query('ROLLBACK'); return res.status(err.status).json({ error: err.error }); }
+
+      const hadNights = (await nightRatesSvc.loadNightRates(client, before.id)).size > 0;
+      const result = await applyBookingPrice(client, {
+        propertyId: req.propertyId, before, newTotal, userId: req.user.id,
+        keepDiscount: before.discount_type !== 'percentage',
+        nightShares: null,
+      });
+      if (result.error) {
+        await client.query('ROLLBACK');
+        const msg = result.error.code === 'RECEIVED_EXCEEDS_PRICE'
+          ? `Room ${before.unit_name}: more has been received than the new price — use Edit Price on that room`
+          : `Room ${before.unit_name}: ${result.error.error || 'refused'}`;
+        return res.status(result.status).json({ ...result.error, error: msg });
+      }
+      const { payable } = result;
+      const oldNet = round2(parseFloat(before.total_amount) - parseFloat(before.discount_amount || 0));
+      let note = `Price corrected: ${fmtIDR(oldNet)} → ${fmtIDR(payable)}.`;
+      if (hadNights) note += ' Same price every night now.';
+      note += ` Reason: ${reason} (Set Prices for the group)`;
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [before.id, note.slice(0, 1000), req.user.id]);
+      done.push({ id: before.id, unit_name: before.unit_name, old_total: oldNet, new_total: payable,
+        recompute: before.folio_status === 'pending_agent_invoice' || before.status === 'checked_out' });
+    }
+    await client.query('COMMIT');
+
+    for (const d of done.filter(x => x.recompute)) {
+      await agentBilling.recomputeCommission(req.propertyId, d.id).catch(e => console.error('Commission recompute failed:', e));
+    }
+    const changed = done.filter(d => d.new_total !== d.old_total);
+    if (changed.length) {
+      const oldSum = changed.reduce((s, d) => s + d.old_total, 0), newSum = changed.reduce((s, d) => s + d.new_total, 0);
+      sendControlAlert(req.propertyId, {
+        bookingIds: changed.map(d => d.id), userId: req.user.id, reason,
+        headline: `💰 Prices set for ${changed.length} room${changed.length === 1 ? '' : 's'} of a group: ${fmtIDR(oldSum)} → ${fmtIDR(newSum)}`,
+        details: [],
+      });
+    }
+    res.json({ rooms: done.map(({ recompute, ...d }) => d) });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

@@ -1053,18 +1053,26 @@ export default function BookingDetail() {
 
       {/* "To check" (migration 109): points left by the VHP import for FO */}
       {Array.isArray(booking.to_check) && booking.to_check.length > 0 && (
-        booking.to_check_done_at ? (
+        booking.to_check_done_at || booking.to_check_bucket === 'done' || booking.to_check_bucket === 'names' ? (
           <div className="text-muted mb-3" style={{ fontSize: 12 }}>
-            ✓ Checked by {booking.to_check_done_by_name || '—'} on {new Date(booking.to_check_done_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-            {' · '}<a href="#" onClick={async e => { e.preventDefault(); await api.put(`/api/bookings/${id}/to-check/done`, { undo: true }); load(); }}>put back on the list</a>
+            {booking.to_check_done_at
+              ? <>✓ Checked by {booking.to_check_done_by_name || '—'} on {new Date(booking.to_check_done_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
+              : <>✓ Every point to check has been done</>}
+            {booking.to_check_bucket === 'names' && <> · <b>still waiting for the guest's name</b> (Change Guest, or Assign Guests on the group page)</>}
+            {booking.to_check_done_at && <>{' · '}<a href="#" onClick={async e => { e.preventDefault(); await api.put(`/api/bookings/${id}/to-check/done`, { undo: true }); load(); }}>put back on the list</a></>}
           </div>
         ) : (
           <div className="alert alert-warn mb-3" style={{ alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ To check</div>
-              {booking.to_check.map((p, i) => <div key={i} style={{ fontSize: 13 }}>• {p}</div>)}
+              {(booking.to_check_points || booking.to_check.map(text => ({ text }))).map((p, i) => (
+                <div key={i} style={{ fontSize: 13, ...(p.resolved ? { textDecoration: 'line-through', opacity: 0.6 } : {}) }}>
+                  {p.resolved ? '✓' : '•'} {p.text}
+                </div>
+              ))}
               <div className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
-                Fix what is listed (Change Room, Edit Details, Edit Price, Change Guest), then press Checked.
+                Fix what is listed (Change Room, Edit Details, Edit Price, Change Guest) — a point you fix is struck through by itself — then press Checked.
+                {booking.reservation_group_id && <> For the whole group at once: the <Link to={`/reservations/group/${booking.reservation_group_id}`}>group page</Link> (Set Prices, Assign Guests, Checked whole group).</>}
               </div>
             </div>
             <button className="btn btn-sm btn-primary" style={{ flexShrink: 0 }}

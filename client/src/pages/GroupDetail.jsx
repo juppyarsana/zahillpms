@@ -9,6 +9,7 @@ import { useSettings } from '../context/SettingsContext';
 import { otaName, roomPending } from '../lib/otaDue';
 import { useAuth } from '../context/AuthContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
+import GroupPriceModal from '../components/GroupPriceModal';
 import MasterFolio from '../components/MasterFolio';
 import GroupBillingCard, { GroupPaymentModal } from '../components/GroupBillingCard';
 
@@ -332,6 +333,18 @@ export default function GroupDetail() {
   // ── Amend Dates, room by room (components/GroupAmendDatesModal.jsx) ──
   const [amending, setAmending] = useState(false);
 
+  // ── Set Prices for several rooms (components/GroupPriceModal.jsx) — same
+  // permission as Edit Price. "To check": Checked for every room at once.
+  const canEditPrice = user?.role === 'owner' || can('edit_price');
+  const [pricing, setPricing] = useState(false);
+  const [checkingGroup, setCheckingGroup] = useState(false);
+  async function checkWholeGroup() {
+    setCheckingGroup(true);
+    try { await api.put(`/api/bookings/group/${groupId}/to-check/done`); await load(); }
+    catch (e) { alert(e.response?.data?.error || 'Could not save — try again'); }
+    finally { setCheckingGroup(false); }
+  }
+
   function addDaysYmd(ymd, n) {
     const [y, m, d] = ymd.split('-').map(Number);
     const dt = new Date(y, m - 1, d + n);
@@ -409,6 +422,7 @@ export default function GroupDetail() {
   const groupModify = [
     group.status !== 'cancelled' && amendableRooms.length > 0 && { label: 'Amend Dates', icon: '📅', onClick: openAmendGroup },
     canAddRoom && { label: 'Add Room', icon: '➕', onClick: openAddRoom },
+    canEditPrice && activeRooms.length > 0 && { label: 'Set Prices', icon: '💰', onClick: () => setPricing(true) },
     roomsWithBooker === 0 && assignableRooms.length > 0 && { label: 'Assign Guests', icon: '👥', onClick: openAssign },
   ].filter(Boolean);
   const groupDanger = [
@@ -491,6 +505,34 @@ export default function GroupDetail() {
           })}
         </div>
       )}
+
+      {/* "To check" across the group's rooms (migration 109, VHP import) —
+          services/toCheck.js on the server says which points are done. */}
+      {data.to_check && (data.to_check.open_rooms > 0 ? (
+        <div className="alert alert-warn mb-3" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              ⚠ To check — {data.to_check.open_rooms} room{data.to_check.open_rooms === 1 ? '' : 's'}
+            </div>
+            {data.to_check.open_points.map(p => (
+              <div key={p.text} style={{ fontSize: 13 }}>
+                • {p.text}{p.rooms.length < data.to_check.open_rooms ? ` (${p.rooms.join(', ')})` : p.rooms.length > 1 ? ` (all ${p.rooms.length} rooms)` : ''}
+              </div>
+            ))}
+            <div className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
+              {canEditPrice && <>Prices: ⋮ → <b>Set Prices</b> (all rooms at once). </>}
+              Guest names: <b>Assign Guests</b> — they can wait for the agent's list. A point you fix is crossed off by itself; then press Checked.
+            </div>
+          </div>
+          <button className="btn btn-sm btn-primary" style={{ flexShrink: 0 }} disabled={checkingGroup} onClick={checkWholeGroup}>
+            {checkingGroup ? '…' : '✓ Checked whole group'}
+          </button>
+        </div>
+      ) : data.to_check.names_rooms > 0 ? (
+        <div className="text-muted mb-3" style={{ fontSize: 12 }}>
+          ✓ Checked · still waiting for the guest names of {data.to_check.names_rooms} room{data.to_check.names_rooms === 1 ? '' : 's'} (Assign Guests)
+        </div>
+      ) : null)}
 
       <div className="tab-bar">
         <button className={`tab-bar-item${tab === 'details' ? ' active' : ''}`} onClick={() => setTab('details')}>Details</button>
@@ -768,6 +810,11 @@ export default function GroupDetail() {
         <GroupAmendDatesModal groupId={groupId} groupName={group.guest_name} rooms={amendableRooms}
           onClose={() => setAmending(false)}
           onDone={async () => { setAmending(false); await load(); if (folio) loadFolio(); }} />
+      )}
+      {pricing && (
+        <GroupPriceModal groupId={groupId} groupName={group.guest_name} rooms={bookings}
+          onClose={() => setPricing(false)}
+          onDone={async () => { setPricing(false); await load(); if (folio) loadFolio(); }} />
       )}
 
       {reinstating && (
