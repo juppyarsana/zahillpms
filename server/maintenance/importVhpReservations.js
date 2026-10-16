@@ -311,6 +311,22 @@ async function run() {
         else room.guests = { n, guessed: false, vhp: n };
       }
 
+      // A stay VHP split night by night (one line per night, e.g. 2 rooms on
+      // the 16th, 1 on the 17th, 2 on the 18th) → join a room to one that
+      // ends the day it starts, same type and rate, so it is one booking.
+      for (const x of rooms) { x.arrival = x.l.arrival; x.departure = x.l.departure; }
+      for (const x of [...rooms].sort((a, b) => a.arrival.localeCompare(b.arrival))) {
+        const prev = rooms.find(p => p !== x && !p.merged && p.type.id === x.type.id
+          && p.l.rate === x.l.rate && p.departure === x.arrival);
+        if (!prev) continue;
+        prev.departure = x.departure;
+        prev.nights += x.nights;
+        prev.joined = true;
+        if (!prev.given && x.given) prev.given = x.given;
+        x.merged = true;
+      }
+      for (let i = rooms.length - 1; i >= 0; i--) if (rooms[i].merged) rooms.splice(i, 1);
+
       // Already in the PMS?
       const dups = r.lines.map(l => alreadyIn(l, typeByName[(M.ROOM_TYPES[l.cat.slice(0, 3)] || '').toLowerCase()]?.id));
       if (dups.every(Boolean)) {
@@ -327,14 +343,14 @@ async function run() {
       // whole stay that no other line of this reservation asked for (so one
       // taken room doesn't push the whole group along by one).
       const planned = [];
-      const isFree = (unitId, ci, co) => !takenBy(unitId, ci, co) && !planned.some(p => p.unit.id === unitId && p.ci < co && p.co > ci);
+      const isFree = (unitId, ci, co) => !takenBy(unitId, ci, co) && !planned.some(p => p.unit.id === unitId); // a group never holds one room twice
       const askedFor = new Set(rooms.filter(x => x.given).map(x => x.given.id));
       for (const room of rooms) {
         room.points = [];
         const { l } = room;
-        if (room.given && room.given.room_type_id === room.type.id && isFree(room.given.id, l.arrival, l.departure)) {
+        if (room.given && room.given.room_type_id === room.type.id && isFree(room.given.id, room.arrival, room.departure)) {
           room.unit = room.given;
-          planned.push({ unit: room.given, ci: l.arrival, co: l.departure });
+          planned.push({ unit: room.given, ci: room.arrival, co: room.departure });
         }
       }
       for (const room of rooms) {
@@ -342,17 +358,17 @@ async function run() {
         const { l } = room;
         let unit = null;
         {
-          const free = u => u.room_type_id === room.type.id && isFree(u.id, l.arrival, l.departure);
+          const free = u => u.room_type_id === room.type.id && isFree(u.id, room.arrival, room.departure);
           unit = units.find(u => free(u) && !askedFor.has(u.id)) || units.find(free) || null;
           if (unit) {
             if (room.given && room.given.room_type_id !== room.type.id) room.points.push(`VHP had room ${room.given.name}, a ${typeNameOf[room.given.room_type_id]} — booked as ${room.type.name} (VHP room type); room picked automatically`);
-            else if (room.given) { const t = takenBy(room.given.id, l.arrival, l.departure); room.points.push(`VHP had room ${room.given.name}${t ? ` (taken in the PMS by ${t.guest})` : ''} — room picked automatically, change it if needed`); }
+            else if (room.given) { const t = takenBy(room.given.id, room.arrival, room.departure); room.points.push(`VHP had room ${room.given.name}${t ? ` (taken in the PMS by ${t.guest})` : ''} — room picked automatically, change it if needed`); }
             else room.points.push(room.count > 1 ? `Room picked automatically (VHP: ${room.count} × ${room.type.name}, no room numbers)` : 'Room picked automatically (no room number in VHP) — change it if needed');
           }
         }
-        if (!unit) { bad = `no ${room.type.name} room is free for the whole stay ${fmtDay(l.arrival)} → ${fmtDay(l.departure)}`; break; }
+        if (!unit) { bad = `no ${room.type.name} room is free for the whole stay ${fmtDay(room.arrival)} → ${fmtDay(room.departure)}`; break; }
         room.unit = unit;
-        planned.push({ unit, ci: l.arrival, co: l.departure });
+        planned.push({ unit, ci: room.arrival, co: room.departure });
       }
       if (bad) { report.skipped.push({ label, why: `does not fit: ${bad}${rooms.length > 1 ? ` (${rooms.length} rooms asked)` : ''}` }); continue; }
 
@@ -366,6 +382,7 @@ async function run() {
           const { l } = room;
           const g = await guestFor(l);
           room.guest = g;
+          if (room.joined) room.points.push('VHP listed this stay night by night — joined into one booking; check the nights and rooms in VHP');
           if (src.point) room.points.push(src.point);
           if (g.placeholder) room.points.push(`Guest name not known yet (VHP: "${l.guestRaw}") — Change Guest / Assign Guests`);
           if (room.guests.guessed) room.points.push(`Number of guests guessed (${room.guests.n}) — VHP's adults / children did not say per room (VHP: ${room.guests.vhp})`);
@@ -373,7 +390,7 @@ async function run() {
           if (!l.rate) room.points.push(l.segment === 'COMPLIMENT' ? 'Complimentary in VHP (rate 0) — make it complimentary (⋮ → Make Complimentary); until then the price is its breakfasts only' : 'No rate in VHP (Rp 0) — set the price with Edit Price (until then it is the breakfasts only)');
           if (!M.OTA_SOURCES[first.company.toUpperCase()]) room.points.push('Check in VHP whether a deposit was paid — if so, Record Payment with the date it was paid (not today)');
           room.input = {
-            guest_id: g.id, unit_id: room.unit.id, check_in_date: l.arrival, check_out_date: l.departure,
+            guest_id: g.id, unit_id: room.unit.id, check_in_date: room.arrival, check_out_date: room.departure,
             num_guests: Math.max(1, room.guests.n), total_amount: l.rate * room.nights,
             rate_plan_id: plan?.id || null, bed_preference: M.BEDS[l.cat[3]] || null,
             special_requests: l.remarks || null,
@@ -388,8 +405,8 @@ async function run() {
         } else {
           made = await bookingCreate.createGroup(client, { propertyId: pid, userId: user.id, input: {
             ...common, guest_id: rooms[0].guest.id, group_deposit_amount: 0,
-            check_in_date: rooms.reduce((m, x) => (x.l.arrival < m ? x.l.arrival : m), rooms[0].l.arrival),
-            check_out_date: rooms.reduce((m, x) => (x.l.departure > m ? x.l.departure : m), rooms[0].l.departure),
+            check_in_date: rooms.reduce((m, x) => (x.arrival < m ? x.arrival : m), rooms[0].arrival),
+            check_out_date: rooms.reduce((m, x) => (x.departure > m ? x.departure : m), rooms[0].departure),
             special_requests: first.remarks || null, internal_notes: `${TAG} · ResNo ${r.res}`,
             rooms: rooms.map(x => ({ ...x.input })),
           } });
@@ -405,7 +422,7 @@ async function run() {
           await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
             [b.id, `Imported from the old system (VHP reservation ${r.res}${createdOn ? `, booked there on ${createdOn}` : ''}).`, user.id]);
           created.bookings.push(b.id);
-          occ.set(b.unit_id, [...(occ.get(b.unit_id) || []), { ci: room.l.arrival, co: room.l.departure, guest: room.guest.name }]);
+          occ.set(b.unit_id, [...(occ.get(b.unit_id) || []), { ci: room.arrival, co: room.departure, guest: room.guest.name }]);
         }
         if (made.group) {
           created.groups.push(made.group.id);
@@ -455,7 +472,7 @@ function printReport(report, created) {
   console.log('══ TO IMPORT ═════════════════════════════════════════════════════');
   for (const x of imp) {
     const l = x.r.lines[0];
-    const dates = `${fmtDay(x.r.first)} → ${fmtDay(x.rooms.reduce((m, y) => (y.l.departure > m ? y.l.departure : m), l.departure))}`;
+    const dates = `${fmtDay(x.r.first)} → ${fmtDay(x.rooms.reduce((m, y) => (y.departure > m ? y.departure : m), x.rooms[0].departure))}`;
     const src = x.src.agentName ? `${x.src.source} · ${x.src.agentName}` : x.src.source;
     console.log(`✓ ${x.r.res.padEnd(6)} ${cleanName(l.guestRaw).slice(0, 26).padEnd(26)} ${dates.padEnd(16)} ${String(x.rooms.length).padStart(2)} room${x.rooms.length === 1 ? ' ' : 's'}  ${rp(x.total).padStart(14)}  ${src}`);
     // Rooms with the same points (and guest / rate) are listed together.
