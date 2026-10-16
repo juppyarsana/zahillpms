@@ -8,6 +8,8 @@
 //   GET  /closing               closed through + corrections waiting
 //   POST /closing               { through, start? } close days
 //   DELETE /closing/last        open the last closed day again (owner)
+//   GET  /pl?month=YYYY-MM      Profit & Loss: the month, the month before, year to date
+//   GET  /pl/xlsx | /pl/pdf     the same as Excel / PDF
 // Owner, or the `accounting` permission (an accountant's login).
 const router = require('express').Router();
 const db = require('../db');
@@ -28,6 +30,7 @@ router.get('/setup', async (req, res) => {
     res.json({
       accounts: m.accounts,
       types: accounting.TYPES,
+      pl_lines: Object.entries(require('../services/plLayout').LINE_LABEL).map(([key, label]) => ({ key, label })),
       items: m.keys.map(k => ({ key: k.key, label: k.label, group: k.group, account_id: k.account_id, is_default: k.is_default })),
     });
   } catch (err) {
@@ -144,6 +147,57 @@ router.get('/journal/xlsx', async (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="journal-${label}.xlsx"`);
     res.send(Buffer.from(buf));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Profit & Loss (migration 110) ──
+async function plFor(req, res) {
+  const { buildPl } = require('../services/plService');
+  const pl = await buildPl(req.propertyId, String(req.query.month || todayWITA().slice(0, 7)), todayWITA());
+  if (pl.error) { res.status(400).json({ error: pl.error }); return null; }
+  return pl;
+}
+async function propertyFor(propertyId) {
+  const { rows: [p] } = await db.query(
+    `SELECT COALESCE(NULLIF(ps.property_name, ''), pr.name) AS property_name, ps.property_address, ps.property_phone, ps.property_email, ps.logo_url
+     FROM properties pr LEFT JOIN property_settings ps ON ps.property_id = pr.id WHERE pr.id = $1`, [propertyId]);
+  return p || {};
+}
+
+router.get('/pl', async (req, res) => {
+  try {
+    const pl = await plFor(req, res);
+    if (pl) res.json(pl);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/pl/xlsx', async (req, res) => {
+  try {
+    const pl = await plFor(req, res);
+    if (!pl) return;
+    const { buildPlXlsx } = require('../services/plExport');
+    const buf = await buildPlXlsx(pl, await propertyFor(req.propertyId));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="profit-and-loss-${pl.month}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/pl/pdf', async (req, res) => {
+  try {
+    const pl = await plFor(req, res);
+    if (!pl) return;
+    const { buildPlPdf } = require('../services/plExport');
+    const buf = await buildPlPdf(pl, await propertyFor(req.propertyId));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="profit-and-loss-${pl.month}.pdf"`);
+    res.send(buf);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

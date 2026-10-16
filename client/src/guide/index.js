@@ -18,6 +18,9 @@ export const GROUPS = [
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
   ] },
+  { label: { id: 'Akuntansi', en: 'Accounting' }, chapters: [
+    { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
+  ] },
 ];
 
 export const CHAPTERS = GROUPS.flatMap(g => g.chapters);

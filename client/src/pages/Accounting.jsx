@@ -2,7 +2,7 @@
 // PMS records (folio charges, payments, POS sessions, expenses), and the chart
 // of accounts + which account each kind of amount goes to.
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { propertyToday } from '../lib/propertyTime';
 import { useAuth } from '../context/AuthContext';
@@ -25,18 +25,19 @@ const KINDS = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenu
 
 const TABS = [
   { key: 'journal', label: '📒 Daily journal' },
+  { key: 'pl', label: '📊 Profit & Loss' },
   { key: 'accounts', label: '🗂 Accounts' },
 ];
 
 export default function Accounting() {
   const [params] = useSearchParams();
-  const [tab, setTab] = useState(params.get('tab') === 'accounts' ? 'accounts' : 'journal');
+  const [tab, setTab] = useState(TABS.some(t => t.key === params.get('tab')) ? params.get('tab') : 'journal');
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto' }}>
       <div className="page-header">
         <div>
           <div className="page-title">Accounting</div>
-          <div className="page-subtitle">The daily journal for your accountant, made from what the PMS already records</div>
+          <div className="page-subtitle">The daily journal and the Profit & Loss, made from what the PMS already records</div>
         </div>
       </div>
       <div className="tab-bar">
@@ -44,8 +45,181 @@ export default function Accounting() {
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
-      {tab === 'journal' ? <JournalTab /> : <AccountsTab />}
+      {tab === 'journal' ? <JournalTab /> : tab === 'pl' ? <PlTab /> : <AccountsTab />}
     </div>
+  );
+}
+
+// Profit & Loss (migration 110): the journal added up per account, laid out
+// by department → GOP → net profit. Month, month before, year to date.
+function shiftMonth(ym, n) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 7);
+}
+const pctText = v => (v == null ? '' : `${Number(v).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`);
+const money = n => {
+  const v = Math.round(Number(n) || 0);
+  return v === 0 ? '–' : v.toLocaleString('id-ID');
+};
+const PL_COLS = ['period', 'previous', 'ytd'];
+
+function PlTab() {
+  const thisMonth = propertyToday().slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [open, setOpen] = useState({});        // line key → accounts shown
+  const [allOpen, setAllOpen] = useState(false);
+  const [downloading, setDownloading] = useState('');
+
+  useEffect(() => {
+    let off = false;
+    setLoading(true); setError('');
+    api.get('/api/accounting/pl', { params: { month } })
+      .then(r => { if (!off) setData(r.data); })
+      .catch(err => { if (!off) { setData(null); setError(err.response?.data?.error || 'Failed to load'); } })
+      .finally(() => { if (!off) setLoading(false); });
+    return () => { off = true; };
+  }, [month]);
+
+  async function download(kind) {
+    setDownloading(kind);
+    try {
+      const type = kind === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const r = await api.get(`/api/accounting/pl/${kind}`, { params: { month }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `profit-and-loss-${month}.${kind}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert(`Failed to make the ${kind === 'pdf' ? 'PDF' : 'Excel file'}`);
+    } finally {
+      setDownloading('');
+    }
+  }
+
+  const cols = data?.columns;
+  const isOpen = key => allOpen || !!open[key];
+  const negative = v => Math.round(Number(v) || 0) < 0;
+
+  return (
+    <>
+      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => setMonth(m => shiftMonth(m, -1))} aria-label="Previous month">←</button>
+        <input className="form-input" type="month" value={month} max={thisMonth}
+          onChange={e => e.target.value && setMonth(e.target.value)} style={{ width: 170 }} aria-label="Month" />
+        <button className="btn btn-secondary btn-sm" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= thisMonth} aria-label="Next month">→</button>
+        {month !== thisMonth && <button className="btn btn-secondary btn-sm" onClick={() => setMonth(thisMonth)}>This month</button>}
+        <span style={{ flex: 1 }} />
+        <button className="btn btn-secondary btn-sm" onClick={() => { setAllOpen(v => !v); setOpen({}); }}>
+          {allOpen ? 'Hide accounts' : 'Show all accounts'}
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={() => download('xlsx')} disabled={loading || !data || !!downloading}>
+          {downloading === 'xlsx' ? 'Making…' : '⬇ Excel'}
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={() => download('pdf')} disabled={loading || !data || !!downloading}>
+          {downloading === 'pdf' ? 'Making…' : '⬇ PDF'}
+        </button>
+      </div>
+
+      {error && <div className="alert alert-error"><div>{error}</div></div>}
+      {loading ? <div className="text-muted">Loading…</div> : data && (<>
+        {data.unmapped.length > 0 && (
+          <div className="alert alert-warn"><div>
+            <b>No account chosen for:</b> {data.unmapped.join('; ')}. Choose one on the Accounts tab — until then these show as their own lines.
+          </div></div>
+        )}
+
+        <div className="card">
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            Net amounts — service charge (paid to staff) and tax are not revenue. Revenue is counted night by night as it is posted to guests' bills;
+            costs come from <b>Back Office → Expenses</b> and agent commission.{' '}
+            {cols.period.partial && <>{cols.period.label} is the month so far. </>}
+            {data.closed_through ? <>Days up to {fmtLong(data.closed_through)} are closed; later days can still change.</> : <>No day is closed yet, so every figure can still change.</>}
+            {' '}% is of total revenue, or of the department's own revenue for its expenses and profit. Click a line to see its accounts.{' '}
+            <Link to="/guide/profit-and-loss">📘 Guide</Link>
+          </div>
+          <div className="table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th style={TH}></th>
+                  {PL_COLS.map(c => [
+                    <th key={c} style={{ ...TH, ...R }}>{cols[c].label}</th>,
+                    <th key={`${c}-p`} style={{ ...TH, ...R }}>%</th>,
+                  ])}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map(r => {
+                  if (r.kind === 'heading') {
+                    return (
+                      <tr key={r.key}>
+                        <td colSpan={7} style={{ ...TD, fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.3, paddingTop: 16, borderBottom: 'none' }}>{r.label}</td>
+                      </tr>
+                    );
+                  }
+                  const total = r.kind !== 'line';
+                  const grand = r.kind === 'grand';
+                  const hasAccounts = (r.accounts || []).length > 0;
+                  const style = {
+                    ...TD,
+                    fontWeight: total ? 700 : 400,
+                    borderTop: total ? '1.5px solid var(--text, #111827)' : undefined,
+                    background: grand ? 'var(--primary-light, rgba(139,30,63,0.07))' : undefined,
+                  };
+                  return [
+                    <tr key={r.key} onClick={hasAccounts ? () => setOpen(o => ({ ...o, [r.key]: !o[r.key] })) : undefined}
+                      style={{ cursor: hasAccounts ? 'pointer' : undefined }}>
+                      <td style={{ ...style, paddingLeft: total ? 8 : 20 }}>
+                        {hasAccounts && <span className="text-muted" style={{ display: 'inline-block', width: 14 }}>{isOpen(r.key) ? '▾' : '▸'}</span>}
+                        {r.label}
+                      </td>
+                      {PL_COLS.map(c => [
+                        <td key={c} style={{ ...style, ...R, color: negative(r.amounts[c]) ? 'var(--danger, #DC2626)' : undefined }}>{money(r.amounts[c])}</td>,
+                        <td key={`${c}-p`} style={{ ...style, ...R, fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>{pctText(r.pct[c])}</td>,
+                      ])}
+                    </tr>,
+                    ...(hasAccounts && isOpen(r.key) ? r.accounts.map(a => (
+                      <tr key={`${r.key}-${a.code}-${a.name}`}>
+                        <td style={{ ...TD, paddingLeft: 40, fontSize: 12, color: a.unmapped ? 'var(--danger, #DC2626)' : 'var(--text-muted)' }}>{a.code} · {a.name}</td>
+                        {PL_COLS.map(c => [
+                          <td key={c} style={{ ...TD, ...R, fontSize: 12, color: 'var(--text-muted)' }}>{money(a.amounts[c])}</td>,
+                          <td key={`${c}-p`} style={TD} />,
+                        ])}
+                      </tr>
+                    )) : []),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {data.off_pl.length > 0 && (
+          <div className="card mt-3">
+            <div className="card-title">Not on the P&L</div>
+            <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>Revenue or expense accounts set to “Not on the P&L” on the Accounts tab.</div>
+            <div className="table-wrap">
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                <tbody>
+                  {data.off_pl.map(a => (
+                    <tr key={a.code + a.name}>
+                      <td style={TD}>{a.code} · {a.name}</td>
+                      {PL_COLS.map(c => <td key={c} style={{ ...TD, ...R }}>{money(a.amounts[c])}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </>)}
+    </>
   );
 }
 
@@ -389,7 +563,11 @@ function ClosingCard({ version, onChanged }) {
   );
 }
 
-const EMPTY_ACCOUNT = { code: '', name: '', type: 'asset' };
+const EMPTY_ACCOUNT = { code: '', name: '', type: 'asset', pl_line: '' };
+// The P&L lines an account of this kind can show on ('' = the kind's default).
+const plOptions = (lines, type) => (lines || []).filter(l =>
+  l.key === 'none' || (type === 'revenue' ? l.key.startsWith('rev.') : type === 'expense' && !l.key.startsWith('rev.')));
+const PL_DEFAULT = { revenue: 'rev.misc', expense: 'und.admin' };
 
 function AccountsTab() {
   const [setup, setSetup] = useState(null);
@@ -436,7 +614,9 @@ function AccountsTab() {
   }
 
   function openAdd() { setForm(EMPTY_ACCOUNT); setFormError(''); setModal({ mode: 'add' }); }
-  function openEdit(a) { setForm({ code: a.code, name: a.name, type: a.type }); setFormError(''); setModal({ mode: 'edit', id: a.id }); }
+  function openEdit(a) { setForm({ code: a.code, name: a.name, type: a.type, pl_line: a.pl_line || '' }); setFormError(''); setModal({ mode: 'edit', id: a.id }); }
+  const plLabel = key => (setup?.pl_lines || []).find(l => l.key === key)?.label || '';
+  const plOf = a => (PL_DEFAULT[a.type] ? plLabel(a.pl_line || PL_DEFAULT[a.type]) : '');
   async function saveAccount() {
     setFormError('');
     try {
@@ -502,7 +682,7 @@ function AccountsTab() {
         <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr><th style={TH}>Code</th><th style={TH}>Name</th><th style={TH}>Kind</th><th style={TH}></th></tr>
+              <tr><th style={TH}>Code</th><th style={TH}>Name</th><th style={TH}>Kind</th><th style={TH}>On the P&L</th><th style={TH}></th></tr>
             </thead>
             <tbody>
               {setup.accounts.map(a => (
@@ -510,6 +690,7 @@ function AccountsTab() {
                   <td style={{ ...TD, fontWeight: 600, whiteSpace: 'nowrap' }}>{a.code}</td>
                   <td style={TD}>{a.name}{!a.is_active && ' (not used)'}</td>
                   <td style={TD}>{KINDS[a.type] || a.type}</td>
+                  <td style={{ ...TD, fontSize: 12, color: 'var(--text-muted)' }}>{plOf(a)}</td>
                   <td style={{ ...TD, ...R }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(a)}>Edit</button>{' '}
                     <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(a)}>{a.is_active ? 'Stop using' : 'Use again'}</button>
@@ -534,9 +715,16 @@ function AccountsTab() {
               <div className="form-group"><label className="form-label">Name *</label>
                 <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Bank BCA" /></div>
               <div className="form-group"><label className="form-label">Kind *</label>
-                <select className="form-select" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+                <select className="form-select" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, pl_line: '' }))}>
                   {setup.types.map(t => <option key={t} value={t}>{KINDS[t] || t}</option>)}
                 </select></div>
+              {PL_DEFAULT[form.type] && (
+                <div className="form-group"><label className="form-label">Line on the Profit & Loss</label>
+                  <select className="form-select" value={form.pl_line} onChange={e => setForm(f => ({ ...f, pl_line: e.target.value }))}>
+                    <option value="">{plLabel(PL_DEFAULT[form.type])} (standard)</option>
+                    {plOptions(setup.pl_lines, form.type).filter(l => l.key !== PL_DEFAULT[form.type]).map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
+                  </select></div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>

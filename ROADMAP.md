@@ -1,6 +1,18 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
+
+---
+
+## 🟡 Accounting step 2 — the accountant moves off VHP (started 2026-10-16)
+
+The accountant asked for a P&L and bank reconciliation, and will move the whole back office (payroll totals,
+supplier bills) from VHP into the PMS. Order: **A — Profit & Loss ✅ built on `dev` (migration 110, not on
+`main`)** → B — own journal entries + trial balance + balance sheet → C — supplier bills (AP) → D — bank
+reconciliation (bank CSV import, matching; QRIS / card settle H+1) → E — Agoda / Booking.com payout matching.
+Before B–E: ask the accountant for payroll (totals or calculated?), a bank CSV per bank, an OTA payout report,
+their VHP P&L + chart, and the opening-balance cut-off date. Details: CLAUDE.md → "Accounting — Profit & Loss".
+Next migration number: **111**.
 
 ---
 
@@ -2059,7 +2071,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 109
+## Next migration number: 111
 
 ---
 

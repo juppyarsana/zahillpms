@@ -2,11 +2,12 @@
 // each kind of amount goes to. The journal (journalService.js) asks
 // loadMapping() for the account behind a key such as 'revenue.room'.
 const db = require('../db');
+const { PL_LINES, plLineFor } = require('./plLayout');
 
 const TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 
-// The standard chart a property starts with. Codes can be changed afterwards;
-// `key` ties a mapping key to its starting account.
+// The standard chart a property starts with: [code, name, kind, P&L line]
+// (the lines are in plLayout.js). Codes can be changed afterwards.
 const DEFAULT_CHART = [
   ['1110', 'Cash on hand', 'asset'],
   ['1120', 'Bank', 'asset'],
@@ -21,27 +22,41 @@ const DEFAULT_CHART = [
   ['2120', 'Service charge payable', 'liability'],
   ['2130', 'Hotel & restaurant tax payable (PB1)', 'liability'],
   ['2140', 'Agent commission payable', 'liability'],
-  ['4110', 'Room revenue', 'revenue'],
-  ['4210', 'F&B revenue — meal plans', 'revenue'],
-  ['4220', 'F&B revenue — restaurant', 'revenue'],
-  ['4310', 'Room add-ons', 'revenue'],
-  ['4320', 'Transport', 'revenue'],
-  ['4330', 'Laundry', 'revenue'],
-  ['4340', 'Services', 'revenue'],
-  ['4350', 'Merchandise', 'revenue'],
-  ['4360', 'Minibar', 'revenue'],
-  ['4390', 'Other revenue', 'revenue'],
-  ['4410', 'Activities', 'revenue'],
-  ['4420', 'Meeting room & events', 'revenue'],
-  ['6110', 'Agent commission', 'expense'],
-  ['6210', 'Utilities', 'expense'],
-  ['6220', 'Laundry cost', 'expense'],
-  ['6230', 'Maintenance', 'expense'],
-  ['6240', 'Staff', 'expense'],
-  ['6250', 'Supplies', 'expense'],
-  ['6260', 'Marketing', 'expense'],
-  ['6270', 'Admin & bank fees', 'expense'],
-  ['6290', 'Other expenses', 'expense'],
+  ['4110', 'Room revenue', 'revenue', 'rev.rooms'],
+  ['4210', 'F&B revenue — meal plans', 'revenue', 'rev.fnb'],
+  ['4220', 'F&B revenue — restaurant', 'revenue', 'rev.fnb'],
+  ['4310', 'Room add-ons', 'revenue', 'rev.other'],
+  ['4320', 'Transport', 'revenue', 'rev.other'],
+  ['4330', 'Laundry', 'revenue', 'rev.other'],
+  ['4340', 'Services', 'revenue', 'rev.other'],
+  ['4350', 'Merchandise', 'revenue', 'rev.other'],
+  ['4360', 'Minibar', 'revenue', 'rev.other'],
+  ['4390', 'Other revenue', 'revenue', 'rev.other'],
+  ['4410', 'Activities', 'revenue', 'rev.other'],
+  ['4420', 'Meeting room & events', 'revenue', 'rev.other'],
+  ['4910', 'Other income', 'revenue', 'rev.misc'],
+  ['5110', 'Rooms — payroll', 'expense', 'dept.rooms'],
+  ['5120', 'Rooms — OTA commission', 'expense', 'dept.rooms'],
+  ['5130', 'Rooms — guest supplies & amenities', 'expense', 'dept.rooms'],
+  ['5210', 'F&B — payroll', 'expense', 'dept.fnb'],
+  ['5220', 'F&B — cost of food', 'expense', 'dept.fnb'],
+  ['5230', 'F&B — cost of drinks', 'expense', 'dept.fnb'],
+  ['5240', 'F&B — supplies', 'expense', 'dept.fnb'],
+  ['5310', 'Cost of activities & transport', 'expense', 'dept.other'],
+  ['6110', 'Agent commission', 'expense', 'dept.rooms'],
+  ['6210', 'Utilities', 'expense', 'und.utilities'],
+  ['6220', 'Laundry cost', 'expense', 'dept.rooms'],
+  ['6230', 'Maintenance', 'expense', 'und.maint'],
+  ['6240', 'Staff', 'expense', 'und.admin'],
+  ['6250', 'Supplies', 'expense', 'und.admin'],
+  ['6260', 'Marketing', 'expense', 'und.sales'],
+  ['6270', 'Admin & bank fees', 'expense', 'und.admin'],
+  ['6280', 'Card & QRIS fees', 'expense', 'und.admin'],
+  ['6290', 'Other expenses', 'expense', 'und.admin'],
+  ['7110', 'Rent / lease', 'expense', 'fixed'],
+  ['7120', 'Insurance', 'expense', 'fixed'],
+  ['7130', 'Property tax (PBB)', 'expense', 'fixed'],
+  ['7140', 'Depreciation', 'expense', 'fixed'],
 ];
 
 // Every fixed mapping key: [key, label, group, starting account code].
@@ -98,23 +113,23 @@ async function ensureChart(propertyId) {
     // (only when its code is still free — a renumbered chart is left alone
     // and the mapping screen shows the item as having no account).
     await db.query(
-      `INSERT INTO gl_accounts (property_id, code, name, type)
-       SELECT $1, '4420', 'Meeting room & events', 'revenue'
+      `INSERT INTO gl_accounts (property_id, code, name, type, pl_line)
+       SELECT $1, '4420', 'Meeting room & events', 'revenue', 'rev.other'
        WHERE EXISTS (SELECT 1 FROM property_modules WHERE property_id = $1 AND module = 'events' AND is_enabled)
        ON CONFLICT (property_id, code) DO NOTHING`, [propertyId]);
     return;
   }
-  for (const [code, name, type] of DEFAULT_CHART) {
+  for (const [code, name, type, plLine] of DEFAULT_CHART) {
     await db.query(
-      `INSERT INTO gl_accounts (property_id, code, name, type) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (property_id, code) DO NOTHING`, [propertyId, code, name, type]);
+      `INSERT INTO gl_accounts (property_id, code, name, type, pl_line) VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (property_id, code) DO NOTHING`, [propertyId, code, name, type, plLine || null]);
   }
 }
 
 async function listAccounts(propertyId) {
   await ensureChart(propertyId);
   const { rows } = await db.query(
-    `SELECT id, code, name, type, is_active FROM gl_accounts WHERE property_id = $1 ORDER BY code`, [propertyId]);
+    `SELECT id, code, name, type, pl_line, is_active FROM gl_accounts WHERE property_id = $1 ORDER BY code`, [propertyId]);
   return rows;
 }
 
@@ -168,6 +183,10 @@ function cleanAccount(body, { partial = false } = {}) {
     out.type = String(body.type || '');
     if (!TYPES.includes(out.type)) return { error: 'Choose the kind of account' };
   }
+  if (body.pl_line !== undefined) {
+    out.pl_line = body.pl_line ? String(body.pl_line) : null;
+    if (out.pl_line && !PL_LINES.includes(out.pl_line)) return { error: 'Choose a line of the Profit & Loss' };
+  }
   if (body.is_active !== undefined) out.is_active = !!body.is_active;
   return { value: out };
 }
@@ -177,8 +196,8 @@ async function createAccount(propertyId, body) {
   if (error) return { error };
   try {
     const { rows: [a] } = await db.query(
-      `INSERT INTO gl_accounts (property_id, code, name, type) VALUES ($1, $2, $3, $4)
-       RETURNING id, code, name, type, is_active`, [propertyId, value.code, value.name, value.type]);
+      `INSERT INTO gl_accounts (property_id, code, name, type, pl_line) VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, code, name, type, pl_line, is_active`, [propertyId, value.code, value.name, value.type, plLineFor(value.type, value.pl_line)]);
     return { account: a };
   } catch (err) {
     if (err.code === '23505') return { error: `Account code ${value.code} is already used`, status: 409 };
@@ -194,12 +213,17 @@ async function updateAccount(propertyId, id, body) {
     const used = mapping.keys.filter(k => k.account_id === id);
     if (used.length) return { error: `This account is still used for: ${used.slice(0, 3).map(k => k.label).join('; ')}${used.length > 3 ? '…' : ''}. Choose another account for those first.`, status: 409 };
   }
+  // The P&L line follows the kind: one that doesn't fit the (new) kind goes
+  // back to the kind's default.
+  const { rows: [cur] } = await db.query('SELECT type, pl_line FROM gl_accounts WHERE id = $1 AND property_id = $2', [id, propertyId]);
+  if (!cur) return { error: 'Account not found', status: 404 };
+  const plLine = plLineFor(value.type || cur.type, value.pl_line !== undefined ? value.pl_line : cur.pl_line);
   try {
     const { rows: [a] } = await db.query(
       `UPDATE gl_accounts SET code = COALESCE($3, code), name = COALESCE($4, name), type = COALESCE($5, type),
-              is_active = COALESCE($6, is_active), updated_at = NOW()
-       WHERE id = $1 AND property_id = $2 RETURNING id, code, name, type, is_active`,
-      [id, propertyId, value.code ?? null, value.name ?? null, value.type ?? null, value.is_active ?? null]);
+              is_active = COALESCE($6, is_active), pl_line = $7, updated_at = NOW()
+       WHERE id = $1 AND property_id = $2 RETURNING id, code, name, type, pl_line, is_active`,
+      [id, propertyId, value.code ?? null, value.name ?? null, value.type ?? null, value.is_active ?? null, plLine]);
     return a ? { account: a } : { error: 'Account not found', status: 404 };
   } catch (err) {
     if (err.code === '23505') return { error: `Account code ${value.code} is already used`, status: 409 };

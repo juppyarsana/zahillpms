@@ -560,6 +560,33 @@ async function buildJournal(propertyId, from, to, { withDetail = false } = {}) {
   return result;
 }
 
+// Every posting of any span (the P&L's year to date): closed days as they were
+// kept, each open stretch rebuilt from today's data. Each posting gets its
+// account (`account`, null when none is chosen yet).
+async function postingsFor(propertyId, from, to) {
+  const closed = await closedRows(propertyId, from, to);
+  const closedDates = new Set(closed.map(r => r.date));
+  const posts = closed.flatMap(storedPosts);
+  let mapping = null;
+  for (let day = from; day <= to;) {
+    if (closedDates.has(day)) { day = addDays(day, 1); continue; }
+    let end = day;
+    while (addDays(end, 1) <= to && !closedDates.has(addDays(end, 1))) end = addDays(end, 1);
+    const r = await collectSpan(propertyId, day, end);
+    posts.push(...r.posts); mapping = r.mapping;
+    day = addDays(end, 1);
+  }
+  mapping = mapping || await loadMapping(propertyId);
+  for (const p of posts) {
+    if (!p.account) {
+      const r = mapping.resolve(p.key);
+      p.account = r.account ? { id: r.account.id, code: r.account.code, name: r.account.name, type: r.account.type } : null;
+      if (!r.account) p.label = r.label;
+    }
+  }
+  return { posts, mapping, closedDays: closedDates.size };
+}
+
 // ── Closing days ──────────────────────────────────────────────────────────
 
 const SEP = '\u0001';
@@ -686,4 +713,4 @@ async function reopenLastDay(propertyId) {
   return row ? { reopened: row.date } : { error: 'No day is closed' };
 }
 
-module.exports = { buildJournal, closingStatus, closeDays, reopenLastDay, MAX_DAYS };
+module.exports = { buildJournal, postingsFor, closingStatus, closeDays, reopenLastDay, MAX_DAYS };
