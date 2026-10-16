@@ -56,6 +56,12 @@ const AGENT_NAMES = {
   'KHIRI TRAVEL I': 'Khiri Travel',
   'BALI DORADA TO': 'PT BALI DORADA TOURS & TRAVEL',
   'WICKED ADVENTU': 'Wicked Adventures',
+  'BB TRAVEL': 'BB Travel',
+  'GOLDEN KRIS TO': 'Golden Kris Tours',
+  'JANS TOUR': 'Jans Tour',
+  'EAGLE VOYAGES': 'Eagle Voyages',
+  'ASIA EVOLUTION': 'Asia Evolution',
+  'PACTO': 'Pacto',
 };
 
 // Nat → nationality as the PMS stores it (country names, client/src/lib/countries.js).
