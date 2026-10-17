@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import { lineShown, shownAmount, shownTotal } from '../lib/priceBasis';
+import { otaName, roomPending } from '../lib/otaDue';
 
 // Record Payment (migrations 082–083): everything the guest owes, in two
 // tables — the room's pending deposit / balance lines, and the extras
@@ -19,7 +20,11 @@ const TH = { textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--tex
 const TD = { padding: '8px', borderBottom: '1px solid var(--border)', fontSize: 13, verticalAlign: 'middle' };
 
 export default function RecordPaymentModal({ booking, estimate, onClose, onPaid, printReceipt }) {
-  const { paymentMethods } = useSettings();
+  const { paymentMethods, sources } = useSettings();
+  // An OTA booking: the room is the OTA's to pay, usually after the stay —
+  // its lines start unticked so a guest's payment for extras is never marked
+  // as the room's by mistake. Tick them only when the OTA's money arrives.
+  const ota = otaName(sources, booking.source);
   const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
   const [folio, setFolio] = useState(null);
   const [addons, setAddons] = useState([]);
@@ -45,7 +50,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const futureNights = payableNights(addons);
 
   function selectAll(which, lines = itemLines, nightList = futureNights) {
-    setRoom(Object.fromEntries(roomLines.map(l => [l.id, { on: which === 'all' || (which === 'deposit' && l.type === 'deposit'), amount: String(Math.round(parseFloat(l.amount))) }])));
+    setRoom(Object.fromEntries(roomLines.map(l => [l.id, { on: !ota && (which === 'all' || (which === 'deposit' && l.type === 'deposit')), amount: String(Math.round(parseFloat(l.amount))) }])));
     setExtrasTyped(null);
     setItems(which === 'all' ? lines.map(c => c.id) : []);
     setNights(which === 'all' ? nightList.map(a => a.id) : []);
@@ -138,12 +143,19 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
           ) : (
             <>
               <div className="flex-between" style={{ marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>
-                  Still owed on this stay: <span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(shownTotal(estimate?.balance_due ?? 0, rates))}</span>
-                </div>
+                {ota ? (
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    Guest owes: <span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(shownTotal(Math.max(0, (estimate?.balance_due ?? 0) - roomPending(booking.payments)), rates))}</span>
+                    <span className="text-muted" style={{ fontSize: 12, fontWeight: 400 }}> · + {fmtIDR(roomPending(booking.payments))} room, paid by {ota}</span>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    Still owed on this stay: <span style={{ color: 'var(--color-danger, #dc2626)' }}>{fmtIDR(shownTotal(estimate?.balance_due ?? 0, rates))}</span>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectAll('all')}>Everything owed</button>
-                  {roomLines.some(l => l.type === 'deposit') && (
+                  {!ota && roomLines.some(l => l.type === 'deposit') && (
                     <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectAll('deposit')}>Room deposit</button>
                   )}
                   <button type="button" className="btn btn-sm btn-secondary" onClick={() => selectAll('none')}>Clear</button>
@@ -152,11 +164,17 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
 
               {nothingOwed && <div className="alert"><div>Nothing is owed on this stay right now.</div></div>}
 
+              {roomLines.length > 0 && ota && (
+                <div className="alert" style={{ marginBottom: 8 }}><div>
+                  <b>The room is paid by {ota}, not by the guest.</b> Tick it only when {ota}'s money has arrived in the bank
+                  (method = that bank, date = the day it arrived).
+                </div></div>
+              )}
               {roomLines.length > 0 && (
                 <div className="table-wrap" style={{ marginBottom: 14 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr>
-                      <th style={{ ...TH, width: 28 }} /><th style={TH}>Room</th>
+                      <th style={{ ...TH, width: 28 }} /><th style={TH}>{ota ? `Room — paid by ${ota}` : 'Room'}</th>
                       <th style={{ ...TH, textAlign: 'right' }}>Due</th><th style={{ ...TH, textAlign: 'right', width: 150 }}>Pay now</th>
                     </tr></thead>
                     <tbody>

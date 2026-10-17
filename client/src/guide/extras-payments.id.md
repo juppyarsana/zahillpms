@@ -15,6 +15,8 @@ Dua hal di **tab Folio** sebuah booking, untuk tagihan extra (restoran / POS, it
 
 > Pembayaran sebagian dicatat sebagai **pembayaran di muka (on account)**. Saldo langsung berkurang, tetapi baris extra **tidak** mendapat tanda "Paid". Itu normal: lihat **Balance due**. Setiap pembayaran punya **🖨 receipt** sendiri di daftar pembayaran.
 
+> **Reservasi OTA** (Booking.com, Agoda, Traveloka…): baris **Room** di jendela ini **tidak tercentang**, karena kamar dibayar oleh OTA, bukan tamu. Centang hanya kalau uang dari OTA sudah masuk ke bank (metode = bank itu, tanggal = hari uang masuk). "Guest owes" di atas adalah yang harus dibayar tamu.
+
 Kalau jumlahnya tidak diubah (dibayar penuh sekaligus), semuanya berjalan seperti biasa: baris extra mendapat tanda **Paid · metode**.
 
 ## Pindah tagihan ke kamar lain
