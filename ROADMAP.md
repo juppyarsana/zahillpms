@@ -17,7 +17,8 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Other guests in the room (migration 112, 2026-10-16, on `dev`):** FO asked to add a second guest to a room, optional — booking page Guest card and Check-in step 2, ID upload per guest, printed on the Registration Card and the police guest report. Details: CLAUDE.md → "Other guests in the room".
 
 **Extras part payments + Transfer bill (migration 113, 2026-10-17, on `dev`):** FO asked to pay extras in parts (two banks / rest later — recorded as a payment on account) and to move unpaid extras from one room's folio to another's (friends booked separately). Details: CLAUDE.md → "Extras: part payments + Transfer bill".
-Next migration number: **114**.
+**Children & kids' free breakfast (migration 114, 2026-10-17, on `dev` + POS `pms-integration`):** a reservation records children next to adults; FO ticks "Kids eat breakfast free" (breakfast only, per reservation) and the kitchen, Guest Lists, Forecast and the POS breakfast list show the free kids apart from the paying pax; the POS pre-fills its free Kids Meal. Details: CLAUDE.md → "Children & kids' free breakfast".
+Next migration number: **115**.
 
 ---
 
@@ -2076,7 +2077,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 114
+## Next migration number: 115
 
 ---
 

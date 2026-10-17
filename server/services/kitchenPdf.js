@@ -31,7 +31,7 @@ function drawTableHeader(doc, y) {
 function drawMeal(doc, y, { title, meal, empty, withoutLabel }) {
   if (y > BOTTOM - 70) { doc.addPage(); y = 50; }
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text(title, LEFT, y);
-  doc.font('Helvetica-Bold').fontSize(12).text(`${meal.pax} pax`, 300, y, { width: RIGHT - 300, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(12).text(`${meal.pax} pax${meal.kids ? ` + ${meal.kids} kid${meal.kids === 1 ? '' : 's'}` : ''}`, 300, y, { width: RIGHT - 300, align: 'right' });
   y += 16;
   doc.font('Helvetica').fontSize(8.5).fillColor('#555')
     .text(`${plural(meal.rooms, 'room')}${meal.without.pax > 0 ? `  ·  ${withoutLabel}: ${meal.without.pax} pax in ${plural(meal.without.rooms, 'room')}` : ''}`, LEFT, y, { width: RIGHT - LEFT });
@@ -50,7 +50,7 @@ function drawMeal(doc, y, { title, meal, empty, withoutLabel }) {
       guest: r.guest_name + (r.status !== 'checked_in' && r.status !== 'checked_out' ? '\n(not checked in yet)' : ''),
       pax: `${r.meal_pax ?? r.num_guests ?? ''}${r.extra_breakfast ? ` (+${r.extra_breakfast} extra bed)` : ''}`,
       plan: r.rate_plan_code || '—',
-      note: [r.box && `BREAKFAST BOX: ${r.box.quantity} ready ${r.box.ready_time}${r.box.note ? ` (${r.box.note})` : ''}`,
+      note: [r.kids_breakfast && `+ ${r.kids_breakfast} KID${r.kids_breakfast === 1 ? '' : 'S'} — FREE BREAKFAST`, r.box && `BREAKFAST BOX: ${r.box.quantity} ready ${r.box.ready_time}${r.box.note ? ` (${r.box.note})` : ''}`,
         r.special_requests].filter(Boolean).join(' · ') || '—',
       tick: '',
     };
@@ -72,7 +72,7 @@ function drawMeal(doc, y, { title, meal, empty, withoutLabel }) {
     y += h;
     doc.moveTo(LEFT, y - 3).lineTo(RIGHT, y - 3).strokeColor('#eee').lineWidth(0.5).stroke();
   }
-  doc.font('Helvetica-Bold').fontSize(9).text(`Total: ${meal.pax} pax`, 300, y + 2, { width: RIGHT - 300, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(9).text(`Total: ${meal.pax} pax${meal.kids ? ` + ${meal.kids} kid${meal.kids === 1 ? '' : 's'} (free)` : ''}`, 300, y + 2, { width: RIGHT - 300, align: 'right' });
   return y + 28;
 }
 

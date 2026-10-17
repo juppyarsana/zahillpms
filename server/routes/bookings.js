@@ -135,6 +135,12 @@ async function logBookingChanges(client, { propertyId, bookingId, userId, before
     const codeOf = planId => planId ? (rows.find(r => r.id === planId)?.code || 'Unknown') : 'None';
     changes.push(`Rate Plan: ${codeOf(before.rate_plan_id)} → ${codeOf(after.rate_plan_id)}`);
   }
+  if (norm(before.children ?? 0) !== norm(after.children ?? 0)) {
+    changes.push(`Children: ${before.children || 0} → ${after.children || 0}`);
+  }
+  if (!!before.kids_free_breakfast !== !!after.kids_free_breakfast && (after.children || before.children)) {
+    changes.push(after.kids_free_breakfast ? "Kids' breakfast: free (hotel covers it)" : "Kids' breakfast: no longer free");
+  }
   if (norm(before.bed_preference) !== norm(after.bed_preference)) {
     const label = v => v ? v.replace('_', ' ') : 'No preference';
     changes.push(`Bed Preference: ${label(before.bed_preference)} → ${label(after.bed_preference)}`);
@@ -368,6 +374,12 @@ const MEAL_FLAGS_SQL = `
          OR (b.status IN ${PRE_ARRIVAL} AND b.check_in_date <= $2::date AND b.check_out_date > $2::date)
        ELSE b.check_in_date <= $2::date AND b.check_out_date > $2::date END AS dinner_here`;
 
+// Free kids' breakfasts a room has (migration 114): its children, when the
+// hotel covers their breakfast and the room's plan includes breakfast.
+function kidsBreakfast(r) {
+  return r.kids_free_breakfast && r.includes_breakfast ? (r.children || 0) : 0;
+}
+
 // Breakfasts from per-night extras (an extra bed with breakfast, migration
 // 074): the morning of `date` = add-on nights of the night before, inside the
 // booking's stay. booking_id → units (people). Added to a booking's breakfast
@@ -430,7 +442,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
   {
     const { rows } = await db.query(`
       SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status,
-             b.special_requests, b.bed_preference, b.reservation_group_id,
+             b.special_requests, b.bed_preference, b.reservation_group_id, b.children, b.kids_free_breakfast,
              g.name AS guest_name, g.nationality, g.whatsapp AS guest_whatsapp,
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
@@ -504,6 +516,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
       else lists.in_house.push(r);
     }
     const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+    const kidsOf = list => list.reduce((s, r) => s + (r.children || 0), 0);
     const bedsOf = list => list.reduce((s, r) => s + (r.extra_beds || 0), 0);
     const mealPax = (list, flag) => list.filter(r => r[flag]).reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
     // + breakfasts that come with an extra bed (the night before)
@@ -519,6 +532,9 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
         in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house), extra_beds: bedsOf(lists.in_house) },
         departures: { rooms: lists.departures.length, pax: pax(lists.departures), extra_beds: bedsOf(lists.departures) },
         breakfast_pax: mealPax(rows.filter(r => r.breakfast_here), 'includes_breakfast') + extraBreakfastPax,
+        // + children whose breakfast the hotel covers (migration 114), counted apart
+        breakfast_kids: rows.filter(r => r.breakfast_here).reduce((t, r) => t + kidsBreakfast(r), 0),
+        children: { arrivals: kidsOf(lists.arrivals), in_house: kidsOf(lists.in_house), departures: kidsOf(lists.departures) },
         dinner_pax: mealPax(rows.filter(r => r.dinner_here), 'includes_dinner'),
       },
     };
@@ -592,6 +608,7 @@ async function loadKitchen(propertyId, requestedDate) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return null;
   const { rows } = await db.query(`
     SELECT b.id, b.check_in_date, b.check_out_date, b.num_guests, b.status, b.special_requests,
+           b.children, b.kids_free_breakfast,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
            rp.code AS rate_plan_code, rp.meal_price AS rate_plan_meal_price,
            COALESCE(rp.includes_lunch, false) AS includes_lunch,
@@ -618,6 +635,9 @@ async function loadKitchen(propertyId, requestedDate) {
   for (const r of rows) {
     r.extra_breakfast = r.breakfast_here ? (extra.get(r.id) || 0) : 0;
     r.breakfast_pax = (r.includes_breakfast ? (parseInt(r.num_guests, 10) || 0) : 0) + r.extra_breakfast;
+    // Children whose breakfast the hotel covers — apart from breakfast_pax
+    // (the paying breakfasts the POS counts and values), shown as "+ N kids".
+    r.kids_breakfast = r.breakfast_here ? kidsBreakfast(r) : 0;
   }
   const breakfastIn = rows.filter(r => r.breakfast_here);
   const dinnerIn = rows.filter(r => r.dinner_here);
@@ -630,6 +650,7 @@ async function loadKitchen(propertyId, requestedDate) {
     breakfast: {
       rows: breakfast, rooms: breakfast.length, pax: mealPaxOf(breakfast),
       extra_beds: breakfast.reduce((s, r) => s + r.extra_breakfast, 0),
+      kids: breakfast.reduce((s, r) => s + r.kids_breakfast, 0),
       without: without(breakfastIn, breakfastIn.filter(r => breakfastPlanIds.has(r.id))),
     },
     dinner: { rows: dinner, rooms: dinner.length, pax: mealPaxOf(dinner), without: without(dinnerIn, dinner) },
@@ -2903,6 +2924,12 @@ router.put('/:id', auth, async (req, res) => {
   }
   const commission = agentService.parseBookingCommission(req.body);
   if (commission.error) return res.status(400).json({ error: commission.error });
+  // Children + kids' free breakfast (migration 114): sent = set, absent = unchanged.
+  const childrenSent = req.body.children !== undefined && req.body.children !== null && req.body.children !== '';
+  const childrenIn = childrenSent ? Number(req.body.children) : null;
+  if (childrenSent && !(Number.isInteger(childrenIn) && childrenIn >= 0 && childrenIn <= 20)) {
+    return res.status(400).json({ error: 'children must be a whole number from 0 to 20' });
+  }
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -2983,6 +3010,13 @@ router.put('/:id', auth, async (req, res) => {
         agentId, 'commission_type' in commissionVals, commissionVals.commission_type ?? null, commissionVals.commission_value ?? null]
     );
     let booking = rows[0];
+    if (childrenSent || req.body.kids_free_breakfast !== undefined) {
+      const children = childrenSent ? childrenIn : (booking.children || 0);
+      const kidsFree = children > 0 && (req.body.kids_free_breakfast !== undefined ? !!req.body.kids_free_breakfast : !!booking.kids_free_breakfast);
+      const { rows: [b3] } = await client.query(
+        'UPDATE bookings SET children = $1, kids_free_breakfast = $2 WHERE id = $3 RETURNING *', [children, kidsFree, booking.id]);
+      booking = b3;
+    }
 
     // Rate plan or guest count changed → recompute the net F&B portion,
     // keep the grand total (room + F&B) fixed by having room absorb the delta,

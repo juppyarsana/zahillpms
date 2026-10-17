@@ -123,7 +123,7 @@ function priceWarning(total, normal, nights) {
 // (check_in_date / check_out_date) instead of the booking's dates.
 // per_night (migration 090): a price for each night (night_amounts, by date);
 // total_amount is then their sum.
-const EMPTY_ROOM = { unit_id: '', num_guests: 1, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null,
+const EMPTY_ROOM = { unit_id: '', num_guests: 1, children: 0, kids_free_breakfast: false, total_amount: '', rate_plan_id: '', bed_preference: '', extra: null,
   own_dates: false, check_in_date: '', check_out_date: '', per_night: false, night_amounts: {} };
 // Sources whose guests pay extras at the hotel, outside the OTA / agent's
 // money: the extra bed isn't part of the deposit asked.
@@ -396,6 +396,7 @@ export default function NewBooking() {
           guest_id: guestId,
           unit_id: room.unit_id,
           num_guests: room.num_guests,
+          children: room.children || 0, kids_free_breakfast: !!room.kids_free_breakfast,
           total_amount: room.total_amount,
           ...(room.per_night ? { night_prices: roomDates(room).map(d => ({ date: d, amount: parseFloat(room.night_amounts[d]) || 0 })) } : {}),
           check_in_date: form.check_in_date,
@@ -425,7 +426,7 @@ export default function NewBooking() {
           group_discount_value: dValue,
           group_deposit_amount: deposit_amount,
           billing_mode: groupPays,
-          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null,
+          rooms: rooms.map(r => ({ unit_id: r.unit_id, num_guests: r.num_guests, children: r.children || 0, kids_free_breakfast: !!r.kids_free_breakfast, total_amount: r.total_amount, rate_plan_id: r.rate_plan_id || null, bed_preference: r.bed_preference || null,
             check_in_date: roomIn(r), check_out_date: roomOut(r), ...(r.per_night ? { night_prices: roomDates(r).map(d => ({ date: d, amount: parseFloat(r.night_amounts[d]) || 0 })) } : {}) })),
         });
         const byUnit = Object.fromEntries((res.data.bookings || []).map(b => [b.unit_id, b.id]));
@@ -638,10 +639,24 @@ export default function NewBooking() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Number of Guests</label>
+                  <label className="form-label">Adults</label>
                   <input className="form-input" type="number" min={1} max={10} value={room.num_guests} onChange={e => setRoom(i, 'num_guests', parseInt(e.target.value) || 1)} />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Children</label>
+                  <input className="form-input" type="number" min={0} max={20} value={room.children || 0}
+                    onChange={e => { const n = Math.max(0, Math.min(20, parseInt(e.target.value) || 0)); setRoom(i, 'children', n); if (!n) setRoom(i, 'kids_free_breakfast', false); }} />
+                </div>
               </div>
+              {(room.children || 0) > 0 && (
+                <div className="form-group" style={{ marginTop: -4 }}>
+                  <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={!!room.kids_free_breakfast} onChange={e => setRoom(i, 'kids_free_breakfast', e.target.checked)} />
+                    Kids eat breakfast free — the hotel covers it
+                  </label>
+                  <div className="text-muted" style={{ fontSize: 11 }}>Children never change the price. Ticked: the kitchen and the restaurant serve them a free breakfast (when the meal plan includes breakfast).</div>
+                </div>
+              )}
 
               {isGroup && (
                 <div className="form-group">
@@ -1122,7 +1137,7 @@ export default function NewBooking() {
                           <td style={td}>
                             <strong>{l.unit?.name || '—'}</strong>{l.unit?.type ? ` · ${l.unit.type}` : ''}
                             <div className="text-muted" style={{ fontSize: 11 }}>
-                              {l.r.num_guests} guest{l.r.num_guests > 1 ? 's' : ''}{l.plan ? ` · ${l.plan.code}` : ''}
+                              {l.r.num_guests} guest{l.r.num_guests > 1 ? 's' : ''}{l.r.children > 0 ? ` + ${l.r.children} child${l.r.children > 1 ? 'ren' : ''}${l.r.kids_free_breakfast ? ' (breakfast free)' : ''}` : ''}{l.plan ? ` · ${l.plan.code}` : ''}
                               {anyOwnDates && <> · {roomIn(l.r)} → {roomOut(l.r)} ({roomNights(l.r)} night{roomNights(l.r) > 1 ? 's' : ''})</>}
                             </div>
                             {l.r.per_night && (

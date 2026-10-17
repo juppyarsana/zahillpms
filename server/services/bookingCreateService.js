@@ -18,6 +18,19 @@ const agentBilling = require('./agentBillingService');
 const { occupiedUntilSql } = require('./occupancySql');
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
+
+// Children on a reservation (migration 114): a count next to the adults
+// (num_guests) and whether the hotel covers their breakfast. null = bad input.
+function parseChildren(input) {
+  const raw = input.children;
+  const children = raw === undefined || raw === null || raw === '' ? 0 : Number(raw);
+  if (!Number.isInteger(children) || children < 0 || children > 20) return null;
+  return { children, kidsFree: children > 0 && !!input.kids_free_breakfast };
+}
+async function saveChildren(client, bookingId, kids) {
+  if (!kids.children) return;
+  await client.query('UPDATE bookings SET children = $1, kids_free_breakfast = $2 WHERE id = $3', [kids.children, kids.kidsFree, bookingId]);
+}
 const fail = (status, error) => ({ status, error: typeof error === 'string' ? { error } : error });
 
 // One room. `input` = the POST /api/bookings body.
@@ -28,6 +41,8 @@ async function createBooking(client, { propertyId, userId, input }) {
   }
   const commission = agentService.parseBookingCommission(input);
   if (commission.error) return fail(400, commission.error);
+  const kids = parseChildren(input);
+  if (!kids) return fail(400, 'children must be a whole number from 0 to 20');
   if (bed_preference && !BED_PREFS.includes(bed_preference)) {
     return fail(400, `bed_preference must be one of ${BED_PREFS.join(', ')}`);
   }
@@ -91,6 +106,8 @@ async function createBooking(client, { propertyId, userId, input }) {
      agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
   );
   const booking = rows[0];
+  await saveChildren(client, booking.id, kids);
+  if (kids.children) Object.assign(booking, { children: kids.children, kids_free_breakfast: kids.kidsFree });
   if (nightPrices?.shares) {
     const saved = await nightRatesSvc.saveNightRates(client, {
       bookingId: booking.id, nights: stayNightList(check_in_date, check_out_date), shares: nightPrices.shares, roomNet, mealNet });
@@ -164,6 +181,7 @@ async function createGroup(client, { propertyId, userId, input }) {
     }
   }
 
+  if (rooms.some(r => !parseChildren(r))) return fail(400, 'children must be a whole number from 0 to 20');
   if (rooms.some(r => r.bed_preference && !BED_PREFS.includes(r.bed_preference))) {
     return fail(400, `bed_preference must be one of ${BED_PREFS.join(', ')}`);
   }
@@ -244,6 +262,7 @@ async function createGroup(client, { propertyId, userId, input }) {
       [s.room.guest_id || guest_id, s.room.unit_id, s.room.ci, s.room.co, s.room.num_guests || 1, source || 'direct', roomStoredTotal, groupBilled ? 0 : s.depositShare, gdType, gdValue, s.discountShare, s.room.special_requests ?? special_requests, s.room.internal_notes ?? internal_notes, status || 'pending', userId, propertyId, group.id, roomPlan?.id || null, s.room.bed_preference || null, roomRevNet, mealNet,
        agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
     );
+    await saveChildren(client, booking.id, parseChildren(s.room));
     if (s.room.nightShares) {
       const saved = await nightRatesSvc.saveNightRates(client, {
         bookingId: booking.id, nights: stayNightList(s.room.ci, s.room.co), shares: s.room.nightShares, roomNet: roomRevNet, mealNet });

@@ -47,7 +47,7 @@ function cells(list, r, isToday) {
     room: [r.unit_name, r.unit_type].filter(Boolean).join('\n'),
     guest: [r.guest_name, [r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · '),
       (r.other_guests || []).length ? `+ ${r.other_guests.map(g => g.name).join(', ')}` : null].filter(Boolean).join('\n'),
-    pax: String(r.num_guests ?? '') + (r.extra_beds > 0 ? `+${r.extra_beds}` : ''),
+    pax: String(r.num_guests ?? '') + (r.extra_beds > 0 ? `+${r.extra_beds}` : '') + (r.children > 0 ? ` +${r.children}ch` : ''),
     // Standard PDF Helvetica has no arrow glyph — a dash renders everywhere.
     stay: `${fmtShort(r.check_in_date)} – ${fmtShort(r.check_out_date)}\n${r.nights} night${r.nights === 1 ? '' : 's'}`,
     plan: r.rate_plan_code || '—',
@@ -121,7 +121,7 @@ function renderGuestLists(doc, data) {
     ['Arrivals', `${plural(s.arrivals.rooms, 'room')} · ${s.arrivals.pax} pax`],
     ['In-House', `${plural(s.in_house.rooms, 'room')} · ${s.in_house.pax} pax`],
     ['Departures', `${plural(s.departures.rooms, 'room')} · ${s.departures.pax} pax`],
-    ['Breakfast', `${s.breakfast_pax} pax this morning`],
+    ['Breakfast', `${s.breakfast_pax} pax this morning${s.breakfast_kids ? ` + ${s.breakfast_kids} kid${s.breakfast_kids === 1 ? '' : 's'} free` : ''}`],
     ['Dinner', `${s.dinner_pax} pax tonight`],
   ];
   const bw = (RIGHT - LEFT) / boxes.length;

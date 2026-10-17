@@ -368,7 +368,7 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
     <div className="card mb-3">
       <div className="flex-between" style={{ marginBottom: 4 }}>
         <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>{meal.pax} pax</div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{meal.pax} pax{meal.kids > 0 && <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-success, #15803d)' }}> + {meal.kids} kid{meal.kids > 1 ? 's' : ''} free</span>}</div>
       </div>
       <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         {plural(meal.rooms, 'room')}
@@ -383,7 +383,8 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
               <td><div style={{ fontWeight: 600 }}>{r.guest_name}</div>
                 {r.status !== 'checked_in' && r.status !== 'checked_out' && <div className="text-muted" style={{ fontSize: 11 }}>Not checked in yet</div>}</td>
               <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 15 }}>{r.meal_pax ?? r.num_guests}
-                {r.extra_breakfast > 0 && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>incl. {r.extra_breakfast} extra bed</div>}</td>
+                {r.extra_breakfast > 0 && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>incl. {r.extra_breakfast} extra bed</div>}
+                {r.kids_breakfast > 0 && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-success, #15803d)' }}>+ {r.kids_breakfast} kid{r.kids_breakfast > 1 ? 's' : ''} · free</div>}</td>
               <td>{r.rate_plan_code || '—'}</td>
               <td style={{ fontSize: 12, maxWidth: 280 }}>
                 {r.box && (

@@ -17,7 +17,8 @@ const { computeProforma } = require('./folioService');
 
 const IN_HOUSE_SQL = `
   SELECT b.id AS booking_id, u.name AS room, u.controller_id AS room_id,
-         g.name AS guest_name, b.check_in_date, b.check_out_date, b.num_guests
+         g.name AS guest_name, b.check_in_date, b.check_out_date, b.num_guests,
+         b.children, b.kids_free_breakfast   -- migration 114: kids, and whether the hotel covers their breakfast
     FROM bookings b
     JOIN units u ON u.id = b.unit_id
     LEFT JOIN guests g ON g.id = b.guest_id

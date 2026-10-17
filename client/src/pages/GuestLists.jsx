@@ -77,7 +77,7 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
     <div className="card mb-3">
       <div className="flex-between" style={{ marginBottom: 4 }}>
         <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>{meal.pax} pax</div>
+        <div style={{ fontSize: 20, fontWeight: 800 }}>{meal.pax} pax{meal.kids > 0 && <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-success, #15803d)' }}> + {meal.kids} kid{meal.kids > 1 ? 's' : ''} free</span>}</div>
       </div>
       <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         {plural(meal.rooms, 'room')}
@@ -104,6 +104,7 @@ function MealSection({ title, icon, meal, empty, withoutLabel, onOpen }) {
                   <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 15 }}>
                     {r.meal_pax ?? r.num_guests}
                     {r.extra_breakfast > 0 && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>incl. {r.extra_breakfast} extra bed</div>}
+                    {r.kids_breakfast > 0 && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-success, #15803d)' }}>+ {r.kids_breakfast} kid{r.kids_breakfast > 1 ? 's' : ''} · free</div>}
                   </td>
                   <td>{r.rate_plan_code || '—'}</td>
                   <td style={{ fontSize: 12, maxWidth: 280 }}>{r.special_requests || <span className="text-muted">—</span>}</td>
@@ -227,6 +228,7 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
                   <td>
                     {r.num_guests}
                     {r.extra_beds > 0 && <div className="text-muted" title={r.extra_beds_text} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>+ {r.extra_beds} extra bed</div>}
+                    {r.children > 0 && <div className="text-muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>+ {r.children} child{r.children > 1 ? 'ren' : ''}{r.kids_free_breakfast ? ' · breakfast free' : ''}</div>}
                   </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{stayText(r)}</td>
                   <td>{planText(r)}</td>
@@ -412,7 +414,7 @@ export default function GuestLists() {
               ['Arrivals', plural(data.summary.arrivals.rooms, 'room'), plural(data.summary.arrivals.pax, 'guest')],
               ['In-House', plural(data.summary.in_house.rooms, 'room'), `${plural(data.summary.in_house.pax, 'guest')} staying over`],
               ['Departures', plural(data.summary.departures.rooms, 'room'), plural(data.summary.departures.pax, 'guest')],
-              ['Breakfast', `${data.summary.breakfast_pax} pax`, 'this morning (BB/HB/FB)'],
+              ['Breakfast', `${data.summary.breakfast_pax} pax${data.summary.breakfast_kids ? ` + ${data.summary.breakfast_kids} kid${data.summary.breakfast_kids > 1 ? 's' : ''}` : ''}`, data.summary.breakfast_kids ? 'this morning · kids free' : 'this morning (BB/HB/FB)'],
               ['Dinner', `${data.summary.dinner_pax} pax`, 'tonight (HB/FB)'],
             ].map(([label, value, sub], i) => (
               <div key={label} style={{ flex: '1 1 140px', padding: '14px 18px', borderLeft: i > 0 ? '1px solid var(--border)' : 'none' }}>

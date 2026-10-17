@@ -202,7 +202,7 @@ export default function Forecast() {
                       <td style={TD}>{r.free}</td>
                       <td style={TD}><span className="badge" style={{ ...occStyle(r.occupancy), minWidth: 44, display: 'inline-block', textAlign: 'center' }}>{r.occupancy}%</span></td>
                       <td style={TD}>{dim(r.guests)}{r.extra_beds > 0 && <span className="text-muted" title="Extra beds that night"> +{r.extra_beds} bed</span>}</td>
-                      <td style={TD}><b>{dim(r.breakfast)}</b></td>
+                      <td style={TD}><b>{dim(r.breakfast)}</b>{r.breakfast_kids > 0 && <span className="text-muted" style={{ fontSize: 11 }} title="Children whose breakfast the hotel covers"> +{r.breakfast_kids} kid{r.breakfast_kids > 1 ? 's' : ''}</span>}</td>
                       {data.has_lunch && <td style={TD}>{dim(r.lunch)}</td>}
                       {data.has_dinner && <td style={TD}>{dim(r.dinner)}</td>}
                       <td style={TD}>{dim(r.unpaid)}</td>
@@ -223,7 +223,7 @@ export default function Forecast() {
                   <td style={{ ...TD, borderBottom: 'none' }}>{t.free}</td>
                   <td style={{ ...TD, borderBottom: 'none' }}>{t.occupancy}%</td>
                   <td style={{ ...TD, borderBottom: 'none' }}>{t.guests}</td>
-                  <td style={{ ...TD, borderBottom: 'none' }}>{t.breakfast}</td>
+                  <td style={{ ...TD, borderBottom: 'none' }}>{t.breakfast}{t.breakfast_kids > 0 && <span className="text-muted" style={{ fontSize: 11 }}> +{t.breakfast_kids} kids</span>}</td>
                   {data.has_lunch && <td style={{ ...TD, borderBottom: 'none' }}>{t.lunch}</td>}
                   {data.has_dinner && <td style={{ ...TD, borderBottom: 'none' }}>{t.dinner}</td>}
                   <td style={{ ...TD, borderBottom: 'none' }} />

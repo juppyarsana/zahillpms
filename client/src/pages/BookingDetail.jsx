@@ -698,6 +698,8 @@ export default function BookingDetail() {
     setEditDetailsForm({
       source: booking.source,
       num_guests: booking.num_guests,
+      children: booking.children || 0,
+      kids_free_breakfast: !!booking.kids_free_breakfast,
       purpose_of_stay: booking.purpose_of_stay || '',
       special_requests: booking.special_requests || '',
       internal_notes: booking.internal_notes || '',
@@ -1014,7 +1016,8 @@ export default function BookingDetail() {
           { label: 'Room', value: booking.unit_name, sub: booking.room_type_name },
           { label: 'Stay', value: `${fmtShortDate(booking.check_in_date)} → ${fmtShortDate(booking.check_out_date)} ${String(booking.check_out_date).slice(0, 4)}`,
             sub: `${booking.nights} night${booking.nights === 1 ? '' : 's'}` },
-          { label: 'Guests', value: booking.num_guests, sub: booking.rate_plan_name || undefined },
+          { label: 'Guests', value: `${booking.num_guests}${booking.children > 0 ? ` + ${booking.children} child${booking.children > 1 ? 'ren' : ''}` : ''}`,
+            sub: [booking.rate_plan_name, booking.children > 0 && booking.kids_free_breakfast ? "kids' breakfast free" : null].filter(Boolean).join(' · ') || undefined },
           { label: booking.agent_name ? agentRoleLabel(booking) : 'Source', value: booking.agent_name || booking.source_label || booking.source,
             sub: booking.agent_name ? booking.source_label : undefined },
           headerBalance && { label: 'Balance due', value: headerBalance.value, sub: headerBalance.sub },
@@ -1147,7 +1150,7 @@ export default function BookingDetail() {
             <span className="text-muted">Nights</span><span>{booking.nights}</span>
           </div>
           <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Guests</span><span>{booking.num_guests}</span>
+            <span className="text-muted">Guests</span><span>{booking.num_guests}{booking.children > 0 && <> + {booking.children} child{booking.children > 1 ? 'ren' : ''}{booking.kids_free_breakfast && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>breakfast free</span>}</>}</span>
           </div>
           {(booking.rate_plan_code || booking.rate_plan_name) && (
             <div className="flex-between" style={{ marginBottom: 6 }}>
@@ -1996,11 +1999,23 @@ export default function BookingDetail() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Number of Guests</label>
+                  <label className="form-label">Adults</label>
                   <input className="form-input" type="number" min="1" value={editDetailsForm.num_guests ?? ''}
                     onChange={e => setEditDetailsForm(f => ({ ...f, num_guests: e.target.value }))} />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Children</label>
+                  <input className="form-input" type="number" min="0" max="20" value={editDetailsForm.children ?? 0}
+                    onChange={e => { const n = Math.max(0, Math.min(20, parseInt(e.target.value) || 0)); setEditDetailsForm(f => ({ ...f, children: n, kids_free_breakfast: n ? f.kids_free_breakfast : false })); }} />
+                </div>
               </div>
+              {(editDetailsForm.children || 0) > 0 && (
+                <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontSize: 13, marginBottom: 12 }}>
+                  <input type="checkbox" checked={!!editDetailsForm.kids_free_breakfast}
+                    onChange={e => setEditDetailsForm(f => ({ ...f, kids_free_breakfast: e.target.checked }))} />
+                  Kids eat breakfast free — the hotel covers it (the kitchen and the restaurant see it)
+                </label>
+              )}
               {editAgent && (booking.folio_status
                 ? <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Agent: <b>{booking.agent_name || '—'}</b> — already billed to the agent, so it can't be changed here.</div>
                 : <BookingAgentFields value={editAgent} onChange={setEditAgent} sourceType={sources.find(s => s.id === editDetailsForm.source)?.source_type}

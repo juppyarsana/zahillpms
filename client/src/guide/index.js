@@ -15,6 +15,7 @@ export const GROUPS = [
     { id: 'about', icon: '📘', title: { id: 'Tentang panduan ini', en: 'About this guide' } },
   ] },
   { label: { id: 'Front Desk', en: 'Front Desk' }, chapters: [
+    { id: 'kids-breakfast', icon: '🧒', title: { id: 'Anak & sarapan gratis', en: 'Children & free breakfast' } },
     { id: 'other-guests', icon: '👥', title: { id: 'Tamu lain di kamar', en: 'Other guests in the room' } },
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
     { id: 'extras-payments', icon: '💳', title: { id: 'Extras: bayar sebagian & pindah tagihan', en: 'Extras: paying in parts & transferring the bill' } },

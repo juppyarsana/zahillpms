@@ -171,6 +171,7 @@ router.get('/breakfast', gate, async (req, res) => {
       date: data.date,
       rooms: data.breakfast.rooms,
       pax: data.breakfast.pax,
+      kids: data.breakfast.kids || 0,      // free kids' breakfasts that morning, apart from pax
       without: data.breakfast.without, // in the hotel but breakfast not included
       rows: data.breakfast.rows.map(r => ({
         booking_id: r.id,
@@ -179,6 +180,11 @@ router.get('/breakfast', gate, async (req, res) => {
         guest_name: r.guest_name,
         pax: r.meal_pax,                     // guests with breakfast incl. extra beds
         extra_bed_pax: r.extra_breakfast || 0,   // of which, from an extra bed (for the POS's "incl. N extra bed" note)
+        // Children (migration 114): `children` on the reservation; `kids_free` =
+        // those whose breakfast the hotel covers this morning — NOT in pax or
+        // breakfast_value (serve them as a free Kids Meal).
+        children: r.children || 0,
+        kids_free: r.kids_breakfast || 0,
         // NET value of this room's included breakfasts (all pax), before
         // service & tax — for the POS breakfast recap.
         breakfast_value: values.get(r.id) || 0,

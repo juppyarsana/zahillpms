@@ -34,7 +34,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
     // breakfast on the first morning).
     db.query(`
       SELECT b.id, to_char(b.check_in_date, 'YYYY-MM-DD') AS ci, to_char(b.check_out_date, 'YYYY-MM-DD') AS co,
-             b.num_guests, b.status, b.reservation_group_id, u.type AS room_type,
+             b.num_guests, b.status, b.reservation_group_id, u.type AS room_type, b.children, b.kids_free_breakfast,
              COALESCE(rp.includes_breakfast, false) AS breakfast,
              COALESCE(rp.includes_lunch, false) AS lunch,
              COALESCE(rp.includes_dinner, false) AS dinner
@@ -86,7 +86,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
       date, holiday: holidayBy.get(date) || null,
       arrivals: 0, arrival_guests: 0, departures: 0, departure_guests: 0, stayovers: 0,
       sold: 0, guests: 0, unpaid: 0, groups: 0,
-      breakfast: 0, lunch: 0, dinner: 0, extra_beds: addonBy.get(date)?.beds || 0,
+      breakfast: 0, breakfast_kids: 0, kids: 0, lunch: 0, dinner: 0, extra_beds: addonBy.get(date)?.beds || 0,
       by_type: Object.fromEntries(types.map(t => [t, 0])),
     };
     const groups = new Set();
@@ -96,7 +96,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
       if (b.co === date) { d.departures++; d.departure_guests += g; }
       if (b.ci < date && b.co > date) d.stayovers++;
       if (b.ci <= date && b.co > date) {          // sleeps here tonight
-        d.sold++; d.guests += g;
+        d.sold++; d.guests += g; d.kids += int(b.children);   // children apart from guests (migration 114)
         if (b.status === 'pending') d.unpaid++;
         if (b.reservation_group_id) groups.add(b.reservation_group_id);
         if (b.room_type in d.by_type) d.by_type[b.room_type]++;
@@ -104,6 +104,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
       }
       if (b.ci < date && b.co >= date) {          // slept here last night
         if (b.breakfast) d.breakfast += g;
+        if (b.breakfast && b.kids_free_breakfast) d.breakfast_kids += int(b.children);   // free kids' breakfasts, apart
         if (b.lunch && b.co > date) d.lunch += g;
       }
     }
@@ -127,7 +128,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
   const totals = {
     arrivals: sum('arrivals'), arrival_guests: sum('arrival_guests'), departures: sum('departures'), departure_guests: sum('departure_guests'),
     sold: sum('sold'), free: sum('free'), guests: sum('guests'),
-    breakfast: sum('breakfast'), lunch: sum('lunch'), dinner: sum('dinner'),
+    breakfast: sum('breakfast'), breakfast_kids: sum('breakfast_kids'), kids: sum('kids'), lunch: sum('lunch'), dinner: sum('dinner'),
     occupancy: sellableNights ? Math.round((sum('sold') / sellableNights) * 100) : 0,
   };
   if (withMoney) {

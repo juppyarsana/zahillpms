@@ -82,7 +82,7 @@ function renderRegistrationCard(doc, { property, data }) {
     height: 38,
     cells: [
       { label: 'Guest Name', value: data.guest_name, weight: 2 },
-      { label: 'No. of Guests', value: data.num_guests != null ? String(data.num_guests) : '', weight: 1 },
+      { label: 'No. of Guests', value: data.num_guests != null ? `${data.num_guests}${data.children ? ` + ${data.children} child${data.children === 1 ? '' : 'ren'}` : ''}` : '', weight: 1 },
     ],
   });
   gridRow(doc, {
