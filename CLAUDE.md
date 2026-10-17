@@ -845,6 +845,26 @@ See `server/.env.example` for the full current list (kept up to date — check t
 - **Kids eat breakfast free (PMS migration 114 + POS `pms-integration` 4339a7a, migration 20261017) — on `dev`, not released. Deploy BOTH together.** After deploy: tick it on a test booking with a child and open POS → Breakfast for the next morning.
 - **Extras part payments + Transfer bill (migration 113, 2026-10-17) — on `dev`, not released.** After deploy: try Record Payment with a smaller extras amount, and ⇄ Transfer to another room on a Folio tab; tell FO (📘 Guide → *Extras: bayar sebagian & pindah tagihan*).
 
+### ▶ Handoff 2026-10-17 (PC → laptop)
+
+**Released, NOT deployed yet:** PMS `main` = `dev` = 211782c (+ this docs commit), POS `pms-integration` = 4339a7a. Both pushed; on the laptop `git pull` on PMS `dev` and POS `pms-integration`, `npm run migrate` in PMS `server/` (local DB needs 113–114; the POS runs its migration by itself on start).
+
+**Next on production (same sitting, PMS first):** `cd /var/www/zahill && bash deploy.sh` (brings migrations **112, 113, 114**), then `cd /var/www/pos-test && bash deploy.sh` (POS migration 20261017). Checks after deploy: Record Payment on an OTA booking (room line unticked, "Guest owes"); ⇄ Transfer to another room on a Folio tab with unpaid extras; Edit Details → Children 1 + Kids eat breakfast free on a test booking → Kitchen tab and POS → Breakfast next morning (undo after); + Add guest on a booking. Tell FO: 📘 Guide → *Extras: bayar sebagian & pindah tagihan*, *Anak & sarapan gratis*, *Tamu lain di kamar*.
+
+**Done today (on the PC):**
+- Extras paid in parts (payment on account) + Transfer bill — migration 113, write-up "Extras: part payments + Transfer bill".
+- Record Payment on an OTA booking: room lines start unticked, header "Guest owes" (no migration).
+- Payment ⋮ (correct / undo / move) is now a visible small icon button (no migration).
+- Children + kids eat breakfast free, PMS + POS — migration 114 + POS 20261017, write-up "Children & kids' free breakfast".
+
+**Open / to decide (owner):**
+- **OTA payouts** — discussed, owner will think about it: today FO marks an OTA booking's room line received when the OTA's money arrives (method = the bank, date = arrival day). Problems: payouts are batched and net of commission (marking at full price overstates the bank; at net leaves the commission owing), easy to forget, and "pay at hotel" OTA bookings (often Booking.com) are treated as OTA-paid. Recommended: each OTA as a billed agent (Agents & companies → stays go on the OTA's statement at check-out, one payout recorded in Agent Billing) + the missing piece = record a payout net of commission (ROADMAP accounting step E). Waiting on: which OTAs collect vs guest pays at hotel, and how payouts arrive (per booking / weekly / monthly, commission taken off?).
+- Kids: not built — lunch / dinner, ages / age rule, children on the police guest report.
+- Part-paid extras never get a "Paid" badge (agreed; balance + payments list show it).
+- Nothing clicked through in a browser by me: Record Payment part payment, Transfer window, New Booking / Edit Details children, POS breakfast page / Came window.
+
+**PC-only, not in git:** simulation bookings SIM Rina Putri (room 103, 1 child free) and SIM Dewi Anggraini (room 104), 17–19 Oct, in the PC's local `zahill_pms` DB (internal_notes `SIMULATION extras-payments`); the PC's browser was logged in with a token for a user not in the local DB (log in as owner@zahill.test there).
+
 ### ▶ Handoff 2026-10-16 evening (laptop → PC at home)
 
 `dev` = `main` = the latest commit, everything pushed. On the PC: `git pull` on `dev`, `npm install` in `client/` and `server/`, `npm run migrate` in `server/` (the PC's DB needs 110–112 if it doesn't have them).
