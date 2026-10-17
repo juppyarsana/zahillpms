@@ -12,7 +12,7 @@ import Icon from './Icon';
 // separating rule (e.g. before a "danger zone" group of destructive actions).
 // `label` + an Icon as `icon` = a labeled outline button with a chevron (detail
 // page headers: "Documents", "More").
-export default function ActionMenu({ items, icon = '⋮', label, ariaLabel = 'More actions', bare = false }) {
+export default function ActionMenu({ items, icon = '⋮', label, ariaLabel = 'More actions', bare = false, small = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -38,10 +38,10 @@ export default function ActionMenu({ items, icon = '⋮', label, ariaLabel = 'Mo
   return (
     <div ref={ref} style={{ position: 'relative', ...(bare ? { display: 'flex' } : {}) }}>
       <button
-        className={bare ? '' : label ? 'btn btn-secondary btn-sm' : 'btn btn-icon'}
+        className={bare ? '' : label ? 'btn btn-secondary btn-sm' : small ? 'btn btn-icon btn-sm' : 'btn btn-icon'}
         onClick={() => setOpen(o => !o)}
         aria-label={ariaLabel}
-        style={bare ? { height: '100%' } : label ? { display: 'flex', alignItems: 'center', gap: 6 } : { fontSize: 16, lineHeight: 1 }}
+        style={bare ? { height: '100%' } : label ? { display: 'flex', alignItems: 'center', gap: 6 } : small ? { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } : { fontSize: 16, lineHeight: 1 }}
       >
         {icon}{label && <>{label}<Icon name="chevronDown" size={14} style={{ opacity: 0.7 }} /></>}
       </button>

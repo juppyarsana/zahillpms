@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import ActionMenu from './ActionMenu';
+import Icon from './Icon';
 import { useSettings } from '../context/SettingsContext';
 
 // Corrections on payments (owner or the `corrections` permission — the
@@ -61,7 +62,7 @@ export function PaymentFixMenu({ payment, onDone }) {
   ];
   return (
     <>
-      <ActionMenu items={items} bare ariaLabel="Correct this payment" />
+      <ActionMenu items={items} small icon={<Icon name="moreV" size={16} />} ariaLabel="Correct this payment" />
       {mode && <FixModal mode={mode} payment={payment} onClose={() => setMode(null)} onDone={() => { setMode(null); onDone(); }} />}
     </>
   );
