@@ -169,8 +169,27 @@ const PAYMENTS_WITH_RECEIPT_SQL = `
         OR EXISTS (SELECT 1 FROM booking_addons y WHERE y.paid_payment_id = p.id AND y.status = 'active') THEN 'lines'
       WHEN p.sale_id IS NOT NULL THEN 'sale'
       WHEN p.activity_booking_id IS NOT NULL THEN 'activity'
+      -- money taken towards the extras without settling given lines: a part
+      -- payment ("pay Rp 2.000.000 now, the rest later / by another bank")
+      WHEN p.type = 'incidental' THEN 'account'
     END AS receipt_kind
   FROM payments p WHERE p.booking_id = $1 ORDER BY p.type`;
+
+// Payments on account (receipt_kind 'account'): extras money not tied to any
+// line — the Record Payment window's part payments. Less what was refunded
+// from them. The window takes this off the unpaid extras it lists.
+function onAccountTotal(payments) {
+  const ids = new Set(payments.filter(p => p.receipt_kind === 'account' && p.status === 'received').map(p => String(p.id)));
+  const sum = payments.filter(p => p.status === 'received'
+    && (ids.has(String(p.id)) || (p.type === 'refund' && p.refund_of && ids.has(String(p.refund_of)))))
+    .reduce((t, p) => t + parseFloat(p.amount), 0);
+  return Math.max(0, round2(sum));
+}
+
+// Where an extras line was moved from (Transfer bill, migration 113): "Room 102 · Ayu".
+const TRANSFERRED_FROM_SQL = `(SELECT 'room ' || tu.name || ' · ' || tg.name FROM bookings tb
+    JOIN units tu ON tu.id = tb.unit_id JOIN guests tg ON tg.id = tb.guest_id
+    WHERE tb.id = fc.transferred_from_booking_id)`;
 
 // A group billed as a whole (migration 097): which of a room's charges go on
 // the GROUP's bill. Room nights + meal plan always; extras only when the group
@@ -223,7 +242,7 @@ async function loadFolio(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const chargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, fc.addon_id, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, fc.addon_id, u.name as posted_by_name, ${TRANSFERRED_FROM_SQL} AS transferred_from,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
             -- F&B on the folio/invoice; a hotel extra (extra bed, transfer —
@@ -273,6 +292,7 @@ async function loadFolio(bookingId, propertyId) {
     subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, agent_billable_total,
     group,
     complimentary_extras,
+    on_account: onAccountTotal(payments),
     // Prices entered incl. service & tax (migration 079): show lines all-in.
     prices_include_tax: !!settings?.prices_include_tax,
     show_tax_breakdown: !!settings?.show_tax_breakdown,   // "Includes service … and tax …" (080)
@@ -310,7 +330,7 @@ async function computeProforma(bookingId, propertyId) {
     [bookingId, propertyId]
   );
   const extraChargesQ = db.query(
-    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, u.name as posted_by_name,
+    `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, u.name as posted_by_name, ${TRANSFERRED_FROM_SQL} AS transferred_from,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             EXISTS (SELECT 1 FROM sale_items si JOIN products p ON p.id = si.product_id
                      WHERE si.sale_id = fc.sale_id AND p.category IN ('drinks', 'food'))
@@ -410,6 +430,7 @@ async function computeProforma(bookingId, propertyId) {
     subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due,
     group,
     complimentary_extras,
+    on_account: onAccountTotal(payments),
     prices_include_tax: !!settings?.prices_include_tax,
     show_tax_breakdown: !!settings?.show_tax_breakdown,
     property: settings || {},
@@ -417,4 +438,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { onAccountTotal, TRANSFERRED_FROM_SQL, PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };

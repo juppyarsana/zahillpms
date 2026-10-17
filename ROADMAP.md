@@ -15,7 +15,9 @@ bank, an OTA payout report, their VHP P&L + chart, and the cut-off date (= first
 balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss" and "Accounting — journal entries".
 
 **Other guests in the room (migration 112, 2026-10-16, on `dev`):** FO asked to add a second guest to a room, optional — booking page Guest card and Check-in step 2, ID upload per guest, printed on the Registration Card and the police guest report. Details: CLAUDE.md → "Other guests in the room".
-Next migration number: **113**.
+
+**Extras part payments + Transfer bill (migration 113, 2026-10-17, on `dev`):** FO asked to pay extras in parts (two banks / rest later — recorded as a payment on account) and to move unpaid extras from one room's folio to another's (friends booked separately). Details: CLAUDE.md → "Extras: part payments + Transfer bill".
+Next migration number: **114**.
 
 ---
 
@@ -2074,7 +2076,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 113
+## Next migration number: 114
 
 ---
 

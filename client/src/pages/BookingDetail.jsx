@@ -22,6 +22,7 @@ import StayExtrasCard, { AddStayItemModal } from '../components/StayExtras';
 import RestaurantRequestsCard from '../components/RestaurantRequests';
 import RoomCheckPanel from '../components/RoomCheck';
 import RecordPaymentModal from '../components/RecordPaymentModal';
+import TransferBillModal, { transferableLines } from '../components/TransferBillModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
 import BookingAgentFields from '../components/BookingAgentFields';
@@ -285,6 +286,7 @@ export default function BookingDetail() {
   const [compInitial, setCompInitial] = useState(null);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
+  const [billTransfer, setBillTransfer] = useState(false);   // Transfer bill window (migration 113)
   const [folioLoading, setFolioLoading] = useState(false);
   const [estimate, setEstimate] = useState(null);
   const [payingActivity, setPayingActivity] = useState(null);
@@ -337,7 +339,7 @@ export default function BookingDetail() {
   // Any payment's receipt (receipt_kind from the server): specific items paid
   // from Record Payment, an extra paid with Pay now, an activity paid directly.
   async function downloadPaymentReceipt(p) {
-    if (p.receipt_kind === 'lines') return downloadLinesReceipt(p.id);
+    if (p.receipt_kind === 'lines' || p.receipt_kind === 'account') return downloadLinesReceipt(p.id);
     if (p.receipt_kind === 'sale') return downloadPdf(`/api/sales/${p.sale_id}/receipt`, `receipt-sale-${String(p.sale_id).slice(0, 8)}.pdf`);
     if (p.receipt_kind === 'activity') return downloadPdf(`/api/activities/bookings/${p.activity_booking_id}/receipt`, `receipt-activity-${String(p.activity_booking_id).slice(0, 8)}.pdf`);
   }
@@ -1052,7 +1054,7 @@ export default function BookingDetail() {
                     ...withReceipt.map(p => ({
                       label: `Receipt · ${p.received_at ? new Date(p.received_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''} · ${fmtIDR(p.amount)}`,
                       icon: '🖨',
-                      hint: `${{ lines: 'Items paid on their own', sale: 'Extra paid at the Sales till', activity: 'Activity paid directly' }[p.receipt_kind]} · ${(paymentMethods.find(m => m.id === p.method)?.label) || p.method}`,
+                      hint: `${{ lines: 'Items paid on their own', account: 'Part payment of the extras', sale: 'Extra paid at the Sales till', activity: 'Activity paid directly' }[p.receipt_kind]} · ${(paymentMethods.find(m => m.id === p.method)?.label) || p.method}`,
                       onClick: () => downloadPaymentReceipt(p),
                     })),
                     { divider: true },
@@ -1508,7 +1510,13 @@ export default function BookingDetail() {
               })()}
               <div className="flex-between" style={{ alignItems: 'baseline', marginBottom: 2 }}>
                 <div className="card-title" style={{ fontSize: 13, margin: 0 }}>Posted</div>
-                <span className="text-muted" style={{ fontSize: 11 }}>on the bill — see Balance due for what's unpaid</span>
+                <span className="flex gap-2 items-center">
+                  <span className="text-muted" style={{ fontSize: 11 }}>on the bill — see Balance due for what's unpaid</span>
+                  {!['cancelled', 'no_show'].includes(booking.status) && transferableLines(folio, booking).length > 0 && (
+                    <button className="btn btn-sm btn-secondary" title="Move unpaid extras to another room's folio (that room pays them)"
+                      onClick={() => setBillTransfer(true)}>⇄ Transfer to another room</button>
+                  )}
+                </span>
               </div>
               <div style={{ marginBottom: 10 }}>
                 {[
@@ -1540,6 +1548,7 @@ export default function BookingDetail() {
                               {c.tax_mode === 'included' && !folio.prices_include_tax && ' · tax & service included'}
                               {c.tax_mode === 'none' && ' · no tax or service'}
                               {c.posted_by_name && ` · ${c.posted_by_name}`}
+                              {c.transferred_from && <span className="badge badge-blue" style={{ marginLeft: 6, fontSize: 10 }}>from {c.transferred_from}</span>}
                             </div>
                           </div>
                           <div className="flex gap-2 items-center">
@@ -2223,6 +2232,12 @@ export default function BookingDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {billTransfer && folio && (
+        <TransferBillModal booking={booking} folio={folio}
+          onClose={() => setBillTransfer(false)}
+          onDone={() => { loadFolio(); load(); }} />
       )}
 
       {recording && (

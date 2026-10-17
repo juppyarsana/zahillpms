@@ -17,6 +17,7 @@ export const GROUPS = [
   { label: { id: 'Front Desk', en: 'Front Desk' }, chapters: [
     { id: 'other-guests', icon: '👥', title: { id: 'Tamu lain di kamar', en: 'Other guests in the room' } },
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
+    { id: 'extras-payments', icon: '💳', title: { id: 'Extras: bayar sebagian & pindah tagihan', en: 'Extras: paying in parts & transferring the bill' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
   ] },
   { label: { id: 'Akuntansi', en: 'Accounting' }, chapters: [

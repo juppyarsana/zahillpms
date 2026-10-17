@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const PDFDocument = require('pdfkit');
-const { loadFolio, computeProforma, round2, chargeTotals, billRates, settleCents, PAID_AT_DESK_SQL } = require('../services/folioService');
+const { loadFolio, computeProforma, round2, chargeTotals, billRates, settleCents, PAID_AT_DESK_SQL, PAYMENTS_WITH_RECEIPT_SQL, onAccountTotal } = require('../services/folioService');
 const proformaFooter = require('../services/proformaFooter');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
@@ -218,7 +218,13 @@ async function lockPaymentBooking(client, bookingId, propertyId) {
 }
 
 // Items part: validates and records one payment for the chosen lines / nights.
-async function payItems(client, booking, { chargeIds, addonIds, method, receivedAt, notes, userId, reference = null }) {
+// `typed` (optional) = the amount front desk typed for the extras. Less than
+// what the chosen items still need (their total minus earlier payments on
+// account) → a part payment: one 'incidental' payment not tied to the lines
+// (receipt_kind 'account'); the lines stay owed, the balance drops. The rest
+// is paid the same way later, e.g. by another bank. Once there is money on
+// account the lines are never tied to a payment (that would count it twice).
+async function payItems(client, booking, { chargeIds, addonIds, method, receivedAt, notes, userId, reference = null, typed }) {
   const { rows: lines } = chargeIds.length ? await client.query(
     `SELECT fc.id, fc.type, fc.description, fc.amount, fc.tax_mode, ${PAID_AT_DESK_SQL} AS paid_at_desk
      FROM folio_charges fc
@@ -258,6 +264,26 @@ async function payItems(client, booking, { chargeIds, addonIds, method, received
   const ymdOf = d => String(d instanceof Date ? d.toISOString() : d).slice(0, 10);
   const what = [...lines.map(l => l.description), ...nights.map(n => `${n.description} — ${ymdOf(n.service_date)}`)].join(', ');
   const cleanNotes = String(notes || '').trim();
+
+  if (typed !== undefined && typed !== null && typed !== '') {
+    const { rows: pays } = await client.query(PAYMENTS_WITH_RECEIPT_SQL, [booking.id]);
+    const credit = onAccountTotal(pays);
+    const due = round2(amount - credit);
+    if (due <= 0.05) return { status: 409, error: 'These items are already covered by payments on account', code: 'ALREADY_PAID' };
+    const want = round2(parseFloat(typed));
+    if (!(want > 0) || want > due + 1) {
+      return { status: 400, error: `The amount for the extras must be between 1 and ${Math.round(due).toLocaleString('id-ID')}`, code: 'BAD_AMOUNT' };
+    }
+    const full = want >= due - 1;   // within a rupiah = all of it (nett prices carry cents)
+    if (!full || credit > 0.005) {
+      const paid = full ? due : want;
+      const { rows: [payment] } = await client.query(
+        `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, reference)
+         VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6, $7) RETURNING id`,
+        [booking.id, paid, method, receivedAt, userId, (cleanNotes || `Paid on account towards: ${what}`).slice(0, 250), reference]);
+      return { payment: { id: payment.id, amount: paid, count: 0, what: `on account (${what})`, on_account: true, left: round2(due - paid) } };
+    }
+  }
   const { rows: [payment] } = await client.query(
     `INSERT INTO payments (booking_id, type, amount, status, method, received_at, received_by, notes, reference)
      VALUES ($1, 'incidental', $2, 'received', $3, COALESCE($4::timestamptz, NOW()), $5, $6, $7) RETURNING id`,
@@ -324,7 +350,7 @@ router.post('/:bookingId/receive', auth, async (req, res) => {
 
     const rp = await payRoomLines(client, booking, room, opts);
     if (rp.error) { await client.query('ROLLBACK'); return res.status(rp.status).json({ error: rp.error }); }
-    const it = await payItems(client, booking, { chargeIds, addonIds, ...opts });
+    const it = await payItems(client, booking, { chargeIds, addonIds, ...opts, typed: req.body.extras_amount });
     if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
 
     const total = round2(rp.total + (it.payment?.amount || 0));
@@ -336,6 +362,7 @@ router.post('/:bookingId/receive', auth, async (req, res) => {
     res.status(201).json({
       total, room_amount: rp.total,
       items_payment_id: it.payment?.id || null, items_amount: it.payment?.amount || 0, items_count: it.payment?.count || 0,
+      items_on_account: !!it.payment?.on_account, items_left: it.payment?.left || 0,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -400,6 +427,9 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
        WHERE a.paid_payment_id = $1 AND a.status = 'active'
          AND NOT EXISTS (SELECT 1 FROM folio_charges f WHERE f.addon_id = a.id AND f.is_voided = false)
        ORDER BY service_date NULLS LAST`, [p.id]);
+    // A payment on account (part payment of the extras) prints as one line.
+    const account = !lines.length && p.type === 'incidental' && !p.sale_id && !p.activity_booking_id && p.status === 'received';
+    if (account) lines.push({ description: `Payment towards the extras${p.notes && !/^Paid on account towards:/.test(p.notes) ? ` — ${p.notes}` : ''}`, quantity: 1, unit_price: p.amount, amount: p.amount, tax_mode: 'none', service_date: null });
     if (!lines.length) return res.status(404).json({ error: 'No folio lines were paid with this payment' });
     const { rows: [settings] } = await db.query(
       `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address,
@@ -429,7 +459,7 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
     y += 22;
     doc.font('Helvetica').fontSize(10);
     for (const l of shownLines) {
-      const desc = `${l.description}${!nett && l.tax_mode === 'included' ? ' (tax incl.)' : l.tax_mode === 'none' ? ' (no tax)' : ''}`;
+      const desc = `${l.description}${account ? '' : !nett && l.tax_mode === 'included' ? ' (tax incl.)' : l.tax_mode === 'none' ? ' (no tax)' : ''}`;
       const h = Math.max(16, doc.heightOfString(desc, { width: 240 }) + 4);
       doc.text(desc, colX.desc, y, { width: 240 });
       doc.text(String(parseFloat(l.quantity)), colX.qty, y, { width: 50, align: 'right' });
@@ -446,13 +476,13 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
       y += bold ? 20 : 16;
     };
     const hasSc = parseFloat(rates.service_charge_rate) > 0, hasTax = parseFloat(rates.tax_rate) > 0;
-    if (!nett && (hasSc || hasTax)) {
+    if (!account && !nett && (hasSc || hasTax)) {
       line('Subtotal', money(t.subtotal));
       if (hasSc) line(`Service Charge (${parseFloat(rates.service_charge_rate)}%)`, money(t.service_charge_amount));
       if (hasTax) line(`Tax (${parseFloat(rates.tax_rate)}%)`, money(t.tax_amount));
     }
     line('Total Paid', money(p.amount), true);
-    if (nett && settings?.show_tax_breakdown) {
+    if (!account && nett && settings?.show_tax_breakdown) {
       const inc = includesNote({ service_charge_rate: rates.service_charge_rate, service_charge_amount: t.service_charge_amount, tax_rate: rates.tax_rate, tax_amount: t.tax_amount }, money);
       if (inc) { doc.font('Helvetica').fontSize(8).fillColor('#777').text(inc, 50, y - 4, { width: 500, align: 'right' }); doc.fillColor('#000'); y += 10; }
     }
@@ -467,6 +497,99 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
     doc.end();
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Transfer bill (migration 113) ───────────────────────────────────────────
+// Two rooms booked separately (e.g. friends on two OTA reservations), one
+// pays the other's extras: unpaid extras lines (Sales items, restaurant / POS
+// bills, activities) move from this folio to another booking's. Never room /
+// meal nights or per-night extras (the night audit posts those to their own
+// booking), never a line already paid. Only folio_charges.booking_id changes —
+// amounts, the sale and the reports stay as they were; the line says where it
+// came from. Moving it back to that room clears the mark.
+const TRANSFER_OPEN = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
+const TRANSFERABLE_SQL = `fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon') AND fc.addon_id IS NULL AND NOT ${PAID_AT_DESK_SQL}`;
+
+// GET /api/folio/:bookingId/transfer-targets — stays whose dates touch this one.
+router.get('/:bookingId/transfer-targets', auth, async (req, res) => {
+  try {
+    const { rows: [src] } = await db.query(
+      'SELECT id, check_in_date, check_out_date FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
+    if (!src) return res.status(404).json({ error: 'Booking not found' });
+    const { rows } = await db.query(
+      `SELECT b.id, b.status, b.check_in_date, b.check_out_date, u.name AS unit_name, g.name AS guest_name,
+              (b.reservation_group_id IS NOT NULL AND b.reservation_group_id = s.reservation_group_id) AS same_group
+       FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+       JOIN bookings s ON s.id = $2
+       WHERE b.property_id = $1 AND b.id <> $2 AND b.status = ANY($3::text[])
+         AND b.folio_status IS NULL AND COALESCE(b.complimentary_scope, '') <> 'all'
+         AND b.check_in_date <= s.check_out_date AND b.check_out_date >= s.check_in_date
+       ORDER BY (b.status = 'checked_in') DESC, u.name`, [req.propertyId, src.id, TRANSFER_OPEN]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/folio/:bookingId/transfer { charge_ids, to_booking_id, reason }
+router.post('/:bookingId/transfer', auth, async (req, res) => {
+  const chargeIds = [...new Set((Array.isArray(req.body.charge_ids) ? req.body.charge_ids : []).map(String))];
+  const toId = String(req.body.to_booking_id || '');
+  const reason = String(req.body.reason || '').trim().slice(0, 300);
+  if (!chargeIds.length) return res.status(400).json({ error: 'Choose the lines to transfer' });
+  if (!toId) return res.status(400).json({ error: 'Choose the room that pays' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required', code: 'REASON_REQUIRED' });
+  if (toId === req.params.bookingId) return res.status(400).json({ error: 'Choose another room' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Both bookings locked, in a fixed order (two transfers at once can't deadlock).
+    const { rows: bks } = await client.query(
+      `SELECT b.id, b.status, b.folio_status, b.complimentary_scope, b.bill_tax_rate, b.bill_service_charge_rate,
+              u.name AS unit_name, g.name AS guest_name
+       FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+       WHERE b.id = ANY($1::uuid[]) AND b.property_id = $2 ORDER BY b.id FOR UPDATE OF b`,
+      [[req.params.bookingId, toId], req.propertyId]);
+    const src = bks.find(b => b.id === req.params.bookingId), dst = bks.find(b => b.id === toId);
+    const stop = async (status, error, code) => { await client.query('ROLLBACK'); return res.status(status).json({ error, code }); };
+    if (!src) return stop(404, 'Booking not found');
+    if (!dst) return stop(404, 'The room that pays was not found');
+    if (['cancelled', 'no_show'].includes(src.status)) return stop(409, `This booking is ${src.status.replace('_', '-')}`);
+    if (src.folio_status) return stop(409, "This stay is on an agent's bill — change that first (⋮ → Fix Agent Billing)", 'AGENT_BILLED');
+    if (src.complimentary_scope === 'all') return stop(409, 'This stay is complimentary for everything — its extras are free', 'COMPLIMENTARY');
+    if (!TRANSFER_OPEN.includes(dst.status)) return stop(409, `Room ${dst.unit_name} can't take charges — the booking is ${dst.status.replace('_', ' ')}`, 'TARGET_CLOSED');
+    if (dst.folio_status) return stop(409, `Room ${dst.unit_name}'s stay is on an agent's bill`, 'TARGET_AGENT_BILLED');
+    if (dst.complimentary_scope === 'all') return stop(409, `Room ${dst.unit_name}'s stay is complimentary for everything — charges there would be free`, 'TARGET_COMPLIMENTARY');
+
+    const { rows: lines } = await client.query(
+      `SELECT fc.id, fc.description, fc.amount, fc.tax_mode FROM folio_charges fc
+       WHERE fc.id = ANY($1::uuid[]) AND fc.booking_id = $2 AND ${TRANSFERABLE_SQL}
+       FOR UPDATE OF fc`, [chargeIds, src.id]);
+    if (lines.length !== chargeIds.length) {
+      return stop(400, 'Some of the chosen lines can\'t be transferred (paid, voided, a room night or not on this folio any more) — refresh and try again', 'NOT_TRANSFERABLE');
+    }
+    await client.query(
+      `UPDATE folio_charges SET booking_id = $1,
+              transferred_from_booking_id = CASE WHEN transferred_from_booking_id = $1 THEN NULL ELSE COALESCE(transferred_from_booking_id, $2) END,
+              transferred_by = CASE WHEN transferred_from_booking_id = $1 THEN NULL ELSE $3::uuid END,
+              transferred_at = CASE WHEN transferred_from_booking_id = $1 THEN NULL ELSE NOW() END
+       WHERE id = ANY($4::uuid[])`, [dst.id, src.id, req.user.id, chargeIds]);
+
+    const rates = billRates(src, (await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [req.propertyId])).rows[0]);
+    const total = chargeTotals(lines, rates.tax_rate, rates.service_charge_rate).total;
+    const what = lines.map(l => l.description).join(', ');
+    const money = `Rp ${Math.round(total).toLocaleString('id-ID')}`;
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3), ($4, $5, $3)', [
+      src.id, `Bill transferred to room ${dst.unit_name} (${dst.guest_name}): ${what} — ${money}. Reason: ${reason}`.slice(0, 1000), req.user.id,
+      dst.id, `Bill transferred here from room ${src.unit_name} (${src.guest_name}): ${what} — ${money}. Reason: ${reason}`.slice(0, 1000)]);
+    await client.query('COMMIT');
+    res.json({ moved: lines.length, amount: total, to_booking_id: dst.id, to_unit_name: dst.unit_name, to_guest_name: dst.guest_name });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -768,7 +891,8 @@ function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal
   const charges = [
     ...mergeStayLines(rawCharges, booking),
     ...mergeAddonLines(rawCharges),
-    ...rawCharges.filter(c => !isStayLine(c)),
+    ...rawCharges.filter(c => !isStayLine(c))
+      .map(c => (c.transferred_from ? { ...c, description: `${c.description} (from ${c.transferred_from})` } : c)),
   ];
   const tableTop = doc.y;
   const colX = { desc: 50, qty: 300, price: 360, amount: 460 };

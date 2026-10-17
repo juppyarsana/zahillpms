@@ -30,6 +30,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
+  const [extrasTyped, setExtrasTyped] = useState(null);   // null = everything the ticked extras still need
 
   const roomLines = (booking.payments || [])
     .filter(p => ['deposit', 'balance'].includes(p.type) && p.status === 'pending' && parseFloat(p.amount) > 0)
@@ -45,6 +46,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
 
   function selectAll(which, lines = itemLines, nightList = futureNights) {
     setRoom(Object.fromEntries(roomLines.map(l => [l.id, { on: which === 'all' || (which === 'deposit' && l.type === 'deposit'), amount: String(Math.round(parseFloat(l.amount))) }])));
+    setExtrasTyped(null);
     setItems(which === 'all' ? lines.map(c => c.id) : []);
     setNights(which === 'all' ? nightList.map(a => a.id) : []);
   }
@@ -62,29 +64,38 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const rates = folio || {};
   const nightNet = a => r2(parseFloat(a.unit_price) * a.quantity);
   // Items as the server charges them: service + tax on the 'added' ones.
-  const itemsTotal = (() => {
+  const sumItems = (itemIds, nightIds) => {
     let taxable = 0, untaxed = 0;
-    for (const c of itemLines) if (items.includes(c.id)) {
+    for (const c of itemLines) if (itemIds.includes(c.id)) {
       if (c.tax_mode && c.tax_mode !== 'added') untaxed += parseFloat(c.amount); else taxable += parseFloat(c.amount);
     }
-    for (const a of futureNights) if (nights.includes(a.id)) taxable += nightNet(a);
+    for (const a of futureNights) if (nightIds.includes(a.id)) taxable += nightNet(a);
     const sub = r2(taxable);
     const sc = r2(sub * (parseFloat(rates.service_charge_rate) || 0) / 100);
     const tax = r2((sub + sc) * (parseFloat(rates.tax_rate) || 0) / 100);
     return r2(sub + sc + tax + untaxed);
-  })();
+  };
+  const itemsTotal = sumItems(items, nights);
+  // Part payments already taken towards the extras (payments on account):
+  // what the ticked extras still need, and what FO receives now (typed less =
+  // the rest stays owed, e.g. for a second bank).
+  const credit = parseFloat(folio?.on_account) || 0;
+  const extrasDue = Math.max(0, r2(itemsTotal - credit));
+  const extrasChosen = items.length + nights.length > 0 && extrasDue > 0.05;
+  const extrasPay = !extrasChosen ? 0 : extrasTyped === null ? extrasDue : (parseFloat(extrasTyped) || 0);
+  const extrasBad = extrasChosen && !(extrasPay > 0 && extrasPay <= extrasDue + 1);
   const roomTotal = roomLines.reduce((s, l) => s + (room[l.id]?.on ? (parseFloat(room[l.id].amount) || 0) : 0), 0);
-  const total = r2(roomTotal + itemsTotal);
+  const total = r2(roomTotal + extrasPay);
   const roomBad = roomLines.some(l => room[l.id]?.on && !(parseFloat(room[l.id].amount) > 0 && parseFloat(room[l.id].amount) <= parseFloat(l.amount) + 0.005));
   const taxNote = !rates.prices_include_tax && (parseFloat(rates.service_charge_rate) > 0 || parseFloat(rates.tax_rate) > 0);
-  const toggle = (list, set, id) => set(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
+  const toggle = (list, set, id) => { setExtrasTyped(null); set(list.includes(id) ? list.filter(x => x !== id) : [...list, id]); };
 
   async function save() {
     setSaving(true); setError('');
     try {
       const r = await api.post(`/api/folio/${booking.id}/receive`, {
         room: roomLines.filter(l => room[l.id]?.on).map(l => ({ payment_id: l.id, amount: parseFloat(room[l.id].amount) })),
-        charge_ids: items, addon_ids: nights, ...form,
+        ...(extrasChosen ? { charge_ids: items, addon_ids: nights, extras_amount: extrasPay } : {}), ...form,
       });
       setDone(r.data);
       onPaid?.();
@@ -95,7 +106,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
     }
   }
 
-  const nothingOwed = folio && !roomLines.length && !itemLines.length && !futureNights.length;
+  const nothingOwed = folio && !roomLines.length
+    && sumItems(itemLines.map(c => c.id), futureNights.map(a => a.id)) - credit <= 0.05;
   return (
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 780, width: '100%' }}>
@@ -109,8 +121,14 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
               <div style={{ fontSize: 14, marginBottom: 12 }}>
                 ✓ <b>{fmtIDR(shownTotal(done.total, rates))}</b> received
                 {done.room_amount > 0 && <> — room {fmtIDR(done.room_amount)}</>}
-                {done.items_count > 0 && <>{done.room_amount > 0 ? ',' : ' —'} {done.items_count} item{done.items_count === 1 ? '' : 's'} {fmtIDR(shownTotal(done.items_amount, rates))}</>}.
+                {done.items_count > 0 && <>{done.room_amount > 0 ? ',' : ' —'} {done.items_count} item{done.items_count === 1 ? '' : 's'} {fmtIDR(shownTotal(done.items_amount, rates))}</>}
+                {done.items_on_account && <>{done.room_amount > 0 ? ',' : ' —'} extras {fmtIDR(shownTotal(done.items_amount, rates))}</>}.
               </div>
+              {done.items_on_account && done.items_left > 0.05 && (
+                <div className="alert" style={{ marginBottom: 12 }}><div>
+                  {fmtIDR(shownTotal(done.items_left, rates))} of the extras is still to pay — open Record Payment again to take the rest (e.g. by another bank).
+                </div></div>
+              )}
               {done.items_payment_id && (
                 <button className="btn btn-secondary" onClick={() => printReceipt(done.items_payment_id)}>🖨 Print receipt for the items</button>
               )}
@@ -198,11 +216,26 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                     </tbody>
                   </table>
                   {taxNote && <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Service charge &amp; tax are added to the extras in the total below.</div>}
+                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {credit > 0.05 && (
+                      <span className="text-muted" style={{ fontSize: 13 }}>
+                        Ticked {fmtIDR(shownTotal(itemsTotal, rates))} − paid on account {fmtIDR(shownTotal(credit, rates))} = <b>{fmtIDR(shownTotal(extrasDue, rates))}</b> still to pay
+                      </span>
+                    )}
+                    <label className="form-label" style={{ margin: 0 }}>Extras — pay now</label>
+                    <input className="form-input" type="number" min={1} disabled={!extrasChosen}
+                      style={{ maxWidth: 160, textAlign: 'right', padding: '4px 8px' }}
+                      value={!extrasChosen ? '' : extrasTyped === null ? String(Math.round(extrasDue)) : extrasTyped}
+                      onChange={e => setExtrasTyped(e.target.value)} />
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: 4, textAlign: 'right' }}>
+                    Type a smaller amount to pay part now — the rest stays owed (e.g. the second part by another bank).
+                  </div>
                 </div>
               )}
 
               <div className="flex-between" style={{ padding: '10px 12px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14, flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: 13 }}>Room {fmtIDR(roomTotal)} · Extras {fmtIDR(shownTotal(itemsTotal, rates))}{taxNote ? ' (incl. service & tax)' : ''}</span>
+                <span style={{ fontSize: 13 }}>Room {fmtIDR(roomTotal)} · Extras {fmtIDR(shownTotal(extrasPay, rates))}{taxNote ? ' (incl. service & tax)' : ''}</span>
                 <span style={{ fontWeight: 800, fontSize: 16 }}>Total to receive {fmtIDR(shownTotal(total, rates))}</span>
               </div>
 
@@ -227,6 +260,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                 </div>
               </div>
               {roomBad && <div className="alert alert-error"><div>A room amount must be more than 0 and not more than what's due.</div></div>}
+              {extrasBad && <div className="alert alert-error"><div>The extras amount must be more than 0 and not more than {fmtIDR(shownTotal(extrasDue, rates))}.</div></div>}
               {error && <div className="alert alert-error"><div>{error}</div></div>}
             </>
           )}
@@ -236,7 +270,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
             <button className="btn btn-primary" onClick={onClose}>Done</button>
           ) : (<>
             <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving || !folio || !(total > 0) || roomBad || !form.method}>
+            <button className="btn btn-primary" onClick={save} disabled={saving || !folio || !(total > 0) || roomBad || extrasBad || !form.method}>
               {saving ? 'Saving…' : `Receive ${fmtIDR(shownTotal(total, rates))}`}
             </button>
           </>)}
