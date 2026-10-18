@@ -26,6 +26,10 @@ History is kept **30 days**.
 | −67 to −75 | **Weak** — may drop now and then |
 | below −75 | **Poor** — expect drops; move the access point closer or add one |
 
+> **Offline tablet:** the signal, access point and battery shown are its **last report** (marked "Last known" / "last report"), not live — an offline tablet can't send anything new.
+>
+> **"⚠ WiFi but no internet"**: the tablet was connected to the WiFi (often with a good signal) but the network did not get through to the internet. That is the access point or router's settings (DHCP, gateway, firewall), not a weak signal.
+
 Signal and access point come only from tablets running the **kiosk app**. A tablet that only runs in a browser still has its drops counted.
 
 ## One room

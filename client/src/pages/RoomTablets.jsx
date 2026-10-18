@@ -36,6 +36,10 @@ function signal(rssi) {
   if (rssi >= -75) return { label: 'Weak', color: 'var(--warning-text)', bg: 'var(--warning-bg)' };
   return { label: 'Poor', color: 'var(--danger-text)', bg: 'var(--danger-bg)' };
 }
+// The kiosk app reports every 2 minutes; older than 10 means what we show is
+// its LAST report, not live.
+const isStale = (d) => !d?.reported_at || Date.now() - new Date(d.reported_at).getTime() > 10 * 60000;
+const MUTED = { bg: '#F3F4F6', color: '#6B7280' };
 const band = (mhz) => (!mhz ? '' : mhz >= 5900 ? '6 GHz' : mhz >= 4900 ? '5 GHz' : '2.4 GHz');
 const apLabel = (d) => d?.ap_name || (d?.bssid ? `AP …${d.bssid.slice(-5)}` : null);
 
@@ -103,7 +107,7 @@ export default function RoomTablets() {
       {tab === 'overview' && (loading && !data ? <div className="text-muted">Loading…</div> : data && <Overview data={data} onOpen={setOpenRoom} />)}
       {tab === 'compare' && <Compare rooms={data?.rooms || []} />}
       {tab === 'aps' && <AccessPoints onOpen={setOpenRoom} />}
-      {openRoom && <RoomModal room={openRoom} onClose={() => setOpenRoom(null)} />}
+      {openRoom && <RoomModal room={openRoom} info={data?.rooms.find((r) => r.room === openRoom)} onClose={() => setOpenRoom(null)} />}
     </div>
   );
 }
@@ -207,9 +211,11 @@ function Overview({ data, onOpen }) {
 
 function NowTile({ r, onClick }) {
   const d = r.device;
+  const stale = isStale(d);
   const sig = signal(d?.rssi);
+  const shown = sig && stale ? { ...sig, ...MUTED } : sig;
   const state = r.online === true ? { dot: 'var(--success)', text: 'Online' }
-    : r.online === false ? { dot: 'var(--danger)', text: `Offline · ${ago(r.last_seen)}` }
+    : r.online === false ? { dot: 'var(--danger)', text: r.last_seen ? `Offline · ${ago(r.last_seen)}` : 'Offline' }
     : { dot: '#9CA3AF', text: 'Checking…' };
   return (
     <button onClick={onClick} style={{
@@ -218,14 +224,18 @@ function NowTile({ r, onClick }) {
     }}>
       <div className="flex-between">
         <span style={{ fontWeight: 700 }}>{r.unit_name || r.room}</span>
-        {d?.battery != null && <span style={{ fontSize: 11, color: d.battery <= 20 && !d.charging ? 'var(--danger-text)' : 'var(--text-muted)' }}>{d.charging ? '⚡' : ''}{d.battery}%</span>}
+        {d?.battery != null && <span title={stale ? `Last report ${ago(d.reported_at)}` : undefined} style={{ fontSize: 11, color: !stale && d.battery <= 20 && !d.charging ? 'var(--danger-text)' : 'var(--text-muted)' }}>{!stale && d.charging ? '⚡' : ''}{d.battery}%</span>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
         <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 4, background: state.dot, marginRight: 4 }} />{state.text}
       </div>
+      {d?.internet_ok === false && (
+        <div style={{ fontSize: 11, marginTop: 4, color: 'var(--danger-text)', fontWeight: 600 }}>⚠ WiFi but no internet{stale ? ` · ${ago(d.reported_at)}` : ''}</div>
+      )}
       {sig ? (
         <div style={{ fontSize: 11, marginTop: 4 }}>
-          <span style={{ background: sig.bg, color: sig.color, borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>{sig.label} {d.rssi}</span>
+          {stale && <span className="text-muted">Last known </span>}
+          <span style={{ background: shown.bg, color: shown.color, borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>{sig.label} {d.rssi}</span>
           <span className="text-muted"> {band(d.mhz)}</span>
           <div className="text-muted" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{apLabel(d)}</div>
         </div>
@@ -502,7 +512,7 @@ function AccessPoints({ onOpen }) {
 
 // ── One room ───────────────────────────────────────────────────────────────
 
-function RoomModal({ room, onClose }) {
+function RoomModal({ room, info, onClose }) {
   const [days, setDays] = useState(1);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -531,8 +541,13 @@ function RoomModal({ room, onClose }) {
     return out.reverse();
   }, [data]);
   const own = data ? data.drops.filter((d) => d.own) : [];
+  // Minutes inside the chosen window only (a drop may have started before it).
+  const winFrom = Date.now() - days * 86400e3;
+  const lostIn = (list) => list.reduce((s, x) => s + Math.max(0, Math.min(Date.now(), new Date(x.to).getTime()) - Math.max(winFrom, new Date(x.from).getTime())), 0) / 1000;
   const d = data?.device;
   const sig = signal(d?.rssi);
+  const stale = isStale(d);
+  const sigColor = stale ? MUTED.color : sig?.color;
 
   return (
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -549,12 +564,23 @@ function RoomModal({ room, onClose }) {
             ))}
           </div>
           {!data ? <div className="text-muted">Loading…</div> : (<>
+            {d?.internet_ok === false && (
+              <div className="alert alert-error"><div>
+                The tablet's {stale ? `last report (${ago(d.reported_at)})` : 'report'} said: <b>connected to WiFi{d.ssid ? ` "${d.ssid}"` : ''}{sig ? ` with a ${sig.label.toLowerCase()} signal` : ''}, but no internet</b>. The tablet is on the WiFi, but that network is not getting through to the internet — look at the access point / router (DHCP, gateway, firewall), not the signal.
+              </div></div>
+            )}
+            {info?.online === false && stale && d && (
+              <div className="alert alert-warn"><div>
+                This tablet is offline. Signal, access point and battery below are from its last report ({ago(d.reported_at)}), not live.
+              </div></div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, fontSize: 13, marginBottom: 14 }}>
-              <Fact label="Signal now" value={sig ? <span style={{ color: sig.color, fontWeight: 700 }}>{sig.label} · {d.rssi} dBm</span> : '—'} />
-              <Fact label="Access point" value={apLabel(d) || '—'} sub={[d?.ssid, band(d?.mhz), d?.mbps ? `${d.mbps} Mbps` : ''].filter(Boolean).join(' · ')} />
-              <Fact label="Battery" value={d?.battery != null ? `${d.battery}%${d.charging ? ' · charging' : ''}` : '—'} />
-              <Fact label="Last report" value={d?.reported_at ? ago(d.reported_at) : '—'} sub={d?.internet_ok === false ? 'reported no internet' : ''} />
-              <Fact label={`Drops · ${days === 1 ? '24 h' : `${days} days`}`} value={own.length} sub={`${fmtDur(own.reduce((s, x) => s + x.seconds, 0))} lost · ${data.drops.length - own.length} with many rooms`} />
+              <Fact label={stale ? 'Signal · last report' : 'Signal now'} value={sig ? <span style={{ color: sigColor, fontWeight: 700 }}>{sig.label} · {d.rssi} dBm</span> : '—'} />
+              <Fact label={stale ? 'Access point · last report' : 'Access point'} value={apLabel(d) || '—'} sub={[d?.ssid, band(d?.mhz), d?.mbps ? `${d.mbps} Mbps` : ''].filter(Boolean).join(' · ')} />
+              <Fact label={stale ? 'Battery · last report' : 'Battery'} value={d?.battery != null ? `${d.battery}%${d.charging ? ' · charging' : ''}` : '—'} />
+              <Fact label="Last heard from" value={<>Screen: {info?.online ? 'now' : info?.last_seen ? ago(info.last_seen) : '—'}</>}
+                sub={d ? `Kiosk app: ${d.reported_at ? ago(d.reported_at) : '—'}` : 'No kiosk app (browser only)'} />
+              <Fact label={`Drops · ${days === 1 ? '24 h' : `${days} days`}`} value={own.length} sub={`${fmtDur(lostIn(own))} offline · ${data.drops.length - own.length} with many rooms`} />
             </div>
 
             <div className="card-title" style={{ fontSize: 13 }}>Signal</div>

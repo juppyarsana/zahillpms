@@ -26,6 +26,10 @@ Riwayat disimpan **30 hari**.
 | −67 sampai −75 | **Weak** (lemah) — kadang putus |
 | di bawah −75 | **Poor** (buruk) — sering putus; dekatkan access point atau tambah satu |
 
+> **Tablet offline:** sinyal, access point dan baterai yang tampil adalah **laporan terakhirnya** (ditandai "Last known" / "last report"), bukan kondisi sekarang — tablet yang offline tidak bisa mengirim apa pun.
+>
+> **"⚠ WiFi but no internet"**: tablet tersambung ke WiFi (sering dengan sinyal bagus) tetapi jaringannya tidak tembus ke internet. Itu masalah pengaturan access point atau router (DHCP, gateway, firewall), bukan sinyal lemah.
+
 Sinyal dan access point hanya datang dari tablet yang memakai **aplikasi kiosk**. Tablet yang hanya berjalan di browser tetap dihitung putusnya.
 
 ## Satu kamar
