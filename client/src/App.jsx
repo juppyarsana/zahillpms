@@ -41,6 +41,7 @@ import Settings from './pages/Settings';
 import SettingsProperty from './pages/SettingsProperty';
 import SettingsCommunications from './pages/SettingsCommunications';
 import SettingsReports from './pages/SettingsReports';
+import RoomTablets from './pages/RoomTablets';
 import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsRatePlans from './pages/SettingsRatePlans';
@@ -114,6 +115,7 @@ function BottomNav() {
       isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
       isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
       can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
+      can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets' },
     ]},
     { label: 'Help', items: [
       { to: '/guide', icon: '📘', label: 'Guide / Panduan' },
@@ -327,6 +329,7 @@ export default function App() {
                   <Route path="/settings/property" element={<RequireOwner><SettingsProperty /></RequireOwner>} />
                   <Route path="/settings/communications" element={<RequireOwner><SettingsCommunications /></RequireOwner>} />
                   <Route path="/settings/reports" element={<RequireOwner><SettingsReports /></RequireOwner>} />
+                  <Route path="/settings/room-tablets" element={<RequireMenu menuKey="room_tablets"><RoomTablets /></RequireMenu>} />
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><RequireModule moduleName="room_controller"><SettingsRoomControllers /></RequireModule></RequireMenu>} />
                   <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />

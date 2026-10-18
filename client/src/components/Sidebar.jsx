@@ -98,6 +98,7 @@ export default function Sidebar() {
     isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
     isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
     can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
+    can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets' },
   ].filter(Boolean);
 
   const accessItems = [

@@ -49,6 +49,7 @@ export const MENU_DEFS = [
   { key: 'users',            label: 'Staff Accounts',       group: 'Settings'  },
   { key: 'settings',         label: 'Sources & Methods',    group: 'Settings'  },
   { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'  },
+  { key: 'room_tablets',     label: 'Room Tablets (WiFi connection history)', group: 'Settings' },
   { key: 'resto_take_order',    label: 'Resto — Take Order',       group: 'Resto' },
   { key: 'resto_confirm_queue', label: 'Resto — Confirm Queue',    group: 'Resto' },
   { key: 'resto_tables',        label: 'Resto — Table Management', group: 'Resto' },

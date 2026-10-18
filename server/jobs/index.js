@@ -149,6 +149,20 @@ function registerJobs() {
     }
   });
 
+  // Room tablet connection history (services/tabletLink.js): each room's first /
+  // last request of the day every 5 minutes; anything older than 30 days at 03:20.
+  cron.schedule('*/5 * * * *', () => {
+    require('../services/tabletLink').flushDays().catch(err => console.error('[Jobs] Tablet day flush failed:', err.message));
+  });
+  cron.schedule('20 3 * * *', async () => {
+    try {
+      const n = await require('../services/tabletLink').prune();
+      if (n) console.log(`[Jobs] Tablet history: ${n} old rows removed`);
+    } catch (err) {
+      console.error('[Jobs] Tablet history prune failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
   // Forecast snapshot — 00:50 WITA, after the night audit (no-shows marked)
   // and the Daily Close: what is on the books for the next 120 nights, kept
   // for pickup (services/forecastSnapshot.js). One read + one insert per

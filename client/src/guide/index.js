@@ -25,6 +25,9 @@ export const GROUPS = [
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
     { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },
   ] },
+  { label: { id: 'Pengaturan', en: 'Settings' }, chapters: [
+    { id: 'room-tablets', icon: '📶', title: { id: 'Tablet kamar — koneksi WiFi', en: 'Room tablets — WiFi connection' } },
+  ] },
 ];
 
 export const CHAPTERS = GROUPS.flatMap(g => g.chapters);

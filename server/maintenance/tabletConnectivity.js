@@ -14,6 +14,12 @@
 //   zcat -f /var/log/nginx/access.log* | node maintenance/tabletConnectivity.js
 //   ... | node maintenance/tabletConnectivity.js --gap 60 --mass 5 --from 2026-10-05
 //   ... --upgraded 201,202,103 --since "2026-10-18 14:00"   (before / after a WiFi change)
+//   ... --save --property zahill [--apply]   (one-off: put the drops and the days
+//       each tablet was running into Room tablets, migration 115; without
+//       --apply it only says what it would save. Re-running replaces what an
+//       earlier import saved and never touches drops the PMS recorded itself.)
+// Only GET .../state is counted (the tablet's 10-second request), the same as
+// the PMS's own recording.
 // The public IP shows the internet line a request went out on (two lines with a
 // load-balancing router = both letters are normal), not which WiFi the tablet is on.
 // The display token is never printed.
@@ -27,14 +33,19 @@ const arg = (name, def) => {
 };
 const GAP_S = Number(arg('gap', 60));
 const MASS = Number(arg('mass', 5));
+const TOGETHER_MS = 90 * 1000; // drops that start within 90 s of each other
+
 const FROM = arg('from', null);
+const SAVE = args.includes('--save');
+const APPLY = args.includes('--apply');
+const PROPERTY = arg('property', null);
 const UPGRADED = (arg('upgraded', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const SINCE = arg('since', null); // 'YYYY-MM-DD HH:MM' WITA
 const TZ_OFFSET_MS = 8 * 3600 * 1000; // WITA
 const parseWita = (s) => Date.parse(s.replace(' ', 'T') + (s.length <= 10 ? 'T00:00' : '') + ':00+08:00');
 
 const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
-const LINE = /^(\S+) \S+ \S+ \[(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})\] "\w+ \/api\/display\/room\/([^/?\s]+)\//;
+const LINE = /^(\S+) \S+ \S+ \[(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2}) ([+-]\d{4})\] "\w+ \/api\/display\/room\/([^/?\s]+)\/state[?\s]/;
 
 const seen = new Map();       // room -> number[] (ms)
 const ipDay = new Map();      // room -> Map(day -> Map(ip -> count))
@@ -72,6 +83,7 @@ rl.on('line', (line) => {
 
 rl.on('close', () => {
   if (!seen.size) { console.log('No tablet requests found.'); return; }
+  if (SAVE) { save().catch((err) => { console.error(err); process.exitCode = 1; }); return; }
   const gapMs = GAP_S * 1000;
 
   // Hotel-wide silences: gaps in the requests of all rooms together.
@@ -105,11 +117,8 @@ rl.on('close', () => {
   for (const d of sorted) {
     const others = new Set();
     for (const e of sorted) {
-      if (e.a >= d.b) break;
-      if (e.room !== d.room && e.b > d.a) {
-        const ov = Math.min(d.b, e.b) - Math.max(d.a, e.a);
-        if (ov >= Math.min(d.b - d.a, e.b - e.a) / 2) others.add(e.room);
-      }
+      if (e.a > d.a + TOGETHER_MS) break;
+      if (e.room !== d.room && Math.abs(e.a - d.a) <= TOGETHER_MS) others.add(e.room);
     }
     d.together = others.size + 1;
   }
@@ -141,8 +150,8 @@ rl.on('close', () => {
   const events = [];
   for (const d of [...mass].sort((x, y) => x.a - y.a)) {
     const last = events[events.length - 1];
-    if (last && d.a < last.b) { last.b = Math.max(last.b, d.b); last.rooms.add(d.room); }
-    else events.push({ a: d.a, b: d.b, rooms: new Set([d.room]) });
+    if (last && d.a - last.lastStart <= TOGETHER_MS) { last.b = Math.max(last.b, d.b); last.lastStart = d.a; last.rooms.add(d.room); }
+    else events.push({ a: d.a, b: d.b, lastStart: d.a, rooms: new Set([d.room]) });
   }
   console.log(`\nDrops of ${MASS}+ rooms at the same time (internet line / server, not one tablet): ${events.length}`);
   for (const e of events) {
@@ -226,3 +235,70 @@ rl.on('close', () => {
 
   console.log('\n· = no request from that tablet that day (switched off, not installed yet, or offline all day).');
 });
+
+// --save: drops (every silence over --gap, as recorded live — the page tells
+// apart the ones many rooms shared) and per room per day the first / last request.
+async function save() {
+  if (!PROPERTY) { console.log('--save needs --property <slug>'); process.exitCode = 1; return; }
+  require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+  const db = require('../db');
+  try {
+    const { rows: [prop] } = await db.query('SELECT id, name FROM properties WHERE slug = $1', [PROPERTY]);
+    if (!prop) { console.log(`No property with slug ${PROPERTY}`); process.exitCode = 1; return; }
+    const { rows: units } = await db.query('SELECT controller_id FROM units WHERE property_id = $1 AND controller_id IS NOT NULL', [prop.id]);
+    const known = new Set(units.map((u) => u.controller_id));
+    const { rows: live } = await db.query(
+      `SELECT controller_id, offline_from, back_at FROM room_tablet_drops WHERE property_id = $1 AND source = 'live'`, [prop.id]);
+    const gapMs = GAP_S * 1000;
+    const drops = [], days = [], skipped = new Set();
+    for (const [room, t] of seen) {
+      if (!known.has(room)) { skipped.add(room); continue; }
+      t.sort((a, b) => a - b);
+      const per = new Map();
+      for (let i = 0; i < t.length; i++) {
+        const day = dayOf(t[i]);
+        const d = per.get(day);
+        if (d) d.last = t[i]; else per.set(day, { first: t[i], last: t[i] });
+        if (i && t[i] - t[i - 1] > gapMs) {
+          const a = t[i - 1], b = t[i];
+          const overlapsLive = live.some((l) => l.controller_id === room
+            && new Date(l.offline_from).getTime() < b && new Date(l.back_at).getTime() > a);
+          if (!overlapsLive) drops.push({ room, a, b });
+        }
+      }
+      for (const [day, d] of per) days.push({ room, day, ...d });
+    }
+    console.log(`${prop.name}: ${drops.length} drops and ${days.length} room-days from ${seen.size - skipped.size} rooms` +
+      (skipped.size ? ` (not a Room ID here, left out: ${[...skipped].join(', ')})` : ''));
+    if (!APPLY) { console.log('Dry run — nothing saved. Add --apply to save.'); return; }
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`DELETE FROM room_tablet_drops WHERE property_id = $1 AND source = 'log'`, [prop.id]);
+      for (const d of drops) {
+        await client.query(
+          `INSERT INTO room_tablet_drops (property_id, controller_id, offline_from, back_at, seconds, source)
+           VALUES ($1, $2, to_timestamp($3 / 1000.0), to_timestamp($4 / 1000.0), $5, 'log') ON CONFLICT DO NOTHING`,
+          [prop.id, d.room, d.a, d.b, Math.round((d.b - d.a) / 1000)]);
+      }
+      for (const d of days) {
+        await client.query(
+          `INSERT INTO room_tablet_days (property_id, controller_id, day, first_seen, last_seen)
+           VALUES ($1, $2, $3, to_timestamp($4 / 1000.0), to_timestamp($5 / 1000.0))
+           ON CONFLICT (property_id, day, controller_id) DO UPDATE
+             SET first_seen = LEAST(room_tablet_days.first_seen, EXCLUDED.first_seen),
+                 last_seen  = GREATEST(room_tablet_days.last_seen, EXCLUDED.last_seen)`,
+          [prop.id, d.room, d.day, d.first, d.last]);
+      }
+      await client.query('COMMIT');
+      console.log('Saved. Open Settings → Room tablets.');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } finally {
+    await db.pool.end();
+  }
+}

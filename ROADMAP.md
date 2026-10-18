@@ -18,7 +18,8 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 
 **Extras part payments + Transfer bill (migration 113, 2026-10-17, on `dev`):** FO asked to pay extras in parts (two banks / rest later — recorded as a payment on account) and to move unpaid extras from one room's folio to another's (friends booked separately). Details: CLAUDE.md → "Extras: part payments + Transfer bill".
 **Children & kids' free breakfast (migration 114, 2026-10-17, on `dev` + POS `pms-integration`):** a reservation records children next to adults; FO ticks "Kids eat breakfast free" (breakfast only, per reservation) and the kitchen, Guest Lists, Forecast and the POS breakfast list show the free kids apart from the paying pax; the POS pre-fills its free Kids Meal. Details: CLAUDE.md → "Children & kids' free breakfast".
-Next migration number: **115**.
+**Room tablets — WiFi connection history (migration 115, 2026-10-19, on `dev`):** Settings → Property → Room Tablets: drops per room per day (a tablet silent > 1 min), drops of 5+ rooms at once apart (internet line / router / server), signal and access point per room over 30 days, before / after a WiFi change, naming access points; `room_tablets` permission. The last 14 days are imported once from the nginx logs (`maintenance/tabletConnectivity.js --save`). Details: CLAUDE.md → "Room tablets — WiFi connection history".
+Next migration number: **116**.
 
 ---
 
@@ -2077,7 +2078,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 115
+## Next migration number: 116
 
 ---
 

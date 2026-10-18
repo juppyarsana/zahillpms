@@ -10,6 +10,7 @@ const activityBookingService = require('../services/activityBookingService');
 const telegramService = require('../services/telegramService');
 const roomCheck = require('../services/roomCheckService');
 const posRoomOrders = require('../services/posRoomOrders');
+const tabletLink = require('../services/tabletLink');
 const salesGate = moduleGuard('sales');
 const activitiesGate = moduleGuard('activities');
 const opsGate = moduleGuard('operations');
@@ -79,6 +80,8 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
     const unit = unitRows[0];
+    // Connection history (migration 115): the tablet asks every 10 s.
+    tabletLink.seen(req.propertyId, roomId);
 
     const { rows: bookingRows } = await db.query(
       `SELECT b.id, g.name AS guest_name, b.check_in_date, b.check_out_date, b.num_guests, b.special_requests, b.bed_preference
@@ -331,10 +334,12 @@ router.post('/room/:roomId/telemetry', authDisplay, async (req, res) => {
       `INSERT INTO room_display_devices (${insertCols.join(', ')})
        VALUES (${placeholders.join(', ')})
        ON CONFLICT (property_id, controller_id) DO UPDATE SET ${setClauses.join(', ')}
-       RETURNING battery_level, battery_charging, battery_alert_level`,
+       RETURNING battery_level, battery_charging, battery_alert_level, network_type, internet_ok,
+                 wifi_ssid, wifi_bssid, wifi_rssi, wifi_frequency_mhz, wifi_link_speed_mbps`,
       [req.propertyId, roomId, ...vals]
     );
     res.json({ ok: true });
+    tabletLink.recordReading(req.propertyId, roomId, device);
     // Low battery / back online on Telegram (migration 103) — after the answer.
     require('../services/tabletAlerts').afterTelemetry(req.propertyId, roomId, device);
   } catch (err) {

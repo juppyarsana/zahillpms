@@ -26,6 +26,7 @@ const ORDERED_PATHS = [
   { key: 'pricing',       path: '/pricing' },
   { key: 'units',         path: '/units' },
   { key: 'users',         path: '/users' },
+  { key: 'room_tablets',  path: '/settings/room-tablets' },
 ];
 
 export function firstAllowedPath(user) {
