@@ -27,6 +27,7 @@ export const GROUPS = [
   ] },
   { label: { id: 'Pengaturan', en: 'Settings' }, chapters: [
     { id: 'room-tablets', icon: '📶', title: { id: 'Tablet kamar — koneksi WiFi', en: 'Room tablets — WiFi connection' } },
+    { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
   ] },
 ];
 

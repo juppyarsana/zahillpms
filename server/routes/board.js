@@ -5,7 +5,9 @@ const multer = require('multer');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const activitiesService = require('../services/activitiesService');
+const { checkMp4 } = require('../services/videoCheck');
 
 async function activitiesModuleEnabled(propertyId) {
   const { rows } = await db.query(
@@ -43,11 +45,51 @@ async function linkOrCreateActivity(propertyId, { name, description, price, link
 const UPLOAD_DIR = path.join(__dirname, '../uploads/board');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Uploads go to a temp file, not memory: a lobby video can be ~100 MB and the
+// server has 1 GB. Pictures are resized from there, videos copied into place.
+const IMAGE_MAX = 10 * 1024 * 1024;
+const VIDEO_MAX = 100 * 1024 * 1024;
+const VIDEO_MAX_SECONDS = 120;
+const multerUpload = multer({ dest: os.tmpdir(), limits: { fileSize: VIDEO_MAX, files: 2 } })
+  .fields([{ name: 'image', maxCount: 1 }, { name: 'video', maxCount: 1 }]);
+function upload(req, res, next) {
+  multerUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'The file is too big — a video can be at most 100 MB, a picture 10 MB.' });
+    return res.status(400).json({ error: err.message });
+  });
+}
+const uploaded = (req, field) => req.files?.[field]?.[0] || null;
+function removeTemp(req) {
+  for (const list of Object.values(req.files || {})) for (const f of list) fs.rm(f.path, { force: true }, () => {});
+}
+function removeStored(url) {
+  if (!url) return;
+  const file = path.join(UPLOAD_DIR, path.basename(url));
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
 
-async function saveResized(buffer, filename) {
+const SHOW_ON = ['rooms', 'lobby', 'both'];
+const parseShowOn = (v) => (v === undefined || v === '' ? undefined : SHOW_ON.includes(v) ? v : null);
+
+// An uploaded video -> its URL, or { error } when the TV could not play it.
+function takeVideo(file) {
+  if (!/\.(mp4|m4v)$/i.test(file.originalname || '') && !/^video\/mp4$/i.test(file.mimetype || '')) {
+    return { error: 'Upload an MP4 video (H.264). An iPhone .mov must be exported as MP4 first.' };
+  }
+  const check = checkMp4(file.path);
+  if (!check.ok) return { error: check.error };
+  if (check.seconds != null && check.seconds > VIDEO_MAX_SECONDS) {
+    return { error: `This video is ${Math.round(check.seconds)} seconds — keep lobby videos to ${VIDEO_MAX_SECONDS / 60} minutes at most.` };
+  }
+  const filename = `board-video-${Date.now()}.mp4`;
+  fs.copyFileSync(file.path, path.join(UPLOAD_DIR, filename));
+  return { url: `/board-images/${filename}` };
+}
+
+async function saveResized(input, filename) {
   const outPath = path.join(UPLOAD_DIR, filename);
-  await sharp(buffer)
+  await sharp(input)
     .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 82 })
     .toFile(outPath);
@@ -73,40 +115,80 @@ router.get('/', auth, async (req, res) => {
 });
 
 // POST /api/board — create card
-router.post('/', auth, upload.single('image'), async (req, res) => {
-  const { title, body, category, meta, active, sort_order, paid, price, link_activity_id } = req.body;
+router.post('/', auth, upload, async (req, res) => {
+  try {
+    await createCard(req, res);
+  } finally {
+    removeTemp(req);
+  }
+});
+async function createCard(req, res) {
+  const { title, body, category, meta, active, sort_order, paid, price, link_activity_id, video_sound } = req.body;
   if (!title || !body || !category) {
     return res.status(400).json({ error: 'title, body, and category are required' });
   }
+  const showOn = parseShowOn(req.body.show_on);
+  if (showOn === null) return res.status(400).json({ error: 'show_on must be rooms, lobby or both' });
+  const image = uploaded(req, 'image');
+  if (image && image.size > IMAGE_MAX) return res.status(400).json({ error: 'A picture can be at most 10 MB.' });
   if (paid === 'true' && !(await activitiesModuleEnabled(req.propertyId))) {
     return res.status(403).json({ error: 'Module not enabled for this property' });
   }
   try {
+    let videoUrl = null;
+    if (uploaded(req, 'video')) {
+      const v = takeVideo(uploaded(req, 'video'));
+      if (v.error) return res.status(400).json({ error: v.error });
+      videoUrl = v.url;
+    }
     let activityId = null;
     if (paid === 'true') {
       const result = await linkOrCreateActivity(req.propertyId, { name: title, description: body, price, linkActivityId: link_activity_id });
       if (result.error) return res.status(result.status).json({ error: result.error });
       activityId = result.activityId;
     }
-    const filename = req.file ? `board-${Date.now()}.jpg` : null;
-    const imageUrl = req.file ? await saveResized(req.file.buffer, filename) : null;
+    const filename = image ? `board-${Date.now()}.jpg` : null;
+    const imageUrl = image ? await saveResized(fs.readFileSync(image.path), filename) : null;
     const { rows: [card] } = await db.query(
-      `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order, property_id, activity_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [title, body, category, meta || null, imageUrl, active !== 'false', parseInt(sort_order) || 0, req.propertyId, activityId]
+      `INSERT INTO guest_board_cards (title, body, category, meta, image_url, active, sort_order, property_id, activity_id,
+                                      show_on, video_url, video_sound)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [title, body, category, meta || null, imageUrl, active !== 'false', parseInt(sort_order) || 0, req.propertyId, activityId,
+        showOn || 'both', videoUrl, video_sound !== 'false']
     );
     res.status(201).json(card);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+}
 
 // PUT /api/board/:id — update card (with optional new image)
-router.put('/:id', auth, upload.single('image'), async (req, res) => {
-  const { title, body, category, meta, active, sort_order, paid, price, link_activity_id } = req.body;
+router.put('/:id', auth, upload, async (req, res) => {
+  try {
+    await updateCard(req, res);
+  } finally {
+    removeTemp(req);
+  }
+});
+async function updateCard(req, res) {
+  const { title, body, category, meta, active, sort_order, paid, price, link_activity_id, video_sound, remove_video } = req.body;
+  const showOn = parseShowOn(req.body.show_on);
+  if (showOn === null) return res.status(400).json({ error: 'show_on must be rooms, lobby or both' });
+  const image = uploaded(req, 'image');
+  if (image && image.size > IMAGE_MAX) return res.status(400).json({ error: 'A picture can be at most 10 MB.' });
   try {
     const { rows: [existing] } = await db.query('SELECT * FROM guest_board_cards WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!existing) return res.status(404).json({ error: 'Card not found' });
+
+    let videoUrl = existing.video_url;
+    if (uploaded(req, 'video')) {
+      const v = takeVideo(uploaded(req, 'video'));
+      if (v.error) return res.status(400).json({ error: v.error });
+      videoUrl = v.url;
+    } else if (remove_video === 'true') {
+      videoUrl = null;
+    }
+
 
     let activityId = existing.activity_id;
     if (paid === 'true' && !existing.activity_id) {
@@ -131,18 +213,17 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
     // `price` sent while already linked is ignored, on purpose.
 
     let imageUrl = existing.image_url;
-    if (req.file) {
-      if (existing.image_url) {
-        const oldFile = path.join(UPLOAD_DIR, path.basename(existing.image_url));
-        if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
-      }
+    if (image) {
+      removeStored(existing.image_url);
       const filename = `board-${Date.now()}.jpg`;
-      imageUrl = await saveResized(req.file.buffer, filename);
+      imageUrl = await saveResized(fs.readFileSync(image.path), filename);
     }
+    if (videoUrl !== existing.video_url) removeStored(existing.video_url);
 
     const { rows: [card] } = await db.query(
       `UPDATE guest_board_cards SET title=$1, body=$2, category=$3, meta=$4, image_url=$5,
-       active=$6, sort_order=$7, activity_id=$8, updated_at=NOW() WHERE id=$9 AND property_id=$10 RETURNING *`,
+       active=$6, sort_order=$7, activity_id=$8, show_on=$11, video_url=$12, video_sound=$13, updated_at=NOW()
+       WHERE id=$9 AND property_id=$10 RETURNING *`,
       [
         title ?? existing.title,
         body ?? existing.body,
@@ -154,13 +235,16 @@ router.put('/:id', auth, upload.single('image'), async (req, res) => {
         activityId,
         req.params.id,
         req.propertyId,
+        showOn || existing.show_on,
+        videoUrl,
+        video_sound !== undefined ? video_sound !== 'false' : existing.video_sound,
       ]
     );
     res.json(card);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+}
 
 // PATCH /api/board/:id/toggle — quick active toggle
 router.patch('/:id/toggle', auth, async (req, res) => {
@@ -184,10 +268,8 @@ router.delete('/:id', auth, async (req, res) => {
     if (card.activity_id) {
       await activitiesService.setAvailability(req.propertyId, card.activity_id, false);
     }
-    if (card.image_url) {
-      const file = path.join(UPLOAD_DIR, path.basename(card.image_url));
-      if (fs.existsSync(file)) fs.unlinkSync(file);
-    }
+    removeStored(card.image_url);
+    removeStored(card.video_url);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

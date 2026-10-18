@@ -3,6 +3,7 @@ import api from './api.js';
 import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
 import { hotelHM, hotelDate } from './hotelTime';
+import { precacheVideos, playableUrl, release } from './videoCache';
 
 const POLL_MS = 15_000;
 const VERSION_CHECK_MS = 10 * 60 * 1000;
@@ -328,6 +329,172 @@ function GuestScreen({ unit, booking, cards = [], weather, property }) {
   );
 }
 
+
+// ─── Lobby screen (Room ID "lobby", migration 116) ──────────────────────────
+// The Guest Board cards set to show in the lobby, one after the other: a
+// picture stays 8 s with its caption; a video plays full screen to its end
+// (with sound when the card says so), then the slideshow carries on. Videos
+// are downloaded once and kept on the TV (videoCache.js); until a video is on
+// the TV its card shows its picture instead. No room, no guest.
+
+const PICTURE_MS = 8000;
+const VIDEO_MAX_MS = 3 * 60 * 1000;   // a stuck video never holds the screen longer
+const VIDEO_WAIT_MS = 15 * 1000;      // still loading → show the picture, move on
+
+function LobbyScreen({ cards = [], weather, property }) {
+  const time = useClock();
+  const { h, m, ampm } = formatClock(time);
+  const dateStr = hotelDate(time, { weekday: 'long', day: 'numeric', month: 'long' });
+  const hasNotices = cards.some(c => c.category === 'notice');
+  const slides = useMemo(() => cards.filter(c => c.category !== 'notice'), [cards]);
+  const videoKey = cards.map(c => c.video_url || '').join('|');
+
+  const [index, setIndex] = useState(0);
+  const [turn, setTurn] = useState(0);            // bumps on every advance (replays a lone video)
+  const [videoSrc, setVideoSrc] = useState(null);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const videoRef = useRef(null);
+
+  const card = slides.length ? slides[index % slides.length] : null;
+  const showVideo = !!(card?.video_url && videoSrc && !videoFailed);
+
+  const next = () => { setIndex(i => (slides.length ? (i + 1) % slides.length : 0)); setTurn(t => t + 1); };
+
+  // Keep every lobby video on the TV (downloads new ones, drops removed ones).
+  useEffect(() => { precacheVideos(cards.map(c => c.video_url)); }, [videoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (index >= slides.length) setIndex(0); }, [slides.length, index]);
+
+  // Load this slide's video from the TV's copy.
+  useEffect(() => {
+    let off = false, src = null;
+    setVideoSrc(null); setVideoFailed(false);
+    if (card?.video_url) {
+      playableUrl(card.video_url).then(u => { src = u; if (!off) setVideoSrc(u); else release(u); });
+    }
+    return () => { off = true; release(src); };
+  }, [card?.video_url, turn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // How long this slide stays: a picture 8 s; a video until it ends.
+  useEffect(() => {
+    if (!card) return undefined;
+    const ms = card.video_url
+      ? (showVideo ? VIDEO_MAX_MS : videoFailed ? PICTURE_MS : VIDEO_WAIT_MS)
+      : PICTURE_MS;
+    if (!card.video_url && slides.length < 2) return undefined;
+    const id = setTimeout(next, ms);
+    return () => clearTimeout(id);
+  }, [card?.id, turn, showVideo, videoFailed, slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start the video — with sound when allowed; a browser that refuses sound
+  // without a click still plays it muted.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!showVideo || !v) return;
+    v.muted = card.video_sound === false;
+    v.play().catch(() => { v.muted = true; v.play().catch(() => setVideoFailed(true)); });
+  }, [showVideo, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const logo = (
+    <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''}
+      style={{ width: showVideo ? 'clamp(70px, 7vw, 110px)' : 'clamp(90px, 10vw, 160px)' }} />
+  );
+
+  return (
+    <div className="w-screen h-screen relative overflow-hidden bg-bg-dark">
+      {showVideo ? (
+        <video key={`${card.id}-${turn}`} ref={videoRef} src={videoSrc} playsInline
+          onEnded={next} onError={() => setVideoFailed(true)}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
+      ) : (
+        <TVBackground imageUrl={card?.image_url} />
+      )}
+      {showVideo && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+          background: 'linear-gradient(to bottom, rgba(5,7,10,0.55) 0%, rgba(5,7,10,0) 22%, rgba(5,7,10,0) 78%, rgba(5,7,10,0.55) 100%)' }} />
+      )}
+
+      {/* Logo — top left */}
+      <div className={`absolute z-10 flex flex-col items-center text-center ${showVideo ? '' : 'glass-card rounded-xl'}`}
+        style={{
+          top: 'clamp(1.5rem, 3vh, 2.5rem)', left: 'clamp(1.5rem, 3vw, 2.5rem)',
+          padding: showVideo ? 0 : 'clamp(1rem, 2vh, 1.75rem) clamp(1.25rem, 2.5vw, 2rem)',
+          gap: 'clamp(0.3rem, 0.8vh, 0.6rem)',
+        }}>
+        {logo}
+        {!showVideo && property?.location && (
+          <p className="font-bold uppercase tracking-[0.4em]"
+            style={{ fontSize: 'clamp(0.5rem, 0.85vw, 0.65rem)', color: '#c9a227' }}>{property.location}</p>
+        )}
+      </div>
+
+      {/* Clock — top right */}
+      <div className="absolute z-10 text-right"
+        style={{ top: 'clamp(1.5rem, 3vh, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)' }}>
+        <div className="flex items-end justify-end leading-none" style={{ gap: 'clamp(0.3rem, 0.6vw, 0.6rem)' }}>
+          <span className="font-extralight text-white tracking-tighter"
+            style={{ fontSize: showVideo ? 'clamp(1.8rem, 4vw, 3rem)' : 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1 }}>{h}:{m}</span>
+          <span className="font-bold" style={{ fontSize: 'clamp(0.9rem, 1.8vw, 1.5rem)', color: '#c9a227', marginBottom: '0.25em' }}>{ampm}</span>
+        </div>
+        <p className="font-bold uppercase"
+          style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', letterSpacing: '0.35em', marginTop: '0.25rem', color: '#e2e8f0' }}>
+          {dateStr}
+        </p>
+      </div>
+
+      {/* Bottom — the card's caption + welcome & weather (pictures only) */}
+      {!showVideo && (
+        <div className="absolute z-10 flex"
+          style={{
+            bottom: hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(2rem, 5vh, 4rem)',
+            left: 'clamp(1.5rem, 3vw, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)',
+            gap: 'clamp(1rem, 2vw, 1.5rem)', alignItems: 'stretch',
+          }}>
+          {card ? <BoardCarousel card={card} cards={slides} index={index % Math.max(1, slides.length)} /> : <div style={{ flex: '0 0 58%' }} />}
+          <div className="glass-card rounded-2xl" style={{ flex: 1, padding: 'clamp(1.25rem, 3vh, 2.25rem) clamp(1.5rem, 3vw, 2.5rem)' }}>
+            <p className="font-bold uppercase"
+              style={{ color: 'rgba(201,162,39,0.75)', fontSize: 'clamp(0.5rem, 0.85vw, 0.7rem)', letterSpacing: '0.4em', marginBottom: 'clamp(0.35rem, 0.9vh, 0.65rem)' }}>
+              Welcome to
+            </p>
+            <h1 className="text-white leading-none"
+              style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1.4rem, 3.2vw, 2.8rem)', marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }}>
+              {property?.name || ''}
+            </h1>
+            {weather?.today && (
+              <>
+                <div style={{ height: 1, background: 'rgba(201,162,39,0.25)', marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(0.6rem, 1.2vw, 1rem)' }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 'clamp(1.6rem, 3.2vw, 2.4rem)', color: '#c9a227' }}>{weather.today.icon}</span>
+                  <div>
+                    <div className="flex items-baseline" style={{ gap: 6 }}>
+                      <span className="text-white font-extralight" style={{ fontSize: 'clamp(1.1rem, 2vw, 1.6rem)' }}>{weather.today.temp}&deg;C</span>
+                      <span className="text-slate-400" style={{ fontSize: 'clamp(0.65rem, 1.1vw, 0.9rem)' }}>{weather.today.desc}</span>
+                    </div>
+                    {weather.tomorrow && (
+                      <div className="text-slate-500 uppercase" style={{ fontSize: 'clamp(0.5rem, 0.8vw, 0.65rem)', letterSpacing: '0.08em', marginTop: 2 }}>
+                        Tomorrow {weather.tomorrow.temp}&deg; &middot; {weather.tomorrow.desc}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Video — its title, small, bottom left */}
+      {showVideo && card.title && (
+        <div className="absolute z-10" style={{ left: 'clamp(1.5rem, 3vw, 2.5rem)', bottom: hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(1.5rem, 4vh, 3rem)' }}>
+          <p className="text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1rem, 2vw, 1.6rem)', textShadow: '0 2px 12px rgba(0,0,0,0.6)' }}>{card.title}</p>
+        </div>
+      )}
+
+      <NoticeTicker cards={cards} />
+    </div>
+  );
+}
+
 function DetailCell({ label, value }) {
   return (
     <div className="flex flex-col" style={{ gap: 'clamp(0.2rem, 0.6vh, 0.5rem)' }}>
@@ -388,16 +555,19 @@ export default function App() {
     if (queryToken) localStorage.setItem('displayToken', queryToken);
   }, [queryRoom, queryToken]);
 
+  // Room ID "lobby" = the lobby TV: no room, the cards set to show in the lobby.
+  const isLobby = roomId.trim().toLowerCase() === 'lobby';
+
   const fetchState = useMemo(() => async () => {
     if (!roomId || !displayToken) return;
     try {
-      const { data } = await api.get(`/room/${encodeURIComponent(roomId)}/state`);
+      const { data } = await api.get(isLobby ? '/lobby/state' : `/room/${encodeURIComponent(roomId)}/state`);
       setState(data);
       setError(null);
     } catch (err) {
       setError(err.response?.data?.error || 'Unable to reach server');
     }
-  }, [roomId, displayToken]);
+  }, [roomId, displayToken, isLobby]);
 
   useEffect(() => {
     fetchState();
@@ -408,6 +578,13 @@ export default function App() {
   if (!roomId || !displayToken) return <UnconfiguredScreen />;
   if (error && !state) return <ErrorScreen message={error} onRetry={fetchState} />;
   if (!state) return null;
+
+  if (isLobby) return (
+    <>
+      <LobbyScreen cards={state.cards} weather={state.weather} property={state.property} />
+      <BuildBadge />
+    </>
+  );
 
   if (!state.booking) return (
     <>

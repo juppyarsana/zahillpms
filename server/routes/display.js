@@ -110,7 +110,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
               CASE WHEN a.is_available THEN a.price END AS activity_price
        FROM guest_board_cards c
        LEFT JOIN activities a ON a.id = c.activity_id
-       WHERE c.active = true AND c.property_id = $1
+       WHERE c.active = true AND c.property_id = $1 AND c.show_on IN ('rooms', 'both')
        ORDER BY
          CASE c.category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
          c.sort_order, c.id`,
@@ -290,6 +290,33 @@ router.post('/room/:roomId/ir', authDisplay, async (req, res) => {
       console.warn('[DISPLAY] MQTT publish failed:', mqttErr.message);
     }
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/display/lobby/state
+// The lobby TV (migration 116): the Guest Board cards set to show in the lobby
+// (pictures, videos, notices), the hotel's name / logo and the weather — no
+// room, no guest. tv-display shows it when its Room ID is "lobby".
+router.get('/lobby/state', authDisplay, async (req, res) => {
+  try {
+    const [{ rows: cards }, { rows: [property] }] = await Promise.all([
+      db.query(
+        `SELECT id, title, body, category, meta, image_url, video_url, video_sound
+           FROM guest_board_cards
+          WHERE active = true AND property_id = $1 AND show_on IN ('lobby', 'both')
+          ORDER BY CASE category WHEN 'notice' THEN 0 WHEN 'activity' THEN 1 WHEN 'dining' THEN 2 WHEN 'property' THEN 3 END,
+                   sort_order, id`,
+        [req.propertyId]),
+      db.query(
+        `SELECT COALESCE(ps.property_name, p.name) AS name, ps.logo_url, ps.brand_color,
+                COALESCE(NULLIF(TRIM(ps.market_area), ''), ps.property_address) AS location
+           FROM properties p LEFT JOIN property_settings ps ON ps.property_id = p.id
+          WHERE p.id = $1`,
+        [req.propertyId]),
+    ]);
+    res.json({ cards, property: property || null, weather: await getWeather() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

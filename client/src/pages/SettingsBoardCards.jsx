@@ -10,7 +10,15 @@ const CATEGORIES = [
   { value: 'notice',   label: 'Notice',    color: '#818cf8' },
 ];
 
-const EMPTY_FORM = { title: '', body: '', category: 'activity', meta: '', active: true, paid: false, price: '', linkMode: 'new', link_activity_id: '' };
+const EMPTY_FORM = { title: '', body: '', category: 'activity', meta: '', active: true, paid: false, price: '', linkMode: 'new', link_activity_id: '', show_on: 'both', video_sound: true };
+
+// Where a card shows (migration 116). Rooms = the room TVs and the room tablets.
+const SHOW_ON = [
+  { value: 'both',  label: 'Rooms & lobby' },
+  { value: 'rooms', label: 'Rooms only' },
+  { value: 'lobby', label: 'Lobby only' },
+];
+const VIDEO_MAX_MB = 100;
 
 function catMeta(cat) {
   return CATEGORIES.find(c => c.value === cat) || CATEGORIES[0];
@@ -29,6 +37,9 @@ export default function SettingsBoardCards() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [saving, setSaving]     = useState(false);
+  const [progress, setProgress] = useState(null); // upload %, while a video goes up
+  const [videoFile, setVideoFile] = useState(null);
+  const [removeVideo, setRemoveVideo] = useState(false);
   const [error, setError]       = useState('');
 
   async function load() {
@@ -52,6 +63,8 @@ export default function SettingsBoardCards() {
     setForm(EMPTY_FORM);
     setImageFile(null);
     setImagePreview(null);
+    setVideoFile(null);
+    setRemoveVideo(false);
     setError('');
     setShowForm(true);
   }
@@ -61,7 +74,10 @@ export default function SettingsBoardCards() {
     setForm({
       title: card.title, body: card.body, category: card.category, meta: card.meta || '', active: card.active,
       paid: !!card.activity_id, price: card.activity_price ?? '', linkMode: 'new', link_activity_id: '',
+      show_on: card.show_on || 'both', video_sound: card.video_sound !== false,
     });
+    setVideoFile(null);
+    setRemoveVideo(false);
     setImageFile(null);
     setImagePreview(card.image_url || null);
     setError('');
@@ -71,6 +87,8 @@ export default function SettingsBoardCards() {
   function closeForm() {
     setShowForm(false);
     setEditing(null);
+    setVideoFile(null);
+    setRemoveVideo(false);
     setImageFile(null);
     setImagePreview(null);
     setError('');
@@ -83,7 +101,24 @@ export default function SettingsBoardCards() {
     setImagePreview(URL.createObjectURL(file));
   }
 
+  function handleVideoChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > VIDEO_MAX_MB * 1024 * 1024) {
+      setError(`This video is ${Math.round(file.size / 1048576)} MB — at most ${VIDEO_MAX_MB} MB. Export it shorter or at a lower quality.`);
+      e.target.value = '';
+      return;
+    }
+    setError('');
+    setVideoFile(file);
+    setRemoveVideo(false);
+    // A new video card is meant for the lobby — rooms only ever show the picture.
+    if (!editing) setForm(f => ({ ...f, show_on: 'lobby' }));
+  }
+
   const editingCard = editing ? cards.find(c => c.id === editing) : null;
+  const currentVideo = removeVideo ? null : editingCard?.video_url || null;
+  const hasVideo = !!videoFile || !!currentVideo;
   const alreadyLinked = !!editingCard?.activity_id;
   const linkedActivityIds = new Set(cards.map(c => c.activity_id).filter(Boolean));
   const availableToLink = catalog.filter(a => !linkedActivityIds.has(a.id));
@@ -109,18 +144,27 @@ export default function SettingsBoardCards() {
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       if (imageFile) fd.append('image', imageFile);
+      if (videoFile) fd.append('video', videoFile);
+      if (removeVideo && !videoFile) fd.append('remove_video', 'true');
 
+      const opts = videoFile ? {
+        timeout: 0,
+        onUploadProgress: (e) => e.total && setProgress(Math.round((e.loaded / e.total) * 100)),
+      } : {};
       if (editing) {
-        await api.put(`/api/board/${editing}`, fd);
+        await api.put(`/api/board/${editing}`, fd, opts);
       } else {
-        await api.post('/api/board', fd);
+        await api.post('/api/board', fd, opts);
       }
       await load();
       closeForm();
     } catch (err) {
-      setError(err.response?.data?.error || 'Save failed');
+      setError(err.response?.status === 413
+        ? 'The server refused a file this big — its upload limit needs raising (see the deploy notes).'
+        : err.response?.data?.error || 'Save failed');
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -153,7 +197,7 @@ export default function SettingsBoardCards() {
       <div className="page-header">
         <div>
           <div className="page-title">Guest Board</div>
-          <div className="page-subtitle">Manage content shown on the Room Display Explore tab</div>
+          <div className="page-subtitle">Pictures, notices and lobby videos — shown on the room TVs and tablets, and on the lobby TV</div>
         </div>
         <button className="btn btn-primary" onClick={openNew}>+ New Card</button>
       </div>
@@ -187,6 +231,16 @@ export default function SettingsBoardCards() {
                       <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           {card.title}
+                          {card.show_on && card.show_on !== 'both' && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 10, padding: '1px 8px' }}>
+                              {card.show_on === 'lobby' ? 'Lobby only' : 'Rooms only'}
+                            </span>
+                          )}
+                          {card.video_url && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', border: '1px solid #C4B5FD', borderRadius: 10, padding: '1px 8px' }}>
+                              🎬 Video{card.video_sound === false ? ' · muted' : ''}
+                            </span>
+                          )}
                           {card.activity_id && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--gold)', borderRadius: 10, padding: '1px 8px' }}>
                               {fmtIDR(card.activity_price)}{card.activity_available === false ? ' · inactive' : ''}
@@ -353,9 +407,52 @@ export default function SettingsBoardCards() {
                 <input type="file" accept="image/*" onChange={handleImageChange} className="form-input" style={{ padding: '6px 10px' }} />
               </div>
 
+              <div className="form-group">
+                <label className="form-label">Video <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — plays on the lobby TV)</span></label>
+                {(videoFile || currentVideo) ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {videoFile
+                      ? <div style={{ fontSize: 13 }}>🎬 {videoFile.name} · {Math.round(videoFile.size / 1048576)} MB <span className="text-muted">(uploads when you save)</span></div>
+                      : <video src={currentVideo} controls muted style={{ width: '100%', maxHeight: 180, borderRadius: 8, background: '#000' }} />}
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={form.video_sound} onChange={e => setForm(f => ({ ...f, video_sound: e.target.checked }))} />
+                        Play with sound
+                      </label>
+                      <button type="button" className="btn btn-sm btn-secondary" style={{ color: '#DC2626' }}
+                        onClick={() => { setVideoFile(null); if (currentVideo) setRemoveVideo(true); }}>Remove video</button>
+                    </div>
+                  </div>
+                ) : (
+                  <input type="file" accept="video/mp4,.mp4,.m4v" onChange={handleVideoChange} className="form-input" style={{ padding: '6px 10px' }} />
+                )}
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                  MP4 (H.264), up to 2 minutes and {VIDEO_MAX_MB} MB. An iPhone video must be exported as MP4 ("Most compatible") first. The picture above stays the cover — room TVs and tablets only show the picture.
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Show on</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {SHOW_ON.map(o => (
+                    <button key={o.value} type="button" onClick={() => setForm(f => ({ ...f, show_on: o.value }))}
+                      style={{
+                        padding: '6px 14px', borderRadius: 20, border: '1px solid', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                        borderColor: form.show_on === o.value ? 'var(--gold)' : 'var(--border)',
+                        background: form.show_on === o.value ? 'rgba(197,163,88,0.12)' : 'transparent',
+                        color: form.show_on === o.value ? 'var(--gold)' : 'var(--text-muted)',
+                      }}>{o.label}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Rooms = the room TVs and the room tablets. Lobby = the lobby TV.
+                  {hasVideo && form.show_on !== 'lobby' && ' In rooms this card shows its picture, not the video.'}
+                </div>
+              </div>
+
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
-                Show on Room Display
+                Active (shown on the screens)
               </label>
 
               {error && <div className="alert alert-error">{error}</div>}
@@ -363,7 +460,7 @@ export default function SettingsBoardCards() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={closeForm}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Card'}
+                {saving ? (progress != null ? `Uploading video… ${progress}%` : 'Saving…') : editing ? 'Save Changes' : 'Create Card'}
               </button>
             </div>
           </div>

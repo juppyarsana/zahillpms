@@ -7,6 +7,8 @@ A small Android TV app that shows the `tv-display` welcome page (`https://tv.zah
 
 The settings (Room ID, display token, TV URL, "Set as screensaver") have **no icon of their own**, so they can't be opened by mistake. To open them: **hold OK for 3 seconds** on the welcome screen; or Android Settings → Screen saver → Zahill → settings; or `adb shell am start -n com.zahill.tvscreensaver/.MainActivity`. A TV that is not set up yet opens them by itself.
 
+**Lobby TV:** the same app with Room ID **`lobby`** shows the lobby slideshow (Guest Board cards set to the lobby, with videos and sound) instead of a room — see the Guide chapter *Lobby TV & Guest Board*.
+
 ## Build
 
 From `tv-screensaver/`, with Android Studio's Java (`build.sh` strips the PATH and fails on some machines):
