@@ -39,7 +39,16 @@ Tap a room (a tile or its name in the grid): signal over the **last 24 h**, **7 
 3. Tick the rooms that got the new WiFi.
 4. **Compare**.
 
-Each room is counted **per 24 hours** its tablet was running, so a few hours "after" can be compared with two weeks "before". The **other rooms** are the comparison: if they also got better, something else changed (e.g. the internet line). The page remembers your choice on this device.
+Each row shows:
+
+| Column | Means |
+| --- | --- |
+| **Online before / after** | the share of the time the tablet could reach the PMS — 100% = never lost it |
+| **Offline a day** | how long its screen was cut off on an average day |
+| **Drops a day** | how many times it lost the connection |
+| **Result** | **Better** / **Worse** / **About the same** by the time offline; **Too early** while the change is under 12 hours old; **Not heard from since …** = that tablet is off or cannot join the WiFi now — go and look |
+
+Time offline matters more than the number of drops: many short drops of a minute can still be better than a few drops of hours. The **other rooms** are the comparison: if they also got better, something else changed (e.g. the internet line). The page remembers your choice on this device.
 
 ## Access points
 

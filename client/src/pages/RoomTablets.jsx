@@ -336,19 +336,36 @@ function Compare({ rooms }) {
   };
   useEffect(() => { if (since) run(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = (room) => setPicked((p) => (p.includes(room) ? p.filter((x) => x !== room) : [...p, room]));
-  const cellOf = (v) => (v ? <><b>{v.drops_per_day}</b> <span className="text-muted">/ {v.minutes_per_day} min</span></> : <span className="text-muted">—</span>);
-  const better = (b, a) => {
-    if (!b || !a) return null;
-    if (a.drops_per_day < b.drops_per_day * 0.7) return <span className="badge badge-green">Better</span>;
-    if (a.drops_per_day > b.drops_per_day * 1.3 && a.drops_per_day - b.drops_per_day >= 1) return <span className="badge badge-red">Worse</span>;
-    return <span className="badge badge-gray">Same</span>;
+  const pct = (v) => (v == null ? '—' : `${v % 1 ? v.toFixed(1) : v}%`);
+  const OnlineBar = ({ v }) => {
+    if (!v) return <span className="text-muted">—</span>;
+    const c = v.online_pct >= 99 ? 'var(--success)' : v.online_pct >= 90 ? '#F59E0B' : 'var(--danger)';
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+        <span style={{ width: 60, height: 6, borderRadius: 3, background: '#E5E7EB', overflow: 'hidden', display: 'inline-block' }}>
+          <span style={{ width: `${v.online_pct}%`, height: '100%', background: c, display: 'block', borderRadius: 3 }} />
+        </span>
+        <b style={{ minWidth: 44, textAlign: 'right' }}>{pct(v.online_pct)}</b>
+      </span>
+    );
   };
+  const VERDICT = {
+    better: <span className="badge badge-green">Better</span>,
+    worse: <span className="badge badge-red">Worse</span>,
+    same: <span className="badge badge-gray">About the same</span>,
+  };
+  const verdictOf = (r) => {
+    if (r.verdict === 'silent') return <span className="badge badge-red">Not heard from since {fmtTime(r.after.silent_since)}</span>;
+    if (r.verdict === 'early') return <span className="badge badge-gray" title={`Fewer than ${data.early_hours} hours after the change`}>Too early ({r.after.hours} h)</span>;
+    return VERDICT[r.verdict] || null;
+  };
+  const arrow = (b, a, f) => <>{b ? f(b) : '—'} <span className="text-muted">→</span> {a ? f(a) : '—'}</>;
 
   return (<>
     <div className="card">
       <div className="card-title">What changed, and when</div>
       <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>
-        Pick when the change was made (e.g. new WiFi) and tick the rooms it covered. Each room is counted per 24 hours its tablet was running, so a short "after" can be compared with a long "before". The other rooms show whether something else changed at the same time.
+        Pick when the change was made (e.g. new WiFi) and tick the rooms it covered. Each room shows how much of the time its tablet was online before and after, so a few hours "after" can be set against two weeks "before". The other rooms show whether something else changed at the same time.
       </div>
       <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <span style={{ fontSize: 13 }}>Changed at</span>
@@ -372,32 +389,41 @@ function Compare({ rooms }) {
       <div className="stat-grid stat-grid-money mt-3">
         {[['Rooms changed', data.groups.changed], ['Other rooms', data.groups.others]].map(([label, g]) => (
           <div className="stat-card" key={label}>
-            <div className="stat-label">{label} · drops a day</div>
-            <div className="stat-value">{g.before ? g.before.drops_per_day : '—'} → {g.after ? g.after.drops_per_day : '—'}</div>
-            <div className="stat-sub">minutes lost a day {g.before ? g.before.minutes_per_day : '—'} → {g.after ? g.after.minutes_per_day : '—'} · {(g.before || g.after)?.rooms || 0} rooms</div>
+            <div className="stat-label">{label} · online</div>
+            <div className="stat-value">{arrow(g.before, g.after, (x) => pct(x.online_pct))}</div>
+            <div className="stat-sub">
+              offline a day {arrow(g.before, g.after, (x) => fmtDur(x.offline_minutes_per_day * 60))}
+              <br />drops a day {arrow(g.before, g.after, (x) => x.drops_per_day)} · {(g.before || g.after)?.rooms || 0} rooms
+            </div>
           </div>
         ))}
       </div>
+      {data.groups.changed.after && data.groups.changed.after.hours < data.early_hours && (
+        <div className="alert alert-warn">
+          <div>Only {data.groups.changed.after.hours} hours since the change — a few drops still swing the numbers a lot. Look again after a full day.</div>
+        </div>
+      )}
       <div className="card">
-        <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-          Before: {fmtTime(data.from)} – {fmtTime(data.since)} · After: {fmtTime(data.since)} – now. Drops of many rooms at once are left out.
+        <div className="text-muted" style={{ fontSize: 13, marginBottom: 8 }}>
+          <b>Online</b> = the share of the time the tablet could reach the PMS (100% = never lost it). <b>Offline a day</b> = how long its screen was cut off, on an average day. <b>Drops a day</b> = how many times it lost the connection. Before: {fmtTime(data.from)} – {fmtTime(data.since)} · After: {fmtTime(data.since)} – now. Moments when many rooms dropped together are left out.
         </div>
         <div className="table-wrap">
-          <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
             <thead><tr>
               <th style={TH}>Room</th><th style={TH}>Group</th>
-              <th style={{ ...TH, ...R }}>Before · drops / lost a day</th><th style={{ ...TH, ...R }}>After · drops / lost a day</th>
-              <th style={{ ...TH, ...R }}>Hours after</th><th style={TH} />
+              <th style={{ ...TH, ...R }}>Online before</th><th style={{ ...TH, ...R }}>Online after</th>
+              <th style={{ ...TH, ...R }}>Offline a day</th><th style={{ ...TH, ...R }}>Drops a day</th><th style={TH}>Result</th>
             </tr></thead>
             <tbody>
               {[...data.rows].sort((a, b) => (b.changed - a.changed) || a.room.localeCompare(b.room, undefined, { numeric: true })).map((r) => (
                 <tr key={r.room}>
                   <td style={{ ...TD, fontWeight: 600 }}>{r.unit_name || r.room}</td>
                   <td style={TD}>{r.changed ? 'Changed' : <span className="text-muted">Other</span>}</td>
-                  <td style={{ ...TD, ...R }}>{cellOf(r.before)}</td>
-                  <td style={{ ...TD, ...R }}>{cellOf(r.after)}</td>
-                  <td style={{ ...TD, ...R }} className="text-muted">{r.after ? r.after.hours : '—'}</td>
-                  <td style={TD}>{better(r.before, r.after)}</td>
+                  <td style={{ ...TD, ...R }}><OnlineBar v={r.before} /></td>
+                  <td style={{ ...TD, ...R }}><OnlineBar v={r.after} /></td>
+                  <td style={{ ...TD, ...R }}>{arrow(r.before, r.after, (x) => fmtDur(x.offline_minutes_per_day * 60))}</td>
+                  <td style={{ ...TD, ...R }}>{arrow(r.before, r.after, (x) => x.drops_per_day)}</td>
+                  <td style={TD}>{verdictOf(r)}</td>
                 </tr>
               ))}
             </tbody>

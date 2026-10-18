@@ -20,6 +20,7 @@ const db = require('../db');
 const GAP_MS = 60 * 1000;
 const MASS = 5;
 const TOGETHER_MS = 90 * 1000;
+const SILENT_MS = 10 * 60 * 1000;
 const KEEP_DAYS = 30;
 const READING_EVERY_MS = 5 * 60 * 1000;
 const TZ = 'Asia/Makassar';
@@ -211,10 +212,15 @@ async function overview(propertyId, { days: nDays = 14 } = {}) {
     for (const d of drops) {
       if (d.room !== room) continue;
       const day = dayOf(d.a);
-      if (!per[day]) continue;
-      const min = (d.b - d.a) / 60000;
-      per[day].drops_all++; per[day].minutes_all += min;
-      if (d.own) { per[day].drops++; per[day].minutes += min; totalOwn++; totalMin += min; }
+      if (per[day]) { per[day].drops_all++; if (d.own) { per[day].drops++; totalOwn++; } }
+      // Minutes go to the day they fell on (a drop over midnight is split).
+      for (let t = d.a; t < d.b;) {
+        const dd = dayOf(t);
+        const next = Math.min(d.b, Date.parse(dd + 'T00:00:00+08:00') + 86400e3);
+        const min = (next - t) / 60000;
+        if (per[dd]) { per[dd].minutes_all += min; if (d.own) { per[dd].minutes += min; totalMin += min; } }
+        t = next;
+      }
     }
     for (const day of days) { per[day].minutes = Math.round(per[day].minutes); per[day].minutes_all = Math.round(per[day].minutes_all); }
     const lastMs = mem || null;
@@ -239,59 +245,99 @@ async function overview(propertyId, { days: nDays = 14 } = {}) {
   };
 }
 
-// Hours each room was seen in [fromMs, toMs), from the per-day first / last request.
-async function hoursSeen(propertyId, fromMs, toMs) {
+// First and last request of each room in the kept history (days table + the
+// requests of the last minutes not written yet).
+async function seenRange(propertyId) {
   const { rows } = await db.query(
-    `SELECT controller_id, first_seen, last_seen FROM room_tablet_days
-      WHERE property_id = $1 AND last_seen > to_timestamp($2 / 1000.0) AND first_seen < to_timestamp($3 / 1000.0)`,
-    [propertyId, fromMs, toMs]);
-  const out = new Map();
-  for (const r of rows) {
-    const a = Math.max(fromMs, new Date(r.first_seen).getTime());
-    const b = Math.min(toMs, new Date(r.last_seen).getTime());
-    if (b > a) out.set(r.controller_id, (out.get(r.controller_id) || 0) + (b - a) / 3600e3);
-  }
-  // Today's requests not flushed yet.
-  for (const d of dayBuffer.values()) {
-    if (d.pid !== propertyId) continue;
-    const a = Math.max(fromMs, d.first), b = Math.min(toMs, d.last);
-    const flushed = rows.some((r) => r.controller_id === d.room && dayOf(new Date(r.first_seen).getTime()) === d.day);
-    if (b > a && !flushed) out.set(d.room, (out.get(d.room) || 0) + (b - a) / 3600e3);
+    `SELECT controller_id, min(first_seen) AS first, max(last_seen) AS last
+       FROM room_tablet_days WHERE property_id = $1 GROUP BY controller_id`, [propertyId]);
+  const out = new Map(rows.map((r) => [r.controller_id, { first: new Date(r.first).getTime(), last: new Date(r.last).getTime() }]));
+  const widen = (room, a, b) => {
+    const v = out.get(room);
+    if (!v) out.set(room, { first: a, last: b });
+    else { v.first = Math.min(v.first, a); v.last = Math.max(v.last, b); }
+  };
+  for (const d of dayBuffer.values()) if (d.pid === propertyId) widen(d.room, d.first, d.last);
+  for (const [k, ms] of lastSeen) {
+    const [pid, room] = k.split('|');
+    if (pid === propertyId) widen(room, ms, ms);
   }
   return out;
 }
 
-// Before / after a change (e.g. new WiFi) at `sinceMs`, per 24 h seen.
+// One room in one window [a, b): the share of the time its tablet was online,
+// and how often it dropped. The window starts when the tablet was first heard
+// from (if later). Offline = its own drops inside the window, plus the time
+// since it was last heard from when it is still silent at the end.
+function windowStats(room, range, drops, a, b) {
+  if (!range) return null;
+  const start = Math.max(a, range.first);
+  if (b - start < 3600e3) return null; // under an hour: too little to say
+  let offline = 0, count = 0;
+  for (const d of drops) {
+    if (d.room !== room || !d.own) continue;
+    const ov = Math.min(b, d.b) - Math.max(start, d.a);
+    if (ov > 0) offline += ov;
+    if (d.a >= start && d.a < b) count++;
+  }
+  let silentSince = null;
+  // Still silent at the end — only after SILENT_MS, so the minutes after a
+  // restart (times not written yet) never look like an outage.
+  if (range.last < b - SILENT_MS) {
+    offline += b - Math.max(start, range.last);
+    silentSince = new Date(range.last).toISOString();
+  }
+  const ms = b - start;
+  offline = Math.min(offline, ms);
+  return {
+    hours: Math.round(ms / 360000) / 10,
+    online_pct: Math.round((1 - offline / ms) * 1000) / 10,
+    offline_minutes_per_day: Math.round((offline / 60000) * 86400e3 / ms),
+    drops: count,
+    drops_per_day: Math.round(count * 86400e3 / ms * 10) / 10,
+    silent_since: silentSince,
+  };
+}
+
+const EARLY_HOURS = 12;
+function verdict(before, after) {
+  if (!before || !after) return null;
+  if (after.silent_since) return 'silent';
+  if (after.hours < EARLY_HOURS) return 'early';
+  const b = before.offline_minutes_per_day, x = after.offline_minutes_per_day;
+  if (x < b * 0.7 && b - x >= 10) return 'better';
+  if (x > b * 1.3 && x - b >= 10) return 'worse';
+  return 'same';
+}
+
+// Before / after a change (e.g. new WiFi) at `sinceMs`.
 async function compare(propertyId, { sinceMs, rooms: changed = [] }) {
   const now = Date.now();
   const fromMs = now - KEEP_DAYS * 86400e3;
-  const [{ ids, names }, drops, before, after] = await Promise.all([
+  const [{ ids, names }, drops, ranges] = await Promise.all([
     roomList(propertyId, dayOf(fromMs)),
     loadDrops(propertyId, fromMs, now),
-    hoursSeen(propertyId, fromMs, sinceMs),
-    hoursSeen(propertyId, sinceMs, now),
+    seenRange(propertyId),
   ]);
-  const rate = (room, hours, a, b) => {
-    if (!hours || hours < 1) return null;
-    const mine = drops.filter((d) => d.room === room && d.own && d.a >= a && d.a < b);
-    const lost = mine.reduce((s, d) => s + (d.b - d.a), 0) / 60000;
-    return { hours: Math.round(hours * 10) / 10, drops: mine.length, minutes: Math.round(lost),
-      drops_per_day: Math.round((mine.length * 24 / hours) * 10) / 10, minutes_per_day: Math.round(lost * 24 / hours) };
-  };
   const set = new Set(changed.map(String));
-  const rows = ids.map((room) => ({
-    room, unit_name: names.get(room) || null, changed: set.has(room),
-    before: rate(room, before.get(room), fromMs, sinceMs), after: rate(room, after.get(room), sinceMs, now),
-  })).filter((r) => r.before || r.after);
+  const rows = ids.map((room) => {
+    const range = ranges.get(room);
+    const before = windowStats(room, range, drops, fromMs, sinceMs);
+    const after = windowStats(room, range, drops, sinceMs, now);
+    return { room, unit_name: names.get(room) || null, changed: set.has(room), before, after, verdict: verdict(before, after) };
+  }).filter((r) => r.before || r.after);
   const avg = (group, k) => {
     const v = rows.filter((r) => r.changed === group && r[k]);
     if (!v.length) return null;
-    return { rooms: v.length,
-      drops_per_day: Math.round(v.reduce((s, r) => s + r[k].drops_per_day, 0) / v.length * 10) / 10,
-      minutes_per_day: Math.round(v.reduce((s, r) => s + r[k].minutes_per_day, 0) / v.length) };
+    const mean = (f) => v.reduce((s, r) => s + r[k][f], 0) / v.length;
+    return { rooms: v.length, online_pct: Math.round(mean('online_pct') * 10) / 10,
+      offline_minutes_per_day: Math.round(mean('offline_minutes_per_day')), drops_per_day: Math.round(mean('drops_per_day') * 10) / 10,
+      hours: Math.round(Math.min(...v.map((r) => r[k].hours)) * 10) / 10 };
   };
   return {
-    since: new Date(sinceMs).toISOString(), from: new Date(fromMs).toISOString(), rows,
+    since: new Date(sinceMs).toISOString(),
+    from: new Date(Math.max(fromMs, Math.min(sinceMs, ...[...ranges.values()].map((v) => v.first)))).toISOString(),
+    early_hours: EARLY_HOURS, rows,
     groups: {
       changed: { before: avg(true, 'before'), after: avg(true, 'after') },
       others: { before: avg(false, 'before'), after: avg(false, 'after') },

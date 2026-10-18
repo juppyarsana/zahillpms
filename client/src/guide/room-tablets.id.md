@@ -39,7 +39,16 @@ Tekan sebuah kamar (kotaknya atau namanya di tabel): sinyal dalam **24 jam terak
 3. Centang kamar yang mendapat WiFi baru.
 4. **Compare**.
 
-Setiap kamar dihitung **per 24 jam** tabletnya menyala, jadi beberapa jam "sesudah" bisa dibandingkan dengan dua minggu "sebelum". **Kamar lain** adalah pembanding: kalau kamar lain juga membaik, berarti ada hal lain yang berubah (misalnya jalur internet). Pilihan Anda diingat di perangkat ini.
+Setiap baris menunjukkan:
+
+| Kolom | Artinya |
+| --- | --- |
+| **Online before / after** | berapa persen waktu tablet bisa terhubung ke PMS — 100% = tidak pernah putus |
+| **Offline a day** | berapa lama layarnya terputus dalam sehari rata-rata |
+| **Drops a day** | berapa kali putus dalam sehari |
+| **Result** | **Better** / **Worse** / **About the same** menurut lamanya offline; **Too early** selama perubahan belum 12 jam; **Not heard from since …** = tablet itu mati atau tidak bisa masuk WiFi sekarang — perlu dicek ke kamar |
+
+Lamanya offline lebih penting daripada jumlah putus: banyak putus sebentar (semenit) bisa lebih baik daripada sedikit putus berjam-jam. **Kamar lain** adalah pembanding: kalau kamar lain juga membaik, berarti ada hal lain yang berubah (misalnya jalur internet). Pilihan Anda diingat di perangkat ini.
 
 ## Access point
 
