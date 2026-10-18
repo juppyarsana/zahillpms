@@ -1,3 +1,4 @@
+import { HOTEL_TZ } from '../hotelTime';
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
 const FOOD_STATUS = {
@@ -78,7 +79,7 @@ export default function YourOrdersTab({ foodOrders = [], activityBookings = [], 
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-dim text-xs">
-                      {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(o.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: HOTEL_TZ })}
                     </span>
                     <span className="text-muted text-sm">{fmtIDR(o.total_amount)}</span>
                   </div>

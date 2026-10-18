@@ -6,6 +6,7 @@ import IRControls from '../components/IRControls';
 import CallButton from '../components/CallButton';
 import KioskChip from '../components/KioskChip';
 import { HousekeepingEntry } from '../components/RoomCheckOverlay';
+import { hotelHM, hotelDate } from '../hotelTime';
 
 export default function IdleScreen({ roomCheck, onOpenRoomCheck, unit, controller, relays = [], property, roomId, online = true, roomControllerEnabled, callingEnabled, operationsEnabled, housekeepingStatus, onMarkClean, onRefresh, onDebugClick, onCallFrontDesk, callActive }) {
   const [activeTab, setActiveTab] = useState('idle');
@@ -114,11 +115,11 @@ function IdleView({ unit, controller, property, online, roomControllerEnabled, h
     return () => clearInterval(id);
   }, []);
 
-  const hours24 = time.getHours();
+  const { hours: hours24, minutes } = hotelHM(time);
   const h     = (hours24 % 12 || 12).toString().padStart(2, '0');
-  const m     = time.getMinutes().toString().padStart(2, '0');
+  const m     = minutes.toString().padStart(2, '0');
   const ampm  = hours24 >= 12 ? 'PM' : 'AM';
-  const dateStr = time.toLocaleDateString('en-GB', {
+  const dateStr = hotelDate(time, {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 

@@ -5,13 +5,14 @@
 // dawn/dusk without a reload. A debug override (set from DebugMenu)
 // forces one theme — device-local, same spirit as the stored room
 // id/token. A per-property config override can layer on later.
+import { hotelHM } from './hotelTime';
 
 const OVERRIDE_KEY = 'themeOverride'; // '', 'light', 'dark'
 const DAY_START = 6;   // inclusive
 const DAY_END = 18;    // exclusive
 
 function autoThemeForNow(date = new Date()) {
-  const h = date.getHours();
+  const h = hotelHM(date).hours;
   return h >= DAY_START && h < DAY_END ? 'light' : 'dark';
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from './api.js';
 import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
+import { hotelHM, hotelDate } from './hotelTime';
 
 const POLL_MS = 15_000;
 const VERSION_CHECK_MS = 10 * 60 * 1000;
@@ -44,11 +45,11 @@ function useClock() {
 // getHours() is 24-hour (0-23) — convert to 12-hour before pairing with an
 // AM/PM suffix, otherwise afternoon/evening shows e.g. "13:44 PM".
 function formatClock(time) {
-  const hours24 = time.getHours();
+  const { hours: hours24, minutes } = hotelHM(time);
   const hour12 = hours24 % 12 || 12;
   return {
     h: hour12.toString().padStart(2, '0'),
-    m: time.getMinutes().toString().padStart(2, '0'),
+    m: minutes.toString().padStart(2, '0'),
     ampm: hours24 >= 12 ? 'PM' : 'AM',
   };
 }
@@ -130,7 +131,7 @@ function TVBackground({ imageUrl }) {
 function VacantScreen({ unitName, cards = [], property }) {
   const time = useClock();
   const { h, m, ampm } = formatClock(time);
-  const dateStr = time.toLocaleDateString('en-GB', {
+  const dateStr = hotelDate(time, {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
   const hasNotices = cards.some(c => c.category === 'notice');
@@ -204,7 +205,7 @@ function GuestScreen({ unit, booking, cards = [], weather, property }) {
   const carouselCards = cards.filter(c => c.category !== 'notice');
   const activeIndex = useCardRotation(carouselCards.length);
   const activeCard = carouselCards[activeIndex] ?? null;
-  const dateStr = time.toLocaleDateString('en-GB', {
+  const dateStr = hotelDate(time, {
     weekday: 'long', day: 'numeric', month: 'long',
   });
 

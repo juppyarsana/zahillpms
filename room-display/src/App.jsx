@@ -18,6 +18,7 @@ import RoomCheckOverlay from './components/RoomCheckOverlay';
 import ConnectionBanner from './components/ConnectionBanner';
 import useResilientEventSource from './useResilientEventSource';
 import { setBusy, canRestart, runningFor } from './idle';
+import { hotelHM } from './hotelTime';
 
 const POLL_MS = 10_000;
 const STATE_TIMEOUT_MS = 8_000;
@@ -86,8 +87,8 @@ export default function App() {
 
   useEffect(() => {
     const id = setInterval(() => {
-      const now = new Date();
-      const key = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const now = hotelHM();
+      const key = `${now.hours.toString().padStart(2, '0')}:${now.minutes.toString().padStart(2, '0')}`;
       if (alarmEnabled && key === alarmTime) {
         if (alarmFiredKeyRef.current !== key) {
           alarmFiredKeyRef.current = key;
@@ -203,7 +204,7 @@ export default function App() {
   // the tablet is idle and the connection is fine (never reload into nothing).
   useEffect(() => {
     const id = setInterval(() => {
-      const hour = new Date().getHours();
+      const hour = hotelHM().hours;
       if (hour < 3 || hour >= 5) return;
       if (runningFor() < NIGHTLY_MIN_UPTIME_MS || !canRestart()) return;
       if (failedPollsRef.current > 0 || navigator.onLine === false) return;

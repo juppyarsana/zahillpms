@@ -10,6 +10,7 @@ import BookActivityTab from '../components/BookActivityTab';
 import YourOrdersTab from '../components/YourOrdersTab';
 import KioskChip from '../components/KioskChip';
 import { HousekeepingEntry } from '../components/RoomCheckOverlay';
+import { hotelHM, hotelDate } from '../hotelTime';
 
 const ORDERS_POLL_MS = 15000;
 
@@ -183,7 +184,7 @@ export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking,
 }
 
 function TopBar({ online, weather }) {
-  const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dateStr = hotelDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
     <div className="shrink-0 flex items-center justify-between px-10 py-4 border-b border-app-soft gap-6">
       <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-dim flex items-center gap-2 shrink-0">
@@ -257,11 +258,11 @@ function HomeWelcome({ booking, weather, property }) {
     return () => clearInterval(id);
   }, []);
 
-  const hours24 = time.getHours();
+  const { hours: hours24, minutes } = hotelHM(time);
   const h = (hours24 % 12 || 12).toString().padStart(2, '0');
-  const m = time.getMinutes().toString().padStart(2, '0');
+  const m = minutes.toString().padStart(2, '0');
   const ampm = hours24 >= 12 ? 'PM' : 'AM';
-  const dateStr = time.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dateStr = hotelDate(time, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const firstName = booking.guest_name?.split(' ')[0] || 'Guest';
 
   return (
