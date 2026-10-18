@@ -18,6 +18,9 @@ object WelcomeWeb {
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
+        // Lobby videos play by themselves WITH sound — nobody presses play on a
+        // screensaver. (The page decides per video whether it has sound.)
+        settings.mediaPlaybackRequiresUserGesture = false
         webChromeClient = WebChromeClient()
     }
 
