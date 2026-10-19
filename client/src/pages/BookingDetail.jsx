@@ -810,7 +810,7 @@ export default function BookingDetail() {
   async function undoNoShow() {
     if (!confirm('Put this booking back? Use this when the guest did arrive (or is still coming). The status goes back to Pending / Deposit Paid / Confirmed from its payments.')) return;
     try {
-      await api.put(`/api/bookings/${id}/undo-no-show`);
+      await api.put(`/api/bookings/${id}/undo-no-show`, { late_arrival: true });
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Could not undo the no-show');
@@ -1080,6 +1080,13 @@ export default function BookingDetail() {
           {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} icon={<Icon name="more" />} label="More" />}
         </>}
       />
+
+      {booking.status === 'no_show' && (
+        <div className="alert alert-warn mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>Marked <b>no-show</b>. Did the guest arrive after all? Put the booking back, then check them in and take payment as usual.</div>
+          <button className="btn btn-sm btn-primary" onClick={undoNoShow}>↩ Undo No-Show</button>
+        </div>
+      )}
 
       {booking.group && (
         <div className="alert alert-success mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

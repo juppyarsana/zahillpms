@@ -4,7 +4,7 @@ const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 
 // Daily Close (Reports & Alerts, paid — smart_reports): the day that just
-// ended, sent at 00:30 WITA (after the 00:05 night audit). Revenue comes from
+// ended, sent at 03:30 WITA (after the 03:00 night audit). Revenue comes from
 // the Reports page's own getReport(), so the figures always match /reports.
 // Each figure is compared with the same weekday a week earlier.
 // It also carries what the night-audit owner email had (overdue guests, the
@@ -146,7 +146,7 @@ async function bookingActivity(propertyId, date) {
   };
 }
 
-// date: the day to close (default yesterday, WITA — the day the 00:05 night
+// date: the day to close (default yesterday, WITA — the day the 03:00 night
 // audit just closed).
 // Restaurant bills given away in the POS (complimentary, charged to a
 // department) on a business day — from the sessions the POS sent

@@ -11,8 +11,11 @@ const { sendPreArrivalEmails, sendPostCheckoutEmails } = require('./communicatio
 const smartReports = require('../services/smartReports');
 
 function registerJobs() {
-  // Night audit — runs at 00:05 every night (after midnight, audits the just-completed day)
-  cron.schedule('5 0 * * *', async () => {
+  // Night audit — 03:00 every night, audits the day that just ended. Not
+  // right after midnight: guests on a late flight often arrive 00:30–02:30,
+  // and the audit marks everyone not checked in by then as a no-show. A guest
+  // arriving later still is put back from Check-in / out → "Arrived late".
+  cron.schedule('0 3 * * *', async () => {
     try {
       await runNightAuditAllProperties('auto');
     } catch (err) {
@@ -20,7 +23,7 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  console.log('[Jobs] Night audit scheduled at 00:05 WITA (Bali)');
+  console.log('[Jobs] Night audit scheduled at 03:00 WITA (Bali)');
 
   // Competitor ratings — daily at 06:00 WITA
   cron.schedule('0 6 * * *', async () => {
@@ -69,7 +72,7 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  // Holiday sync — daily at 01:30 WITA, before yield pricing runs at 02:00 so that
+  // Holiday sync — daily at 01:30 WITA, before yield pricing runs at 03:15 so that
   // night's auto rates see any newly-added/changed holiday.
   cron.schedule('30 1 * * *', async () => {
     try {
@@ -81,8 +84,8 @@ function registerJobs() {
 
   console.log('[Jobs] Holiday sync scheduled daily 01:30 WITA (api.co.id)');
 
-  // Yield pricing — daily at 02:00 WITA (after night audit has closed the day, so occupancy is current)
-  cron.schedule('0 2 * * *', async () => {
+  // Yield pricing — daily at 03:15 WITA (after the 03:00 night audit has closed the day, so occupancy is current)
+  cron.schedule('15 3 * * *', async () => {
     try {
       await runYieldAllProperties();
     } catch (err) {
@@ -90,7 +93,7 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  console.log('[Jobs] Yield pricing scheduled daily 02:00 WITA');
+  console.log('[Jobs] Yield pricing scheduled daily 03:15 WITA');
 
   // Smart Reports — Morning Brief daily at 07:00 WITA (only properties with
   // the smart_reports module on, only recipients subscribed to it).
@@ -102,8 +105,8 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  // Daily Close — 00:30 WITA, after the 00:05 night audit has closed the day.
-  cron.schedule('30 0 * * *', async () => {
+  // Daily Close — 03:30 WITA, after the 03:00 night audit has closed the day.
+  cron.schedule('30 3 * * *', async () => {
     try {
       await smartReports.runReportAllProperties('daily_close');
     } catch (err) {
@@ -138,7 +141,7 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  console.log('[Jobs] Smart Reports scheduled — Daily Close 00:30, Morning Brief 07:00, Tomorrow Preview 19:00, Weekly Mon 08:00, Monthly 1st 08:00 WITA');
+  console.log('[Jobs] Smart Reports scheduled — Daily Close 03:30, Morning Brief 07:00, Tomorrow Preview 19:00, Weekly Mon 08:00, Monthly 1st 08:00 WITA');
 
   // Room tablets that stopped reporting — every 5 minutes (services/tabletAlerts.js).
   cron.schedule('*/5 * * * *', async () => {
@@ -163,11 +166,11 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
-  // Forecast snapshot — 00:50 WITA, after the night audit (no-shows marked)
+  // Forecast snapshot — 03:50 WITA, after the night audit (no-shows marked)
   // and the Daily Close: what is on the books for the next 120 nights, kept
   // for pickup (services/forecastSnapshot.js). One read + one insert per
   // property. A server that was down then catches up a minute after it starts.
-  cron.schedule('50 0 * * *', async () => {
+  cron.schedule('50 3 * * *', async () => {
     try {
       await require('../services/forecastSnapshot').snapshotAllProperties();
     } catch (err) {

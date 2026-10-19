@@ -461,7 +461,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
 
   // 12. Owner email — best-effort, never blocks or fails the audit. Skipped
   // when the property gets the Daily Close (Reports & Alerts), which carries
-  // the same content at 00:30.
+  // the same content at 03:30.
   try {
     if (await require('../services/dailyClose').dailyCloseReplacesAuditEmail(propertyId)) {
       console.log('[Night Audit] Owner email skipped — the Daily Close report replaces it');

@@ -9,6 +9,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import OtherGuests from '../components/OtherGuests';
+import LateArrivals from '../components/LateArrivals';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
 function avatarColor(name = '') {
@@ -113,9 +114,20 @@ export default function CheckIn() {
     setArrivals(a.data);
     setDepartures(d.data);
     setInHouse(h.data);
+    return a.data;
   }
 
   useEffect(() => { load(); }, []);
+
+  // A no-show put back from "Marked no-show last night": reload, and open the
+  // check-in for a single booking (a group then uses Check In Whole Group).
+  async function onLateRestored({ bookingIds, groupId }) {
+    const a = await load();
+    if (!groupId) {
+      const b = a.find(x => x.id === bookingIds[0]);
+      if (b) startCheckin(b);
+    }
+  }
 
   useEffect(() => {
     const bookingId = searchParams.get('checkin');
@@ -258,6 +270,8 @@ export default function CheckIn() {
           </button>
         )}
       </div>
+
+      <LateArrivals lang="en" onRestored={onLateRestored} />
 
       <div className="grid-2 mb-3">
         {/* ── Arrivals ── */}

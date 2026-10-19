@@ -6,6 +6,7 @@ import EarlyDepartureOption from '../components/EarlyDepartureOption';
 import { CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import RoomCheckPanel from '../components/RoomCheck';
 import RegistrationCardModal from '../components/RegistrationCardModal';
+import LateArrivals from '../components/LateArrivals';
 import { useSettings } from '../context/SettingsContext';
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
@@ -116,10 +117,20 @@ export default function QuickCheckIn() {
       setArrivals(a.data);
       setDepartures(d.data);
       setInHouse(h.data);
-    } catch (_) {}
+      return a.data;
+    } catch (_) { return []; }
   }
 
   useEffect(() => { load(); }, []);
+
+  // Tamu no-show yang ternyata datang: muat ulang, lalu buka check-in-nya.
+  async function onLateRestored({ bookingIds, groupId }) {
+    const a = await load();
+    if (!groupId) {
+      const b = a.find(x => x.id === bookingIds[0]);
+      if (b) openCheckin(b);
+    }
+  }
 
   // ── Check-in helpers ──
   function openCheckin(b) {
@@ -246,6 +257,7 @@ export default function QuickCheckIn() {
       </div>
 
       {/* ══ CHECK-IN TAB ══ */}
+      {tab === 'checkin' && <LateArrivals lang="id" onRestored={onLateRestored} />}
       {tab === 'checkin' && (
         arrivals.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>

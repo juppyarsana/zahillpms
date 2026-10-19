@@ -391,6 +391,31 @@ export default function GroupDetail() {
     }
   }
 
+  // No-show rooms put back — one room (row button) or every no-show room of
+  // the group (More → Guests arrived late). The rooms go back to pending /
+  // deposit paid / confirmed from the payments; check in as usual afterwards.
+  async function undoNoShowRoom(b) {
+    if (!window.confirm(`Room ${b.unit_name}: the guest did arrive? The no-show is undone and the room can be checked in.`)) return;
+    try {
+      await api.put(`/api/bookings/${b.id}/undo-no-show`, { late_arrival: true });
+      setFolio(null);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to undo the no-show');
+    }
+  }
+  async function undoNoShowGroup() {
+    const n = bookings.filter(b => b.status === 'no_show').length;
+    if (!window.confirm(`The guests arrived late? All ${n} no-show room${n === 1 ? '' : 's'} are put back; then check them in (Check In Group).`)) return;
+    try {
+      await api.put(`/api/bookings/group/${groupId}/undo-no-show`, { late_arrival: true });
+      setFolio(null);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to undo the no-shows');
+    }
+  }
+
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
   if (!data) return <div className="alert alert-error">Group not found</div>;
 
@@ -415,7 +440,12 @@ export default function GroupDetail() {
   // The group's agent(s) (migration 084) — one normally; set per room in Edit Details.
   const groupAgents = [...new Set(activeRooms.map(b => b.agent_name).filter(Boolean))];
   const inHouse = activeRooms.filter(b => b.status === 'checked_in').length;
-  const groupState = group.status === 'cancelled' || activeRooms.length === 0 ? { label: 'Cancelled', color: 'red' }
+  const noShowRooms = bookings.filter(b => b.status === 'no_show');
+  // Every room a no-show (the night audit) — not cancelled: the guests may
+  // still turn up, and Cancel Group would turn the no-shows into cancellations.
+  const allNoShow = group.status !== 'cancelled' && activeRooms.length === 0 && noShowRooms.length > 0;
+  const groupState = allNoShow ? { label: 'No show', color: 'red' }
+    : group.status === 'cancelled' || activeRooms.length === 0 ? { label: 'Cancelled', color: 'red' }
     : activeRooms.every(b => b.status === 'checked_out') ? { label: 'Checked out', color: 'gray' }
     : inHouse > 0 ? { label: `In house · ${inHouse}/${activeRooms.length}`, color: 'blue' }
     : { label: 'Upcoming', color: 'green' };
@@ -426,9 +456,13 @@ export default function GroupDetail() {
     canAddRoom && { label: 'Add Room', icon: '➕', onClick: openAddRoom },
     canEditPrice && activeRooms.length > 0 && { label: 'Set Prices', icon: '💰', onClick: () => setPricing(true) },
     roomsWithBooker === 0 && assignableRooms.length > 0 && { label: 'Assign Guests', icon: '👥', onClick: openAssign },
+    group.status !== 'cancelled' && noShowRooms.length > 0 && {
+      label: noShowRooms.length > 1 ? `Guests arrived late — put ${noShowRooms.length} rooms back` : 'Guest arrived late — undo no-show',
+      icon: '↩️', onClick: undoNoShowGroup,
+    },
   ].filter(Boolean);
   const groupDanger = [
-    group.status === 'active' && { label: 'Cancel Group', icon: '✕', onClick: cancelGroup, danger: true },
+    group.status === 'active' && !allNoShow && { label: 'Cancel Group', icon: '✕', onClick: cancelGroup, danger: true },
   ].filter(Boolean);
   const groupMenu = [...groupModify, groupModify.length && groupDanger.length ? { divider: true } : null, ...groupDanger].filter(Boolean);
   function whatsappBooker() {
@@ -565,7 +599,11 @@ export default function GroupDetail() {
           <div className="card mb-3">
             <div className="flex-between" style={{ alignItems: 'center', marginBottom: 8 }}>
               <div className="card-title" style={{ marginBottom: 0 }}>
-                Rooms ({rollup.room_count}){rollup.cancelled_count > 0 && <span className="text-muted" style={{ fontSize: 12, fontWeight: 400 }}> · {rollup.cancelled_count} cancelled</span>}
+                Rooms ({rollup.room_count}){(() => {
+                  const cancelled = bookings.filter(b => b.status === 'cancelled').length;
+                  const parts = [cancelled > 0 && `${cancelled} cancelled`, noShowRooms.length > 0 && `${noShowRooms.length} no-show`].filter(Boolean);
+                  return parts.length > 0 && <span className="text-muted" style={{ fontSize: 12, fontWeight: 400 }}> · {parts.join(' · ')}</span>;
+                })()}
               </div>
               {canAddRoom && <button className="btn btn-sm btn-secondary" onClick={openAddRoom}>+ Add Room</button>}
             </div>
@@ -625,6 +663,10 @@ export default function GroupDetail() {
                   {['pending', 'deposit_paid', 'confirmed'].includes(b.status) && activeRoomCount > 1 && (
                     <button className="btn btn-sm btn-secondary" title="The group needs one room fewer — cancel this room only"
                       onClick={() => { setRemoving(b); setRemoveReason(''); setRemoveError(''); }}>Remove</button>
+                  )}
+                  {b.status === 'no_show' && group.status !== 'cancelled' && (
+                    <button className="btn btn-sm btn-secondary" title="The guest did arrive — put this room back and check in"
+                      onClick={() => undoNoShowRoom(b)}>↩ Undo No-Show</button>
                   )}
                   {canCorrect && b.status === 'cancelled' && (
                     <button className="btn btn-sm btn-secondary" title="Cancelled by mistake — put this room back if it is still free"
