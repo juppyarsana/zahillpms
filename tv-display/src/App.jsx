@@ -100,7 +100,7 @@ function useImageLayers(src) {
   return layers;
 }
 
-function TVBackground({ imageUrl }) {
+function TVBackground({ imageUrl, light = false }) {
   const layers = useImageLayers(imageUrl || '/hero.png');
   return (
     <>
@@ -118,10 +118,13 @@ function TVBackground({ imageUrl }) {
           }}
         />
       ))}
-      {/* gradient: transparent top → near-black bottom */}
+      {/* gradient: transparent top → near-black bottom (light: only a thin
+          shade along the edges, so the lobby's picture keeps its colours) */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 10,
-        background: 'linear-gradient(to top, #05070a 30%, rgba(5,7,10,0.65) 55%, rgba(5,7,10,0.25) 100%)',
+        background: light
+          ? 'linear-gradient(to bottom, rgba(5,7,10,0.35) 0%, rgba(5,7,10,0) 18%, rgba(5,7,10,0) 75%, rgba(5,7,10,0.6) 100%)'
+          : 'linear-gradient(to top, #05070a 30%, rgba(5,7,10,0.65) 55%, rgba(5,7,10,0.25) 100%)',
       }} />
     </>
   );
@@ -395,10 +398,17 @@ function LobbyScreen({ cards = [], weather, property }) {
     v.play().catch(() => { v.muted = true; v.play().catch(() => setVideoFailed(true)); });
   }, [showVideo, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const logo = (
-    <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''}
-      style={{ width: showVideo ? 'clamp(70px, 7vw, 110px)' : 'clamp(90px, 10vw, 160px)' }} />
-  );
+  // Everything sits small in the bottom corners so the picture / video fills
+  // the screen: logo + hotel name bottom left, time · weather bottom right,
+  // the card's title small top left. Above the notice ticker when it shows.
+  const edge = 'clamp(1.5rem, 3vw, 2.5rem)';
+  const bottom = hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(1.5rem, 4vh, 3rem)';
+  const shadow = '0 2px 12px rgba(0,0,0,0.65)';
+  const corner = {
+    background: 'rgba(5,7,10,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16,
+    padding: 'clamp(0.6rem, 1.4vh, 1rem) clamp(0.9rem, 1.6vw, 1.4rem)',
+  };
 
   return (
     <div className="w-screen h-screen relative overflow-hidden bg-bg-dark">
@@ -407,88 +417,60 @@ function LobbyScreen({ cards = [], weather, property }) {
           onEnded={next} onError={() => setVideoFailed(true)}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
       ) : (
-        <TVBackground imageUrl={card?.image_url} />
+        <TVBackground imageUrl={card?.image_url} light />
       )}
       {showVideo && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-          background: 'linear-gradient(to bottom, rgba(5,7,10,0.55) 0%, rgba(5,7,10,0) 22%, rgba(5,7,10,0) 78%, rgba(5,7,10,0.55) 100%)' }} />
+          background: 'linear-gradient(to bottom, rgba(5,7,10,0.35) 0%, rgba(5,7,10,0) 18%, rgba(5,7,10,0) 75%, rgba(5,7,10,0.6) 100%)' }} />
       )}
 
-      {/* Logo — top left */}
-      <div className={`absolute z-10 flex flex-col items-center text-center ${showVideo ? '' : 'glass-card rounded-xl'}`}
-        style={{
-          top: 'clamp(1.5rem, 3vh, 2.5rem)', left: 'clamp(1.5rem, 3vw, 2.5rem)',
-          padding: showVideo ? 0 : 'clamp(1rem, 2vh, 1.75rem) clamp(1.25rem, 2.5vw, 2rem)',
-          gap: 'clamp(0.3rem, 0.8vh, 0.6rem)',
-        }}>
-        {logo}
-        {!showVideo && property?.location && (
-          <p className="font-bold uppercase tracking-[0.4em]"
-            style={{ fontSize: 'clamp(0.5rem, 0.85vw, 0.65rem)', color: '#c9a227' }}>{property.location}</p>
+      {/* The card's title — small, top left */}
+      {card?.title && (
+        <div className="absolute z-20" style={{ top: edge, left: edge, maxWidth: '60vw' }}>
+          <p className="text-white"
+            style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1rem, 2vw, 1.6rem)', textShadow: shadow, lineHeight: 1.2 }}>
+            {card.title}
+          </p>
+        </div>
+      )}
+
+      {/* Logo + hotel name — bottom left */}
+      <div className="absolute z-20 flex items-center" style={{ ...corner, left: edge, bottom, gap: 'clamp(0.6rem, 1.2vw, 1rem)' }}>
+        <img src={property?.logo_url || '/logo.png'} alt=""
+          style={{ height: 'clamp(36px, 5vh, 56px)', width: 'auto', objectFit: 'contain' }} />
+        {property?.name && (
+          <div>
+            <p className="text-white leading-none"
+              style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1rem, 1.8vw, 1.5rem)' }}>{property.name}</p>
+            {property.location && (
+              <p className="font-bold uppercase"
+                style={{ fontSize: 'clamp(0.45rem, 0.75vw, 0.6rem)', letterSpacing: '0.35em', color: '#c9a227', marginTop: '0.35em' }}>{property.location}</p>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Clock — top right */}
-      <div className="absolute z-10 text-right"
-        style={{ top: 'clamp(1.5rem, 3vh, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)' }}>
-        <div className="flex items-end justify-end leading-none" style={{ gap: 'clamp(0.3rem, 0.6vw, 0.6rem)' }}>
-          <span className="font-extralight text-white tracking-tighter"
-            style={{ fontSize: showVideo ? 'clamp(1.8rem, 4vw, 3rem)' : 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1 }}>{h}:{m}</span>
-          <span className="font-bold" style={{ fontSize: 'clamp(0.9rem, 1.8vw, 1.5rem)', color: '#c9a227', marginBottom: '0.25em' }}>{ampm}</span>
+      {/* Time · weather + date — bottom right */}
+      <div className="absolute z-20 text-right" style={{ ...corner, right: edge, bottom }}>
+        <div className="flex items-center justify-end leading-none" style={{ gap: 'clamp(0.5rem, 1vw, 0.9rem)' }}>
+          <span className="text-white font-light" style={{ fontSize: 'clamp(1.3rem, 2.4vw, 2rem)' }}>
+            {h}:{m}<span className="font-bold" style={{ fontSize: '0.55em', color: '#c9a227', marginLeft: '0.25em' }}>{ampm}</span>
+          </span>
+          {weather?.today && (
+            <>
+              <span style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.2)' }} />
+              <span className="flex items-center" style={{ gap: 6 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 'clamp(1.2rem, 2.2vw, 1.8rem)', color: '#c9a227' }}>{weather.today.icon}</span>
+                <span className="text-white font-light" style={{ fontSize: 'clamp(1.1rem, 2vw, 1.7rem)' }}>{weather.today.temp}&deg;C</span>
+              </span>
+            </>
+          )}
         </div>
         <p className="font-bold uppercase"
-          style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', letterSpacing: '0.35em', marginTop: '0.25rem', color: '#e2e8f0' }}>
+          style={{ fontSize: 'clamp(0.45rem, 0.75vw, 0.6rem)', letterSpacing: '0.3em', marginTop: '0.45rem', color: '#e2e8f0' }}>
           {dateStr}
         </p>
       </div>
-
-      {/* Bottom — the card's caption + welcome & weather (pictures only) */}
-      {!showVideo && (
-        <div className="absolute z-10 flex"
-          style={{
-            bottom: hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(2rem, 5vh, 4rem)',
-            left: 'clamp(1.5rem, 3vw, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)',
-            gap: 'clamp(1rem, 2vw, 1.5rem)', alignItems: 'stretch',
-          }}>
-          {card ? <BoardCarousel card={card} cards={slides} index={index % Math.max(1, slides.length)} /> : <div style={{ flex: '0 0 58%' }} />}
-          <div className="glass-card rounded-2xl" style={{ flex: 1, padding: 'clamp(1.25rem, 3vh, 2.25rem) clamp(1.5rem, 3vw, 2.5rem)' }}>
-            <p className="font-bold uppercase"
-              style={{ color: 'rgba(201,162,39,0.75)', fontSize: 'clamp(0.5rem, 0.85vw, 0.7rem)', letterSpacing: '0.4em', marginBottom: 'clamp(0.35rem, 0.9vh, 0.65rem)' }}>
-              Welcome to
-            </p>
-            <h1 className="text-white leading-none"
-              style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1.4rem, 3.2vw, 2.8rem)', marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }}>
-              {property?.name || ''}
-            </h1>
-            {weather?.today && (
-              <>
-                <div style={{ height: 1, background: 'rgba(201,162,39,0.25)', marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(0.6rem, 1.2vw, 1rem)' }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 'clamp(1.6rem, 3.2vw, 2.4rem)', color: '#c9a227' }}>{weather.today.icon}</span>
-                  <div>
-                    <div className="flex items-baseline" style={{ gap: 6 }}>
-                      <span className="text-white font-extralight" style={{ fontSize: 'clamp(1.1rem, 2vw, 1.6rem)' }}>{weather.today.temp}&deg;C</span>
-                      <span className="text-slate-400" style={{ fontSize: 'clamp(0.65rem, 1.1vw, 0.9rem)' }}>{weather.today.desc}</span>
-                    </div>
-                    {weather.tomorrow && (
-                      <div className="text-slate-500 uppercase" style={{ fontSize: 'clamp(0.5rem, 0.8vw, 0.65rem)', letterSpacing: '0.08em', marginTop: 2 }}>
-                        Tomorrow {weather.tomorrow.temp}&deg; &middot; {weather.tomorrow.desc}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Video — its title, small, bottom left */}
-      {showVideo && card.title && (
-        <div className="absolute z-10" style={{ left: 'clamp(1.5rem, 3vw, 2.5rem)', bottom: hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(1.5rem, 4vh, 3rem)' }}>
-          <p className="text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1rem, 2vw, 1.6rem)', textShadow: '0 2px 12px rgba(0,0,0,0.6)' }}>{card.title}</p>
-        </div>
-      )}
 
       <NoticeTicker cards={cards} />
     </div>
