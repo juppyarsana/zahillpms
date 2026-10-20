@@ -888,6 +888,26 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 - **TV app 0.2.0 on the TVs (owner, planned 2026-10-20) — not a server deploy.** Build on the owner's LAPTOP only (same debug key as the installed 0.1.0): `cd tv-screensaver && export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr" && export PATH="$JAVA_HOME/bin:$PATH" && ./gradlew :app:assembleDebug` → `tv-screensaver/app/build/outputs/apk/debug/app-debug.apk`. Per TV: `adb connect <tv-ip>:5555` → `adb install -r app-debug.apk` (keeps Room ID / token / permission; `INSTALL_FAILED_UPDATE_INCOMPATIBLE` = other key → `adb uninstall com.zahill.tvscreensaver`, `adb install app-debug.apk`, `adb shell pm grant com.zahill.tvscreensaver android.permission.WRITE_SECURE_SETTINGS`, open Zahill Welcome → enter Room ID + token → Save → Set as screensaver). Then Home → Apps → hold OK on **Zahill Welcome** → add to favourites. Test: press it → welcome page; any key → TV; hold OK 3 s → settings. Optional: TV time zone → GMT+08:00 Makassar. Try one Sharp TV first. Full steps: `tv-screensaver/README.md`.
 
+### ▶ Handoff 2026-10-20 evening (office → home)
+
+**State of git:** `dev` = 4590bb9 + this note, pushed. `main` = eca4caf (Channel Manager stages 2–4, released, NOT deployed). The front-desk work below (migration 123) is on `dev` only — not released to `main`, not deployed. At home: `git pull` on `dev`, `npm install` in `client/` and `server/`, `npm run migrate` in `server/` (brings 120–123 if that machine's DB doesn't have them).
+
+**Done today:**
+- Tim Walker group money fixed on production (`moveRoomPayment.js`).
+- Deployed to production: migrations 117–119 (Channel Manager stage 1, Change Room from a later night, lobby music).
+- Lobby music starts on the first click / key in a browser that blocks sound (ebf417d, on `main`, needs a deploy).
+- Channel Manager stages 2–4 built and released to `main` (migrations 120–122): free rooms + prices out, OTA bookings in, health alerts + go-live checklist.
+- Migration 123 (on `dev`): pop-up on every page for each OTA booking (new / changed / cancelled / needs you), 🌐 OTA bookings page + menu counter, Dashboard box "From the OTAs — today", Channex webhook (instant, needs `SERVER_PUBLIC_URL`), OTA-paid bookings = Confirmed, an OTA switching to "guest pays at hotel" = needs-you item. 28 checks against Channex staging.
+- **Walkthrough on the office machine with Channex staging:** step 1 setup, step 2 sending, step 3 a new booking made in the Channex dashboard (Agoda AGO-00001, Komang Ita, room 101, 22–23 Oct) came in, step 4 changing it in Channex worked (owner: "it worked").
+
+**Next:**
+1. Finish the walkthrough: cancel Komang Ita in Channex (step 4b), step 5 overbooking (more rooms than free → "needs you"), step 6 switch-over (a booking typed into the PMS first, then the same one from Channex → linked, not doubled).
+   - The Channex staging API key is only in the office machine's `server/.env`, and the walkthrough data (Komang Ita, the staging links) is only in its local DB. To continue at home: copy `CHANNEX_API_KEY` / `CHANNEX_API_URL` (staging) into home `server/.env` and link the property again in Settings → Channel Manager (pick "Zahill Kintamani" + the four room types). Or finish on the office machine.
+   - Test helper `ota.js` (plays the OTA through the API) lives in the office machine's scratchpad, not in git.
+2. Release migration 123 to `main` (`git checkout main && git merge --ff-only dev && git push`) when happy, then deploy (`bash deploy.sh`) — brings 120–123; nothing switches on without `CHANNEX_API_KEY` on production.
+3. Owner to decide: OTA payouts (batched, net of commission) — how the room line of an OTA-paid booking gets marked received.
+4. Still waiting: the owner's Channex production account → go-live steps above.
+
 ### ▶ Handoff 2026-10-17 (PC → laptop) — everything below deployed to production 2026-10-20
 
 **Released, NOT deployed yet:** PMS `main` = `dev` = 211782c (+ this docs commit), POS `pms-integration` = 4339a7a. Both pushed; on the laptop `git pull` on PMS `dev` and POS `pms-integration`, `npm run migrate` in PMS `server/` (local DB needs 113–114; the POS runs its migration by itself on start).
