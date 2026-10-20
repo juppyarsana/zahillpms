@@ -3,7 +3,7 @@ import api from './api.js';
 import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
 import { hotelHM, hotelDate } from './hotelTime';
-import { precacheVideos, playableUrl, release } from './videoCache';
+import { precacheVideos, playableUrl, release, MUSIC_CACHE } from './videoCache';
 
 const POLL_MS = 15_000;
 const VERSION_CHECK_MS = 10 * 60 * 1000;
@@ -333,6 +333,100 @@ function GuestScreen({ unit, booking, cards = [], weather, property }) {
 }
 
 
+// ─── Lobby music (migration 119) ────────────────────────────────────────────
+// The songs uploaded on the Guest Board page, played one after the other in a
+// loop at the volume set there. While a lobby video plays with sound the music
+// fades out and pauses, then fades back in. Songs are kept on the TV like the
+// videos. A TV app that blocks sound until a button is pressed (older than
+// 0.2.0) is retried every 30 s.
+
+const FADE_MS = 1500;
+
+function shuffled(list) {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function LobbyMusic({ music, quiet }) {
+  const audioRef = useRef(null);
+  const fadeRef = useRef(null);
+  const [queue, setQueue] = useState([]);
+  const [pos, setPos] = useState(0);
+  const [src, setSrc] = useState(null);
+  const [blocked, setBlocked] = useState(false);
+  const tracks = music?.tracks || [];
+  const key = tracks.map(t => t.url).join('|') + (music?.shuffle ? '|s' : '');
+  const target = Math.max(0, Math.min(1, (music?.volume ?? 40) / 100));
+
+  useEffect(() => { precacheVideos(tracks.map(t => t.url), MUSIC_CACHE); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setQueue(music?.shuffle ? shuffled(tracks) : tracks); setPos(0); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const track = queue.length ? queue[pos % queue.length] : null;
+
+  useEffect(() => {
+    let off = false, got = null;
+    setSrc(null);
+    if (track) playableUrl(track.url, MUSIC_CACHE).then(u => { got = u; if (!off) setSrc(u); else release(u); });
+    return () => { off = true; release(got); };
+  }, [track?.url, pos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const next = () => {
+    if (pos + 1 >= queue.length && music?.shuffle && queue.length > 1) { setQueue(shuffled(tracks)); setPos(0); }
+    else setPos(p => (queue.length ? (p + 1) % queue.length : 0));
+  };
+
+  // Fade to the wanted level (volume, or silent while a video speaks).
+  function fadeTo(level, done) {
+    const a = audioRef.current;
+    if (!a) return;
+    clearInterval(fadeRef.current);
+    const from = a.volume, steps = 15;
+    let i = 0;
+    fadeRef.current = setInterval(() => {
+      i++;
+      a.volume = Math.max(0, Math.min(1, from + (level - from) * (i / steps)));
+      if (i >= steps) { clearInterval(fadeRef.current); done?.(); }
+    }, FADE_MS / steps);
+  }
+
+  function start() {
+    const a = audioRef.current;
+    if (!a || !src) return;
+    a.play().then(() => { setBlocked(false); fadeTo(target); }).catch(() => setBlocked(true));
+  }
+
+  // Start / fade in: fade only at the very start and after a video; the next
+  // song in the list just carries on at the set level.
+  const fadeInRef = useRef(true);
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a || !src) return;
+    if (quiet) { fadeInRef.current = true; fadeTo(0, () => a.pause()); return; }
+    if (a.paused) {
+      a.volume = fadeInRef.current ? 0 : target;
+      fadeInRef.current = false;
+      start();
+    } else fadeTo(target);
+  }, [src, quiet, target]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sound blocked by the TV: try again now and then.
+  useEffect(() => {
+    if (!blocked || quiet) return undefined;
+    const id = setInterval(start, 30_000);
+    return () => clearInterval(id);
+  }, [blocked, quiet, src]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => clearInterval(fadeRef.current), []);
+
+  if (!track) return null;
+  return (
+    <audio ref={audioRef} src={src || undefined} preload="auto"
+      onEnded={next}
+      onError={() => { if (queue.length > 1) setTimeout(next, 2000); }} />
+  );
+}
+
 // ─── Lobby screen (Room ID "lobby", migration 116) ──────────────────────────
 // The Guest Board cards set to show in the lobby, one after the other: a
 // picture stays 8 s with its caption; a video plays full screen to its end
@@ -344,7 +438,7 @@ const PICTURE_MS = 8000;
 const VIDEO_MAX_MS = 3 * 60 * 1000;   // a stuck video never holds the screen longer
 const VIDEO_WAIT_MS = 15 * 1000;      // still loading → show the picture, move on
 
-function LobbyScreen({ cards = [], weather, property }) {
+function LobbyScreen({ cards = [], weather, property, music }) {
   const time = useClock();
   const { h, m, ampm } = formatClock(time);
   const dateStr = hotelDate(time, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -473,6 +567,7 @@ function LobbyScreen({ cards = [], weather, property }) {
       </div>
 
       <NoticeTicker cards={cards} />
+      <LobbyMusic music={music} quiet={showVideo && card?.video_sound !== false} />
     </div>
   );
 }
@@ -563,7 +658,7 @@ export default function App() {
 
   if (isLobby) return (
     <>
-      <LobbyScreen cards={state.cards} weather={state.weather} property={state.property} />
+      <LobbyScreen cards={state.cards} weather={state.weather} property={state.property} music={state.music} />
       <BuildBadge />
     </>
   );

@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const activitiesService = require('../services/activitiesService');
 const { checkMp4 } = require('../services/videoCheck');
+const { musicState } = require('../services/lobbyMusic');
 
 async function activitiesModuleEnabled(propertyId) {
   const { rows } = await db.query(
@@ -271,6 +272,122 @@ router.delete('/:id', auth, async (req, res) => {
     removeStored(card.image_url);
     removeStored(card.video_url);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Lobby music (migration 119) ────────────────────────────────────────────
+// MP3s the lobby TV plays in a loop. Room TVs never play them.
+const MUSIC_MAX = 20 * 1024 * 1024;
+const MUSIC_FILES = 20;
+const musicUpload = multer({ dest: os.tmpdir(), limits: { fileSize: MUSIC_MAX, files: MUSIC_FILES } }).array('files', MUSIC_FILES);
+
+// An MP3 starts with an ID3 tag or an MPEG audio frame (11 sync bits).
+function isMp3(file) {
+  if (!/\.mp3$/i.test(file.originalname || '') && !/^audio\/(mpeg|mp3)$/i.test(file.mimetype || '')) return false;
+  const fd = fs.openSync(file.path, 'r');
+  try {
+    const b = Buffer.alloc(3);
+    fs.readSync(fd, b, 0, 3, 0);
+    return b.toString('latin1') === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+const trackTitle = (name) => String(name || 'Song').replace(/\.mp3$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 120) || 'Song';
+
+// GET /api/board/music
+router.get('/music', auth, async (req, res) => {
+  try {
+    res.json(await musicState(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/board/music — multipart `files` (up to 20 MP3s, 20 MB each)
+router.post('/music', auth, (req, res) => {
+  musicUpload(req, res, async (upErr) => {
+    const files = req.files || [];
+    const cleanup = () => { for (const f of files) fs.rm(f.path, { force: true }, () => {}); };
+    if (upErr) {
+      cleanup();
+      if (upErr.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'A song can be at most 20 MB.' });
+      if (upErr.code === 'LIMIT_FILE_COUNT' || upErr.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: `Upload at most ${MUSIC_FILES} songs at a time.` });
+      return res.status(400).json({ error: upErr.message });
+    }
+    try {
+      if (!files.length) return res.status(400).json({ error: 'Choose one or more MP3 files.' });
+      const bad = files.filter(f => !isMp3(f)).map(f => f.originalname);
+      if (bad.length) return res.status(400).json({ error: `Only MP3 files can be played: ${bad.join(', ')}` });
+      const { rows: [{ max }] } = await db.query('SELECT COALESCE(MAX(sort_order), 0) AS max FROM lobby_music_tracks WHERE property_id = $1', [req.propertyId]);
+      let order = Number(max);
+      for (const [i, f] of files.entries()) {
+        const filename = `lobby-music-${Date.now()}-${i}.mp3`;
+        fs.copyFileSync(f.path, path.join(UPLOAD_DIR, filename));
+        await db.query(
+          `INSERT INTO lobby_music_tracks (property_id, title, file_url, size_bytes, sort_order, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [req.propertyId, trackTitle(f.originalname), `/board-images/${filename}`, f.size, ++order, req.user?.id || null]
+        );
+      }
+      res.status(201).json(await musicState(req.propertyId));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// PUT /api/board/music/settings { enabled?, volume?, shuffle? }
+router.put('/music/settings', auth, async (req, res) => {
+  const { enabled, volume, shuffle } = req.body || {};
+  if (volume !== undefined && !(Number.isInteger(Number(volume)) && Number(volume) >= 0 && Number(volume) <= 100)) {
+    return res.status(400).json({ error: 'volume must be 0–100' });
+  }
+  try {
+    await db.query(
+      `INSERT INTO property_settings (property_id, lobby_music_enabled, lobby_music_volume, lobby_music_shuffle)
+       VALUES ($1, COALESCE($2, FALSE), COALESCE($3, 40), COALESCE($4, FALSE))
+       ON CONFLICT (property_id) DO UPDATE SET
+         lobby_music_enabled = COALESCE($2, property_settings.lobby_music_enabled),
+         lobby_music_volume  = COALESCE($3, property_settings.lobby_music_volume),
+         lobby_music_shuffle = COALESCE($4, property_settings.lobby_music_shuffle)`,
+      [req.propertyId,
+        enabled === undefined ? null : !!enabled,
+        volume === undefined ? null : Number(volume),
+        shuffle === undefined ? null : !!shuffle]
+    );
+    res.json(await musicState(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/board/music/order { ids: [...] } — the play order
+router.put('/music/order', auth, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+  if (!ids) return res.status(400).json({ error: 'ids required' });
+  try {
+    for (const [i, id] of ids.entries()) {
+      await db.query('UPDATE lobby_music_tracks SET sort_order = $1 WHERE id = $2 AND property_id = $3', [i + 1, id, req.propertyId]);
+    }
+    res.json(await musicState(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/board/music/:id
+router.delete('/music/:id', auth, async (req, res) => {
+  try {
+    const { rows: [t] } = await db.query('DELETE FROM lobby_music_tracks WHERE id = $1 AND property_id = $2 RETURNING file_url', [req.params.id, req.propertyId]);
+    if (!t) return res.status(404).json({ error: 'Song not found' });
+    removeStored(t.file_url);
+    res.json(await musicState(req.propertyId));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

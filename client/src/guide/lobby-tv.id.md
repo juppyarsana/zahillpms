@@ -27,6 +27,19 @@ Buka kartu → **Show on**:
 
 Di TV lobi gambar tampil 8 detik; video diputar sampai selesai, lalu slideshow berlanjut. TV mengunduh setiap video **sekali** lalu menyimpannya, jadi internet hotel tidak terpakai setiap kali berulang. TV kamar dan tablet hanya menampilkan gambar kartu, tidak pernah videonya.
 
+## Musik di lobi
+
+Di bagian atas halaman Guest Board, **🎵 Lobby music**:
+
+1. **+ Add songs (MP3)** — pilih satu atau beberapa file MP3 (maks. 20 MB per lagu, 20 lagu sekali unggah). ▶ memutar lagu di sini untuk didengar dulu.
+2. Centang **Play on the lobby TV**.
+3. **Volume** — tingkat suara musik di dalam TV (mulai sekitar 40%). Volume TV sendiri (remote) tetap menentukan seberapa keras di lobi.
+4. **Shuffle** (acak), atau atur urutan dengan ↑ ↓. **Remove** menghapus lagu.
+
+TV lobi memutar lagu satu per satu dan berulang. Saat video **bersuara** tampil, musik mengecil lalu berhenti, dan kembali setelah video selesai. TV kamar tidak pernah memutar musik. TV menyimpan setiap lagu setelah diputar pertama kali, sama seperti video. Musik butuh **aplikasi TV 0.2.0** di TV lobi — versi lama tidak membolehkan musik mulai sendiri.
+
+> Pakai musik bebas royalti, atau lagu yang lisensinya dimiliki hotel (LMKN). Lagu komersial yang diputar di area umum memerlukan lisensi.
+
 ## Menyiapkan TV lobi
 
 TV lobi memakai aplikasi **Zahill** yang sama dengan TV kamar. Di pengaturannya (tahan **OK** 3 detik di layar sambutan) ketik **lobby** sebagai **Room ID**, display token yang sama dengan kamar, lalu **Save**. Kemudian tekan **Zahill Welcome**. Atur **sleep timer** TV ke **Never** supaya tetap menyala.

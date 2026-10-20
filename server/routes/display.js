@@ -5,6 +5,7 @@ const moduleGuard = require('../middleware/moduleGuard');
 const mqttClient = require('../mqtt');
 const sse = require('../sse');
 const { getWeather } = require('../weather');
+const { musicState } = require('../services/lobbyMusic');
 const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
 const telegramService = require('../services/telegramService');
@@ -316,7 +317,12 @@ router.get('/lobby/state', authDisplay, async (req, res) => {
           WHERE p.id = $1`,
         [req.propertyId]),
     ]);
-    res.json({ cards, property: property || null, weather: await getWeather() });
+    // Lobby music (migration 119): only sent when switched on and there are songs.
+    const m = await musicState(req.propertyId);
+    const music = m.enabled && m.tracks.length
+      ? { volume: m.volume, shuffle: m.shuffle, tracks: m.tracks.map(t => ({ id: t.id, title: t.title, url: t.file_url })) }
+      : null;
+    res.json({ cards, property: property || null, weather: await getWeather(), music });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

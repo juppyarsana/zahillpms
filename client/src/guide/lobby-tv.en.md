@@ -27,6 +27,19 @@ Open a card → **Show on**:
 
 On the lobby TV a picture stays 8 seconds; a video plays to its end, then the slideshow carries on. The TV downloads each video **once** and keeps it, so the hotel's internet isn't used every time it loops. Room TVs and tablets only ever show the card's picture, never the video.
 
+## Music in the lobby
+
+At the top of the Guest Board page, **🎵 Lobby music**:
+
+1. **+ Add songs (MP3)** — choose one or more MP3 files (up to 20 MB each, 20 at a time). ▶ plays a song here to listen first.
+2. Tick **Play on the lobby TV**.
+3. **Volume** — the music's level inside the TV (start around 40%). The TV's own volume on the remote still sets how loud the lobby hears it.
+4. **Shuffle**, or keep the order with ↑ ↓. **Remove** takes a song off.
+
+The lobby TV plays the songs one after the other in a loop. When a video **with sound** comes up, the music fades out and comes back after the video. Room TVs never play music. The TV keeps each song after the first play, like the videos. Music needs **TV app 0.2.0** on the lobby TV — older versions don't let the music start by itself.
+
+> Use royalty-free music, or songs the hotel holds a licence for (LMKN). Commercial songs played in a public area need a licence.
+
 ## Setting up the lobby TV
 
 It runs the same **Zahill** app as the room TVs. In its settings (hold **OK** for 3 seconds on the welcome screen) type **lobby** as the **Room ID**, the same display token as the rooms, and **Save**. Then press **Zahill Welcome**. Set the TV's own **sleep timer to Never** so it stays on.

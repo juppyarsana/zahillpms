@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import LobbyMusicCard from '../components/LobbyMusicCard';
 
 const CATEGORIES = [
   { value: 'activity', label: 'Activity',  color: '#4ade80' },
@@ -206,6 +207,7 @@ export default function SettingsBoardCards() {
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Loading…</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <LobbyMusicCard />
           {grouped.map(group => (
             <div key={group.value} className="card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>

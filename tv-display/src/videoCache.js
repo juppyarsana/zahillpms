@@ -4,18 +4,19 @@
 // Guest Board is dropped from the TV's copy. Where Cache Storage is missing
 // (old WebView, plain http), the video simply streams from the server.
 const CACHE = 'lobby-videos-v1';
+export const MUSIC_CACHE = 'lobby-music-v1';   // the lobby's songs (migration 119), kept apart
 const hasCache = () => typeof window !== 'undefined' && 'caches' in window;
 
 let running = null;
 
 // Fetch every video not yet on the TV, one at a time; forget removed ones.
-export function precacheVideos(urls) {
+export function precacheVideos(urls, cacheName = CACHE) {
   if (!hasCache()) return Promise.resolve();
   const wanted = [...new Set(urls.filter(Boolean))];
   const job = (async () => {
     if (running) await running.catch(() => {});
-    if (!(await caches.open(CACHE).then(() => true, () => false))) return; // storage not working: stream instead
-    const cache = await caches.open(CACHE);
+    if (!(await caches.open(cacheName).then(() => true, () => false))) return; // storage not working: stream instead
+    const cache = await caches.open(cacheName);
     for (const req of await cache.keys()) {
       if (!wanted.includes(new URL(req.url).pathname)) await cache.delete(req);
     }
@@ -35,11 +36,11 @@ export function precacheVideos(urls) {
 // straight from the server (the first time round, while the copy is still
 // downloading, or when the TV's storage doesn't work). Call release() with the
 // result when done.
-export async function playableUrl(url) {
+export async function playableUrl(url, cacheName = CACHE) {
   if (!url) return null;
   if (!hasCache()) return url;
   try {
-    const res = await (await caches.open(CACHE)).match(url);
+    const res = await (await caches.open(cacheName)).match(url);
     if (!res) return url;
     return URL.createObjectURL(await res.blob());
   } catch {
