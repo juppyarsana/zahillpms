@@ -185,6 +185,25 @@ async function ackBookingRevision(revisionId) {
   return request('POST', `/booking_revisions/${encodeURIComponent(revisionId)}/ack`);
 }
 
+// ── Webhook (migration 123): Channex calls the PMS when a booking comes in ──
+
+async function listWebhooks(channexPropertyId) {
+  return (await listAll(`/webhooks?filter[property_id]=${encodeURIComponent(channexPropertyId)}`))
+    .map(w => ({ id: w.id, url: w.attributes?.callback_url, is_active: !!w.attributes?.is_active }));
+}
+
+async function createWebhook(channexPropertyId, callbackUrl) {
+  const data = await request('POST', '/webhooks', { webhook: {
+    property_id: channexPropertyId, callback_url: callbackUrl, event_mask: 'booking',
+    request_params: {}, headers: {}, is_active: true, send_data: false,
+  } });
+  return data.data?.id;
+}
+
+async function deleteWebhook(webhookId) {
+  return request('DELETE', `/webhooks/${encodeURIComponent(webhookId)}`);
+}
+
 function environment() {
   return /staging/i.test(BASE_URL) ? 'staging' : 'production';
 }
@@ -205,4 +224,7 @@ module.exports = {
   readAri,
   pullBookingRevisions,
   ackBookingRevision,
+  listWebhooks,
+  createWebhook,
+  deleteWebhook,
 };

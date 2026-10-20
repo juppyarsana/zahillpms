@@ -149,6 +149,7 @@ app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/exp
 app.use('/api/accounting', auth, moduleGuard('accounting'), require('./routes/accounting'));
 app.use('/api/yield', auth, moduleGuard('yield_management'), requireRole('owner'), require('./routes/yield'));
 app.use('/api/channel-manager', auth, moduleGuard('channel_manager'), require('./routes/channelManager'));
+app.use('/api/ota-inbox', auth, moduleGuard('channel_manager'), require('./routes/otaInbox'));
 // Reports & Alerts: free instant Telegram alerts for every property; the
 // scheduled reports are the paid `smart_reports` module, checked per report
 // inside the route file.
@@ -209,4 +210,5 @@ app.listen(PORT, async () => {
   require('./jobs').registerJobs();
   require('./services/channelSync').start().catch(err => console.error('[CHANNEL SYNC] start', err.message));
   require('./services/channelBookings').start();
+  setTimeout(() => require('./services/channelWebhook').ensureAll().catch(err => console.error('[CHANNEL WEBHOOK] start', err.message)), 15000);
 });

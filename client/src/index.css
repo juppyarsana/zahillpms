@@ -1012,3 +1012,14 @@ tr:hover td { background: #FAFAF8; }
 /* the last band (facts or tabs) follows the card's rounded bottom corners */
 .detail-header > :last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .detail-header .dh-top { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+
+/* ── OTA bookings: pop-up + menu counter (migration 123) ── */
+.nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #DC2626; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; flex-shrink: 0; }
+.nav-badge-dot { position: absolute; top: -4px; right: -10px; margin: 0; }
+.bottom-nav-icon { position: relative; }
+.ota-popup { position: fixed; bottom: 20px; left: 260px; z-index: 1200; width: 340px; max-width: calc(100vw - 32px); display: flex; flex-direction: column-reverse; gap: 8px; }
+.ota-popup-card { background: var(--surface, #fff); border: 1px solid var(--border, #E5E7EB); border-left: 4px solid; border-radius: 10px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); font-size: 14px; animation: ota-in .25s ease-out; }
+.ota-popup-more { display: flex; justify-content: flex-end; gap: 12px; align-items: center; font-size: 13px; padding: 0 4px; }
+.ota-popup-more a, .ota-popup-more .btn-link { background: var(--surface, #fff); border: 1px solid var(--border, #E5E7EB); border-radius: 999px; padding: 4px 10px; cursor: pointer; color: inherit; text-decoration: none; font-size: 13px; }
+@keyframes ota-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 767px) { .ota-popup { top: 8px; bottom: auto; right: 8px; left: 8px; width: auto; max-width: none; flex-direction: column; } }

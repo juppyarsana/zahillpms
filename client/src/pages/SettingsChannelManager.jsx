@@ -403,7 +403,12 @@ function BookingsCard() {
     setBusy(true);
     try { await api.post(`/api/channel-manager/revisions/${r.id}/handled`); await load(); } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   };
+  const webhookOn = async () => {
+    setBusy(true); setErr(null);
+    try { await api.post('/api/channel-manager/webhook'); await load(); } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
   const recent = (d?.recent || []).filter(r => !(d.open || []).some(o => o.id === r.id));
+  const wh = d?.webhook;
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -412,11 +417,21 @@ function BookingsCard() {
         <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={busy} onClick={pull}>{busy ? 'Checking…' : 'Check now'}</button>
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
-        Every minute the PMS reads new, changed and cancelled OTA bookings from Channex and puts them in: the first free room of the type,
-        the guest, the OTA as the source, the price, who collects the money. New ones are on Reservations → ⚠ To check
-        and on Telegram (New booking alert). What the PMS can't do safely — no free room, a guest already checked in — waits here for you.
-        Last read: {when(d?.last_pull_at)}.
+        The PMS reads new, changed and cancelled OTA bookings from Channex and puts them in: the first free room of the type,
+        the guest, the OTA as the source, the price, who collects the money. Front desk sees each one as a pop-up and on
+        🌐 OTA bookings (also Reservations → ⚠ To check and the Telegram New booking alert). What the PMS can't do safely — no free room,
+        a guest already checked in — waits there and here for you. Last read: {when(d?.last_pull_at)}.
       </div>
+      {wh && (
+        <div style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          {wh.on
+            ? <span>⚡ <b>Instant:</b> Channex tells the PMS the moment a booking comes in{wh.last_webhook_at ? ` — last call ${when(wh.last_webhook_at)}` : ''}. The one-minute read stays as a back-up.</span>
+            : !wh.public_url
+              ? <span style={{ color: 'var(--text-muted)' }}>⏱ Read every minute. (Instant needs the server's public address — not on a test laptop.)</span>
+              : <><span style={{ color: 'var(--warning-text)' }}>⏱ Read every minute — Channex is not set to call the PMS{wh.error ? `: ${wh.error}` : ''}.</span>
+                  <button className="btn btn-secondary btn-sm" disabled={busy} onClick={webhookOn}>Turn on instant</button></>}
+        </div>
+      )}
       {(err || d?.last_pull_error) && <div className="alert alert-error"><div>{err || `Channex could not be read: ${d.last_pull_error}`}</div></div>}
       {d?.open?.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>

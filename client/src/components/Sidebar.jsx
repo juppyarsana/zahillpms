@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { useOtaInbox } from './OtaInbox';
 
-function SidebarLink({ to, end, icon, label }) {
+function SidebarLink({ to, end, icon, label, badge }) {
   return (
     <NavLink to={to} end={end} className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}>
       <span className="sidebar-link-icon">{icon}</span>
       <span className="sidebar-link-label">{label}</span>
+      {badge > 0 && <span className="nav-badge">{badge}</span>}
     </NavLink>
   );
 }
@@ -53,11 +55,13 @@ export default function Sidebar() {
   const { user, logout, can, hasModule } = useAuth();
   const { branding } = useSettings();
   const isOwner = user?.role === 'owner';
+  const { badge: otaBadge } = useOtaInbox();
 
   // ── daily nav ──────────────────────────────────────────
   const frontDeskItems = [
     can('reservations')  && hasModule('reservations') && { to: '/availability',  icon: '🔎', label: 'Availability' },
     can('reservations')  && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Reservations' },
+    can('reservations')  && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },
     // Quick Check-in is reached from Check-in / out (⚡ Quick Mode); only staff
     // who can't open Check-in / out get it as its own menu item.
     can('quick_checkin') && !can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick Check-in' },

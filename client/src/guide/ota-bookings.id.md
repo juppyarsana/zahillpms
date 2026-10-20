@@ -1,6 +1,12 @@
 # Booking dari OTA
 
-Kalau hotel sudah terhubung ke channel manager (Channex), booking dari Agoda, Booking.com, Traveloka dan OTA lain masuk ke PMS **sendiri**, dalam sekitar satu menit. Perubahan dan pembatalan di OTA juga masuk sendiri. Tidak perlu diketik.
+Kalau hotel sudah terhubung ke channel manager (Channex), booking dari Agoda, Booking.com, Traveloka dan OTA lain masuk ke PMS **sendiri**, biasanya dalam beberapa detik (paling lama satu menit). Perubahan dan pembatalan di OTA juga masuk sendiri. Tidak perlu diketik.
+
+## Cara melihatnya
+
+- **Pop-up** di kanan atas setiap halaman: *New Agoda booking*, *booking changed*, *booking cancelled* atau *needs you*, dengan nama tamu, kamar dan tanggal, plus bunyi singkat. **Open** membuka booking-nya, **OK** menutupnya — untuk semua orang di front desk, jadi cukup satu orang yang menekan. **All seen** menutup semuanya.
+- **🌐 OTA bookings** di menu (Front Desk), dengan angka merah selama ada yang baru atau butuh Anda: yang butuh Anda paling atas, lalu hari ini, lalu sebelumnya. **↻ Check now** langsung membaca Channex.
+- Kotak **Dashboard** *From the OTAs — today*: berapa yang baru / diubah / dibatalkan hari ini dan apa yang butuh Anda.
 
 ## Booking OTA baru
 
@@ -17,7 +23,9 @@ Setiap booking muncul di **Reservations → ⚠ To check** dengan poin:
 - **Room picked automatically** — pindahkan dengan **Change Room** kalau ada kamar yang lebih cocok (poinnya hilang sendiri), atau tekan **✓ Checked**.
 - **Guest pays at the hotel** — di sebagian booking Booking.com / Expedia hotel yang menagih, bukan OTA. **Tagih harga kamar** saat check-in atau check-out seperti booking langsung; PMS akan memintanya.
 
-Di booking OTA biasa tamu sudah bayar ke OTA: kamar tidak ditagih di front desk (PMS menulis "Room — paid by Agoda"). Extra tetap dibayar tamu.
+Di booking OTA biasa tamu sudah bayar ke OTA, jadi booking langsung **Confirmed** dan kamar tidak ditagih di front desk (PMS menulis "Room — paid by Agoda"). **Jangan tandai pembayaran kamar sebagai diterima** saat check-in atau check-out: baris kamar yang masih terbuka adalah utang OTA ke hotel, dan ditandai diterima saat uang dari OTA masuk ke bank. Extra tetap dibayar tamu.
+
+Booking *Guest pays at the hotel* tetap **Pending** sampai tamu membayar, seperti booking langsung. Kalau OTA kemudian mengubah booking dari yang satu ke yang lain, pop-up menulis *needs you* dan status ikut berubah.
 
 ## Diubah atau dibatalkan di OTA
 
@@ -37,6 +45,6 @@ Beberapa hal tidak dikerjakan PMS sendiri:
 - tipe kamar yang belum di-link,
 - perubahan pada booking yang dulu dimasukkan manual.
 
-Semua itu muncul di **Settings → Channel Manager → 4. Bookings from the OTAs** (owner) dan di Telegram. Selesaikan (pindahkan tamu, telepon OTA, masukkan atau ubah booking secara manual), lalu tekan **Done — handled**.
+Semua itu muncul sebagai pop-up *needs you*, paling atas di **🌐 OTA bookings**, di Dashboard dan di Telegram. Selesaikan (pindahkan tamu, telepon OTA, masukkan atau ubah booking secara manual), lalu tekan **Done — handled**.
 
 > Jangan mengetik booking OTA secara manual kalau hotel sudah terhubung — booking-nya jadi dua. Masukkan manual hanya kalau PMS memintanya.

@@ -38,6 +38,7 @@ const ratePlanService = require('./ratePlanService');
 const telegramService = require('./telegramService');
 const { stayNights: stayNightList } = require('./folioService');
 const health = require('./channelHealth');
+const { recomputeBookingStatus } = require('./paymentStatusService');
 
 const PROVIDER = 'channex';
 const PULL_MS = 60_000;
@@ -226,6 +227,7 @@ async function linkExisting(client, propertyId, r, rooms, same) {
               to_check = COALESCE(to_check, '[]'::jsonb) || $3::jsonb, to_check_done_at = NULL, to_check_done_by = NULL
         WHERE id = $1`, [b.id, r.collect, JSON.stringify(points)]);
     await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by ${how}; not booked again.`);
+    await recomputeBookingStatus(client, b.id);
   }
   return {
     result: 'applied', bookingIds: same.map(s => s.b.id), channelBookingId: cb.id,
@@ -303,6 +305,7 @@ async function createFromRevision(client, propertyId, r, L) {
     if (!p.plan) points.push(`The ${r.ota} rate plan is not linked to a meal plan in the PMS — meal plan set to ${defaultPlan?.name || 'the default'}; check it`);
     if (!(p.room.amount > 0)) points.push(`No price came from ${r.ota} — set it with Edit Price`);
     await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb WHERE id = $1', [b.id, r.collect, JSON.stringify(points)]);
+    await recomputeBookingStatus(client, b.id);
     await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
       [cb.id, p.room.id, b.id]);
     await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${r.collect === 'property' ? 'the hotel collects' : r.collect === 'ota' ? `paid to ${r.ota}` : 'who collects not given'}.`);
@@ -480,6 +483,7 @@ async function applyChange(client, propertyId, r, cb, L) {
         const cp = collectPoint(r); if (cp) points.push(cp);
         await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb, reservation_group_id = $4 WHERE id = $1',
           [made.booking.id, r.collect, JSON.stringify(points), cb.reservation_group_id]);
+        await recomputeBookingStatus(client, made.booking.id);
         await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, made.booking.id]);
         await note(client, made.booking.id, `Room added on ${r.ota} via the channel manager (reservation ${r.code}). ${fmtIDR(room.amount)}.`);
         changes.push(`room ${unit.name} added`); touched.push(made.booking.id);
@@ -493,7 +497,16 @@ async function applyChange(client, propertyId, r, cb, L) {
     }
     // Who collects may change (e.g. a virtual card added later).
     if (r.collect !== cb.payment_collect) {
-      await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [mapped.map(m => m.booking_id).filter(Boolean), r.collect]);
+      const ids = mapped.map(m => m.booking_id).filter(Boolean);
+      await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [ids, r.collect]);
+      for (const id of ids) {
+        await recomputeBookingStatus(client, id);
+        await note(client, id, `${r.ota} changed who collects the money: ${r.collect === 'property' ? 'the hotel collects now' : r.collect === 'ota' ? `paid to ${r.ota} now` : 'not given'} (channel manager, reservation ${r.code}).`);
+      }
+      const cp = collectPoint(r);
+      if (cp) problems.push(cp);
+      else changes.push(`paid to ${r.ota} now — nothing to collect from the guest`);
+      touched.push(...ids);
     }
   }
   await closeGroupIfEmpty(client, cb.reservation_group_id);
@@ -619,8 +632,9 @@ async function ack(propertyId, revisionId) {
 // ── Reading the feed ─────────────────────────────────────────
 
 const pulling = new Set();
+const again = new Set();   // a webhook came in while reading — read once more after
 async function pullProperty(propertyId) {
-  if (pulling.has(propertyId)) return { busy: true };
+  if (pulling.has(propertyId)) { again.add(propertyId); return { busy: true }; }
   pulling.add(propertyId);
   let handled = 0, failed = 0;
   try {
@@ -648,7 +662,13 @@ async function pullProperty(propertyId) {
     throw err;
   } finally {
     pulling.delete(propertyId);
+    if (again.delete(propertyId)) setTimeout(() => pullProperty(propertyId).catch(() => {}), 500);
   }
+}
+
+// The Channex webhook said something came in: read now (never waits on it).
+function requestPull(propertyId) {
+  pullProperty(propertyId).catch(err => console.error('[CHANNEL BOOKINGS] webhook pull', propertyId, err.message));
 }
 
 let timer = null;
@@ -697,4 +717,4 @@ async function markHandled(propertyId, id, userId) {
   return row;
 }
 
-module.exports = { parseRevision, handleRevision, pullProperty, pullAll, start, list, markHandled };
+module.exports = { parseRevision, handleRevision, pullProperty, requestPull, pullAll, start, list, markHandled };

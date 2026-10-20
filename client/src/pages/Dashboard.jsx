@@ -7,6 +7,7 @@ import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import api from '../services/api';
 import { TodaySection, MonthSection, SectionHeading } from '../components/DashboardSections';
+import { OtaTodayBox } from '../components/OtaInbox';
 import { propertyClock, propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -1451,6 +1452,7 @@ export default function Dashboard() {
       <SectionHeading title="Today" />
       <TodaySection today={data.today} occupancy={occupancy}
         canLists={can('guest_lists')} canReservations={can('reservations') && hasModule('reservations')} />
+      <OtaTodayBox />
 
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>

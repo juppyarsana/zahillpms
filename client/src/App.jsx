@@ -53,6 +53,8 @@ import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
 import Accounting from './pages/Accounting';
+import OtaBookings from './pages/OtaBookings';
+import { OtaInboxProvider, OtaPopup, useOtaInbox } from './components/OtaInbox';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
@@ -79,9 +81,11 @@ function BottomNav() {
   // Grouped "More" drawer — mirrors the desktop sidebar's grouping so the two
   // navs stay in sync (and so nothing is unreachable on mobile, which used to
   // be the case for Night Audit / Agent Billing / Room Controllers / Guest Board).
+  const { badge: otaBadge } = useOtaInbox();
   const moreGroups = [
     { label: 'Front Desk', items: [
       can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
+      can('reservations') && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },
       can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('forecast') && hasModule('reservations') && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
@@ -156,7 +160,7 @@ function BottomNav() {
             className={`bottom-nav-item${moreActive || drawerOpen ? ' active' : ''}`}
             onClick={() => setDrawerOpen(true)}
           >
-            <span className="bottom-nav-icon">☰</span>
+            <span className="bottom-nav-icon">☰{otaBadge > 0 && <span className="nav-badge nav-badge-dot">{otaBadge}</span>}</span>
             <span className="bottom-nav-label">More</span>
           </button>
         )}
@@ -188,6 +192,7 @@ function BottomNav() {
                   >
                     <span style={{ fontSize: 20 }}>{item.icon}</span>
                     <span>{item.label}</span>
+                    {item.badge > 0 && <span className="nav-badge">{item.badge}</span>}
                   </button>
                 ))}
               </div>
@@ -218,6 +223,7 @@ function Layout({ children }) {
   const { branding } = useSettings();
   return (
     <AskProvider>
+     <OtaInboxProvider>
       <div className="app-shell">
         <Sidebar />
         <div className="app-main">
@@ -232,7 +238,9 @@ function Layout({ children }) {
         <CallBanner />
         <AskFab />
         <CallRoomFab />
+        <OtaPopup />
       </div>
+     </OtaInboxProvider>
     </AskProvider>
   );
 }
@@ -302,6 +310,7 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
+                  <Route path="/ota-bookings"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="channel_manager"><OtaBookings /></RequireModule></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
                   <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Availability /></RequireModule></RequireMenu>} />
                   <Route path="/events"           element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><Events /></RequireModule></RequireMenu>} />

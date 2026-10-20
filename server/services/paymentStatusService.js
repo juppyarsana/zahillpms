@@ -26,10 +26,20 @@ async function recomputeBookingStatus(client, bookingId) {
     [bookingId]
   );
   const { rows: [bkg] } = await client.query(
-    'SELECT status, deposit_amount FROM bookings WHERE id = $1',
+    'SELECT status, deposit_amount, payment_collect FROM bookings WHERE id = $1',
     [bookingId]
   );
   if (!bkg || !['pending', 'deposit_paid', 'confirmed'].includes(bkg.status)) return bkg?.status;
+
+  // Paid to the OTA (channel manager, migration 121): the guest owes the hotel
+  // nothing for the room — confirmed. Its pending room line is what the OTA
+  // still has to pay the hotel, not something to chase the guest for.
+  if (bkg.payment_collect === 'ota') {
+    if (bkg.status !== 'confirmed') {
+      await client.query("UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1", [bookingId]);
+    }
+    return 'confirmed';
+  }
 
   const noDeposit = !bkg.deposit_amount || parseFloat(bkg.deposit_amount) === 0;
   const deposits = pmts.filter(p => p.type === 'deposit');

@@ -9,6 +9,7 @@ const cm = require('../services/channelManagerService');
 const channelSync = require('../services/channelSync');
 const channelBookings = require('../services/channelBookings');
 const channelHealth = require('../services/channelHealth');
+const channelWebhook = require('../services/channelWebhook');
 
 router.use(requireRole('owner'));
 
@@ -48,7 +49,22 @@ router.get('/compare', async (req, res) => {
 // GET /api/channel-manager/bookings — stage 3: reservations read from Channex
 // ({ open: needing FO, recent, last_pull_at, last_pull_error }).
 router.get('/bookings', async (req, res) => {
-  try { res.json(await channelBookings.list(req.propertyId)); } catch (err) { send(res, err); }
+  try {
+    const [list, webhook] = await Promise.all([channelBookings.list(req.propertyId), channelWebhook.status(req.propertyId)]);
+    res.json({ ...list, webhook });
+  } catch (err) { send(res, err); }
+});
+
+// POST /api/channel-manager/webhook — (re)register the Channex webhook so
+// bookings arrive within seconds (migration 123).
+router.post('/webhook', async (req, res) => {
+  try {
+    const out = await channelWebhook.ensure(req.propertyId);
+    if (out.state === 'no_url') return res.status(400).json({ error: 'This server has no public https address (SERVER_PUBLIC_URL) — bookings are read every minute instead', code: 'NO_URL' });
+    if (out.state === 'not_linked') return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    if (out.state === 'error') return res.status(502).json({ error: out.error, webhook: await channelWebhook.status(req.propertyId) });
+    res.json({ ok: true, webhook: await channelWebhook.status(req.propertyId) });
+  } catch (err) { send(res, err); }
 });
 
 // POST /api/channel-manager/bookings/pull — read the feed now.
@@ -86,13 +102,18 @@ router.post('/sync', async (req, res) => {
 router.put('/property', async (req, res) => {
   try {
     const external_id = await cm.linkProperty(req.propertyId, { external_id: req.body.external_id, create: !!req.body.create });
+    channelWebhook.ensure(req.propertyId).catch(err => console.error('[CHANNEL WEBHOOK] link', err.message));
     res.json({ ok: true, external_id });
   } catch (err) { send(res, err); }
 });
 
 // DELETE /api/channel-manager/property
 router.delete('/property', async (req, res) => {
-  try { await cm.unlinkProperty(req.propertyId); res.json({ ok: true }); } catch (err) { send(res, err); }
+  try {
+    await cm.unlinkProperty(req.propertyId);
+    await channelWebhook.remove(req.propertyId).catch(() => {});
+    res.json({ ok: true });
+  } catch (err) { send(res, err); }
 });
 
 // PUT /api/channel-manager/room-types/:id { external_id } | { create: true }

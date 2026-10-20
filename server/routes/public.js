@@ -1,6 +1,20 @@
 const router = require('express').Router();
 const db = require('../db');
 
+// POST /api/public/channex/webhook/:token — Channex says a booking came in,
+// changed or was cancelled (migration 123). Only triggers an immediate read of
+// the booking feed; the token is the secret. Always answers fast.
+router.post('/channex/webhook/:token', async (req, res) => {
+  try {
+    const ok = await require('../services/channelWebhook').receive(req.params.token, req.body);
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[CHANNEL WEBHOOK] receive', err.message);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 // GET /api/public/properties/:slug/branding — no auth. Used by the login
 // screen to show the right property's logo/name before credentials are
 // submitted. Cosmetic only — does not affect how /api/auth/login resolves
