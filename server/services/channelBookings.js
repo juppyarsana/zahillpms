@@ -591,7 +591,9 @@ async function handleRevision(propertyId, raw) {
     if (!seen.acked_at) await ack(propertyId, r.revisionId);
     return true;
   }
-  const client = await db.pool.connect();
+  let client;
+  try { client = await db.pool.connect(); }
+  catch (err) { console.error('[CHANNEL BOOKINGS]', r.revisionId, 'no database:', err.message); return false; }   // not acknowledged — tried again
   let out;
   try {
     await client.query('BEGIN');
@@ -664,6 +666,7 @@ let again = false;       // something came in while reading — read once more a
 let lastPullAt = 0;
 let pullFails = 0;
 let pullPausedUntil = 0;
+let retrySoon = false;   // a revision failed to save — read again on the next minute, not in 15
 
 async function readFeed() {
   const props = await linkedProperties();
@@ -684,6 +687,7 @@ async function readFeed() {
       if (!progressed) break;   // only revisions that keep failing (or aren't ours) are left
     }
     lastPullAt = Date.now(); pullFails = 0; pullPausedUntil = 0;
+    retrySoon = [...counts.values()].some(c => c.failed > 0);
     for (const p of props) {
       await db.query(
         `INSERT INTO channel_sync_state (property_id, last_pull_at, last_pull_error) VALUES ($1, NOW(), NULL)
@@ -737,22 +741,25 @@ async function handleWebhook(propertyId, revisionId) {
     const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
     const rev = await channex.getBookingRevision(revisionId);
     if (!rev || !p || revProperty(rev) !== p.channex_property_id) return void pullAll().catch(() => {});
-    await withLock(propertyId, () => handleRevision(propertyId, rev));
+    const done = await withLock(propertyId, () => handleRevision(propertyId, rev));
+    if (!done) retrySoon = true;   // not saved, not acknowledged — the next minute's read tries again
   } catch (err) {
     console.error('[CHANNEL BOOKINGS] webhook', propertyId, err.message);
+    retrySoon = true;
     pullAll().catch(() => {});
   }
 }
 
 // Every minute: read when some linked property has no working webhook yet (a
-// webhook counts once Channex has called it), else every 15 minutes.
+// webhook counts once Channex has called it) or a revision failed to save,
+// else every 15 minutes.
 async function tick() {
   try {
     if (Date.now() < pullPausedUntil) return;
     const props = await linkedProperties();
     if (!props.length) return;
     const allInstant = props.every(p => p.webhook_id && p.last_webhook_at);
-    if (allInstant && Date.now() - lastPullAt < BACKUP_MS) return;
+    if (allInstant && !retrySoon && Date.now() - lastPullAt < BACKUP_MS) return;
     await pullAll();
   } catch (err) {
     console.error('[CHANNEL BOOKINGS] read', err.message);
@@ -793,4 +800,4 @@ async function markHandled(propertyId, id, userId) {
   return row;
 }
 
-module.exports = { parseRevision, handleRevision, pullProperty, pullAll, handleWebhook, start, list, markHandled };
+module.exports = { parseRevision, handleRevision, pullProperty, pullAll, handleWebhook, tick, start, list, markHandled };
