@@ -1,13 +1,11 @@
-// Channex channel-manager adapter — spike/validation only (see migration 060
-// and routes/channelManager.js). Deliberately vendor-specific and isolated
+// Channex channel-manager adapter (migrations 060, 117; routes/channelManager.js). Deliberately vendor-specific and isolated
 // behind a plain function interface (isConfigured/push*/pull*) so a future
 // beds24Adapter.js or staahAdapter.js could implement the same shape without
 // any caller (routes/channelManager.js) needing to change.
 //
-// NOTE: the request/response field names below (property/room_type/rate_plan
-// creation especially) are best-effort from Channex's public docs
-// (docs.channex.io) — verify against the live staging Swagger UI and adjust
-// as needed. Expected iteration for a spike, not a sign something's broken.
+// Field names checked against Channex staging (2026-09-17 spike, 2026-10-20
+// stage 1). CHANNEX_API_URL picks staging or production; one API key covers
+// every property in that Channex account.
 
 const BASE_URL = process.env.CHANNEX_API_URL || 'https://staging.channex.io/api/v1';
 
@@ -32,48 +30,91 @@ async function request(method, path, body) {
   return data;
 }
 
-// ── One-time setup (spike scope: one property, one room type, one rate plan) ──
+// ── Reading the account (setup screen) ───────────────────────
+
+// Every page of a list endpoint (Channex pages at 100 at most).
+async function listAll(path) {
+  const out = [];
+  const sep = path.includes('?') ? '&' : '?';
+  for (let page = 1; page <= 50; page++) {
+    const data = await request('GET', `${path}${sep}pagination[page]=${page}&pagination[limit]=100`);
+    const rows = data.data || [];
+    out.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return out;
+}
+
+async function listProperties() {
+  return (await listAll('/properties')).map(p => ({
+    id: p.id, title: p.attributes?.title, currency: p.attributes?.currency, timezone: p.attributes?.timezone,
+  }));
+}
+
+async function listRoomTypes(channexPropertyId) {
+  return (await listAll(`/room_types?filter[property_id]=${encodeURIComponent(channexPropertyId)}`)).map(rt => ({
+    id: rt.id, title: rt.attributes?.title, count_of_rooms: rt.attributes?.count_of_rooms,
+    occ_adults: rt.attributes?.occ_adults,
+  }));
+}
+
+async function listRatePlans(channexPropertyId) {
+  return (await listAll(`/rate_plans?filter[property_id]=${encodeURIComponent(channexPropertyId)}`)).map(rp => ({
+    id: rp.id, title: rp.attributes?.title, sell_mode: rp.attributes?.sell_mode,
+    meal_type: rp.attributes?.meal_type, currency: rp.attributes?.currency,
+    room_type_id: rp.relationships?.room_type?.data?.id || null,
+    occupancy: (rp.attributes?.options || []).find(o => o.is_primary)?.occupancy ?? null,
+  }));
+}
+
+// ── Setup: create / update ───────────────────────────────────
 
 async function createProperty({ title, currency = 'IDR', timezone = 'Asia/Makassar' }) {
   const data = await request('POST', '/properties', { property: { title, currency, timezone } });
   return data.data; // Channex wraps responses as { data: {...} }
 }
 
-// Idempotent — a prior attempt may have created the room type on Channex's
-// side but failed on a later step (e.g. rate plan validation) before we
-// could save the mapping locally, so a naive create-every-time would hit
-// Channex's "Duplication in Room Type title is not allowed" error on retry.
-async function createRoomType(channexPropertyId, unit) {
-  const existing = await request('GET', `/room_types?filter[property_id]=${encodeURIComponent(channexPropertyId)}`);
-  const match = (existing.data || []).find(rt => rt.attributes?.title === unit.name);
-  if (match) return { id: match.id, ...match.attributes };
-
+// A PMS room type → one Channex room type with `count` rooms.
+async function createRoomType(channexPropertyId, { title, count, maxGuests }) {
   const data = await request('POST', '/room_types', {
     room_type: {
       property_id: channexPropertyId,
-      title: unit.name,
-      count_of_rooms: 1,
-      occ_adults: unit.max_guests || 2,
+      title,
+      count_of_rooms: count,
+      occ_adults: maxGuests || 2,
       occ_children: 0,
       occ_infants: 0,
+      default_occupancy: maxGuests || 2,
     },
   });
-  return data.data;
+  return { id: data.data.id, ...data.data.attributes };
 }
 
-async function createRatePlan(channexPropertyId, channexRoomTypeId, ratePlan) {
-  const data = await request('POST', '/rate_plans', {
-    rate_plan: {
-      property_id: channexPropertyId,
-      room_type_id: channexRoomTypeId,
-      title: ratePlan.name,
-      currency: 'IDR',
-      sell_mode: 'per_room',
-      rate_mode: 'manual',
-      options: [{ occupancy: 1, is_primary: true, rate: 0 }],
-    },
-  });
-  return data.data;
+async function updateRoomType(channexRoomTypeId, { title, count, maxGuests }) {
+  const room_type = {};
+  if (title !== undefined) room_type.title = title;
+  if (count !== undefined) room_type.count_of_rooms = count;
+  if (maxGuests !== undefined) { room_type.occ_adults = maxGuests; room_type.default_occupancy = maxGuests; }
+  const data = await request('PUT', `/room_types/${encodeURIComponent(channexRoomTypeId)}`, { room_type });
+  return { id: data.data.id, ...data.data.attributes };
+}
+
+// A (room type, meal plan) pair → one Channex rate plan, sold per room at
+// the room type's full occupancy (the price the PMS sends is for that many
+// guests, meal plan included).
+async function createRatePlan(channexPropertyId, channexRoomTypeId, { title, occupancy, mealType }) {
+  const rate_plan = {
+    property_id: channexPropertyId,
+    room_type_id: channexRoomTypeId,
+    title,
+    currency: 'IDR',
+    sell_mode: 'per_room',
+    rate_mode: 'manual',
+    options: [{ occupancy: occupancy || 2, is_primary: true, rate: 0 }],
+  };
+  if (mealType) rate_plan.meal_type = mealType;
+  const data = await request('POST', '/rate_plans', { rate_plan });
+  return { id: data.data.id, ...data.data.attributes };
 }
 
 // ── ARI push ─────────────────────────────────────────────────
@@ -117,10 +158,19 @@ async function ackBookingRevision(revisionId) {
   return request('POST', `/booking_revisions/${encodeURIComponent(revisionId)}/ack`);
 }
 
+function environment() {
+  return /staging/i.test(BASE_URL) ? 'staging' : 'production';
+}
+
 module.exports = {
   isConfigured,
+  environment,
+  listProperties,
+  listRoomTypes,
+  listRatePlans,
   createProperty,
   createRoomType,
+  updateRoomType,
   createRatePlan,
   pushAvailability,
   pushRates,
