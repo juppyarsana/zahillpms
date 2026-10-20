@@ -175,6 +175,7 @@ async function unlinkProperty(propertyId) {
     'SELECT count(*)::int AS n FROM channel_room_types WHERE property_id = $1 AND provider = $2', [propertyId, PROVIDER]);
   if (n > 0) throw httpError(409, 'Unlink every room type first', 'HAS_ROOM_TYPES');
   await db.query('UPDATE properties SET channex_property_id = NULL WHERE id = $1', [propertyId]);
+  await db.query('DELETE FROM channel_sync_values WHERE property_id = $1', [propertyId]);   // stage 2: nothing is held there any more
 }
 
 async function loadRoomType(propertyId, roomTypeId) {

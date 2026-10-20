@@ -147,6 +147,33 @@ async function pushRates(channexPropertyId, channexRatePlanId, values) {
   });
 }
 
+// Stage 2 (services/channelSync.js): one request carrying many values, each
+// a date range — kind 'availability' ({ room_type_id, date_from, date_to,
+// availability }) or 'restrictions' ({ rate_plan_id, date_from, date_to,
+// rate as a decimal string }). Both dates inclusive. Returns Channex's
+// warnings (values it did not take), [] when all went in.
+async function pushAri(kind, values) {
+  if (!values.length) return [];
+  if (!['availability', 'restrictions'].includes(kind)) throw new Error(`Unknown ARI kind ${kind}`);
+  const data = await request('POST', `/${kind}`, { values });
+  return data?.meta?.warnings || [];
+}
+
+// What Channex holds for a date range (checking a send):
+// { availability: { roomTypeId: { date: n } }, rates: { ratePlanId: { date: "123.00" } } }
+async function readAri(channexPropertyId, dateFrom, dateTo) {
+  const q = `filter[property_id]=${encodeURIComponent(channexPropertyId)}&filter[date][gte]=${dateFrom}&filter[date][lte]=${dateTo}`;
+  const [avail, restr] = await Promise.all([
+    request('GET', `/availability?${q}`),
+    request('GET', `/restrictions?${q}&filter[restrictions]=rate`),
+  ]);
+  const rates = {};
+  for (const [rp, days] of Object.entries(restr?.data || {})) {
+    rates[rp] = Object.fromEntries(Object.entries(days).map(([d, v]) => [d, v.rate]));
+  }
+  return { availability: avail?.data || {}, rates };
+}
+
 // ── Bookings (pull, inspect-only for this spike) ────────────
 
 async function pullBookingRevisions(channexPropertyId) {
@@ -174,6 +201,8 @@ module.exports = {
   createRatePlan,
   pushAvailability,
   pushRates,
+  pushAri,
+  readAri,
   pullBookingRevisions,
   ackBookingRevision,
 };

@@ -1,6 +1,7 @@
 // Settings → Channel Manager (owner, `channel_manager` module). Stage 1:
 // link this hotel to its Channex property, then each room type and meal plan
-// to a Channex room type / rate plan. Server: routes/channelManager.js.
+// to a Channex room type / rate plan. Stage 2: the "Sending to Channex"
+// card (free rooms + prices, services/channelSync.js). Server: routes/channelManager.js.
 
 import { useEffect, useState } from 'react';
 import api from '../services/api';
@@ -25,6 +26,15 @@ export default function SettingsChannelManager() {
     .catch(err => setError(errText(err)))
     .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
+
+  // The send status changes by itself (the server sends within seconds of a change).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      api.get('/api/channel-manager/sync').then(r => setData(d => (d ? { ...d, sync: r.data.sync } : d))).catch(() => {});
+    }, 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   const run = async (key, fn) => {
     setBusy(key); setError(null);
@@ -69,8 +79,9 @@ export default function SettingsChannelManager() {
         <>
           <div className="alert alert-info" style={{ marginBottom: 12 }}>
             <div>
-              <b>Step 1 of the connection.</b> Linking only tells Channex which rooms the hotel has — nothing is sent to the OTAs yet.
-              Free rooms, prices and bookings come in the next steps.
+              Once a room type and its meal plans are linked, the PMS keeps Channex up to date by itself: free rooms and the nightly
+              price for the next {data.sync_days || 365} nights, sent within about half a minute of any booking, room or price change.
+              Channex passes them to the OTAs only for channels connected there. OTA bookings coming into the PMS is the next step.
             </div>
           </div>
 
@@ -221,7 +232,64 @@ export default function SettingsChannelManager() {
               })}
             </div>
           )}
+
+          {/* ── 3. Sending free rooms and prices ──────────────────── */}
+          {data.property && linkedTypes > 0 && (
+            <SyncCard sync={data.sync} days={data.sync_days} busy={busy}
+              onSend={() => run('sync', () => api.post('/api/channel-manager/sync'))} />
+          )}
         </>
+      )}
+    </div>
+  );
+}
+
+function when(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  const at = d.toLocaleString('en-GB', { timeZone: 'Asia/Makassar', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return mins < 1 ? `just now (${at})` : mins < 60 ? `${mins} min ago (${at})` : at;
+}
+
+function SyncCard({ sync, days, busy, onSend }) {
+  const last = sync?.last_sent || null;
+  const failing = sync?.last_error && (!sync.last_ok_at || new Date(sync.last_error_at) > new Date(sync.last_ok_at));
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+        <div className="card-title" style={{ margin: 0 }}>3. Sending to Channex</div>
+        {failing ? <span className="badge badge-red">Not sending — retrying</span>
+          : sync?.waiting || sync?.running ? <span className="badge badge-yellow">Sending changes…</span>
+          : sync?.last_ok_at ? <span className="badge badge-green">Up to date</span>
+          : <span className="badge badge-gray">Nothing sent yet</span>}
+        <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={!!busy} onClick={onSend}>
+          {busy === 'sync' ? 'Sending…' : 'Send everything now'}
+        </button>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
+        Free rooms per room type and the price per meal plan (normal rate incl. pricing periods + meal plan for the room type's
+        maximum guests, service &amp; tax included) for the next {days || 365} nights. Changes go within about half a minute; everything is
+        sent again every night at 04:10.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13 }}>
+        <div><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Last sent</div>{when(sync?.last_ok_at)}</div>
+        <div><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Last full send</div>{when(sync?.last_full_at)}</div>
+        {last && (
+          <div><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Last send</div>
+            {last.nights_changed ? `${last.nights_changed} nights changed (${last.availability_ranges} room · ${last.rate_ranges} price updates)` : 'nothing had changed'}
+          </div>
+        )}
+      </div>
+      {failing && (
+        <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>
+          <div>Channex refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again every minute: {sync.last_error}</div>
+        </div>
+      )}
+      {last?.warnings?.length > 0 && (
+        <div className="alert alert-warn" style={{ marginTop: 12, marginBottom: 0 }}>
+          <div>Channex did not take some values: {last.warnings.map(w => JSON.stringify(w)).join(' · ').slice(0, 400)}</div>
+        </div>
       )}
     </div>
   );

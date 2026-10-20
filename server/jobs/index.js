@@ -25,6 +25,17 @@ function registerJobs() {
 
   console.log('[Jobs] Night audit scheduled at 03:00 WITA (Bali)');
 
+  // Channel manager (migration 120): send every linked property's free rooms
+  // and prices again in full — after the night audit and the yield run, and
+  // it adds the new last night of the 365-night window.
+  cron.schedule('10 4 * * *', async () => {
+    try {
+      await require('../services/channelSync').syncAllFull();
+    } catch (err) {
+      console.error('[Jobs] Channel full resend failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
   // Competitor ratings — daily at 06:00 WITA
   cron.schedule('0 6 * * *', async () => {
     try {

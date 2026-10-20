@@ -6,6 +6,7 @@
 const router = require('express').Router();
 const requireRole = require('../middleware/role');
 const cm = require('../services/channelManagerService');
+const channelSync = require('../services/channelSync');
 
 router.use(requireRole('owner'));
 
@@ -18,7 +19,29 @@ function send(res, err) {
 
 // GET /api/channel-manager/setup
 router.get('/setup', async (req, res) => {
-  try { res.json(await cm.getSetup(req.propertyId)); } catch (err) { send(res, err); }
+  try {
+    const [setup, sync] = await Promise.all([cm.getSetup(req.propertyId), channelSync.status(req.propertyId)]);
+    res.json({ ...setup, sync, sync_days: channelSync.SYNC_DAYS });
+  } catch (err) { send(res, err); }
+});
+
+// GET /api/channel-manager/sync — the send status alone (the page polls it;
+// /setup also reads Channex, too heavy to repeat).
+router.get('/sync', async (req, res) => {
+  try { res.json({ sync: await channelSync.status(req.propertyId) }); } catch (err) { send(res, err); }
+});
+
+// POST /api/channel-manager/sync — send every night's free rooms and prices
+// again now (stage 2). Waits for the send and returns what went.
+router.post('/sync', async (req, res) => {
+  try {
+    const result = await channelSync.runSync(req.propertyId, 'manual');
+    if (result.busy) return res.status(409).json({ error: 'A send is already running — try again in a moment', code: 'BUSY' });
+    if (result.skipped) return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    res.json({ ok: true, result, sync: await channelSync.status(req.propertyId) });
+  } catch (err) {
+    res.status(502).json({ error: err.message, sync: await channelSync.status(req.propertyId).catch(() => null) });
+  }
 });
 
 // PUT /api/channel-manager/property { external_id } | { create: true }
