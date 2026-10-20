@@ -134,9 +134,12 @@ async function checklist(propertyId) {
   else out.push(item('send', 'ok', 'Free rooms and prices are being sent'));
   const { rows: [pull] } = await db.query('SELECT last_pull_at, last_pull_error FROM channel_sync_state WHERE property_id = $1', [propertyId]);
   if (pull?.last_pull_error) out.push(item('pull', 'fail', 'Reading OTA bookings is failing', pull.last_pull_error));
-  else if (ago(pull?.last_pull_at) == null || ago(pull.last_pull_at) > 5) out.push(item('pull', 'warn', 'OTA bookings have not been read in the last 5 minutes', 'Press Check now (card 4).'));
-  else out.push(item('pull', 'ok', 'OTA bookings are being read every minute'));
   const wh = await require('./channelWebhook').status(propertyId);
+  const instant = wh.on && wh.last_webhook_at;
+  const limit = instant ? 20 : 5;
+  if (pull?.last_pull_error) { /* above */ }
+  else if (ago(pull?.last_pull_at) == null || ago(pull.last_pull_at) > limit) out.push(item('pull', 'warn', `OTA bookings have not been read in the last ${limit} minutes`, 'Press Check now (card 4).'));
+  else out.push(item('pull', 'ok', instant ? 'OTA bookings come in by the webhook, with a back-up read every 15 minutes' : 'OTA bookings are being read every minute'));
   out.push(wh.on ? item('webhook', 'ok', 'Channex tells the PMS the moment a booking comes in', wh.last_webhook_at ? `Last call ${new Date(wh.last_webhook_at).toLocaleString('en-GB', { timeZone: 'Asia/Makassar', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'No call yet — it comes with the first OTA booking.')
     : !wh.public_url ? item('webhook', setup.environment === 'production' ? 'warn' : 'info', 'Bookings are read every minute only (no instant call from Channex)', 'The server needs its public https address (SERVER_PUBLIC_URL) for Channex to call it.')
     : item('webhook', 'warn', 'Channex is not set to call the PMS when a booking comes in', `${wh.error ? `${wh.error} — ` : ''}press Turn on instant (card 4). Bookings are still read every minute.`));

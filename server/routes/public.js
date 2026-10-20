@@ -2,17 +2,17 @@ const router = require('express').Router();
 const db = require('../db');
 
 // POST /api/public/channex/webhook/:token — Channex says a booking came in,
-// changed or was cancelled (migration 123). Only triggers an immediate read of
-// the booking feed; the token is the secret. Always answers fast.
+// changed or was cancelled (migration 123). The PMS fetches that revision from
+// Channex itself; the token is the secret. Always 200 (Channex's rule — even
+// when the PMS can't save it, the feed read picks it up again).
 router.post('/channex/webhook/:token', async (req, res) => {
   try {
     const ok = await require('../services/channelWebhook').receive(req.params.token, req.body);
-    if (!ok) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true });
+    if (!ok) console.warn('[CHANNEL WEBHOOK] call with an unknown token');
   } catch (err) {
     console.error('[CHANNEL WEBHOOK] receive', err.message);
-    res.status(500).json({ error: 'Failed' });
   }
+  res.json({ ok: true });
 });
 
 // GET /api/public/properties/:slug/branding — no auth. Used by the login

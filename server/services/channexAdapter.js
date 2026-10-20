@@ -150,13 +150,14 @@ async function pushRates(channexPropertyId, channexRatePlanId, values) {
 // Stage 2 (services/channelSync.js): one request carrying many values, each
 // a date range — kind 'availability' ({ room_type_id, date_from, date_to,
 // availability }) or 'restrictions' ({ rate_plan_id, date_from, date_to,
-// rate as a decimal string }). Both dates inclusive. Returns Channex's
-// warnings (values it did not take), [] when all went in.
+// rate as a decimal string }). Both dates inclusive. One call carries every
+// value (Channex certification: a full sync = 2 calls; 10 MB per call).
+// Returns { warnings (values Channex did not take), taskIds }.
 async function pushAri(kind, values) {
-  if (!values.length) return [];
+  if (!values.length) return { warnings: [], taskIds: [] };
   if (!['availability', 'restrictions'].includes(kind)) throw new Error(`Unknown ARI kind ${kind}`);
   const data = await request('POST', `/${kind}`, { values });
-  return data?.meta?.warnings || [];
+  return { warnings: data?.meta?.warnings || [], taskIds: (data?.data || []).filter(d => d.type === 'task').map(d => d.id) };
 }
 
 // What Channex holds for a date range (checking a send):
@@ -176,9 +177,17 @@ async function readAri(channexPropertyId, dateFrom, dateTo) {
 
 // ── Bookings (pull, inspect-only for this spike) ────────────
 
-async function pullBookingRevisions(channexPropertyId) {
-  const data = await request('GET', `/booking_revisions/feed?filter[property_id]=${encodeURIComponent(channexPropertyId)}`);
+// The revisions not acknowledged yet — for every property of the account in
+// one call (Channex: don't read the feed property by property).
+async function pullBookingRevisions() {
+  const data = await request('GET', '/booking_revisions/feed');
   return data.data || [];
+}
+
+// One revision (the webhook names it).
+async function getBookingRevision(revisionId) {
+  const data = await request('GET', `/booking_revisions/${encodeURIComponent(revisionId)}`);
+  return data.data || null;
 }
 
 async function ackBookingRevision(revisionId) {
@@ -223,6 +232,7 @@ module.exports = {
   pushAri,
   readAri,
   pullBookingRevisions,
+  getBookingRevision,
   ackBookingRevision,
   listWebhooks,
   createWebhook,

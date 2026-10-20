@@ -288,8 +288,8 @@ function SyncCard({ sync, days, busy, onSend }) {
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
         Free rooms per room type and the price per meal plan (normal rate incl. pricing periods + meal plan for the room type's
-        maximum guests, service &amp; tax included) for the next {days || 365} nights. Changes go within about half a minute; everything is
-        sent again every night at 04:10.
+        maximum guests, service &amp; tax included) for the next {days || 500} nights. Changes go within about half a minute — only what changed; everything is
+        sent again every night at 04:10 (Send everything now: at most once an hour).
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13 }}>
         <div><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Last sent</div>{when(sync?.last_ok_at)}</div>
@@ -299,10 +299,17 @@ function SyncCard({ sync, days, busy, onSend }) {
             {last.nights_changed ? `${last.nights_changed} nights changed (${last.availability_ranges} room · ${last.rate_ranges} price updates)` : 'nothing had changed'}
           </div>
         )}
+        {last?.task_ids && (last.task_ids.availability?.length > 0 || last.task_ids.restrictions?.length > 0) && (
+          <div style={{ gridColumn: '1 / -1' }}><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Channex task IDs of the last send (asked for by Channex's certification)</div>
+            <code style={{ fontSize: 12, wordBreak: 'break-all' }}>
+              {[...(last.task_ids.availability || []).map(id => `availability ${id}`), ...(last.task_ids.restrictions || []).map(id => `prices ${id}`)].join(' · ')}
+            </code>
+          </div>
+        )}
       </div>
       {failing && (
         <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>
-          <div>Channex refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again every minute: {sync.last_error}</div>
+          <div>Channex refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again after 1, 2, 4… up to 15 minutes: {sync.last_error}</div>
         </div>
       )}
       {cmpErr && <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}><div>{cmpErr}</div></div>}
@@ -425,7 +432,7 @@ function BookingsCard() {
       {wh && (
         <div style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           {wh.on
-            ? <span>⚡ <b>Instant:</b> Channex tells the PMS the moment a booking comes in{wh.last_webhook_at ? ` — last call ${when(wh.last_webhook_at)}` : ''}. The one-minute read stays as a back-up.</span>
+            ? <span>⚡ <b>Instant:</b> Channex tells the PMS the moment a booking comes in{wh.last_webhook_at ? ` — last call ${when(wh.last_webhook_at)}` : ''}. A back-up read every 15 minutes catches anything missed.</span>
             : !wh.public_url
               ? <span style={{ color: 'var(--text-muted)' }}>⏱ Read every minute. (Instant needs the server's public address — not on a test laptop.)</span>
               : <><span style={{ color: 'var(--warning-text)' }}>⏱ Read every minute — Channex is not set to call the PMS{wh.error ? `: ${wh.error}` : ''}.</span>

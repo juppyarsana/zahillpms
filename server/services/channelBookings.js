@@ -630,64 +630,140 @@ async function ack(propertyId, revisionId) {
 }
 
 // ── Reading the feed ─────────────────────────────────────────
+//
+// Channex's rules (PMS certification): the feed is read in ONE call for every
+// property of the account, not property by property; with the webhook on it
+// is only the safety net (every 15 minutes), without it every minute. A
+// revision is handled under its property's lock, so the webhook and a read
+// never book the same revision twice.
 
-const pulling = new Set();
-const again = new Set();   // a webhook came in while reading — read once more after
-async function pullProperty(propertyId) {
-  if (pulling.has(propertyId)) { again.add(propertyId); return { busy: true }; }
-  pulling.add(propertyId);
-  let handled = 0, failed = 0;
+const BACKUP_MS = 15 * 60_000;     // with a working webhook
+const locks = new Map();
+function withLock(propertyId, fn) {
+  const prev = locks.get(propertyId) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  locks.set(propertyId, run.catch(() => {}));
+  return run;
+}
+
+// Linked properties with the module on: Channex property id → PMS property.
+async function linkedProperties() {
+  const { rows } = await db.query(`
+    SELECT p.id, p.channex_property_id, s.webhook_id, s.last_webhook_at
+      FROM properties p
+      JOIN property_modules pm ON pm.property_id = p.id AND pm.module = 'channel_manager' AND pm.is_enabled = true
+      LEFT JOIN channel_sync_state s ON s.property_id = p.id
+     WHERE p.channex_property_id IS NOT NULL AND p.is_active = true`);
+  return rows;
+}
+
+const revProperty = raw => (raw.attributes || raw).property_id || raw.relationships?.property?.data?.id || null;
+
+let pulling = null;      // the read running now (a promise)
+let again = false;       // something came in while reading — read once more after
+let lastPullAt = 0;
+let pullFails = 0;
+let pullPausedUntil = 0;
+
+async function readFeed() {
+  const props = await linkedProperties();
+  const byCx = new Map(props.map(p => [p.channex_property_id, p.id]));
+  const counts = new Map(props.map(p => [p.id, { handled: 0, failed: 0 }]));
   try {
-    const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
-    if (!p?.channex_property_id) return { skipped: 'not linked' };
-    for (let round = 0; round < 20; round++) {
-      const revs = await channex.pullBookingRevisions(p.channex_property_id);
+    for (let round = 0; round < 20 && props.length; round++) {
+      const revs = await channex.pullBookingRevisions();
       if (!revs.length) break;
       let progressed = false;
       for (const rev of revs) {
-        if (await handleRevision(propertyId, rev)) { handled++; progressed = true; } else failed++;
+        const pid = byCx.get(revProperty(rev));
+        if (!pid) continue;   // a property not linked here (or module off) — left in the feed
+        const done = await withLock(pid, () => handleRevision(pid, rev));
+        const c = counts.get(pid);
+        if (done) { c.handled++; progressed = true; } else c.failed++;
       }
-      if (!progressed) break;   // only revisions that keep failing are left
+      if (!progressed) break;   // only revisions that keep failing (or aren't ours) are left
     }
-    await db.query(
-      `INSERT INTO channel_sync_state (property_id, last_pull_at, last_pull_error) VALUES ($1, NOW(), NULL)
-       ON CONFLICT (property_id) DO UPDATE SET last_pull_at = NOW(), last_pull_error = NULL`, [propertyId]);
-    await health.recovered(propertyId, 'pull').catch(() => {});
-    return { handled, failed };
+    lastPullAt = Date.now(); pullFails = 0; pullPausedUntil = 0;
+    for (const p of props) {
+      await db.query(
+        `INSERT INTO channel_sync_state (property_id, last_pull_at, last_pull_error) VALUES ($1, NOW(), NULL)
+         ON CONFLICT (property_id) DO UPDATE SET last_pull_at = NOW(), last_pull_error = NULL`, [p.id]);
+      await health.recovered(p.id, 'pull').catch(() => {});
+    }
+    return counts;
   } catch (err) {
-    await db.query(
-      `INSERT INTO channel_sync_state (property_id, last_pull_error) VALUES ($1, $2)
-       ON CONFLICT (property_id) DO UPDATE SET last_pull_error = $2`, [propertyId, String(err.message).slice(0, 1000)]).catch(() => {});
-    await health.failed(propertyId, 'pull').catch(() => {});
+    // Back off: 1, 2, 4 … 15 minutes after failures in a row (also a 429).
+    pullFails++;
+    pullPausedUntil = Date.now() + Math.min(15, 2 ** (pullFails - 1)) * 60_000;
+    for (const p of props) {
+      await db.query(
+        `INSERT INTO channel_sync_state (property_id, last_pull_error) VALUES ($1, $2)
+         ON CONFLICT (property_id) DO UPDATE SET last_pull_error = $2`, [p.id, String(err.message).slice(0, 1000)]).catch(() => {});
+      await health.failed(p.id, 'pull').catch(() => {});
+    }
     throw err;
-  } finally {
-    pulling.delete(propertyId);
-    if (again.delete(propertyId)) setTimeout(() => pullProperty(propertyId).catch(() => {}), 500);
   }
 }
 
-// The Channex webhook said something came in: read now (never waits on it).
-function requestPull(propertyId) {
-  pullProperty(propertyId).catch(err => console.error('[CHANNEL BOOKINGS] webhook pull', propertyId, err.message));
+// Read the feed now (one read at a time; a read asked for while one runs
+// happens right after it).
+async function pullAll() {
+  if (pulling) { again = true; return pulling; }
+  pulling = (async () => {
+    try { return await readFeed(); }
+    finally {
+      pulling = null;
+      if (again) { again = false; setTimeout(() => pullAll().catch(() => {}), 500); }
+    }
+  })();
+  return pulling;
+}
+
+// Check now (a page) for one property: the same single read for everyone,
+// this property's counts back.
+async function pullProperty(propertyId) {
+  const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
+  if (!p?.channex_property_id) return { skipped: 'not linked' };
+  if (pulling) { again = true; await pulling.catch(() => {}); }
+  const counts = await pullAll();
+  return counts?.get(propertyId) || { handled: 0, failed: 0 };
+}
+
+// The webhook: fetch the one revision Channex names and handle it; anything
+// unexpected falls back to a read of the feed.
+async function handleWebhook(propertyId, revisionId) {
+  try {
+    if (!revisionId) return void pullAll().catch(() => {});
+    const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
+    const rev = await channex.getBookingRevision(revisionId);
+    if (!rev || !p || revProperty(rev) !== p.channex_property_id) return void pullAll().catch(() => {});
+    await withLock(propertyId, () => handleRevision(propertyId, rev));
+  } catch (err) {
+    console.error('[CHANNEL BOOKINGS] webhook', propertyId, err.message);
+    pullAll().catch(() => {});
+  }
+}
+
+// Every minute: read when some linked property has no working webhook yet (a
+// webhook counts once Channex has called it), else every 15 minutes.
+async function tick() {
+  try {
+    if (Date.now() < pullPausedUntil) return;
+    const props = await linkedProperties();
+    if (!props.length) return;
+    const allInstant = props.every(p => p.webhook_id && p.last_webhook_at);
+    if (allInstant && Date.now() - lastPullAt < BACKUP_MS) return;
+    await pullAll();
+  } catch (err) {
+    console.error('[CHANNEL BOOKINGS] read', err.message);
+  }
 }
 
 let timer = null;
-async function pullAll() {
-  try {
-    const { rows } = await db.query(`
-      SELECT p.id FROM properties p
-        JOIN property_modules pm ON pm.property_id = p.id AND pm.module = 'channel_manager' AND pm.is_enabled = true
-       WHERE p.channex_property_id IS NOT NULL AND p.is_active = true`);
-    for (const r of rows) await pullProperty(r.id).catch(err => console.error('[CHANNEL BOOKINGS] pull', r.id, err.message));
-  } catch (err) {
-    console.error('[CHANNEL BOOKINGS] pullAll', err.message);
-  }
-}
-
 function start() {
   if (!channex.isConfigured() || timer) return;
-  timer = setInterval(pullAll, PULL_MS);
-  setTimeout(pullAll, 5000);
+  timer = setInterval(tick, PULL_MS);
+  setTimeout(tick, 5000);
 }
 
 // For the Channel Manager page: open items first, then the latest.
@@ -717,4 +793,4 @@ async function markHandled(propertyId, id, userId) {
   return row;
 }
 
-module.exports = { parseRevision, handleRevision, pullProperty, requestPull, pullAll, start, list, markHandled };
+module.exports = { parseRevision, handleRevision, pullProperty, pullAll, handleWebhook, start, list, markHandled };

@@ -91,6 +91,10 @@ router.post('/sync', async (req, res) => {
   try {
     const result = await channelSync.runSync(req.propertyId, 'manual');
     if (result.busy) return res.status(409).json({ error: 'A send is already running — try again in a moment', code: 'BUSY' });
+    if (result.tooSoon) {
+      const at = result.next.toLocaleTimeString('en-GB', { timeZone: 'Asia/Makassar', hour: '2-digit', minute: '2-digit' });
+      return res.status(409).json({ error: `Everything was sent less than an hour ago — changes keep going by themselves. Send everything again after ${at}.`, code: 'TOO_SOON', sync: await channelSync.status(req.propertyId) });
+    }
     if (result.skipped) return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
     res.json({ ok: true, result, sync: await channelSync.status(req.propertyId) });
   } catch (err) {

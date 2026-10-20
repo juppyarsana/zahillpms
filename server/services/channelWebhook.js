@@ -1,9 +1,10 @@
 // Channex webhook (migration 123): Channex calls the PMS the moment a booking
-// comes in, is changed or is cancelled, and the PMS reads the feed right away
-// (channelBookings.requestPull) — a booking reaches front desk in seconds.
-// The one-minute read stays as the safety net, so a missed or late call only
-// delays a booking, never loses it. The call itself carries nothing the PMS
-// trusts: it only says "read now"; what is booked still comes from the feed.
+// comes in, is changed or is cancelled. The PMS fetches that one revision from
+// Channex (channelBookings.handleWebhook — never trusting the call's body),
+// saves it and acknowledges it: a booking reaches front desk in seconds. The
+// feed read stays as the safety net (every 15 minutes once the webhook has
+// been called, every minute before), so a missed call only delays a booking.
+// The PMS always answers 200 (Channex's rule), even when it can't save.
 //
 // Callback: <SERVER_PUBLIC_URL>/api/public/channex/webhook/<token> — the token
 // (random, per property) is the secret. Needs a public https address, so it
@@ -79,14 +80,17 @@ async function status(propertyId) {
   };
 }
 
-// Channex called. Unknown token → false (the route answers 404).
+// Channex called. Returns false for an unknown token (logged; the route still
+// answers 200). The work runs after the answer.
 async function receive(token, body) {
   if (!/^[a-f0-9]{48}$/.test(String(token))) return false;
   const { rows: [s] } = await db.query(
     `UPDATE channel_sync_state SET last_webhook_at = NOW() WHERE webhook_token = $1 RETURNING property_id`, [token]);
   if (!s) return false;
   const event = String(body?.event || '');
-  if (!event || event.startsWith('booking')) require('./channelBookings').requestPull(s.property_id);
+  if (event && !event.startsWith('booking')) return true;
+  const revisionId = body?.payload?.revision_id || body?.revision_id || null;
+  setImmediate(() => require('./channelBookings').handleWebhook(s.property_id, revisionId));
   return true;
 }
 

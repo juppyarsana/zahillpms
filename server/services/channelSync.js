@@ -29,11 +29,13 @@ const { basisFrom } = require('./priceBasis');
 const health = require('./channelHealth');
 
 const PROVIDER = 'channex';
-const SYNC_DAYS = 365;
+const SYNC_DAYS = 500;          // Channex certification: a full sync covers 500 days
 const TICK_MS = 10_000;
-const GAP_SECONDS = 15;        // at most one run per property per 15 s
-const RETRY_SECONDS = 60;      // after a failed send
-const CHUNK = 500;             // values per Channex request
+const GAP_SECONDS = 15;        // at most one run per property per 15 s (≤ 4 calls / min / endpoint; Channex allows 10)
+const RETRY_SECONDS = [60, 120, 240, 480, 900];   // after the 1st, 2nd, … failure in a row (also a 429)
+const MANUAL_FULL_GAP_MS = 60 * 60 * 1000;         // "Send everything now" at most once an hour
+const fails = new Map();       // property → failures in a row (in memory; a restart starts again at 60 s)
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
@@ -151,9 +153,10 @@ async function syncProperty(propertyId, { full = false } = {}) {
     property_id: cxProperty, rate_plan_id: r.external, date_from: r.date_from, date_to: r.date_to, rate: r.value.toFixed(2),
   }));
 
-  const warnings = [];
-  for (let i = 0; i < avail.length; i += CHUNK) warnings.push(...await channex.pushAri('availability', avail.slice(i, i + CHUNK)));
-  for (let i = 0; i < rates.length; i += CHUNK) warnings.push(...await channex.pushAri('restrictions', rates.slice(i, i + CHUNK)));
+  // One call for availability, one for prices — whatever the number of values.
+  const a = await channex.pushAri('availability', avail);
+  const r = await channex.pushAri('restrictions', rates);
+  const warnings = [...a.warnings, ...r.warnings];
 
   // Remember what Channex now has; forget past nights and unlinked items.
   if (changed.length) {
@@ -171,6 +174,7 @@ async function syncProperty(propertyId, { full = false } = {}) {
   return {
     full, nights_changed: changed.length,
     availability_ranges: avail.length, rate_ranges: rates.length,
+    task_ids: { availability: a.taskIds, restrictions: r.taskIds },
     warnings: warnings.slice(0, 20),
   };
 }
@@ -189,6 +193,14 @@ async function runSync(propertyId, mode = 'change') {
   // always look older than dirty_at (the worker would run again forever).
   const { rows: [st] } = await db.query('SELECT dirty_at::text AS dirty_at FROM channel_sync_state WHERE property_id = $1', [propertyId]);
   const full = mode !== 'change';
+  if (mode === 'manual') {
+    const { rows: [f] } = await db.query('SELECT last_full_at FROM channel_sync_state WHERE property_id = $1', [propertyId]);
+    if (f?.last_full_at && Date.now() - new Date(f.last_full_at).getTime() < MANUAL_FULL_GAP_MS) {
+      running.delete(propertyId);
+      const next = new Date(new Date(f.last_full_at).getTime() + MANUAL_FULL_GAP_MS);
+      return { tooSoon: true, next };
+    }
+  }
   try {
     const result = await syncProperty(propertyId, { full });
     await db.query(
@@ -199,13 +211,18 @@ async function runSync(propertyId, mode = 'change') {
          next_try_at = NOW() + make_interval(secs => $4), last_sent = $5
        WHERE property_id = $1`,
       [propertyId, st?.dirty_at || null, full, GAP_SECONDS, JSON.stringify({ ...result, mode, at: new Date().toISOString() })]);
+    fails.delete(propertyId);
     await health.recovered(propertyId, 'send').catch(() => {});
     return result;
   } catch (err) {
     await db.query(
       `UPDATE channel_sync_state SET last_run_at = NOW(), last_error = $2, last_error_at = NOW(),
          next_try_at = NOW() + make_interval(secs => $3)
-       WHERE property_id = $1`, [propertyId, String(err.message).slice(0, 2000), RETRY_SECONDS]);
+       WHERE property_id = $1`, [propertyId, String(err.message).slice(0, 2000), (() => {
+        const n = (fails.get(propertyId) || 0) + 1;
+        fails.set(propertyId, n);
+        return RETRY_SECONDS[Math.min(n, RETRY_SECONDS.length) - 1];
+      })()]);
     console.error('[CHANNEL SYNC]', propertyId, err.message);
     await health.failed(propertyId, 'send').catch(() => {});
     throw err;
@@ -233,7 +250,10 @@ async function syncAllFull() {
     `SELECT p.id FROM properties p
        JOIN property_modules pm ON pm.property_id = p.id AND pm.module = 'channel_manager' AND pm.is_enabled = true
       WHERE p.channex_property_id IS NOT NULL AND p.is_active = true`);
-  for (const r of rows) await runSync(r.id, 'full').catch(() => {});
+  for (const [i, r] of rows.entries()) {
+    if (i) await sleep(5000);   // a few seconds between properties (Channex)
+    await runSync(r.id, 'full').catch(() => {});
+  }
 }
 
 // Started with the server when Channex is configured. A linked property with
