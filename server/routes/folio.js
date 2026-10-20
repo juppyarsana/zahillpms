@@ -324,6 +324,40 @@ async function payRoomLines(client, booking, parts, { method, receivedAt, notes,
   return { total };
 }
 
+// What a room's extras still need, for Record Group Payment (group paid room
+// by room): unpaid extras on the folio + per-night extras still to come — the
+// same lists as the room's own Record Payment window. Totals as payItems
+// charges them (service + tax on the 'added' ones at the booking's bill rates).
+// A room with a part payment on account is left out (`on_account` > 0) —
+// paying its lines in full here would count that money twice; it is settled
+// on the room's own folio.
+async function extrasDue(bookingId, propertyId) {
+  const f = await loadFolio(bookingId, propertyId);
+  if (!f || f.booking.complimentary_scope === 'all') return null;
+  const { rows: addons } = await db.query(
+    `SELECT a.id, a.description, a.service_date, a.quantity, a.unit_price
+     FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
+     LEFT JOIN sales s ON s.id = a.sale_id
+     WHERE a.booking_id = $1 AND a.property_id = $2 AND a.status = 'active' AND a.paid_payment_id IS NULL
+       AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
+       AND (s.payment_method IS NULL OR s.payment_method IN ('room_charge', 'unpaid'))
+       AND NOT EXISTS (SELECT 1 FROM folio_charges fc WHERE fc.addon_id = a.id AND fc.is_voided = false)
+     ORDER BY a.service_date, a.description`, [bookingId, propertyId]);
+  const ymdOf = d => String(d instanceof Date ? d.toISOString() : d).slice(0, 10);
+  const lines = f.charges.filter(c => !['room', 'fnb'].includes(c.type) && !c.paid_at_desk && !c.complimentary);
+  const nightLines = addons.map(a => ({ amount: round2(parseFloat(a.unit_price) * a.quantity), tax_mode: 'added' }));
+  const total = chargeTotals([...lines, ...nightLines], f.tax_rate, f.service_charge_rate).total;
+  const one = c => chargeTotals([c], f.tax_rate, f.service_charge_rate).total;
+  return {
+    on_account: parseFloat(f.on_account) || 0,
+    total,
+    items: [
+      ...lines.map(c => ({ kind: 'charge', id: c.id, description: c.description, date: c.service_date ? ymdOf(c.service_date) : ymdOf(c.posted_at), amount: one(c) })),
+      ...addons.map((a, i) => ({ kind: 'night', id: a.id, description: a.description, date: ymdOf(a.service_date), upcoming: true, amount: one(nightLines[i]) })),
+    ],
+  };
+}
+
 // POST /api/folio/:bookingId/receive
 //   { room: [{ payment_id, amount }], charge_ids: [], addon_ids: [], method, received_at?, notes? }
 // The Record Payment window: room lines and items in one go, all or nothing.
@@ -1449,3 +1483,6 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
 
 module.exports = router;
 module.exports.payRoomLines = payRoomLines;   // routes/payments.js (move a payment)
+module.exports.payItems = payItems;           // routes/bookings.js (Record Group Payment — extras)
+module.exports.lockPaymentBooking = lockPaymentBooking;
+module.exports.extrasDue = extrasDue;

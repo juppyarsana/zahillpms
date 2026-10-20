@@ -23,6 +23,7 @@ Agents usually transfer in full 7 days before arrival. Record that transfer on t
 1. Group page → **Record Group Payment**.
 2. Enter the amount received — the PMS spreads it over the rooms.
 3. Enter the transfer date and reference.
+4. Does the transfer also cover extras (e.g. an extra bed)? Tick that room under **Extras on the rooms** in the same window. Ticked extras are paid on the room's folio and stay off the agent's bill. Leave them unticked if the guest or the agent pays them later.
 
 One transfer for several separate reservations: record it on each one with the same reference.
 

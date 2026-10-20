@@ -90,6 +90,9 @@ export default function GroupDetail() {
     try {
       const r = await api.get(`/api/bookings/group/${groupId}`);
       setData(r.data);
+      // A group paid room by room: each room's unpaid extras, for Record Group Payment.
+      if (!r.data.bill) api.get(`/api/bookings/group/${groupId}/extras-due`).then(x => setExtrasDue(x.data)).catch(() => setExtrasDue([]));
+      else setExtrasDue([]);
     } catch {}
     setLoading(false);
   }
@@ -165,6 +168,11 @@ export default function GroupDetail() {
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState('');
   const [folioPaying, setFolioPaying] = useState(false);   // group billed as a whole: Record Group Payment from the Master Folio
+  const [extrasDue, setExtrasDue] = useState([]);   // [{ booking_id, unit_name, on_account, total, items }] — rooms' unpaid extras
+  const [extraSel, setExtraSel] = useState(new Set());   // booking_id — rooms whose extras are paid too (all of them)
+  // Rooms whose extras can be paid here (a room with a part payment on account is paid on its own folio).
+  const payableExtras = () => extrasDue.filter(r => !(r.on_account > 0.005));
+  const extrasPicked = () => payableExtras().filter(r => extraSel.has(r.booking_id));
 
   // Every unpaid room payment line in the group, room by room.
   function pendingLines() {
@@ -208,6 +216,7 @@ export default function GroupDetail() {
     // transfer), otherwise everything that's left.
     const deposits = lines.filter(l => l.type === 'deposit');
     setPaySel(new Set((deposits.length ? deposits : lines).map(l => l.id)));
+    setExtraSel(new Set());   // extras start unticked (an agent's stay: the agent may pay them at check-out)
     setPayAmt({});
     setPayTotal('');
     setPayForm({ method: payMethods.find(m => m.id === 'bank_transfer')?.id || payMethods[0]?.id || '', received_at: todayStr, reference: '', notes: '' });
@@ -221,7 +230,13 @@ export default function GroupDetail() {
     try {
       const lines = pendingLines().filter(l => paySel.has(l.id));
       await api.post(`/api/bookings/group/${groupId}/payments`, {
-        lines: lines.map(l => ({ payment_id: l.id, amount: lineAmount(l) })), method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
+        lines: lines.map(l => ({ payment_id: l.id, amount: lineAmount(l) })),
+        items: extrasPicked().map(r => ({
+          booking_id: r.booking_id,
+          charge_ids: r.items.filter(i => i.kind === 'charge').map(i => i.id),
+          addon_ids: r.items.filter(i => i.kind === 'night').map(i => i.id),
+        })),
+        method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
       });
       setPaying(false);
       load();
@@ -726,7 +741,7 @@ export default function GroupDetail() {
                 {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
               </div>
             )}
-            {pendingLines().length > 0 && (
+            {(pendingLines().length > 0 || payableExtras().length > 0) && (
               <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={openGroupPayment}>💳 Record Group Payment</button>
                 <span className="text-muted" style={{ fontSize: 12, alignSelf: 'center' }}>
@@ -743,11 +758,14 @@ export default function GroupDetail() {
       {paying && (() => {
         const lines = pendingLines();
         const picked = lines.filter(l => paySel.has(l.id));
-        const total = picked.reduce((sum, l) => sum + lineAmount(l), 0);
+        const roomPart = picked.reduce((sum, l) => sum + lineAmount(l), 0);
+        const extrasPart = extrasPicked().reduce((sum, r) => sum + r.total, 0);
+        const total = roomPart + extrasPart;
+        const toggleExtras = bid => setExtraSel(sel => { const n = new Set(sel); if (n.has(bid)) n.delete(bid); else n.add(bid); return n; });
         const unpaid = lines.reduce((sum, l) => sum + parseFloat(l.amount), 0);
         const badLine = picked.find(l => !(lineAmount(l) > 0) || lineAmount(l) > parseFloat(l.amount) + 0.005);
         const typedTotal = Math.round(parseFloat(payTotal) || 0);
-        const pick = ids => { setPaySel(new Set(ids)); setPayAmt({}); setPayTotal(''); };
+        const pick = (ids, extras = []) => { setPaySel(new Set(ids)); setExtraSel(new Set(extras)); setPayAmt({}); setPayTotal(''); };
         const toggle = lineId => {
           setPaySel(sel => { const n = new Set(sel); if (n.has(lineId)) n.delete(lineId); else n.add(lineId); return n; });
           setPayAmt(a => { const n = { ...a }; delete n[lineId]; return n; });
@@ -771,14 +789,14 @@ export default function GroupDetail() {
                   </div>
                   {typedTotal > unpaid + 0.5 && (
                     <div className="alert alert-warn" style={{ marginTop: 6, fontSize: 12 }}>
-                      <div>More than the rooms still owe ({fmtIDR(unpaid)}). Record {fmtIDR(unpaid)} here; money for extras goes on that room's folio.</div>
+                      <div>More than the rooms still owe ({fmtIDR(unpaid)}). The amount only pays room lines — tick the rooms' extras below for the rest.</div>
                     </div>
                   )}
                 </div>
                 <div className="flex gap-2" style={{ marginBottom: 10, flexWrap: 'wrap' }}>
                   <span className="text-muted" style={{ fontSize: 13, alignSelf: 'center' }}>Or pick:</span>
                   <button className="btn btn-sm btn-secondary" onClick={() => pick(lines.filter(l => l.type === 'deposit').map(l => l.id))}>All deposits</button>
-                  <button className="btn btn-sm btn-secondary" onClick={() => pick(lines.map(l => l.id))}>Everything unpaid</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => pick(lines.map(l => l.id), payableExtras().map(r => r.booking_id))}>Everything unpaid</button>
                   <button className="btn btn-sm btn-secondary" onClick={() => pick([])}>Clear</button>
                 </div>
                 <div style={{ border: '1px solid var(--border)', borderRadius: 6, marginBottom: 12 }}>
@@ -809,6 +827,35 @@ export default function GroupDetail() {
                     );
                   })}
                 </div>
+                {extrasDue.length > 0 && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 6, marginBottom: 12 }}>
+                    <div className="flex-between text-muted" style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                      <span>Extras on the rooms (extra bed, sales, activities)</span><span>Incl. service &amp; tax</span>
+                    </div>
+                    {extrasDue.map(r => {
+                      const locked = r.on_account > 0.005;
+                      const on = !locked && extraSel.has(r.booking_id);
+                      return (
+                        <div key={r.booking_id} style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                          <div className="flex-between" style={{ gap: 8 }}>
+                            <label className="flex gap-2" style={{ alignItems: 'center', cursor: locked ? 'default' : 'pointer', minWidth: 0, flexWrap: 'wrap' }}>
+                              <input type="checkbox" checked={on} disabled={locked} onChange={() => toggleExtras(r.booking_id)} />
+                              <b>{r.unit_name}</b><span>Extras</span>
+                            </label>
+                            <span style={{ fontWeight: on ? 700 : 400, whiteSpace: 'nowrap' }}>{fmtIDR(r.total)}</span>
+                          </div>
+                          <div className="text-muted" style={{ fontSize: 12, paddingLeft: 24 }}>
+                            {r.items.map(i => `${i.description}${i.date ? ` · ${i.date.slice(8, 10)}/${i.date.slice(5, 7)}` : ''}${i.upcoming ? ' (upcoming)' : ''}`).join(', ')}
+                          </div>
+                          {locked && <div className="text-muted" style={{ fontSize: 11, paddingLeft: 24 }}>Part paid already — take the rest on this room's folio.</div>}
+                        </div>
+                      );
+                    })}
+                    <div className="text-muted" style={{ fontSize: 11, padding: '6px 10px' }}>
+                      Ticked extras are paid in full on that room's folio and are never billed to an agent. Leave them unticked when the guest or the agent pays them later.
+                    </div>
+                  </div>
+                )}
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Method</label>
@@ -832,6 +879,9 @@ export default function GroupDetail() {
                 <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
                   <span>Total received</span><span>{fmtIDR(total)}</span>
                 </div>
+                {extrasPart > 0 && (
+                  <div className="text-muted" style={{ fontSize: 12, textAlign: 'right' }}>Rooms {fmtIDR(roomPart)} · Extras {fmtIDR(extrasPart)}</div>
+                )}
                 <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
                   A line paid in part stays open for the rest. A room counts as deposit paid once its whole deposit is in.
                 </div>
@@ -840,7 +890,7 @@ export default function GroupDetail() {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || paySel.size === 0 || !payForm.method || !!badLine}>
+                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || (paySel.size === 0 && extrasPicked().length === 0) || !payForm.method || !!badLine}>
                   {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
                 </button>
               </div>
@@ -1116,7 +1166,7 @@ export default function GroupDetail() {
           {folioLoading && !folio ? <div className="text-muted">Loading…</div> : folio && (
             <MasterFolio folio={folio}
               onRecordGroupPayment={data.bill ? (group.status !== 'cancelled' ? () => setFolioPaying(true) : null)
-                : pendingLines().length > 0 ? openGroupPayment : null} />
+                : (pendingLines().length > 0 || payableExtras().length > 0) ? openGroupPayment : null} />
           )}
         </div>
       )}

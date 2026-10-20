@@ -9,7 +9,8 @@ const agentBilling = require('../services/agentBillingService');
 const agentService = require('../services/agentService');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
 const { sendBookingEmail, sendGroupBookingEmail } = require('../services/mailer');
-const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL } = require('../services/folioService');
+const { computeFolioTotals, computeProforma, round2, PAYMENTS_WITH_RECEIPT_SQL, onAccountTotal } = require('../services/folioService');
+const folioRoutes = require('./folio');
 const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
 const nightRatesSvc = require('../services/nightRates');
@@ -2528,13 +2529,40 @@ router.put('/group/:groupId/billing', auth, async (req, res) => {
   }
 });
 
+// GET /api/bookings/group/:groupId/extras-due — for a group paid room by
+// room: each active room's unpaid extras (extra bed nights, sales charged to
+// the room, activities), so Record Group Payment can take them too.
+router.get('/group/:groupId/extras-due', auth, async (req, res) => {
+  try {
+    const { rows: rooms } = await db.query(
+      `SELECT b.id, u.name AS unit_name FROM bookings b JOIN units u ON u.id = b.unit_id
+       WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND b.status NOT IN ('cancelled', 'no_show')
+       ORDER BY u.name`, [req.params.groupId, req.propertyId]);
+    const out = [];
+    for (const r of rooms) {
+      const d = await folioRoutes.extrasDue(r.id, req.propertyId);
+      if (d && d.items.length) out.push({ booking_id: r.id, unit_name: r.unit_name, ...d });
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/group/:groupId/payments', auth, async (req, res) => {
   const parts = Array.isArray(req.body.lines)
     ? req.body.lines.filter(l => l && l.payment_id).map(l => ({ id: String(l.payment_id), amount: round2(parseFloat(l.amount)) }))
     : (Array.isArray(req.body.payment_ids) ? req.body.payment_ids.map(id => ({ id: String(id), amount: null })) : []);
   const ids = [...new Set(parts.map(p => p.id))];
   const { method, notes } = req.body;
-  if (!ids.length) return res.status(400).json({ error: 'Select at least one payment line' });
+  // Extras per room (paid as one 'incidental' payment on that room's folio, like its own Record Payment).
+  const uniq = v => [...new Set((Array.isArray(v) ? v : []).map(String))];
+  const extras = (Array.isArray(req.body.items) ? req.body.items : [])
+    .filter(x => x && x.booking_id)
+    .map(x => ({ bookingId: String(x.booking_id), chargeIds: uniq(x.charge_ids), addonIds: uniq(x.addon_ids) }))
+    .filter(x => x.chargeIds.length || x.addonIds.length);
+  if (new Set(extras.map(x => x.bookingId)).size !== extras.length) return res.status(400).json({ error: 'A room is listed twice' });
+  if (!ids.length && !extras.length) return res.status(400).json({ error: 'Select at least one payment line' });
   if (ids.length !== parts.length) return res.status(400).json({ error: 'A payment line is listed twice' });
   if (!method) return res.status(400).json({ error: 'Payment method required' });
   const receivedAt = req.body.received_at || null;
@@ -2587,8 +2615,37 @@ router.post('/group/:groupId/payments', auth, async (req, res) => {
     }
     const bookingIds = [...new Set(lines.map(l => l.booking_id))];
     for (const bid of bookingIds) await recomputeBookingStatus(client, bid);
+
+    let extrasTotal = 0;
+    if (extras.length) {
+      const { rows: [pm] } = await client.query(
+        'SELECT label FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active = true', [method, req.propertyId]);
+      if (!pm) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Invalid payment method' }); }
+      const { rows: members } = await client.query(
+        `SELECT id FROM bookings WHERE id = ANY($1::uuid[]) AND reservation_group_id = $2 AND property_id = $3`,
+        [extras.map(x => x.bookingId), req.params.groupId, req.propertyId]);
+      if (members.length !== extras.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Some rooms are not part of this group' }); }
+      for (const x of extras.sort((a, b) => a.bookingId.localeCompare(b.bookingId))) {
+        const lk = await folioRoutes.lockPaymentBooking(client, x.bookingId, req.propertyId);
+        if (lk.error) { await client.query('ROLLBACK'); return res.status(lk.status).json({ error: lk.error }); }
+        const { rows: pays } = await client.query(PAYMENTS_WITH_RECEIPT_SQL, [x.bookingId]);
+        if (onAccountTotal(pays) > 0.005) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'A room already has a part payment for its extras — take the rest on that room\'s folio', code: 'ON_ACCOUNT' });
+        }
+        const it = await folioRoutes.payItems(client, lk.booking, {
+          chargeIds: x.chargeIds, addonIds: x.addonIds, method, receivedAt, userId: req.user.id, reference,
+          notes: String(notes || '').trim(),
+        });
+        if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
+        if (!it.payment) continue;
+        extrasTotal = round2(extrasTotal + it.payment.amount);
+        await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
+          x.bookingId, `Paid with Record Group Payment (${pm.label}): ${it.payment.what} — Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')}`.slice(0, 1000), req.user.id]);
+      }
+    }
     await client.query('COMMIT');
-    res.json({ lines: lines.length, rooms: bookingIds.length, total });
+    res.json({ lines: lines.length, rooms: bookingIds.length, total: round2(total + extrasTotal), room_total: total, extras_total: extrasTotal });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

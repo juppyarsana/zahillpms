@@ -23,6 +23,7 @@ Agen biasanya transfer penuh H-7. Catat transfer itu di reservasinya, dengan **t
 1. Halaman grup → **Record Group Payment**.
 2. Isi jumlah yang diterima — PMS membaginya ke kamar-kamar.
 3. Isi tanggal transfer dan referensi.
+4. Transfer juga untuk ekstra (mis. extra bed)? Centang kamar itu di bagian **Extras on the rooms** di jendela yang sama. Ekstra yang dicentang dibayar di folio kamar itu dan tidak masuk tagihan agen. Biarkan tidak dicentang kalau tamu atau agen membayarnya nanti.
 
 Satu transfer untuk beberapa reservasi terpisah: catat di setiap reservasi dengan referensi yang sama.
 
