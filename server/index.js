@@ -208,4 +208,5 @@ app.listen(PORT, async () => {
   }
   require('./jobs').registerJobs();
   require('./services/channelSync').start().catch(err => console.error('[CHANNEL SYNC] start', err.message));
+  require('./services/channelBookings').start();
 });

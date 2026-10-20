@@ -1,0 +1,634 @@
+// Channel Manager stage 3 (migration 121): OTA bookings in from Channex.
+//
+// Every minute (and on "Check now") the PMS reads Channex's booking feed for
+// each linked property — the revisions not confirmed yet — and handles them
+// in order, each in its own transaction:
+//
+//   new        → a PMS booking per room (a group when 2+ rooms, paid room by
+//                room): the first free room of the linked room type for its
+//                dates, the guest (matched by e-mail + name, or new), the OTA
+//                as the source (made if missing, Publish Rate off), the price
+//                Channex reports (night by night when they differ), the meal
+//                plan linked to the rate plan, adults / children, the OTA's
+//                notes as special requests. To check points: the room was
+//                picked automatically, who collects the money when the hotel
+//                does. No deposit; `payment_collect` says who collects.
+//   modified   → the same rooms changed to match: dates, room type (another
+//                free room of it when needed), meal plan, guests, price; a
+//                room added is booked, a room gone is cancelled.
+//   cancelled  → its bookings cancelled (folio nights voided), money already
+//                received flagged.
+//
+// Anything the PMS can't do safely is NOT guessed: no free room, a guest
+// already checked in, a currency other than IDR, an unlinked room type, or a
+// change to a reservation FO entered by hand. Those are saved as "attention"
+// (listed on the Channel Manager page and sent on Telegram) and FO acts.
+//
+// A revision is confirmed (acked) to Channex only after its row in
+// channel_revisions is saved. One that fails with an error is not confirmed
+// and is tried again on the next read.
+const db = require('../db');
+const channex = require('./channexAdapter');
+const { occupiedUntilSql } = require('./occupancySql');
+const bookingCreate = require('./bookingCreateService');
+const { applyBookingPrice } = require('./bookingPriceService');
+const roomCharge = require('./roomChargeService');
+const nightRatesSvc = require('./nightRates');
+const ratePlanService = require('./ratePlanService');
+const telegramService = require('./telegramService');
+const { stayNights: stayNightList } = require('./folioService');
+
+const PROVIDER = 'channex';
+const PULL_MS = 60_000;
+const OPEN = ['pending', 'deposit_paid', 'confirmed'];
+
+const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+const fmtDay = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); };
+const span = (ci, co) => `${fmtDay(ci)} – ${fmtDay(co)}`;
+const ymd = v => String(v || '').slice(0, 10);
+
+// ── Reading a revision ───────────────────────────────────────
+
+function parseRevision(raw) {
+  const a = raw.attributes || raw;
+  const cust = a.customer || {};
+  return {
+    revisionId: a.id || raw.id,
+    bookingId: a.booking_id,
+    status: a.status,
+    ota: (a.ota_name || '').trim() || 'Channel manager',
+    code: a.ota_reservation_code || a.unique_id || '',
+    currency: a.currency || 'IDR',
+    collect: a.payment_collect === 'property' ? 'property' : a.payment_collect === 'ota' ? 'ota' : null,
+    paymentType: a.payment_type || null,
+    notes: (a.notes || '').trim(),
+    arrivalHour: a.arrival_hour || null,
+    arrival: a.arrival_date, departure: a.departure_date,
+    customer: {
+      name: [cust.name, cust.surname].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(),
+      mail: (cust.mail || '').trim(), phone: (cust.phone || '').trim(), country: cust.country || null,
+      address: [cust.address, cust.city, cust.zip].filter(Boolean).join(', ') || null,
+    },
+    rooms: (a.rooms || []).map(r => {
+      const days = Object.entries(r.days || {}).map(([date, v]) => ({ date, amount: Number(v) })).sort((x, y) => (x.date < y.date ? -1 : 1));
+      const amount = Number(r.amount);
+      return {
+        id: r.booking_room_id, roomType: r.room_type_id, ratePlan: r.rate_plan_id,
+        ci: r.checkin_date, co: r.checkout_date,
+        amount: Number.isFinite(amount) && amount > 0 ? amount : days.reduce((s, d) => s + d.amount, 0),
+        days,
+        adults: Math.max(1, parseInt(r.occupancy?.adults, 10) || 1),
+        children: Math.min(20, Math.max(0, parseInt(r.occupancy?.children, 10) || 0)),
+        cancelled: !!r.is_cancelled,
+      };
+    }),
+  };
+}
+
+// The OTA's own night prices, when they differ night by night.
+function nightPricesOf(room) {
+  const nights = stayNightList(room.ci, room.co);
+  if (nights.length < 2 || room.days.length !== nights.length) return null;
+  if (!room.days.every((d, i) => d.date === nights[i])) return null;
+  if (new Set(room.days.map(d => Math.round(d.amount))).size < 2) return null;
+  return room.days.map(d => ({ date: d.date, amount: d.amount }));
+}
+
+// ── Lookups ──────────────────────────────────────────────────
+
+async function links(client, propertyId) {
+  const [{ rows: rts }, { rows: rps }] = await Promise.all([
+    client.query(`SELECT c.room_type_id, c.external_room_type_id, rt.name FROM channel_room_types c JOIN room_types rt ON rt.id = c.room_type_id
+                   WHERE c.property_id = $1 AND c.provider = $2`, [propertyId, PROVIDER]),
+    client.query(`SELECT c.room_type_id, c.rate_plan_id, c.external_rate_plan_id, rp.name FROM channel_rate_plans c JOIN rate_plans rp ON rp.id = c.rate_plan_id
+                   WHERE c.property_id = $1 AND c.provider = $2`, [propertyId, PROVIDER]),
+  ]);
+  return {
+    roomType: ext => rts.find(r => r.external_room_type_id === ext) || null,
+    ratePlan: ext => rps.find(r => r.external_rate_plan_id === ext) || null,
+  };
+}
+
+// The first free room of a type for [ci, co): not booked (every booking but
+// cancelled / no-show, the occupiedUntilSql rule), not out of order for the
+// stay, not already picked for this reservation. `exclude` = bookings that
+// don't count (the booking being moved).
+async function freeUnit(client, propertyId, roomTypeId, ci, co, { taken = [], exclude = [], prefer = null } = {}) {
+  const { rows } = await client.query(`
+    SELECT u.id, u.name FROM units u
+     WHERE u.property_id = $1 AND u.room_type_id = $2
+       AND NOT (u.id = ANY($5::uuid[]))
+       AND NOT (u.status = 'out_of_order' AND (u.status_expected_back IS NULL OR u.status_expected_back > $3::date))
+       AND NOT EXISTS (
+         SELECT 1 FROM bookings b
+          WHERE b.unit_id = u.id AND b.property_id = $1 AND b.status NOT IN ('cancelled', 'no_show')
+            AND NOT (b.id = ANY($6::uuid[]))
+            AND b.check_in_date < $4::date AND ${occupiedUntilSql('b')} > $3::date)
+     ORDER BY (u.id = $7::uuid) DESC, u.name
+     LIMIT 1`, [propertyId, roomTypeId, ci, co, taken, exclude, prefer]);
+  return rows[0] || null;
+}
+
+// OTA e-mail relays reach the guest only through the OTA — kept off the profile.
+const RELAY = /(guest\.booking\.com|agoda-messaging|agoda\.com|expediapartnercentral|expedia\.com|airbnb\.com|traveloka\.com|tiket\.com|trip\.com|ctrip\.com)$/i;
+const words = s => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1));
+function nationalityOf(country) {
+  if (!country || !/^[A-Z]{2}$/i.test(country)) return null;
+  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(country.toUpperCase()) || null; } catch { return null; }
+}
+
+async function guestFor(client, propertyId, cust) {
+  const name = cust.name || 'Guest';
+  const email = cust.mail && !RELAY.test(cust.mail) ? cust.mail.toLowerCase() : null;
+  if (email) {
+    const { rows } = await client.query('SELECT id, name FROM guests WHERE property_id = $1 AND lower(email) = $2 ORDER BY created_at', [propertyId, email]);
+    const mine = words(name);
+    const hit = rows.find(g => [...words(g.name)].some(w => mine.has(w)));
+    if (hit) return { id: hit.id, name: hit.name, matched: true };
+  }
+  const { rows: [g] } = await client.query(
+    `INSERT INTO guests (name, nationality, whatsapp, email, address, property_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name`,
+    [name.slice(0, 200), nationalityOf(cust.country), cust.phone || null, email, cust.address, propertyId]);
+  return { id: g.id, name: g.name, matched: false };
+}
+
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const SOURCE_ALIAS = { bookingcom: 'booking_com', tiketcom: 'tiket_com', tripcom: 'ctrip', expediacom: 'expedia' };
+async function sourceFor(client, propertyId, ota) {
+  const n = norm(ota);
+  const { rows } = await client.query('SELECT id, label FROM booking_sources WHERE property_id = $1', [propertyId]);
+  const hit = rows.find(s => norm(s.id) === n || norm(s.label) === n || s.id === SOURCE_ALIAS[n]);
+  if (hit) return hit.id;
+  const id = (SOURCE_ALIAS[n] || n || 'channel').slice(0, 40);
+  await client.query(
+    `INSERT INTO booking_sources (id, label, is_ota, source_type, publish_rate, property_id) VALUES ($1, $2, true, 'ota', false, $3)`,
+    [id, ota.slice(0, 100), propertyId]);
+  return id;
+}
+
+async function note(client, bookingId, text) {
+  await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)', [bookingId, text.slice(0, 1000)]);
+}
+
+function collectPoint(r) {
+  if (r.collect === 'property') {
+    return `Guest pays at the hotel (${r.ota}${r.paymentType ? ` · ${r.paymentType.replace(/_/g, ' ')}` : ''}) — collect the room price, it is not paid by ${r.ota}`;
+  }
+  if (!r.collect) return `${r.ota} did not say who collects the money — check the reservation on ${r.ota}`;
+  return null;
+}
+
+// ── new ──────────────────────────────────────────────────────
+
+async function createFromRevision(client, propertyId, r, L) {
+  const rooms = r.rooms.filter(x => !x.cancelled);
+  if (!rooms.length) return { result: 'ignored', message: 'No rooms in the reservation' };
+  if (r.currency !== 'IDR') return { result: 'attention', message: `Price is in ${r.currency}, not IDR — enter this ${r.ota} booking by hand` };
+
+  // Room type, meal plan and a free room for every room — or nothing.
+  const defaultPlan = await ratePlanService.getDefaultRatePlan(propertyId);
+  const picked = [];
+  for (const room of rooms) {
+    const type = L.roomType(room.roomType);
+    if (!type) return { result: 'attention', message: `A room type of this booking is not linked in the PMS (Channex ${room.roomType}) — enter it by hand and link the room type` };
+    const plan = L.ratePlan(room.ratePlan);
+    const unit = await freeUnit(client, propertyId, type.room_type_id, room.ci, room.co, { taken: picked.map(p => p.unit.id) });
+    if (!unit) return { result: 'attention', message: `No free ${type.name} for ${span(room.ci, room.co)} — overbooked. Move a guest or call ${r.ota}, then enter the booking by hand` };
+    picked.push({ room, type, plan, unit });
+  }
+
+  const guest = await guestFor(client, propertyId, r.customer);
+  const source = await sourceFor(client, propertyId, r.ota);
+  const special = [r.notes, r.arrivalHour ? `Arrival time (OTA): ${String(r.arrivalHour).slice(0, 5)}` : ''].filter(Boolean).join('\n') || null;
+  const internal = `CHANNEX · ${r.ota} ${r.code}`.trim();
+  const roomInput = p => ({
+    unit_id: p.unit.id, check_in_date: p.room.ci, check_out_date: p.room.co,
+    num_guests: p.room.adults, children: p.room.children,
+    rate_plan_id: p.plan?.rate_plan_id || defaultPlan?.id || null,
+    total_amount: p.room.amount, night_prices: nightPricesOf(p.room) || undefined,
+  });
+
+  let made;
+  if (picked.length === 1) {
+    made = await bookingCreate.createBooking(client, { propertyId, userId: null, input: {
+      ...roomInput(picked[0]), guest_id: guest.id, source, deposit_amount: 0, special_requests: special, internal_notes: internal } });
+    if (made.status) return { result: 'error', message: made.error.error || 'Booking not saved' };
+    made = { group: null, bookings: [made.booking] };
+  } else {
+    const ci = picked.reduce((m, p) => (p.room.ci < m ? p.room.ci : m), picked[0].room.ci);
+    const co = picked.reduce((m, p) => (p.room.co > m ? p.room.co : m), picked[0].room.co);
+    made = await bookingCreate.createGroup(client, { propertyId, userId: null, input: {
+      guest_id: guest.id, check_in_date: ci, check_out_date: co, source, special_requests: special, internal_notes: internal,
+      group_billing: false, rooms: picked.map(roomInput) } });
+    if (made.status) return { result: 'error', message: made.error.error || 'Booking not saved' };
+  }
+
+  const { rows: [cb] } = await client.query(
+    `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, reservation_group_id, last_revision_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (property_id, provider, external_booking_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()
+     RETURNING id`, [propertyId, PROVIDER, r.bookingId, r.ota, r.code, r.status, r.collect, made.group?.id || null, r.revisionId]);
+
+  const ids = [];
+  for (const [i, p] of picked.entries()) {
+    const b = made.bookings[i];
+    ids.push(b.id);
+    const points = [`Room picked automatically: ${p.unit.name} (${p.type.name}) — booked on ${r.ota}${r.code ? ` (${r.code})` : ''}`];
+    const cp = collectPoint(r);
+    if (cp) points.push(cp);
+    if (!p.plan) points.push(`The ${r.ota} rate plan is not linked to a meal plan in the PMS — meal plan set to ${defaultPlan?.name || 'the default'}; check it`);
+    if (!(p.room.amount > 0)) points.push(`No price came from ${r.ota} — set it with Edit Price`);
+    await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb WHERE id = $1', [b.id, r.collect, JSON.stringify(points)]);
+    await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [cb.id, p.room.id, b.id]);
+    await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${r.collect === 'property' ? 'the hotel collects' : r.collect === 'ota' ? `paid to ${r.ota}` : 'who collects not given'}.`);
+  }
+  const rooms_ = picked.map(p => p.unit.name).join(', ');
+  return {
+    result: 'applied', bookingIds: ids, channelBookingId: cb.id,
+    message: `Booked ${rooms_} · ${guest.name}${guest.matched ? '' : ' (new guest)'}`,
+    alert: { title: `New ${r.ota} booking`, guest: guest.name, rooms: picked.map(p => p.unit.name), checkIn: picked[0].room.ci, checkOut: picked[picked.length - 1].room.co,
+      guests: picked.reduce((s, p) => s + p.room.adults, 0), total: picked.reduce((s, p) => s + p.room.amount, 0),
+      extra: r.collect === 'property' ? 'The hotel collects the payment' : r.collect === 'ota' ? `Paid to ${r.ota}` : null },
+  };
+}
+
+// ── modified / cancelled ─────────────────────────────────────
+
+async function cancelBooking(client, b, r, problems) {
+  if (['cancelled', 'no_show'].includes(b.status)) return false;
+  if (!OPEN.includes(b.status)) {
+    problems.push(`Room ${b.unit_name}: cancelled on ${r.ota}, but the guest is ${b.status.replace('_', ' ')} — handle it by hand`);
+    return false;
+  }
+  await client.query("UPDATE bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [b.id]);
+  await roomCharge.voidAll(client, b.id, null);
+  await note(client, b.id, `Booking cancelled on ${r.ota} (channel manager, reservation ${r.code}).`);
+  const { rows: [{ received }] } = await client.query(
+    "SELECT COALESCE(SUM(amount), 0) AS received FROM payments WHERE booking_id = $1 AND status = 'received'", [b.id]);
+  if (Number(received) >= 1) problems.push(`Room ${b.unit_name}: ${fmtIDR(received)} was received on this booking — refund it or keep it, by ${r.ota}'s cancellation terms`);
+  return true;
+}
+
+async function closeGroupIfEmpty(client, groupId) {
+  if (!groupId) return;
+  const { rows: [{ n }] } = await client.query(
+    "SELECT count(*)::int AS n FROM bookings WHERE reservation_group_id = $1 AND status NOT IN ('cancelled', 'no_show')", [groupId]);
+  if (n === 0) await client.query("UPDATE reservation_groups SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [groupId]);
+  else await require('../routes/bookings').syncGroupSpan(client, groupId);
+}
+
+async function loadBooking(client, id) {
+  const { rows: [b] } = await client.query(
+    `SELECT b.*, u.name AS unit_name, u.room_type_id AS unit_room_type_id,
+            to_char(b.check_in_date, 'YYYY-MM-DD') AS ci, to_char(b.check_out_date, 'YYYY-MM-DD') AS co
+       FROM bookings b JOIN units u ON u.id = b.unit_id WHERE b.id = $1`, [id]);
+  return b || null;
+}
+
+// One room of a modified reservation → its booking changed to match.
+async function changeRoom(client, propertyId, r, room, b, L, defaultPlan, problems, takenUnits) {
+  const type = L.roomType(room.roomType);
+  if (!type) { problems.push(`Room ${b.unit_name}: the new room type is not linked in the PMS — change it by hand`); return null; }
+  const plan = L.ratePlan(room.ratePlan);
+  const planId = plan?.rate_plan_id || b.rate_plan_id || defaultPlan?.id || null;
+  const price = Math.round(parseFloat(b.total_amount) - parseFloat(b.discount_amount || 0));
+  const diff = [];
+  if (room.ci !== b.ci || room.co !== b.co) diff.push(`dates ${span(b.ci, b.co)} → ${span(room.ci, room.co)}`);
+  if (type.room_type_id !== b.unit_room_type_id) diff.push(`room type → ${type.name}`);
+  if (planId !== b.rate_plan_id) diff.push(`meal plan → ${plan?.name || 'default'}`);
+  if (room.adults !== Number(b.num_guests)) diff.push(`adults ${b.num_guests} → ${room.adults}`);
+  if (room.children !== Number(b.children || 0)) diff.push(`children ${b.children || 0} → ${room.children}`);
+  if (Math.abs(Math.round(room.amount) - price) >= 1) diff.push(`price ${fmtIDR(price)} → ${fmtIDR(room.amount)}`);
+  if (!diff.length) return null;
+
+  if (!OPEN.includes(b.status)) {
+    problems.push(`Room ${b.unit_name}: changed on ${r.ota} (${diff.join('; ')}) but the guest is ${b.status.replace('_', ' ')} — apply it by hand`);
+    return null;
+  }
+
+  let unitId = b.unit_id, unitName = b.unit_name;
+  if (room.ci !== b.ci || room.co !== b.co || type.room_type_id !== b.unit_room_type_id) {
+    const unit = await freeUnit(client, propertyId, type.room_type_id, room.ci, room.co,
+      { taken: takenUnits, exclude: [b.id], prefer: type.room_type_id === b.unit_room_type_id ? b.unit_id : null });
+    if (!unit) {
+      problems.push(`Room ${b.unit_name}: changed on ${r.ota} to ${type.name} ${span(room.ci, room.co)}, but no room is free — nothing changed, sort it out by hand`);
+      return null;
+    }
+    if (unit.id !== b.unit_id) diff.push(`room ${b.unit_name} → ${unit.name}`);
+    unitId = unit.id; unitName = unit.name;
+  }
+  takenUnits.push(unitId);
+
+  await client.query(
+    `UPDATE bookings SET unit_id = $2, check_in_date = $3, check_out_date = $4, num_guests = $5, children = $6::int,
+            kids_free_breakfast = CASE WHEN $6::int > 0 THEN kids_free_breakfast ELSE false END, rate_plan_id = $7, updated_at = NOW()
+      WHERE id = $1`, [b.id, unitId, room.ci, room.co, room.adults, room.children, planId]);
+  const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1', [b.id]);
+  const np = nightPricesOf(room);
+  const parsed = np ? nightRatesSvc.parseNightPrices(np, stayNightList(room.ci, room.co)) : null;
+  const priced = await applyBookingPrice(client, {
+    propertyId, before: fresh, userId: null, newTotal: room.amount,
+    keepDiscount: false, receivedWasTypo: false,
+    balanceNote: `Changed on ${r.ota} — additional amount`,
+    nightShares: parsed?.shares || null,
+  });
+  if (priced?.error) { problems.push(`Room ${unitName}: ${priced.error.error || 'price not saved'}`); throw new Error(priced.error.error || 'price not saved'); }
+  await note(client, b.id, `Changed on ${r.ota} (channel manager, reservation ${r.code}): ${diff.join('; ')}.`);
+  return { unitName, diff };
+}
+
+async function applyChange(client, propertyId, r, cb, L) {
+  const { rows: mapped } = await client.query(
+    'SELECT external_room_id, booking_id FROM channel_booking_rooms WHERE channel_booking_id = $1', [cb.id]);
+  if (!mapped.length) {
+    return { result: 'attention', message: `${r.status === 'cancelled' ? 'Cancelled' : 'Changed'} on ${r.ota} — this reservation was entered by hand earlier, so apply it by hand too` };
+  }
+  const problems = [], changes = [], touched = [];
+  const defaultPlan = await ratePlanService.getDefaultRatePlan(propertyId);
+  const byRoom = new Map(mapped.map(m => [m.external_room_id, m.booking_id]));
+  const takenUnits = [];
+
+  if (r.status === 'cancelled') {
+    for (const m of mapped) {
+      const b = m.booking_id && await loadBooking(client, m.booking_id);
+      if (!b) continue;
+      if (await cancelBooking(client, b, r, problems)) { changes.push(`room ${b.unit_name} cancelled`); touched.push(b.id); }
+    }
+  } else {
+    if (r.currency !== 'IDR') return { result: 'attention', message: `Changed on ${r.ota}, price in ${r.currency} — apply it by hand` };
+    // Channex may give a room a new id on a revision: rooms not matched by id
+    // are paired with the reservation's other bookings — same room type
+    // first, then in order — and the link moves to the new id.
+    const loose = [];
+    let activeMapped = 0;
+    for (const m of mapped) { const b = m.booking_id && await loadBooking(client, m.booking_id); if (b && !['cancelled', 'no_show'].includes(b.status)) activeMapped++; }
+    for (const m of mapped.filter(x => !r.rooms.some(room => room.id === x.external_room_id))) {
+      const b = m.booking_id && await loadBooking(client, m.booking_id);
+      if (b && !['cancelled', 'no_show'].includes(b.status)) loose.push({ m, b });
+    }
+    const pairUp = (room, sameType) => {
+      const i = loose.findIndex(x => !sameType || x.b.unit_room_type_id === L.roomType(room.roomType)?.room_type_id);
+      return i < 0 ? null : loose.splice(i, 1)[0];
+    };
+    const unmatched = r.rooms.filter(room => !byRoom.has(room.id) && !room.cancelled)
+      .sort((a, b) => (a.ci < b.ci ? -1 : a.ci > b.ci ? 1 : 0));
+    for (const pass of [true, false]) {
+      const left = unmatched.filter(x => !byRoom.has(x.id));
+      // Across room types only for a one-room reservation (its room type
+      // changed); otherwise the old room is cancelled, the new one booked.
+      if (!pass && !(r.rooms.filter(x => !x.cancelled).length === 1 && left.length === 1 && loose.length === 1 && activeMapped === 1)) break;
+      for (const room of left) {
+        const hit = pairUp(room, pass);
+        if (!hit) continue;
+        await client.query('UPDATE channel_booking_rooms SET external_room_id = $3 WHERE channel_booking_id = $1 AND external_room_id = $2',
+          [cb.id, hit.m.external_room_id, room.id]);
+        byRoom.delete(hit.m.external_room_id);
+        byRoom.set(room.id, hit.m.booking_id);
+        hit.m.external_room_id = room.id;
+      }
+    }
+    for (const room of r.rooms) {
+      const bookingId = byRoom.get(room.id);
+      const b = bookingId && await loadBooking(client, bookingId);
+      if (b && room.cancelled) {
+        if (await cancelBooking(client, b, r, problems)) { changes.push(`room ${b.unit_name} cancelled`); touched.push(b.id); }
+      } else if (b) {
+        if (['cancelled', 'no_show'].includes(b.status)) { problems.push(`Room ${b.unit_name}: changed on ${r.ota} but the booking is ${b.status.replace('_', ' ')} in the PMS — check it`); continue; }
+        const done = await changeRoom(client, propertyId, r, room, b, L, defaultPlan, problems, takenUnits);
+        if (done) { changes.push(`room ${done.unitName}: ${done.diff.join('; ')}`); touched.push(b.id); }
+        else takenUnits.push(b.unit_id);
+      } else if (!room.cancelled && !bookingId) {
+        // A room added to the reservation.
+        const type = L.roomType(room.roomType);
+        const unit = type && await freeUnit(client, propertyId, type.room_type_id, room.ci, room.co, { taken: takenUnits });
+        if (!type || !unit) { problems.push(`A room was added on ${r.ota} (${type?.name || 'unlinked room type'} ${span(room.ci, room.co)}) but no room is free — enter it by hand`); continue; }
+        takenUnits.push(unit.id);
+        const { rows: [first] } = await client.query('SELECT guest_id, source, special_requests, internal_notes FROM bookings WHERE id = $1', [mapped[0].booking_id]);
+        const plan = L.ratePlan(room.ratePlan);
+        const made = await bookingCreate.createBooking(client, { propertyId, userId: null, input: {
+          guest_id: first.guest_id, unit_id: unit.id, check_in_date: room.ci, check_out_date: room.co,
+          num_guests: room.adults, children: room.children, rate_plan_id: plan?.rate_plan_id || defaultPlan?.id || null,
+          total_amount: room.amount, night_prices: nightPricesOf(room) || undefined, deposit_amount: 0,
+          source: first.source, special_requests: first.special_requests, internal_notes: first.internal_notes } });
+        if (made.status) throw new Error(made.error.error || 'Room not saved');
+        const points = [`Room picked automatically: ${unit.name} (${type.name}) — added on ${r.ota}${r.code ? ` (${r.code})` : ''}`];
+        const cp = collectPoint(r); if (cp) points.push(cp);
+        await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb, reservation_group_id = $4 WHERE id = $1',
+          [made.booking.id, r.collect, JSON.stringify(points), cb.reservation_group_id]);
+        await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, made.booking.id]);
+        await note(client, made.booking.id, `Room added on ${r.ota} via the channel manager (reservation ${r.code}). ${fmtIDR(room.amount)}.`);
+        changes.push(`room ${unit.name} added`); touched.push(made.booking.id);
+      }
+    }
+    // Rooms no longer in the reservation.
+    const present = new Set(r.rooms.map(x => x.id));
+    for (const m of mapped.filter(x => !present.has(x.external_room_id))) {
+      const b = m.booking_id && await loadBooking(client, m.booking_id);
+      if (b && await cancelBooking(client, b, r, problems)) { changes.push(`room ${b.unit_name} removed`); touched.push(b.id); }
+    }
+    // Who collects may change (e.g. a virtual card added later).
+    if (r.collect !== cb.payment_collect) {
+      await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [mapped.map(m => m.booking_id).filter(Boolean), r.collect]);
+    }
+  }
+  await closeGroupIfEmpty(client, cb.reservation_group_id);
+  await client.query('UPDATE channel_bookings SET status = $2, payment_collect = $3, last_revision_id = $4, updated_at = NOW() WHERE id = $1',
+    [cb.id, r.status, r.collect, r.revisionId]);
+
+  // Problems also go on the bookings' To check list.
+  if (problems.length) {
+    for (const id of mapped.map(m => m.booking_id).filter(Boolean)) {
+      await client.query(
+        `UPDATE bookings SET to_check = COALESCE(to_check, '[]'::jsonb) || $2::jsonb, to_check_done_at = NULL, to_check_done_by = NULL WHERE id = $1`,
+        [id, JSON.stringify(problems.map(p => `${r.ota}: ${p}`))]);
+    }
+  }
+  const verb = r.status === 'cancelled' ? 'cancelled' : 'changed';
+  return {
+    result: problems.length ? 'attention' : changes.length ? 'applied' : 'ignored',
+    message: [changes.length ? changes.join(' · ') : (problems.length ? '' : 'Nothing to change in the PMS'), ...problems].filter(Boolean).join(' · '),
+    bookingIds: [...new Set([...touched, ...mapped.map(m => m.booking_id).filter(Boolean)])],
+    channelBookingId: cb.id,
+    alert: changes.length || problems.length ? { title: `Booking ${verb} on ${r.ota}`, text: [r.code, ...changes, ...problems.map(p => `⚠️ ${p}`)] } : null,
+  };
+}
+
+// ── One revision ─────────────────────────────────────────────
+
+async function processRevision(client, propertyId, r) {
+  const L = await links(client, propertyId);
+  const { rows: [cb] } = await client.query(
+    'SELECT * FROM channel_bookings WHERE property_id = $1 AND provider = $2 AND external_booking_id = $3', [propertyId, PROVIDER, r.bookingId]);
+  if (!cb) {
+    if (r.status === 'cancelled') return { result: 'ignored', message: `Cancelled on ${r.ota} before it reached the PMS — nothing to do` };
+    const made = await createFromRevision(client, propertyId, r, L);
+    if (made.result === 'attention') {
+      // Remember the reservation, so its later changes aren't booked automatically either.
+      const { rows: [row] } = await client.query(
+        `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, last_revision_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`, [propertyId, PROVIDER, r.bookingId, r.ota, r.code, r.status, r.collect, r.revisionId]);
+      made.channelBookingId = row.id;
+    }
+    return made;
+  }
+  return applyChange(client, propertyId, r, cb, L);
+}
+
+function alertText(r, out) {
+  const h = telegramService.escapeHtml;
+  const lines = [];
+  if (out.result === 'attention' && !out.alert) {
+    lines.push(`⚠️ <b>${h(r.ota)} booking needs you</b>`, `${h(r.customer.name || 'Guest')} · ${h(r.code)}`);
+    if (r.rooms[0]) lines.push(`${h(span(r.rooms[0].ci, r.rooms[0].co))}`);
+    lines.push('', h(out.message));
+    return lines.join('\n');
+  }
+  const a = out.alert;
+  if (a.text) return [`🌐 <b>${h(a.title)}</b>`, h(r.customer.name || ''), ...a.text.map(h)].filter(Boolean).join('\n');
+  const nights = Math.round((Date.parse(a.checkOut) - Date.parse(a.checkIn)) / 86400000);
+  return [`🌐 <b>${h(a.title)}</b>`, `<b>${h(a.guest)}</b>`, '',
+    `🛏 ${h(a.rooms.join(', '))}`, `• ${h(span(a.checkIn, a.checkOut))} · ${nights} night${nights === 1 ? '' : 's'}`,
+    `• ${a.guests} guest${a.guests === 1 ? '' : 's'}`, `• ${h(fmtIDR(a.total))}`, a.extra ? `• ${h(a.extra)}` : ''].filter(s => s !== '').join('\n');
+}
+
+async function saveRevisionRow(client, propertyId, r, raw, out) {
+  await client.query(
+    `INSERT INTO channel_revisions (property_id, provider, external_revision_id, external_booking_id, channel_booking_id, revision_status,
+                                    ota_name, ota_code, guest_name, arrival, departure, result, message, booking_ids, raw, processed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+     ON CONFLICT (property_id, provider, external_revision_id) DO UPDATE SET
+       result = EXCLUDED.result, message = EXCLUDED.message, booking_ids = EXCLUDED.booking_ids,
+       channel_booking_id = EXCLUDED.channel_booking_id, processed_at = NOW(), tries = channel_revisions.tries + 1`,
+    [propertyId, PROVIDER, r.revisionId, r.bookingId, out.channelBookingId || null, r.status, r.ota, r.code, r.customer.name || null,
+     r.arrival || r.rooms[0]?.ci || null, r.departure || r.rooms[r.rooms.length - 1]?.co || null,
+     out.result, (out.message || '').slice(0, 2000), out.bookingIds || null, JSON.stringify(raw)]);
+}
+
+// Returns true when the revision is done (saved and confirmed).
+async function handleRevision(propertyId, raw) {
+  const r = parseRevision(raw);
+  const { rows: [seen] } = await db.query(
+    'SELECT result, acked_at FROM channel_revisions WHERE property_id = $1 AND provider = $2 AND external_revision_id = $3', [propertyId, PROVIDER, r.revisionId]);
+  if (seen && seen.result !== 'error') {
+    if (!seen.acked_at) await ack(propertyId, r.revisionId);
+    return true;
+  }
+  const client = await db.pool.connect();
+  let out;
+  try {
+    await client.query('BEGIN');
+    out = await processRevision(client, propertyId, r);
+    if (out.result === 'error') throw new Error(out.message);
+    await saveRevisionRow(client, propertyId, r, raw, out);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    out = { result: 'error', message: err.message };
+    await saveRevisionRow(db, propertyId, r, raw, out).catch(e => console.error('[CHANNEL BOOKINGS] save error row', e.message));
+    if (!seen) {
+      telegramService.sendAlert(propertyId, 'alert_new_booking',
+        `⚠️ <b>${telegramService.escapeHtml(r.ota)} booking could not be saved</b>\n${telegramService.escapeHtml(r.customer.name || '')} · ${telegramService.escapeHtml(r.code)}\n\n${telegramService.escapeHtml(err.message)}\n\nThe PMS tries again every minute — see Settings → Channel Manager.`, { html: true }).catch(() => {});
+    }
+    console.error('[CHANNEL BOOKINGS]', r.revisionId, err.message);
+    return false;
+  } finally {
+    client.release();
+  }
+  await ack(propertyId, r.revisionId);
+  if (out.result !== 'ignored' && (out.alert || out.result === 'attention')) {
+    telegramService.sendAlert(propertyId, 'alert_new_booking', alertText(r, out), { html: true }).catch(() => {});
+  }
+  return true;
+}
+
+async function ack(propertyId, revisionId) {
+  try {
+    await channex.ackBookingRevision(revisionId);
+    await db.query('UPDATE channel_revisions SET acked_at = NOW() WHERE property_id = $1 AND provider = $2 AND external_revision_id = $3',
+      [propertyId, PROVIDER, revisionId]);
+  } catch (err) {
+    console.error('[CHANNEL BOOKINGS] ack', revisionId, err.message);   // confirmed on a later read
+  }
+}
+
+// ── Reading the feed ─────────────────────────────────────────
+
+const pulling = new Set();
+async function pullProperty(propertyId) {
+  if (pulling.has(propertyId)) return { busy: true };
+  pulling.add(propertyId);
+  let handled = 0, failed = 0;
+  try {
+    const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
+    if (!p?.channex_property_id) return { skipped: 'not linked' };
+    for (let round = 0; round < 20; round++) {
+      const revs = await channex.pullBookingRevisions(p.channex_property_id);
+      if (!revs.length) break;
+      let progressed = false;
+      for (const rev of revs) {
+        if (await handleRevision(propertyId, rev)) { handled++; progressed = true; } else failed++;
+      }
+      if (!progressed) break;   // only revisions that keep failing are left
+    }
+    await db.query(
+      `INSERT INTO channel_sync_state (property_id, last_pull_at, last_pull_error) VALUES ($1, NOW(), NULL)
+       ON CONFLICT (property_id) DO UPDATE SET last_pull_at = NOW(), last_pull_error = NULL`, [propertyId]);
+    return { handled, failed };
+  } catch (err) {
+    await db.query(
+      `INSERT INTO channel_sync_state (property_id, last_pull_error) VALUES ($1, $2)
+       ON CONFLICT (property_id) DO UPDATE SET last_pull_error = $2`, [propertyId, String(err.message).slice(0, 1000)]).catch(() => {});
+    throw err;
+  } finally {
+    pulling.delete(propertyId);
+  }
+}
+
+let timer = null;
+async function pullAll() {
+  try {
+    const { rows } = await db.query(`
+      SELECT p.id FROM properties p
+        JOIN property_modules pm ON pm.property_id = p.id AND pm.module = 'channel_manager' AND pm.is_enabled = true
+       WHERE p.channex_property_id IS NOT NULL AND p.is_active = true`);
+    for (const r of rows) await pullProperty(r.id).catch(err => console.error('[CHANNEL BOOKINGS] pull', r.id, err.message));
+  } catch (err) {
+    console.error('[CHANNEL BOOKINGS] pullAll', err.message);
+  }
+}
+
+function start() {
+  if (!channex.isConfigured() || timer) return;
+  timer = setInterval(pullAll, PULL_MS);
+  setTimeout(pullAll, 5000);
+}
+
+// For the Channel Manager page: open items first, then the latest.
+async function list(propertyId, { limit = 30 } = {}) {
+  const cols = `r.id, r.revision_status, r.ota_name, r.ota_code, r.guest_name, to_char(r.arrival, 'YYYY-MM-DD') AS arrival,
+                to_char(r.departure, 'YYYY-MM-DD') AS departure, r.result, r.message, r.booking_ids, r.tries,
+                r.received_at, r.processed_at, r.acked_at, r.handled_at, hu.name AS handled_by_name`;
+  const [{ rows: open }, { rows: recent }, { rows: [st] }] = await Promise.all([
+    db.query(`SELECT ${cols} FROM channel_revisions r LEFT JOIN users hu ON hu.id = r.handled_by
+               WHERE r.property_id = $1 AND r.result IN ('attention', 'error') AND r.handled_at IS NULL
+               ORDER BY r.received_at`, [propertyId]),
+    db.query(`SELECT ${cols} FROM channel_revisions r LEFT JOIN users hu ON hu.id = r.handled_by
+               WHERE r.property_id = $1 ORDER BY r.received_at DESC LIMIT $2`, [propertyId, limit]),
+    db.query('SELECT last_pull_at, last_pull_error FROM channel_sync_state WHERE property_id = $1', [propertyId]),
+  ]);
+  return { open, recent, last_pull_at: st?.last_pull_at || null, last_pull_error: st?.last_pull_error || null };
+}
+
+// FO dealt with it by hand. An error revision is then confirmed to Channex too.
+async function markHandled(propertyId, id, userId) {
+  const { rows: [row] } = await db.query(
+    `UPDATE channel_revisions SET handled_at = NOW(), handled_by = $3
+      WHERE id = $1 AND property_id = $2 AND result IN ('attention', 'error') AND handled_at IS NULL
+      RETURNING external_revision_id, result, acked_at`, [id, propertyId, userId]);
+  if (!row) { const e = new Error('Nothing to mark — already handled or not found'); e.status = 404; throw e; }
+  if (!row.acked_at) await ack(propertyId, row.external_revision_id);
+  return row;
+}
+
+module.exports = { parseRevision, handleRevision, pullProperty, pullAll, start, list, markHandled };

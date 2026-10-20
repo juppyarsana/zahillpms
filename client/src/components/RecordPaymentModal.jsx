@@ -24,7 +24,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   // An OTA booking: the room is the OTA's to pay, usually after the stay —
   // its lines start unticked so a guest's payment for extras is never marked
   // as the room's by mistake. Tick them only when the OTA's money arrives.
-  const ota = otaName(sources, booking.source);
+  const ota = otaName(sources, booking.source, booking.payment_collect);
   const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
   const [folio, setFolio] = useState(null);
   const [addons, setAddons] = useState([]);

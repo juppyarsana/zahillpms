@@ -79,6 +79,8 @@ function GuestCard({ booking, borderColor, rightLabel, rightColor, onClick }) {
 export default function QuickCheckIn() {
   const { sources } = useSettings();
   const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
+  // Who collects (channel manager, migration 121) wins over the source.
+  const otaPays = (b) => (b.payment_collect ? b.payment_collect === 'ota' : otaSources.includes(b.source));
 
   const [tab, setTab] = useState('checkin');
 
@@ -134,7 +136,7 @@ export default function QuickCheckIn() {
 
   // ── Check-in helpers ──
   function openCheckin(b) {
-    const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
+    const isOTA = otaPays(b) || !!b.agent_billed;
     setCiSelected(b);
     setIdFile(null);
     setCiMsg('');
@@ -270,7 +272,7 @@ export default function QuickCheckIn() {
             {clusterByGroup(arrivals).map(item => {
               if (item.type === 'single') {
                 const b = item.booking;
-                const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
+                const isOTA = otaPays(b) || !!b.agent_billed;
                 const ready = b.deposit_paid || isOTA;
                 return (
                   <GuestCard
@@ -303,7 +305,7 @@ export default function QuickCheckIn() {
                   )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {bookings.map(b => {
-                      const isOTA = otaSources.includes(b.source) || !!b.agent_billed;
+                      const isOTA = otaPays(b) || !!b.agent_billed;
                       const ready = b.deposit_paid || isOTA;
                       return (
                         <GuestCard

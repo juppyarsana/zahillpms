@@ -924,7 +924,7 @@ export default function BookingDetail() {
   const roomPaid = roomPaymentLines.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
   const bookingNet = parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0);
   // OTA booking: the open room lines are the OTA's to pay, not the guest's.
-  const ota = otaName(sources, booking.source);
+  const ota = otaName(sources, booking.source, booking.payment_collect);
   const otaOpen = ota && !['cancelled', 'no_show'].includes(booking.status) ? roomPending(booking.payments) : 0;
   const pendingBalance = roomPaymentLines
     .filter(p => p.type === 'balance' && p.status !== 'received')

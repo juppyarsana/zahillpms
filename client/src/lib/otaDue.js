@@ -4,10 +4,13 @@
 // same rule as the checkout screens (server services/checkoutBalance.js).
 const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];   // same as server
 
-// The OTA's name when the booking's source is an OTA, else null.
-export function otaName(sources, sourceId) {
+// The OTA's name when the OTA pays the room, else null. `collect` = the
+// booking's payment_collect (migration 121, set by the channel manager):
+// 'property' = the hotel collects even from an OTA booking ("pay at hotel").
+export function otaName(sources, sourceId, collect = null) {
   const s = (sources || []).find(x => x.id === sourceId);
-  if (s?.is_ota || OTA_SOURCES.includes(sourceId)) return s?.label || sourceId;
+  if (collect === 'property') return null;
+  if (collect === 'ota' || s?.is_ota || OTA_SOURCES.includes(sourceId)) return s?.label || sourceId;
   return null;
 }
 

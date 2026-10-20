@@ -50,8 +50,10 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN agents ag ON ag.id = b.agent_id
      WHERE b.id = $1`, [bookingId]);
-  const isOTA = OTA_SOURCES.includes(booking.source) || chan?.is_ota
-    || agentBilling.CITY_LEDGER.includes(chan?.agent_payment_status);
+  // Who collects (migration 121, channel manager) wins over the source:
+  // a "pay at hotel" OTA booking is paid at the desk like a direct one.
+  const otaPays = booking.payment_collect ? booking.payment_collect === 'ota' : (OTA_SOURCES.includes(booking.source) || chan?.is_ota);
+  const isOTA = otaPays || agentBilling.CITY_LEDGER.includes(chan?.agent_payment_status);
   let payLaterUnpaid = null;   // set when checked in without full payment
 
   if (isOTA) {

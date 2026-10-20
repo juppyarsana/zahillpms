@@ -448,7 +448,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
              g.name AS guest_name, g.nationality, g.whatsapp AS guest_whatsapp,
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
-             COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
+             COALESCE(bs.label, b.source) AS source_label, CASE WHEN b.payment_collect IS NOT NULL THEN b.payment_collect = 'ota' ELSE COALESCE(bs.is_ota, false) END AS is_ota,
              CASE WHEN $2::date = $3::date THEN
                     CASE WHEN b.status IN ${PRE_ARRIVAL} THEN 'arrival'
                          WHEN b.status = 'checked_out' OR b.check_out_date <= $2::date THEN 'departure'
@@ -712,7 +712,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
   const { rows: candidates } = await db.query(`
     SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status, b.reservation_group_id,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
-           COALESCE(bs.label, b.source) AS source_label, COALESCE(bs.is_ota, false) AS is_ota,
+           COALESCE(bs.label, b.source) AS source_label, CASE WHEN b.payment_collect IS NOT NULL THEN b.payment_collect = 'ota' ELSE COALESCE(bs.is_ota, false) END AS is_ota,
            COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name,
            CASE WHEN b.status = 'checked_out' OR b.check_out_date = $2::date THEN 'departing'
                 WHEN b.check_out_date < $2::date THEN 'overdue'

@@ -1,9 +1,11 @@
 // Settings → Channel Manager (owner, `channel_manager` module). Stage 1:
 // link this hotel to its Channex property, then each room type and meal plan
 // to a Channex room type / rate plan. Stage 2: the "Sending to Channex"
-// card (free rooms + prices, services/channelSync.js). Server: routes/channelManager.js.
+// card (free rooms + prices, services/channelSync.js). Stage 3: the "Bookings from
+// the OTAs" card (services/channelBookings.js). Server: routes/channelManager.js.
 
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 
 const MEAL_LABEL = {
@@ -81,7 +83,7 @@ export default function SettingsChannelManager() {
             <div>
               Once a room type and its meal plans are linked, the PMS keeps Channex up to date by itself: free rooms and the nightly
               price for the next {data.sync_days || 365} nights, sent within about half a minute of any booking, room or price change.
-              Channex passes them to the OTAs only for channels connected there. OTA bookings coming into the PMS is the next step.
+              Channex passes them to the OTAs only for channels connected there. OTA bookings come back into the PMS by themselves (card 4).
             </div>
           </div>
 
@@ -238,6 +240,9 @@ export default function SettingsChannelManager() {
             <SyncCard sync={data.sync} days={data.sync_days} busy={busy}
               onSend={() => run('sync', () => api.post('/api/channel-manager/sync'))} />
           )}
+
+          {/* ── 4. Bookings coming in ─────────────────────────────── */}
+          {data.property && linkedTypes > 0 && <BookingsCard />}
         </>
       )}
     </div>
@@ -291,6 +296,102 @@ function SyncCard({ sync, days, busy, onSend }) {
           <div>Channex did not take some values: {last.warnings.map(w => JSON.stringify(w)).join(' · ').slice(0, 400)}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+const RESULT = {
+  applied:   { label: 'Saved',        cls: 'badge-green' },
+  attention: { label: 'Needs you',    cls: 'badge-yellow' },
+  ignored:   { label: 'Nothing to do', cls: 'badge-gray' },
+  error:     { label: 'Not saved — retrying', cls: 'badge-red' },
+};
+const KIND = { new: 'New', modified: 'Changed', cancelled: 'Cancelled' };
+const dayOf = v => v ? new Date(v + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '';
+
+function RevisionRow({ r, onHandled, busy }) {
+  const meta = RESULT[r.result] || RESULT.ignored;
+  const open = ['attention', 'error'].includes(r.result) && !r.handled_at;
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: open ? 'var(--warning-bg)' : 'var(--cream)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+          <b>{KIND[r.revision_status] || r.revision_status} · {r.ota_name}</b>
+          <span style={{ color: 'var(--text-muted)' }}>{r.ota_code}</span>
+          <span className={`badge ${meta.cls}`}>{r.handled_at ? 'Handled' : meta.label}</span>
+        </div>
+        <div style={{ fontSize: 13, marginTop: 2 }}>
+          {r.guest_name || 'Guest'}{r.arrival ? ` · ${dayOf(r.arrival)} – ${dayOf(r.departure)}` : ''}
+          <span style={{ color: 'var(--text-muted)' }}> · {when(r.received_at)}</span>
+        </div>
+        {r.message && <div style={{ fontSize: 12, color: open ? 'var(--warning-text)' : 'var(--text-muted)', marginTop: 4 }}>{r.message}</div>}
+        {r.handled_at && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Handled by {r.handled_by_name || 'staff'} · {when(r.handled_at)}</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {(r.booking_ids || []).slice(0, 4).map((id, i) => (
+          <Link key={id} to={`/reservations/${id}`} className="btn btn-secondary btn-sm">Open{(r.booking_ids.length > 1) ? ` ${i + 1}` : ''} →</Link>
+        ))}
+        {open && (
+          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onHandled(r)}>
+            {r.result === 'error' ? 'Entered by hand' : 'Done — handled'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BookingsCard() {
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const load = () => api.get('/api/channel-manager/bookings').then(r => { setD(r.data); setErr(null); }).catch(e => setErr(errText(e)));
+  useEffect(() => {
+    load();
+    const id = setInterval(() => { if (!document.hidden) load(); }, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const pull = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await api.post('/api/channel-manager/bookings/pull'); setD(r.data); } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  const handled = async (r) => {
+    const what = r.result === 'error' ? 'You entered this booking by hand (or it is not needed)? It is then confirmed to Channex and taken off this list.'
+      : 'You have dealt with this by hand? It is taken off this list.';
+    if (!window.confirm(what)) return;
+    setBusy(true);
+    try { await api.post(`/api/channel-manager/revisions/${r.id}/handled`); await load(); } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  };
+  const recent = (d?.recent || []).filter(r => !(d.open || []).some(o => o.id === r.id));
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+        <div className="card-title" style={{ margin: 0 }}>4. Bookings from the OTAs</div>
+        {d?.open?.length ? <span className="badge badge-yellow">{d.open.length} need{d.open.length === 1 ? 's' : ''} you</span> : null}
+        <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={busy} onClick={pull}>{busy ? 'Checking…' : 'Check now'}</button>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
+        Every minute the PMS reads new, changed and cancelled OTA bookings from Channex and puts them in: the first free room of the type,
+        the guest, the OTA as the source, the price, who collects the money. New ones are on Reservations → ⚠ To check
+        and on Telegram (New booking alert). What the PMS can't do safely — no free room, a guest already checked in — waits here for you.
+        Last read: {when(d?.last_pull_at)}.
+      </div>
+      {(err || d?.last_pull_error) && <div className="alert alert-error"><div>{err || `Channex could not be read: ${d.last_pull_error}`}</div></div>}
+      {d?.open?.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          {d.open.map(r => <RevisionRow key={r.id} r={r} onHandled={handled} busy={busy} />)}
+        </div>
+      )}
+      {recent.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', margin: '4px 0 6px' }}>Latest</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {recent.slice(0, 15).map(r => <RevisionRow key={r.id} r={r} onHandled={handled} busy={busy} />)}
+          </div>
+        </>
+      )}
+      {d && !d.open?.length && !recent.length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No OTA bookings have come in yet.</div>}
     </div>
   );
 }

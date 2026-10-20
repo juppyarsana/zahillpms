@@ -7,6 +7,7 @@ const router = require('express').Router();
 const requireRole = require('../middleware/role');
 const cm = require('../services/channelManagerService');
 const channelSync = require('../services/channelSync');
+const channelBookings = require('../services/channelBookings');
 
 router.use(requireRole('owner'));
 
@@ -29,6 +30,30 @@ router.get('/setup', async (req, res) => {
 // /setup also reads Channex, too heavy to repeat).
 router.get('/sync', async (req, res) => {
   try { res.json({ sync: await channelSync.status(req.propertyId) }); } catch (err) { send(res, err); }
+});
+
+// GET /api/channel-manager/bookings — stage 3: reservations read from Channex
+// ({ open: needing FO, recent, last_pull_at, last_pull_error }).
+router.get('/bookings', async (req, res) => {
+  try { res.json(await channelBookings.list(req.propertyId)); } catch (err) { send(res, err); }
+});
+
+// POST /api/channel-manager/bookings/pull — read the feed now.
+router.post('/bookings/pull', async (req, res) => {
+  try {
+    const result = await channelBookings.pullProperty(req.propertyId);
+    if (result.busy) return res.status(409).json({ error: 'Already reading — try again in a moment', code: 'BUSY' });
+    if (result.skipped) return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    res.json({ ok: true, result, ...(await channelBookings.list(req.propertyId)) });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/channel-manager/revisions/:id/handled — FO dealt with it by hand.
+router.post('/revisions/:id/handled', async (req, res) => {
+  try { await channelBookings.markHandled(req.propertyId, req.params.id, req.user.id); res.json({ ok: true }); }
+  catch (err) { send(res, err); }
 });
 
 // POST /api/channel-manager/sync — send every night's free rooms and prices

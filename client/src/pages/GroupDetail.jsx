@@ -450,9 +450,9 @@ export default function GroupDetail() {
   const { group, bookings, rollup } = data;
   // OTA rooms (e.g. Agoda): their open room lines are the OTA's to pay, not
   // the guest's — shown apart so FO doesn't ask the guest for them.
-  const otaOpenOf = b => (!data.bill && otaName(sources, b.source) && !['cancelled', 'no_show'].includes(b.status)) ? roomPending(b.payments) : 0;
+  const otaOpenOf = b => (!data.bill && otaName(sources, b.source, b.payment_collect) && !['cancelled', 'no_show'].includes(b.status)) ? roomPending(b.payments) : 0;
   const otaOpenTotal = bookings.reduce((s, b) => s + otaOpenOf(b), 0);
-  const otaNames = [...new Set(bookings.filter(b => otaOpenOf(b) >= 1).map(b => otaName(sources, b.source)))].join(' / ');
+  const otaNames = [...new Set(bookings.filter(b => otaOpenOf(b) >= 1).map(b => otaName(sources, b.source, b.payment_collect)))].join(' / ');
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
   const assignableRooms = bookings.filter(b => !['cancelled', 'no_show', 'checked_out'].includes(b.status));
   const roomsWithBooker = assignableRooms.filter(b => b.guest_id === group.primary_guest_id).length;
@@ -680,7 +680,7 @@ export default function GroupDetail() {
                       </span>
                     );
                     if (unpaid <= 0 || ['cancelled', 'no_show'].includes(b.status)) return null;
-                    const ota = otaName(sources, b.source);
+                    const ota = otaName(sources, b.source, b.payment_collect);
                     if (ota && otaOpenOf(b) >= unpaid - 0.5) return (
                       <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}
                         title={`The guest paid ${ota}; ${ota} pays the hotel. Nothing to collect from the guest for the room.`}>

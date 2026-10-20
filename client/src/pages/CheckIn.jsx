@@ -77,6 +77,8 @@ export default function CheckIn() {
   const { can } = useAuth();
   const { sources, branding } = useSettings();
   const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
+  // Who collects (channel manager, migration 121) wins over the source.
+  const otaPays = (b) => (b.payment_collect ? b.payment_collect === 'ota' : otaSources.includes(b.source));
   function srcLabel(id) { return sources.find(s => s.id === id)?.label || id; }
   const [searchParams] = useSearchParams();
 
@@ -143,7 +145,7 @@ export default function CheckIn() {
     setIdFile(null);
     setPayLaterReason(null);
 
-    if (!otaSources.includes(b.source) && !b.agent_billed) {
+    if (!otaPays(b) && !b.agent_billed) {
       if (b.status === 'deposit_paid') {
         setDepositBlockId(b.id);
         setMsg('balance_unpaid');
@@ -255,7 +257,7 @@ export default function CheckIn() {
   }
 
   // OTA, or an agent that pays the hotel later (migration 084): nothing to collect for the room
-  const isOTA = (b) => otaSources.includes(b.source) || !!b.agent_billed;
+  const isOTA = (b) => otaPays(b) || !!b.agent_billed;
 
   return (
     <div>

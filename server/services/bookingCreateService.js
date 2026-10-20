@@ -229,8 +229,10 @@ async function createGroup(client, { propertyId, userId, input }) {
   // Billed as a whole (migration 097): one bill and one payment record for
   // the group, no deposit / balance lines on its rooms — except a group
   // billed to a city-ledger agent, which keeps per-room agent billing.
-  let groupBilled = true;
-  if (agentPick.agentId) {
+  // The caller can ask for room-by-room payment (group_billing: false) — the
+  // channel manager does for OTA reservations, whose room money comes from the OTA.
+  let groupBilled = input.group_billing !== false;
+  if (groupBilled && agentPick.agentId) {
     const { rows: [ag] } = await client.query('SELECT payment_status FROM agents WHERE id = $1', [agentPick.agentId]);
     if (agentBilling.CITY_LEDGER.includes(ag?.payment_status)) groupBilled = false;
   }

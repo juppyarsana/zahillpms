@@ -20,6 +20,7 @@ export const GROUPS = [
     { id: 'kids-breakfast', icon: '🧒', title: { id: 'Anak & sarapan gratis', en: 'Children & free breakfast' } },
     { id: 'other-guests', icon: '👥', title: { id: 'Tamu lain di kamar', en: 'Other guests in the room' } },
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
+    { id: 'ota-bookings', icon: '🌐', title: { id: 'Booking dari OTA', en: 'Bookings from the OTAs' } },
     { id: 'extras-payments', icon: '💳', title: { id: 'Extras: bayar sebagian & pindah tagihan', en: 'Extras: paying in parts & transferring the bill' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
   ] },

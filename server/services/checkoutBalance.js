@@ -19,7 +19,7 @@ const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];   // same as routes/
 // default (a city-ledger agent is billed).
 async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   const { rows: [b] } = await db.query(
-    `SELECT b.id, b.source, b.folio_status, COALESCE(bs.is_ota, false) AS is_ota,
+    `SELECT b.id, b.source, b.folio_status, b.payment_collect, COALESCE(bs.is_ota, false) AS is_ota,
             ag.name AS agent_name, ag.payment_status AS agent_payment_status
        FROM bookings b
        LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
@@ -33,7 +33,8 @@ async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   }
   const pf = await computeProforma(bookingId, propertyId);
   if (!pf) return null;
-  const ota = OTA_SOURCES.includes(b.source) || b.is_ota;
+  // Who collects (migration 121, set by the channel manager) wins over the source.
+  const ota = b.payment_collect ? b.payment_collect === 'ota' : (OTA_SOURCES.includes(b.source) || b.is_ota);
   let owed = pf.balance_due;
   if (ota) {
     const roomPending = pf.payments
