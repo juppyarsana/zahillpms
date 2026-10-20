@@ -859,8 +859,10 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
 
-- **Lobby music (migration 119, same deploy):** after deploy, Guest Board → 🎵 Lobby music → add MP3s, tick *Play on the lobby TV*, volume ~40%. Plays only on a lobby TV with TV app 0.2.0 (older versions block sound starting by itself). Royalty-free or licensed (LMKN) songs only.
-- **Next deploy brings migrations 117–119** (`main` c2e93e5): Channel Manager stage 1 (page only says "not set up" without a Channex key — nothing to do) and Change Room from a later night. Tell FO: guest moving rooms during the stay → ⋮ More → Change Room → *From which night?* (Guide → *Pindah kamar*); never shorten + add a room again, and *received payment was a typo* only for amounts typed wrong.
+- **Deployed 2026-10-20 at `main` ded34cb (owner): migrations 117–119** (Channel Manager stage 1, Change Room from a later night, lobby music). By hand, not confirmed yet:
+  - Tell FO: guest moving rooms during the stay → ⋮ More → Change Room → *From which night?* (Guide → *Pindah kamar*); never shorten + add a room again; *received payment was a typo* only for amounts typed wrong.
+  - Lobby music: Guest Board → 🎵 Lobby music → add MP3s, tick *Play on the lobby TV*, volume ~40%. Plays only once the lobby TV has TV app 0.2.0. Royalty-free or licensed (LMKN) songs only.
+  - Channel Manager: nothing until Channex production exists (page says not set up without a key).
 - ~~Tim Walker group money on the wrong rooms~~ — fixed on production 2026-10-20 with `moveRoomPayment.js` (203 → 104, 208 → 101 `--restore`; backups `server/maintenance/backups/moveRoomPayment-zahill-203-104-2026-10-20T11-15-32-318Z.json` and `…-208-101-2026-10-20T11-15-40-325Z.json`). All four rooms paid + confirmed; 14 Oct money +Rp 2.850.000 back to what came in (a correction in the next accounting close if 14 Oct was closed).
 - **Deployed 2026-10-20 at `main` 7f002bf (owner): migrations 112–116 and everything up to Record Group Payment with extras.** Steps by hand NOT confirmed done yet — remove each once the owner says so:
   - Tell owner / managers: night audit now 03:00 WITA, Daily Close at 03:30 (was 00:30). Tell FO: Check-in / out → 🌙 *Marked no-show last night* → *Arrived late* (Guide → *Tamu datang lewat tengah malam*); Bu Sese group (103–105) put back + checked in?
