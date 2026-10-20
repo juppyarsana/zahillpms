@@ -174,6 +174,19 @@ export default function GroupDetail() {
   const payableExtras = () => extrasDue.filter(r => !(r.on_account > 0.005));
   const extrasPicked = () => payableExtras().filter(r => extraSel.has(r.booking_id));
 
+  // Received on a room's deposit / balance lines beyond its price (total −
+  // discount): a stay shortened after it was paid — Paid counts it, the
+  // room's own unpaid lines don't.
+  const roomCredit = b => {
+    const received = (b.payments || [])
+      .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status === 'received')
+      .reduce((s, p) => s + parseFloat(p.amount), 0);
+    return Math.round(received - (parseFloat(b.total_amount) - parseFloat(b.discount_amount || 0)));
+  };
+  const creditRooms = data && !data.bill
+    ? data.bookings.filter(b => !['cancelled', 'no_show'].includes(b.status)).map(b => ({ unit_name: b.unit_name, over: roomCredit(b) })).filter(r => r.over >= 1)
+    : [];
+
   // Every unpaid room payment line in the group, room by room.
   function pendingLines() {
     if (!data) return [];
@@ -659,6 +672,13 @@ export default function GroupDetail() {
                     const unpaid = (b.payments || [])
                       .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status !== 'received' && parseFloat(p.amount) > 0)
                       .reduce((s, p) => s + parseFloat(p.amount), 0);
+                    const over = roomCredit(b);
+                    if (over >= 1 && !['cancelled', 'no_show'].includes(b.status)) return (
+                      <span style={{ fontSize: 12, color: 'var(--warning-text, #92400e)', fontWeight: 600 }}
+                        title="More was received on this room than its price — e.g. the stay was shortened after it was paid. Move it to the room that took the nights, or refund it.">
+                        {fmtIDR(over)} paid too much
+                      </span>
+                    );
                     if (unpaid <= 0 || ['cancelled', 'no_show'].includes(b.status)) return null;
                     const ota = otaName(sources, b.source);
                     if (ota && otaOpenOf(b) >= unpaid - 0.5) return (
@@ -733,6 +753,15 @@ export default function GroupDetail() {
                 <div className="text-muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
                   The guests paid {otaNames}; {otaNames} pays the hotel. Mark each room's line received when that money comes in.
                   Extras (restaurant, extra bed…) are on each room's folio.
+                </div>
+              </div>
+            )}
+            {creditRooms.length > 0 && (
+              <div className="alert alert-warn" style={{ fontSize: 12, marginTop: 8 }}>
+                <div>
+                  {creditRooms.map((r, i) => `${i ? 'room' : 'Room'} ${r.unit_name} ${fmtIDR(r.over)}`).join(', ')} paid more than {creditRooms.length === 1 ? 'its' : 'their'} price — counted in Paid above,
+                  so the rooms' unpaid lines add up to more than the Balance Due. If the guest moved to another room of the group, that money pays the new room:
+                  don't collect it again. Next time use <b>Change Room → From which night</b>, which moves the money with the nights.
                 </div>
               </div>
             )}

@@ -37,6 +37,7 @@ const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
 const { TODAY_WITA_SQL, checkoutDaySql, occupiedUntilSql, overdueSql } = require('../services/occupancySql');
 const toCheck = require('../services/toCheck');
+const splitStay = require('../services/splitStayService');
 
 // A booking can carry more than one 'balance' payment line: a price
 // correction (PUT /:id/price) that raises an already fully-paid booking adds a
@@ -1349,7 +1350,16 @@ router.get('/:id', auth, async (req, res) => {
     }
     // Other guests in the room (migration 112).
     const other_guests = (await otherGuestsFor(db, [booking.id])).get(booking.id) || [];
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests });
+    // A stay split over two rooms (migration 118): the booking it continues
+    // and the one(s) continuing it.
+    const { rows: split_links } = await db.query(`
+      SELECT b.id, u.name AS unit_name, to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in_date,
+             to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out_date, b.status,
+             CASE WHEN b.id = $2 THEN 'from' ELSE 'to' END AS direction
+      FROM bookings b JOIN units u ON u.id = b.unit_id
+      WHERE b.property_id = $1 AND (b.id = $2 OR b.split_from_booking_id = $3)
+      ORDER BY b.check_in_date`, [req.propertyId, booking.split_from_booking_id || null, booking.id]);
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests, split_links });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2818,6 +2828,78 @@ async function changeRoomQuote(client, { propertyId, booking, targetUnitId }) {
   };
 }
 
+// Change Room from a later night (PUT /:id/change-room with `from`): the
+// booking keeps its room up to `from`, a new booking takes the rest in the
+// new room (services/splitStayService.js). Runs inside the caller's
+// transaction; returns { error, status } or { body, controllers, alert }.
+async function splitRoomChange(client, req, before, { unitId, from, charge, custom, reason }) {
+  const fail = (status, error, code) => ({ status, error: { error, ...(code ? { code } : {}) } });
+  const ci = String(before.check_in_date).slice(0, 10), co = String(before.check_out_date).slice(0, 10);
+  if (!(from > ci && from < co)) return fail(400, 'Choose a night after the first night and before check-out');
+  if (before.status === 'checked_in' && from < roomCharge.todayWITA()) {
+    return fail(400, 'That night is already over — choose today or a later night');
+  }
+  if (before.complimentary_scope) return fail(409, 'This stay is complimentary — remove complimentary first, then split it', 'COMPLIMENTARY');
+  if (before.folio_status) return fail(409, 'This stay is already on an agent bill — it can no longer be split', 'AGENT_BILLED');
+
+  const { rows: [conflict] } = await client.query(`
+    SELECT b.id, g.name AS guest_name FROM bookings b JOIN guests g ON g.id = b.guest_id
+    WHERE b.unit_id = $1 AND b.property_id = $2 AND b.id <> $3
+      AND b.status NOT IN ('cancelled', 'no_show')
+      AND b.check_in_date < $5 AND ${occupiedUntilSql('b')} > $4
+    LIMIT 1`, [unitId, req.propertyId, before.id, from, co]);
+  if (conflict) return fail(409, `That room is booked for those nights (${conflict.guest_name})`);
+
+  const parts = await splitStay.splitParts(client, before, from);
+  if (parts.error) return fail(400, parts.error);
+  const quote = await changeRoomQuote(client, { propertyId: req.propertyId, booking: splitStay.secondPartBooking(before, parts), targetUnitId: unitId });
+  if (!quote) return fail(404, 'Room not found');
+  const amount = charge === 'complimentary' ? 0 : charge === 'custom' ? round2(custom) : quote.difference;
+  if (!reason && !(quote.same_type && amount === 0)) return fail(400, 'A reason is required');
+
+  const { rows: [oldUnit] } = await client.query('SELECT id, name, type, controller_id FROM units WHERE id = $1', [before.unit_id]);
+  const { rows: [newUnit] } = await client.query('SELECT id, name, type, controller_id FROM units WHERE id = $1 AND property_id = $2', [unitId, req.propertyId]);
+  if (!newUnit) return fail(404, 'Room not found');
+  const label = u => `${u.name}${u.type ? ` (${u.type})` : ''}`;
+
+  const done = await splitStay.apply(client, {
+    propertyId: req.propertyId, before, unitId, fromDate: from, userId: req.user.id, amount, parts, q: quote,
+    labels: { from: oldUnit.name, to: newUnit.name }, reason,
+  });
+  if (done.error) return done;
+  if (before.reservation_group_id) await syncGroupSpan(client, before.reservation_group_id);
+
+  const d = x => fmtShortYmd(x);
+  const nightsText = n => `${n} night${n === 1 ? '' : 's'}`;
+  let price = '';
+  if (quote.same_type && amount === 0) price = ' Same room type — price unchanged.';
+  else if (charge === 'complimentary') price = ` Complimentary — no charge (normal difference ${fmtIDR(quote.difference)}).`;
+  else if (amount > 0) price = ` Charged +${fmtIDR(amount)}${charge === 'custom' ? ` (normal difference ${fmtIDR(quote.difference)})` : ''}.`;
+  else if (amount < 0) price = ` Credit ${fmtIDR(-amount)}.`;
+  const moved = done.money.moves > 0.005 ? ` ${fmtIDR(done.money.moves)} received moved with the nights.` : '';
+  const why = reason ? ` Reason: ${reason}` : '';
+  await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3), ($4, $5, $3)', [
+    before.id,
+    (`Stay split: from ${d(from)} the guest continues in room ${label(newUnit)}. This room: ${d(ci)} – ${d(from)} (${nightsText(parts.a.nights)}), price ${fmtIDR(parts.a.payable)}.${moved}${why}`).slice(0, 1000),
+    req.user.id,
+    done.b.id,
+    (`Continues the stay from room ${label(oldUnit)}: ${d(from)} – ${d(co)} (${nightsText(parts.b.nights)}), price ${fmtIDR(parts.b.payable)}.${price}${moved}${why}`).slice(0, 1000),
+  ]);
+
+  const alert = quote.difference > 0 && amount < quote.difference ? {
+    bookingIds: done.b.id, userId: req.user.id, reason,
+    headline: amount <= 0
+      ? `🎁 Free upgrade from ${d(from)}: ${label(oldUnit)} → ${label(newUnit)}, no charge`
+      : `🏷 Discounted upgrade from ${d(from)}: ${label(oldUnit)} → ${label(newUnit)}, charged ${fmtIDR(amount)}`,
+    details: [`Normal difference ${fmtIDR(quote.difference)} for ${nightsText(quote.nights)} — given away ${fmtIDR(quote.difference - Math.max(0, amount))}`],
+  } : null;
+  return {
+    body: { split: true, from: oldUnit.name, to: newUnit.name, new_booking_id: done.b.id, charged: amount, moved: done.money.moves, quote },
+    controllers: [oldUnit.controller_id, newUnit.controller_id],
+    alert,
+  };
+}
+
 const CHANGEABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
 
 // GET /api/bookings/:id/change-room/quote?unit_id= — the price difference
@@ -2827,6 +2909,14 @@ router.get('/:id/change-room/quote', auth, async (req, res) => {
   try {
     const { rows: [booking] } = await db.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    // ?from= a later night of the stay: the stay is split (services/splitStayService.js).
+    const from = req.query.from ? String(req.query.from).slice(0, 10) : null;
+    if (from && from !== String(booking.check_in_date).slice(0, 10)) {
+      const sq = await splitStay.quote(db, { booking, fromDate: from, targetUnitId: req.query.unit_id, changeRoomQuote, propertyId: req.propertyId });
+      if (!sq) return res.status(404).json({ error: 'Room not found' });
+      if (sq.error) return res.status(400).json({ error: sq.error });
+      return res.json(sq);
+    }
     const quote = await changeRoomQuote(db, { propertyId: req.propertyId, booking, targetUnitId: req.query.unit_id });
     if (!quote) return res.status(404).json({ error: 'Room not found' });
     res.json(quote);
@@ -2864,6 +2954,16 @@ router.put('/:id/change-room', auth, async (req, res) => {
       return res.status(409).json({ error: `Cannot change room — booking is ${before.status.replace('_', ' ')}` });
     }
     if (before.unit_id === unit_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The booking is already in this room' }); }
+
+    const from = req.body.from ? String(req.body.from).slice(0, 10) : null;
+    if (from && from !== String(before.check_in_date).slice(0, 10)) {
+      const result = await splitRoomChange(client, req, before, { unitId: unit_id, from, charge, custom, reason });
+      if (result.error) { await client.query('ROLLBACK'); return res.status(result.status).json(result.error); }
+      await client.query('COMMIT');
+      for (const c of result.controllers) if (c) sse.notify(c, { type: 'room_changed' });
+      if (result.alert) sendControlAlert(req.propertyId, result.alert);
+      return res.json(result.body);
+    }
 
     const { rows: [conflict] } = await client.query(`
       SELECT b.id, g.name AS guest_name FROM bookings b JOIN guests g ON g.id = b.guest_id

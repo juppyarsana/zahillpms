@@ -31,6 +31,7 @@ import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
 import { otaName, roomPending } from '../lib/otaDue';
+import { propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -247,6 +248,8 @@ export default function BookingDetail() {
   // Change Room (upgrade / downgrade / move): quote for the picked room and
   // how to charge the difference.
   const [changeQuote, setChangeQuote] = useState(null);
+  const [changeFrom, setChangeFrom] = useState('');    // '' = the whole stay, else the night the new room starts
+  const [splitDone, setSplitDone] = useState(null);     // { to, new_booking_id } after a split
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [chargeMode, setChargeMode] = useState('difference'); // difference | complimentary
   const [customAmount, setCustomAmount] = useState(''); // Change Room: the NEW room's price for the stay (pre-filled with its normal rate)
@@ -566,27 +569,43 @@ export default function BookingDetail() {
     load();
   }
 
+  async function loadChangeUnits(from) {
+    const r = await api.get('/api/bookings/transfer-availability', {
+      params: {
+        check_in: from || booking.check_in_date?.slice(0, 10),
+        check_out: booking.check_out_date?.slice(0, 10),
+        exclude_booking_id: id,
+      },
+    });
+    setTransferUnits(r.data.filter(u => u.id !== booking.unit_id));
+  }
+
   async function openTransfer() {
     setTransferTarget(null);
     setChangeQuote(null);
+    setChangeFrom('');
+    setSplitDone(null);
     setChargeMode('difference');
     setCustomAmount('');
     setChangeReason('');
     setChangeError('');
     setTransferring(true);
     try {
-      const r = await api.get('/api/bookings/transfer-availability', {
-        params: {
-          check_in: booking.check_in_date?.slice(0, 10),
-          check_out: booking.check_out_date?.slice(0, 10),
-          exclude_booking_id: id,
-        },
-      });
-      setTransferUnits(r.data.filter(u => u.id !== booking.unit_id));
+      await loadChangeUnits('');
     } catch {
       alert('Failed to load unit availability');
       setTransferring(false);
     }
+  }
+
+  // From which night the new room starts: the whole stay, or a later night
+  // (the stay is split — the first nights stay in this room).
+  async function pickChangeFrom(from) {
+    setChangeFrom(from);
+    setTransferTarget(null);
+    setChangeQuote(null);
+    setChangeError('');
+    try { await loadChangeUnits(from); } catch { setChangeError('Failed to load unit availability'); }
   }
 
   async function pickChangeRoom(unitId) {
@@ -595,7 +614,7 @@ export default function BookingDetail() {
     setChangeError('');
     setQuoteLoading(true);
     try {
-      const r = await api.get(`/api/bookings/${id}/change-room/quote`, { params: { unit_id: unitId } });
+      const r = await api.get(`/api/bookings/${id}/change-room/quote`, { params: { unit_id: unitId, ...(changeFrom ? { from: changeFrom } : {}) } });
       setChangeQuote(r.data);
       setCustomAmount(String(Math.round(r.data.next.total)));
       setChargeMode('difference');
@@ -611,8 +630,9 @@ export default function BookingDetail() {
     setTransferLoading(true);
     setChangeError('');
     try {
-      await api.put(`/api/bookings/${id}/change-room`, {
+      const r = await api.put(`/api/bookings/${id}/change-room`, {
         unit_id: transferTarget,
+        ...(changeFrom ? { from: changeFrom } : {}),
         // Normal rate kept → 'difference'; a typed price → 'custom' with the
         // difference to what the guest pays now (Edit History still shows the
         // normal difference next to it).
@@ -622,6 +642,7 @@ export default function BookingDetail() {
         reason: changeReason.trim(),
       });
       setTransferring(false);
+      if (r.data?.split) setSplitDone({ to: r.data.to, new_booking_id: r.data.new_booking_id });
       setFolio(null);
       setEstimate(null);
       load();
@@ -1087,6 +1108,18 @@ export default function BookingDetail() {
           <button className="btn btn-sm btn-primary" onClick={undoNoShow}>↩ Undo No-Show</button>
         </div>
       )}
+
+      {Array.isArray(booking.split_links) && booking.split_links.map(l => (
+        <div key={l.id} className="alert alert-info mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>
+            {l.direction === 'to'
+              ? <>The stay continues in <b>room {l.unit_name}</b> from {fmtShortDate(l.check_in_date)} to {fmtShortDate(l.check_out_date)} — its own booking, with the money received for those nights.</>
+              : <>This booking continues the stay from <b>room {l.unit_name}</b> ({fmtShortDate(l.check_in_date)} – {fmtShortDate(l.check_out_date)}).</>}
+            {splitDone && l.id === splitDone.new_booking_id && ' Just split.'}
+          </span>
+          <Link to={`/reservations/${l.id}`} className="btn btn-sm btn-secondary">Open room {l.unit_name} →</Link>
+        </div>
+      ))}
 
       {booking.group && (
         <div className="alert alert-success mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2100,6 +2133,13 @@ export default function BookingDetail() {
         const newNet = Number.isFinite(newGross) ? newGross - newDiscount : null;
         const received = roomPaymentLines.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
         const overReceived = newNet !== null && received > 0 && newNet < received;
+        // The oldest received room payment from an earlier day: correcting it
+        // as a typo changes that day's money.
+        const earlierReceipt = (booking.payments || [])
+          .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status === 'received' && p.received_at)
+          .map(p => new Date(p.received_at).toLocaleDateString('en-CA', { timeZone: PROPERTY_TZ }))
+          .filter(d => d < propertyToday())
+          .sort()[0] || null;
         const valid = Number.isFinite(newGross) && newGross >= 0 && priceForm.reason.trim().length > 0
           && (!overReceived || priceForm.received_was_typo !== null);
         return (
@@ -2206,6 +2246,14 @@ export default function BookingDetail() {
                             onChange={() => setPriceForm(f => ({ ...f, received_was_typo: true }))} />
                           <span>Guest paid {fmtIDR(newNet)} — the received amount was the same typo. <b>Correct it to {fmtIDR(newNet)}.</b></span>
                         </label>
+                        {priceForm.received_was_typo === true && earlierReceipt && (
+                          <div className="alert alert-warn" style={{ fontSize: 12, margin: '0 0 8px 24px' }}><div>
+                            This money was recorded on <b>{fmtShortDate(earlierReceipt)}</b>. Correcting it changes what that day received
+                            (Daily Close, Cashier Closing). Only choose this if that amount was typed wrong. If the money really came in —
+                            e.g. the guest moved to another room for the rest of the stay — choose the option below, or use
+                            <b> Change Room → From which night</b>, which moves the money to the new room.
+                          </div></div>
+                        )}
                         <label className="flex gap-2" style={{ fontSize: 13, cursor: 'pointer', alignItems: 'flex-start' }}>
                           <input type="radio" name="received_was_typo" checked={priceForm.received_was_typo === false}
                             onChange={() => setPriceForm(f => ({ ...f, received_was_typo: false }))} />
@@ -2325,6 +2373,16 @@ export default function BookingDetail() {
         const reasonNeeded = !(q?.same_type && (chargeMode === 'complimentary' || Math.abs(diff) < 1));
         const canSave = !!q && !quoteLoading && (!reasonNeeded || changeReason.trim().length > 0) && (chargeMode === 'complimentary' || priceOk);
         const fmtStay = (a, b) => `${fmtShortDate(a)} – ${fmtShortDate(b)}`;
+        // Nights a split can start on: after the first night, before check-out;
+        // for a guest in house, today or later.
+        const ciYmd = booking.check_in_date?.slice(0, 10), coYmd = booking.check_out_date?.slice(0, 10);
+        const todayYmd = propertyToday();
+        const laterNights = [];
+        for (let t = new Date(ciYmd + 'T00:00:00Z').getTime() + 86400000; t < new Date(coYmd + 'T00:00:00Z').getTime(); t += 86400000) {
+          const n = new Date(t).toISOString().slice(0, 10);
+          if (booking.status !== 'checked_in' || n >= todayYmd) laterNights.push(n);
+        }
+        const sp = q?.split;
         return (
           <div className="modal-backdrop">
             <div className="modal" style={{ maxWidth: 600, width: '100%' }}>
@@ -2337,6 +2395,23 @@ export default function BookingDetail() {
                   Current room: <strong>{booking.unit_name}</strong> · {booking.check_in_date?.slice(0, 10)} → {booking.check_out_date?.slice(0, 10)}
                   {booking.status === 'checked_in' && ' · guest is in house'}
                 </div>
+
+                {laterNights.length > 0 && (
+                  <div className="form-group">
+                    <label className="form-label">From which night?</label>
+                    <select className="form-input" value={changeFrom} onChange={e => pickChangeFrom(e.target.value)}>
+                      <option value="">The whole stay ({fmtStay(booking.check_in_date, booking.check_out_date)})</option>
+                      {laterNights.map(n => (
+                        <option key={n} value={n}>From {fmtShortDate(n)} — {fmtShortDate(booking.check_in_date)} – {fmtShortDate(n)} stays in {booking.unit_name}</option>
+                      ))}
+                    </select>
+                    <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                      {changeFrom
+                        ? 'The stay is split: this booking keeps the first nights, a new booking takes the rest in the new room — with the money received for those nights.'
+                        : 'Pick a later night when the guest changes rooms during the stay.'}
+                    </div>
+                  </div>
+                )}
 
                 <label className="form-label">New room</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto', marginBottom: 12 }}>
@@ -2424,6 +2499,19 @@ export default function BookingDetail() {
                   </div>
                 )}
 
+                {sp && (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13 }}>
+                    <div className="flex-between"><span><b>{booking.unit_name}</b> · {fmtStay(sp.a.check_in, sp.a.check_out)} · {sp.a.nights} night{sp.a.nights === 1 ? '' : 's'}</span><span>{fmtIDR(sp.a.payable)}</span></div>
+                    <div className="flex-between" style={{ marginTop: 4 }}><span><b>{q.next.name}</b> (new booking) · {fmtStay(sp.b.check_in, sp.b.check_out)} · {sp.b.nights} night{sp.b.nights === 1 ? '' : 's'}</span><span>{fmtIDR(sp.b.payable + (chargeMode === 'complimentary' ? 0 : diff))}</span></div>
+                    {sp.money.received > 0 && (
+                      <div className="text-muted" style={{ marginTop: 8, fontSize: 12 }}>
+                        Received so far {fmtIDR(sp.money.received)}: {fmtIDR(sp.money.stays)} stays on {booking.unit_name}
+                        {sp.money.moves > 0 && <>, <b>{fmtIDR(sp.money.moves)} moves to {q.next.name}</b> (same date and method)</>}.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label className="form-label">{reasonNeeded ? 'Reason *' : 'Reason (optional)'}</label>
                   <input className="form-input" value={changeReason} onChange={e => setChangeReason(e.target.value)}
@@ -2437,7 +2525,11 @@ export default function BookingDetail() {
                       : charge < 0
                         ? <>The booking price goes down by <b>{fmtIDR(-charge)}</b>. If the guest has already paid more, it shows as a credit to refund.</>
                         : <>The booking price stays the same.</>}
-                    {booking.status === 'checked_in' && ' The old room is marked for cleaning.'}
+                    {sp
+                      ? (booking.status === 'checked_in'
+                        ? ` On ${fmtShortDate(sp.b.check_in)} check the guest out of ${booking.unit_name} and into ${q.next.name} as usual.`
+                        : ' Each room has its own booking; check-in and check-out as usual.')
+                      : booking.status === 'checked_in' && ' The old room is marked for cleaning.'}
                   </div></div>
                 )}
                 {changeError && <div className="alert alert-error">{changeError}</div>}
@@ -2445,7 +2537,7 @@ export default function BookingDetail() {
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setTransferring(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={doTransfer} disabled={!canSave || transferLoading}>
-                  {transferLoading ? 'Saving…' : 'Change Room'}
+                  {transferLoading ? 'Saving…' : changeFrom ? `Split from ${fmtShortDate(changeFrom)}` : 'Change Room'}
                 </button>
               </div>
             </div>
