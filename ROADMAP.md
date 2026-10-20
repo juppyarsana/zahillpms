@@ -20,7 +20,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Children & kids' free breakfast (migration 114, 2026-10-17, on `dev` + POS `pms-integration`):** a reservation records children next to adults; FO ticks "Kids eat breakfast free" (breakfast only, per reservation) and the kitchen, Guest Lists, Forecast and the POS breakfast list show the free kids apart from the paying pax; the POS pre-fills its free Kids Meal. Details: CLAUDE.md → "Children & kids' free breakfast".
 **Room tablets — WiFi connection history (migration 115, 2026-10-19, on `dev`):** Settings → Property → Room Tablets: drops per room per day (a tablet silent > 1 min), drops of 5+ rooms at once apart (internet line / router / server), signal and access point per room over 30 days, before / after a WiFi change, naming access points; `room_tablets` permission. The last 14 days are imported once from the nginx logs (`maintenance/tabletConnectivity.js --save`). Details: CLAUDE.md → "Room tablets — WiFi connection history".
 **Lobby TV + Guest Board videos (migration 116, 2026-10-19, on `dev`):** a Guest Board card shows in rooms, the lobby or both; the lobby TV (TV app, Room ID `lobby`) shows the lobby cards as a slideshow with short MP4 videos with sound, kept on the TV after one download. Details: CLAUDE.md → "Lobby TV + Guest Board videos".
-Next migration number: **122**.
+Next migration number: **123**.
 
 ---
 
@@ -1159,7 +1159,7 @@ Per-property tax and service charge rates, applied on folio and invoice.
    correct via independent readback. This is exactly the kind of bug that
    would have silently undersold every room by 99% if it had shipped
    straight to a real push job without this spike catching it first.
-3. **🟡 In progress (2026-10-20) — production channel-manager automation, both ways.** Stage 1 (setup: property + room types + meal plans linked by room type, migration 117, Settings → Channel Manager) built and tested on staging; stages 2 (rooms + prices out), 3 (bookings in), 4 (status + go-live) next — see CLAUDE.md "Channel Manager (Channex)". Original list of what was needed: What's needed
+3. **🟡 In progress (2026-10-20) — production channel-manager automation, both ways.** Stages 1–4 built and tested on Channex staging 2026-10-20 (117 setup, 120 free rooms + prices out, 121 OTA bookings in, 122 health + go-live checklist); waiting for the owner's Channex production account — go-live steps in CLAUDE.md "Pending on the next production deploy" — see CLAUDE.md "Channel Manager (Channex)". Original list of what was needed: What's needed
    to go from "spike proves the mechanism" to "actually usable":
    - Map all of a property's real units (not just one) — `POST /test/setup`
      equivalent needs a bulk/batch path, and a real UI for it (owner picks
@@ -2079,7 +2079,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 122
+## Next migration number: 123
 
 ---
 

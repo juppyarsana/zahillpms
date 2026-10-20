@@ -24,6 +24,10 @@ Di booking OTA biasa tamu sudah bayar ke OTA: kamar tidak ditagih di front desk 
 - **Diubah** (tanggal, tipe kamar, jumlah tamu, harga): booking ikut diubah. Kalau kamarnya tidak kosong di tanggal baru, PMS memindahkan ke kamar kosong lain dengan tipe yang sama. Edit History mencatat perubahannya.
 - **Dibatalkan**: booking dibatalkan. Kalau sudah ada uang masuk, daftar To check memberi tahu — kembalikan atau simpan sesuai aturan pembatalan OTA.
 
+## Booking yang sudah ada di PMS
+
+Saat OTA pertama kali dihubungkan, Channex bisa mengirim booking yang sudah ada di PMS (diketik manual, atau dari sistem lama). PMS mengenalinya — tipe kamar sama, tanggal sama, dan nama tamu atau nomor reservasi OTA di catatan — lalu **menautkannya**, tidak membuat booking kedua. Booking itu muncul di **To check** ("…was matched to this booking"), dengan harga dari OTA kalau berbeda dengan PMS. Setelah itu, perubahan di OTA mengubah booking tersebut.
+
 ## Kalau PMS butuh Anda
 
 Beberapa hal tidak dikerjakan PMS sendiri:

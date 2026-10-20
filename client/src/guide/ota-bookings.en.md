@@ -24,6 +24,10 @@ On a normal OTA booking the guest has paid the OTA: the room is not collected at
 - **Changed** (dates, room type, guests, price): the booking is changed to match. If its room isn't free on the new dates, the PMS moves it to another free room of the type. Edit History says what changed.
 - **Cancelled**: the booking is cancelled. If money was received on it, the To check list says so — refund it or keep it by the OTA's cancellation terms.
 
+## Bookings already in the PMS
+
+When an OTA is first connected, Channex may send bookings the hotel already has in the PMS (typed in, or from the old system). The PMS recognises them — same room type, same dates, and the guest's name or the OTA reservation number in the notes — and **links** them instead of booking them twice. They show on **To check** ("…was matched to this booking"), with the OTA's price when it differs from the PMS. From then on, changes on the OTA change that booking.
+
 ## When the PMS needs you
 
 Some things the PMS doesn't do by itself:

@@ -83,6 +83,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_channel_manager: {
+    type: 'alert',
+    label: 'Channel manager problems',
+    when: 'Instantly',
+    description: 'Sending free rooms and prices to Channex, or reading OTA bookings from it, has failed for 15 minutes — and when it works again. Sent once, not repeated.',
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_event: {
     type: 'alert',
     label: 'Events (meeting room)',

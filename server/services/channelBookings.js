@@ -37,6 +37,7 @@ const nightRatesSvc = require('./nightRates');
 const ratePlanService = require('./ratePlanService');
 const telegramService = require('./telegramService');
 const { stayNights: stayNightList } = require('./folioService');
+const health = require('./channelHealth');
 
 const PROVIDER = 'channex';
 const PULL_MS = 60_000;
@@ -178,12 +179,75 @@ function collectPoint(r) {
   return null;
 }
 
+// ── Already in the PMS ───────────────────────────────────────
+
+// For each room: a PMS booking of the same room type and the same dates, not
+// linked to the channel manager yet, carrying the OTA's reservation code (in
+// its notes) or the guest's name. [{ room, b }] for the rooms matched.
+async function existingStays(client, propertyId, r, rooms, L) {
+  const found = [];
+  const mine = new Set([...words(r.customer.name)].filter(w => w.length > 2));
+  const code = String(r.code || '').trim();
+  for (const room of rooms) {
+    const type = L.roomType(room.roomType);
+    if (!type) continue;
+    const { rows } = await client.query(`
+      SELECT b.id, b.reservation_group_id, b.payment_collect, b.total_amount, b.discount_amount,
+             b.internal_notes, b.special_requests, u.name AS unit, g.name AS guest
+        FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+       WHERE b.property_id = $1 AND u.room_type_id = $2 AND b.check_in_date = $3::date AND b.check_out_date = $4::date
+         AND b.status NOT IN ('cancelled', 'no_show')
+         AND NOT EXISTS (SELECT 1 FROM channel_booking_rooms cr WHERE cr.booking_id = b.id)
+         AND NOT (b.id = ANY($5::uuid[]))
+       ORDER BY u.name`, [propertyId, type.room_type_id, room.ci, room.co, found.map(f => f.b.id)]);
+    const byCode = code.length >= 4 && rows.find(b => `${b.internal_notes || ''} ${b.special_requests || ''}`.includes(code));
+    const byName = rows.find(b => [...words(b.guest)].some(w => w.length > 2 && mine.has(w)));
+    const b = byCode || byName;
+    if (b) found.push({ room, b, how: byCode ? 'reservation code' : 'guest name' });
+  }
+  return found;
+}
+
+async function linkExisting(client, propertyId, r, rooms, same) {
+  const groups = [...new Set(same.map(s => s.b.reservation_group_id).filter(Boolean))];
+  const { rows: [cb] } = await client.query(
+    `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, reservation_group_id, last_revision_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (property_id, provider, external_booking_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()
+     RETURNING id`, [propertyId, PROVIDER, r.bookingId, r.ota, r.code, r.status, r.collect, groups.length === 1 ? groups[0] : null, r.revisionId]);
+  for (const { room, b, how } of same) {
+    await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      [cb.id, room.id, b.id]);
+    const price = Math.round(parseFloat(b.total_amount) - parseFloat(b.discount_amount || 0));
+    const points = [`${r.ota} ${r.code} came through the channel manager and was matched to this booking (${how})${Math.abs(price - Math.round(room.amount)) >= 1 ? ` — ${r.ota} says ${fmtIDR(room.amount)}, the PMS has ${fmtIDR(price)}: check the price` : ''}`];
+    if (!b.payment_collect) { const cp = collectPoint(r); if (cp) points.push(cp); }
+    await client.query(
+      `UPDATE bookings SET payment_collect = COALESCE(payment_collect, $2),
+              to_check = COALESCE(to_check, '[]'::jsonb) || $3::jsonb, to_check_done_at = NULL, to_check_done_by = NULL
+        WHERE id = $1`, [b.id, r.collect, JSON.stringify(points)]);
+    await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by ${how}; not booked again.`);
+  }
+  return {
+    result: 'applied', bookingIds: same.map(s => s.b.id), channelBookingId: cb.id,
+    message: `Already in the PMS — linked to ${same.map(s => `room ${s.b.unit}`).join(', ')} (${same[0].b.guest})`,
+  };
+}
+
 // ── new ──────────────────────────────────────────────────────
 
 async function createFromRevision(client, propertyId, r, L) {
   const rooms = r.rooms.filter(x => !x.cancelled);
   if (!rooms.length) return { result: 'ignored', message: 'No rooms in the reservation' };
   if (r.currency !== 'IDR') return { result: 'attention', message: `Price is in ${r.currency}, not IDR — enter this ${r.ota} booking by hand` };
+
+  // Already in the PMS (typed in, or from the VHP import, before the OTA was
+  // connected — Channex often sends an OTA's existing bookings when it is
+  // connected)? Then link instead of booking twice.
+  const same = await existingStays(client, propertyId, r, rooms, L);
+  if (same.length === rooms.length) return linkExisting(client, propertyId, r, rooms, same);
+  if (same.length) {
+    return { result: 'attention', message: `Part of this ${r.ota} booking is already in the PMS (${same.map(s => `room ${s.b.unit}`).join(', ')}) and part is not — check it and enter the rest by hand` };
+  }
 
   // Room type, meal plan and a free room for every room — or nothing.
   const defaultPlan = await ratePlanService.getDefaultRatePlan(propertyId);
@@ -574,11 +638,13 @@ async function pullProperty(propertyId) {
     await db.query(
       `INSERT INTO channel_sync_state (property_id, last_pull_at, last_pull_error) VALUES ($1, NOW(), NULL)
        ON CONFLICT (property_id) DO UPDATE SET last_pull_at = NOW(), last_pull_error = NULL`, [propertyId]);
+    await health.recovered(propertyId, 'pull').catch(() => {});
     return { handled, failed };
   } catch (err) {
     await db.query(
       `INSERT INTO channel_sync_state (property_id, last_pull_error) VALUES ($1, $2)
        ON CONFLICT (property_id) DO UPDATE SET last_pull_error = $2`, [propertyId, String(err.message).slice(0, 1000)]).catch(() => {});
+    await health.failed(propertyId, 'pull').catch(() => {});
     throw err;
   } finally {
     pulling.delete(propertyId);

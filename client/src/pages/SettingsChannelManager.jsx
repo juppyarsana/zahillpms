@@ -2,7 +2,8 @@
 // link this hotel to its Channex property, then each room type and meal plan
 // to a Channex room type / rate plan. Stage 2: the "Sending to Channex"
 // card (free rooms + prices, services/channelSync.js). Stage 3: the "Bookings from
-// the OTAs" card (services/channelBookings.js). Server: routes/channelManager.js.
+// the OTAs" card (services/channelBookings.js). Stage 4: the go-live checklist and
+// Compare with Channex (services/channelHealth.js). Server: routes/channelManager.js.
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -86,6 +87,8 @@ export default function SettingsChannelManager() {
               Channex passes them to the OTAs only for channels connected there. OTA bookings come back into the PMS by themselves (card 4).
             </div>
           </div>
+
+          <Checklist reloadKey={data} />
 
           {/* ── 1. The Channex property ───────────────────────────── */}
           <div className="card" style={{ marginBottom: 16 }}>
@@ -259,6 +262,14 @@ function when(ts) {
 
 function SyncCard({ sync, days, busy, onSend }) {
   const last = sync?.last_sent || null;
+  const [cmp, setCmp] = useState(null);
+  const [cmpBusy, setCmpBusy] = useState(false);
+  const [cmpErr, setCmpErr] = useState(null);
+  const compare = async () => {
+    setCmpBusy(true); setCmpErr(null);
+    try { setCmp((await api.get('/api/channel-manager/compare', { params: { days: 30 } })).data); }
+    catch (e) { setCmpErr(errText(e)); } finally { setCmpBusy(false); }
+  };
   const failing = sync?.last_error && (!sync.last_ok_at || new Date(sync.last_error_at) > new Date(sync.last_ok_at));
   return (
     <div className="card" style={{ marginTop: 16 }}>
@@ -268,9 +279,12 @@ function SyncCard({ sync, days, busy, onSend }) {
           : sync?.waiting || sync?.running ? <span className="badge badge-yellow">Sending changes…</span>
           : sync?.last_ok_at ? <span className="badge badge-green">Up to date</span>
           : <span className="badge badge-gray">Nothing sent yet</span>}
-        <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={!!busy} onClick={onSend}>
-          {busy === 'sync' ? 'Sending…' : 'Send everything now'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary btn-sm" disabled={cmpBusy} onClick={compare}>{cmpBusy ? 'Comparing…' : 'Compare with Channex'}</button>
+          <button className="btn btn-secondary btn-sm" disabled={!!busy} onClick={onSend}>
+            {busy === 'sync' ? 'Sending…' : 'Send everything now'}
+          </button>
+        </div>
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
         Free rooms per room type and the price per meal plan (normal rate incl. pricing periods + meal plan for the room type's
@@ -289,6 +303,32 @@ function SyncCard({ sync, days, busy, onSend }) {
       {failing && (
         <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>
           <div>Channex refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again every minute: {sync.last_error}</div>
+        </div>
+      )}
+      {cmpErr && <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}><div>{cmpErr}</div></div>}
+      {cmp && (
+        <div className={`alert ${cmp.different ? 'alert-warn' : 'alert-success'}`} style={{ marginTop: 12, marginBottom: 0 }}>
+          <div style={{ width: '100%' }}>
+            {cmp.different
+              ? <><b>{cmp.different} of {cmp.checked} values differ</b> in the next {cmp.days} nights — usually a change still on its way (wait half a minute and compare again) or a value changed by hand in Channex. <i>Send everything now</i> puts Channex back to the PMS's figures.</>
+              : <><b>Channex holds exactly what the PMS sends</b> — {cmp.checked} values over the next {cmp.days} nights.</>}
+            {cmp.differences.length > 0 && (
+              <div className="table-wrap" style={{ marginTop: 8 }}>
+                <table className="table" style={{ fontSize: 12, minWidth: 420 }}>
+                  <thead><tr><th>Night</th><th>Room type / plan</th><th>What</th><th style={{ textAlign: 'right' }}>PMS</th><th style={{ textAlign: 'right' }}>Channex</th></tr></thead>
+                  <tbody>
+                    {cmp.differences.slice(0, 20).map((d, i) => (
+                      <tr key={i}>
+                        <td>{dayOf(d.night)}</td><td>{d.name}</td><td>{d.kind}</td>
+                        <td style={{ textAlign: 'right' }}>{d.kind === 'price' ? fmtRp(d.pms) : d.pms}</td>
+                        <td style={{ textAlign: 'right' }}>{d.channex == null ? '—' : d.kind === 'price' ? fmtRp(d.channex) : d.channex}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {last?.warnings?.length > 0 && (
@@ -392,6 +432,55 @@ function BookingsCard() {
         </>
       )}
       {d && !d.open?.length && !recent.length && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No OTA bookings have come in yet.</div>}
+    </div>
+  );
+}
+
+
+function fmtRp(n) { return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID'); }
+
+const STATE = {
+  ok:   { icon: '✓', color: 'var(--success-text)' },
+  warn: { icon: '!', color: 'var(--warning-text)' },
+  fail: { icon: '✕', color: 'var(--danger-text)' },
+  info: { icon: 'i', color: 'var(--info-text)' },
+};
+
+function Checklist({ reloadKey }) {
+  const [c, setC] = useState(null);
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    api.get('/api/channel-manager/checklist').then(r => {
+      setC(r.data);
+      setOpen(o => (o === null ? !r.data.ready : o));
+    }).catch(() => {});
+  }, [reloadKey]);
+  if (!c) return null;
+  const fails = c.items.filter(i => i.state === 'fail').length;
+  const warns = c.items.filter(i => i.state === 'warn').length;
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
+        <div className="card-title" style={{ margin: 0 }}>Go-live checklist</div>
+        {fails ? <span className="badge badge-red">{fails} to fix</span>
+          : <span className="badge badge-green">Ready</span>}
+        {warns > 0 && <span className="badge badge-yellow">{warns} to look at</span>}
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>{open ? 'Hide ▴' : 'Show ▾'}</span>
+      </div>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {c.items.map(i => (
+            <div key={i.key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13 }}>
+              <span style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 800, color: '#fff', background: STATE[i.state].color }}>{STATE[i.state].icon}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{i.title}</div>
+                {i.detail && <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 1 }}>{i.detail}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

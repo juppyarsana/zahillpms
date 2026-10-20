@@ -8,6 +8,7 @@ const requireRole = require('../middleware/role');
 const cm = require('../services/channelManagerService');
 const channelSync = require('../services/channelSync');
 const channelBookings = require('../services/channelBookings');
+const channelHealth = require('../services/channelHealth');
 
 router.use(requireRole('owner'));
 
@@ -30,6 +31,18 @@ router.get('/setup', async (req, res) => {
 // /setup also reads Channex, too heavy to repeat).
 router.get('/sync', async (req, res) => {
   try { res.json({ sync: await channelSync.status(req.propertyId) }); } catch (err) { send(res, err); }
+});
+
+// GET /api/channel-manager/checklist — stage 4: the go-live checklist.
+router.get('/checklist', async (req, res) => {
+  try { res.json(await channelHealth.checklist(req.propertyId)); } catch (err) { send(res, err); }
+});
+
+// GET /api/channel-manager/compare?days=30 — the next nights as Channex holds
+// them vs what the PMS sends.
+router.get('/compare', async (req, res) => {
+  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 30));
+  try { res.json(await channelHealth.compare(req.propertyId, days)); } catch (err) { send(res, err); }
 });
 
 // GET /api/channel-manager/bookings — stage 3: reservations read from Channex

@@ -25,6 +25,13 @@ function registerJobs() {
 
   console.log('[Jobs] Night audit scheduled at 03:00 WITA (Bali)');
 
+  // Channel manager (migration 122): a Telegram alert once sending / reading
+  // has failed for 15 minutes.
+  cron.schedule('*/5 * * * *', async () => {
+    try { await require('../services/channelHealth').checkAlerts(); }
+    catch (err) { console.error('[Jobs] Channel health check failed:', err.message); }
+  }, { timezone: 'Asia/Makassar' });
+
   // Channel manager (migration 120): send every linked property's free rooms
   // and prices again in full — after the night audit and the yield run, and
   // it adds the new last night of the 365-night window.

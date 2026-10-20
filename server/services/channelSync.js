@@ -26,6 +26,7 @@ const { nightlyRoomRates } = require('./pricingService');
 const { computeFolioTotals } = require('./folioService');
 const { mealNetPerNight } = require('./ratePlanService');
 const { basisFrom } = require('./priceBasis');
+const health = require('./channelHealth');
 
 const PROVIDER = 'channex';
 const SYNC_DAYS = 365;
@@ -198,6 +199,7 @@ async function runSync(propertyId, mode = 'change') {
          next_try_at = NOW() + make_interval(secs => $4), last_sent = $5
        WHERE property_id = $1`,
       [propertyId, st?.dirty_at || null, full, GAP_SECONDS, JSON.stringify({ ...result, mode, at: new Date().toISOString() })]);
+    await health.recovered(propertyId, 'send').catch(() => {});
     return result;
   } catch (err) {
     await db.query(
@@ -205,6 +207,7 @@ async function runSync(propertyId, mode = 'change') {
          next_try_at = NOW() + make_interval(secs => $3)
        WHERE property_id = $1`, [propertyId, String(err.message).slice(0, 2000), RETRY_SECONDS]);
     console.error('[CHANNEL SYNC]', propertyId, err.message);
+    await health.failed(propertyId, 'send').catch(() => {});
     throw err;
   } finally {
     running.delete(propertyId);
