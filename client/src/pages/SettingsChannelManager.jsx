@@ -260,6 +260,52 @@ function when(ts) {
   return mins < 1 ? `just now (${at})` : mins < 60 ? `${mins} min ago (${at})` : at;
 }
 
+const MODE = { change: 'Changes', full: 'Nightly full send', manual: 'Send everything now' };
+
+// The last 20 sends with their Channex task IDs (migration 124) — Channex's
+// certification asks for a task ID from each test.
+function SendLog({ log }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(null);
+  if (!log.length) return null;
+  const ids = e => [...(e.task_ids?.availability || []).map(id => ['Rooms', id]), ...(e.task_ids?.restrictions || []).map(id => ['Prices', id])];
+  const copy = async (k, text) => { try { await navigator.clipboard.writeText(text); setCopied(k); setTimeout(() => setCopied(null), 1500); } catch { /* no clipboard */ } };
+  return (
+    <div style={{ marginTop: 14 }}>
+      <button className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▾' : '▸'} Last sends ({log.length}) — with Channex task IDs</button>
+      {open && (
+        <div className="table-wrap" style={{ marginTop: 8 }}>
+          <table className="table" style={{ minWidth: 640, fontSize: 12 }}>
+            <thead><tr><th>When</th><th>What</th><th>Channex task IDs</th></tr></thead>
+            <tbody>
+              {log.map((e, k) => (
+                <tr key={k}>
+                  <td style={{ whiteSpace: 'nowrap', verticalAlign: 'top' }}>{when(e.at)}<div style={{ color: 'var(--text-muted)' }}>{MODE[e.mode] || e.mode}</div></td>
+                  <td style={{ verticalAlign: 'top' }}>
+                    {!e.ok ? <span style={{ color: 'var(--danger-text)' }}>Failed: {e.error}</span>
+                      : e.mode !== 'change' ? `Everything: ${e.availability_ranges} room · ${e.rate_ranges} price updates (${e.nights} values)`
+                      : <>{(e.items || []).map((t, n) => <div key={n}>{t}</div>)}{e.items_more > 0 && <div style={{ color: 'var(--text-muted)' }}>+ {e.items_more} more</div>}</>}
+                    {e.warnings > 0 && <div style={{ color: 'var(--warning-text)' }}>{e.warnings} value{e.warnings === 1 ? '' : 's'} not taken by Channex</div>}
+                  </td>
+                  <td style={{ verticalAlign: 'top' }}>
+                    {ids(e).map(([kind, id]) => (
+                      <div key={id} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{ color: 'var(--text-muted)', width: 44 }}>{kind}</span>
+                        <code style={{ wordBreak: 'break-all' }}>{id}</code>
+                        <button className="btn btn-secondary btn-sm" style={{ padding: '0 6px' }} onClick={() => copy(id, id)}>{copied === id ? '✓' : 'Copy'}</button>
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SyncCard({ sync, days, busy, onSend }) {
   const last = sync?.last_sent || null;
   const [cmp, setCmp] = useState(null);
@@ -299,13 +345,6 @@ function SyncCard({ sync, days, busy, onSend }) {
             {last.nights_changed ? `${last.nights_changed} nights changed (${last.availability_ranges} room · ${last.rate_ranges} price updates)` : 'nothing had changed'}
           </div>
         )}
-        {last?.task_ids && (last.task_ids.availability?.length > 0 || last.task_ids.restrictions?.length > 0) && (
-          <div style={{ gridColumn: '1 / -1' }}><div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Channex task IDs of the last send (asked for by Channex's certification)</div>
-            <code style={{ fontSize: 12, wordBreak: 'break-all' }}>
-              {[...(last.task_ids.availability || []).map(id => `availability ${id}`), ...(last.task_ids.restrictions || []).map(id => `prices ${id}`)].join(' · ')}
-            </code>
-          </div>
-        )}
       </div>
       {failing && (
         <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -343,6 +382,7 @@ function SyncCard({ sync, days, busy, onSend }) {
           <div>Channex did not take some values: {last.warnings.map(w => JSON.stringify(w)).join(' · ').slice(0, 400)}</div>
         </div>
       )}
+      <SendLog log={sync?.send_log || []} />
     </div>
   );
 }

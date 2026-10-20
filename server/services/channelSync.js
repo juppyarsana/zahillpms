@@ -37,6 +37,15 @@ const MANUAL_FULL_GAP_MS = 60 * 60 * 1000;         // "Send everything now" at m
 const fails = new Map();       // property → failures in a row (in memory; a restart starts again at 60 s)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// The last 20 sends, newest first (migration 124).
+async function logSend(propertyId, entry) {
+  await db.query(
+    `UPDATE channel_sync_state SET send_log = (
+       SELECT COALESCE(jsonb_agg(e ORDER BY i), '[]'::jsonb)
+         FROM jsonb_array_elements(jsonb_build_array($2::jsonb) || send_log) WITH ORDINALITY AS t(e, i) WHERE i <= 20)
+      WHERE property_id = $1`, [propertyId, JSON.stringify(entry)]).catch(err => console.error('[CHANNEL SYNC] log', err.message));
+}
+
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
 // The values the channel manager should have now, keyed `kind|external|night`.
@@ -171,8 +180,23 @@ async function syncProperty(propertyId, { full = false } = {}) {
     `DELETE FROM channel_sync_values WHERE property_id = $1 AND (night < $2::date OR NOT ((kind || '|' || external_id) = ANY($3::text[])))`,
     [propertyId, from, live]);
 
+  // What went, in words, for the send list (room type / meal plan + dates).
+  const { rows: names } = await db.query(`
+    SELECT c.external_room_type_id AS id, rt.name AS label FROM channel_room_types c JOIN room_types rt ON rt.id = c.room_type_id WHERE c.property_id = $1
+    UNION ALL
+    SELECT c.external_rate_plan_id, rt.name || ' ' || rp.name FROM channel_rate_plans c
+      JOIN room_types rt ON rt.id = c.room_type_id JOIN rate_plans rp ON rp.id = c.rate_plan_id WHERE c.property_id = $1`, [propertyId]);
+  const label = new Map(names.map(n => [n.id, n.label]));
+  const day = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
+  const rng = r => (r.date_from === r.date_to ? day(r.date_from) : `${day(r.date_from)} – ${day(r.date_to)}`);
+  const items = [
+    ...avail.map(r => `${label.get(r.room_type_id) || 'room type'}: ${r.availability} free · ${rng(r)}`),
+    ...rates.map(r => `${label.get(r.rate_plan_id) || 'rate'}: Rp ${Math.round(Number(r.rate)).toLocaleString('id-ID')} · ${rng(r)}`),
+  ];
+
   return {
     full, nights_changed: changed.length,
+    items: full ? [] : items.slice(0, 12), items_more: full ? 0 : Math.max(0, items.length - 12),
     availability_ranges: avail.length, rate_ranges: rates.length,
     task_ids: { availability: a.taskIds, restrictions: r.taskIds },
     warnings: warnings.slice(0, 20),
@@ -212,6 +236,11 @@ async function runSync(propertyId, mode = 'change') {
        WHERE property_id = $1`,
       [propertyId, st?.dirty_at || null, full, GAP_SECONDS, JSON.stringify({ ...result, mode, at: new Date().toISOString() })]);
     fails.delete(propertyId);
+    if (result.nights_changed || full) {
+      await logSend(propertyId, { at: new Date().toISOString(), mode, ok: true, nights: result.nights_changed,
+        availability_ranges: result.availability_ranges, rate_ranges: result.rate_ranges,
+        items: result.items, items_more: result.items_more, task_ids: result.task_ids, warnings: result.warnings.length });
+    }
     await health.recovered(propertyId, 'send').catch(() => {});
     return result;
   } catch (err) {
@@ -224,6 +253,7 @@ async function runSync(propertyId, mode = 'change') {
         return RETRY_SECONDS[Math.min(n, RETRY_SECONDS.length) - 1];
       })()]);
     console.error('[CHANNEL SYNC]', propertyId, err.message);
+    await logSend(propertyId, { at: new Date().toISOString(), mode, ok: false, error: String(err.message).slice(0, 300) });
     await health.failed(propertyId, 'send').catch(() => {});
     throw err;
   } finally {
@@ -269,7 +299,7 @@ async function start() {
 
 async function status(propertyId) {
   const { rows: [s] } = await db.query(
-    `SELECT dirty_at, done_dirty_at, last_run_at, last_ok_at, last_full_at, last_error, last_error_at, next_try_at, last_sent,
+    `SELECT dirty_at, done_dirty_at, last_run_at, last_ok_at, last_full_at, last_error, last_error_at, next_try_at, last_sent, send_log,
             (dirty_at > COALESCE(done_dirty_at, '-infinity')) AS waiting
        FROM channel_sync_state WHERE property_id = $1`, [propertyId]);
   return s ? { ...s, running: running.has(propertyId) } : null;

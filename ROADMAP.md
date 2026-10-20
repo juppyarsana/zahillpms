@@ -20,7 +20,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Children & kids' free breakfast (migration 114, 2026-10-17, on `dev` + POS `pms-integration`):** a reservation records children next to adults; FO ticks "Kids eat breakfast free" (breakfast only, per reservation) and the kitchen, Guest Lists, Forecast and the POS breakfast list show the free kids apart from the paying pax; the POS pre-fills its free Kids Meal. Details: CLAUDE.md → "Children & kids' free breakfast".
 **Room tablets — WiFi connection history (migration 115, 2026-10-19, on `dev`):** Settings → Property → Room Tablets: drops per room per day (a tablet silent > 1 min), drops of 5+ rooms at once apart (internet line / router / server), signal and access point per room over 30 days, before / after a WiFi change, naming access points; `room_tablets` permission. The last 14 days are imported once from the nginx logs (`maintenance/tabletConnectivity.js --save`). Details: CLAUDE.md → "Room tablets — WiFi connection history".
 **Lobby TV + Guest Board videos (migration 116, 2026-10-19, on `dev`):** a Guest Board card shows in rooms, the lobby or both; the lobby TV (TV app, Room ID `lobby`) shows the lobby cards as a slideshow with short MP4 videos with sound, kept on the TV after one download. Details: CLAUDE.md → "Lobby TV + Guest Board videos".
-Next migration number: **124**.
+Next migration number: **125**.
 
 ---
 
