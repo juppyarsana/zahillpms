@@ -413,8 +413,17 @@ function LobbyMusic({ music, quiet }) {
   // Sound blocked by the TV: try again now and then.
   useEffect(() => {
     if (!blocked || quiet) return undefined;
+    // A browser (a laptop, not the TV app) allows sound after a click / key:
+    // start straight away on the first one.
     const id = setInterval(start, 30_000);
-    return () => clearInterval(id);
+    const now = () => start();
+    window.addEventListener('pointerdown', now);
+    window.addEventListener('keydown', now);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('pointerdown', now);
+      window.removeEventListener('keydown', now);
+    };
   }, [blocked, quiet, src]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => clearInterval(fadeRef.current), []);
