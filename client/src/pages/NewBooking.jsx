@@ -100,6 +100,7 @@ function nightsBetween(a, b) {
 }
 
 const idr = n => `Rp ${Math.round(Number(n) || 0).toLocaleString('id-ID')}`;
+const fmtDay = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 
 // A typed room total far from the normal price for the stay is usually a
 // nightly price typed into the whole-stay field (or an extra zero).
@@ -503,17 +504,23 @@ export default function NewBooking() {
   const anyUnavailable = availabilities.some(a => a && a.available === false);
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
-          <div className="page-title">New Booking</div>
-          <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
+          <div className="page-eyebrow"><BackLink to="/reservations" label="Reservations" /></div>
+          <div className="page-title">New booking</div>
+          <div className="page-subtitle">Guest, dates and room — the price adds up in the summary</div>
+        </div>
+        <div>
+          <Link to="/reservations" className="btn btn-secondary">Cancel</Link>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
+      <div className="nb-cols">
+      <div className="nb-main">
         <div className="card mb-3">
-          <div className="card-title">Guest</div>
+          <div className="card-title">1 · Guest</div>
           <div className="flex gap-2 mb-3">
             <button type="button" className={`btn btn-sm ${mode==='search'?'btn-primary':'btn-secondary'}`} onClick={() => setMode('search')}>Search Existing</button>
             <button type="button" className={`btn btn-sm ${mode==='new'?'btn-primary':'btn-secondary'}`} onClick={() => setMode('new')}>New Guest</button>
@@ -577,7 +584,7 @@ export default function NewBooking() {
         </div>
 
         <div className="card mb-3">
-          <div className="card-title">Dates</div>
+          <div className="card-title">2 · Dates &amp; source</div>
           <div className="form-row form-row-dates">
             <div className="form-group">
               <label className="form-label">Check-in *</label>
@@ -625,7 +632,7 @@ export default function NewBooking() {
           return (
             <div className="card mb-3" key={i}>
               <div className="card-title flex" style={{ justifyContent: 'space-between' }}>
-                <span>{isGroup ? `Room ${i + 1}` : 'Booking Details'}</span>
+                <span>{isGroup ? `3 · Room ${i + 1}` : '3 · Room'}</span>
                 {rooms.length > 1 && (
                   <button type="button" className="btn btn-sm btn-secondary" onClick={() => removeRoom(i)}>Remove</button>
                 )}
@@ -922,7 +929,7 @@ export default function NewBooking() {
         </div>
 
         <div className="card mb-3">
-          <div className="card-title">{isGroup ? 'Group Discount & Deposit' : 'Discount & Deposit'}</div>
+          <div className="card-title">{isGroup ? '4 · Group discount, deposit & notes' : '4 · Discount, deposit & notes'}</div>
           {isGroup && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
               Group total: Rp {groupTotal.toLocaleString('id-ID')} across {rooms.length} rooms
@@ -1069,13 +1076,59 @@ export default function NewBooking() {
           </div>
         )}
 
-        {error && <div className="alert alert-error">{error}</div>}
-        <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
-          <Link to="/reservations" className="btn btn-secondary">Cancel</Link>
-          <button type="submit" className="btn btn-primary" disabled={loading || anyUnavailable}>
-            {isGroup ? 'Review Group Booking' : 'Review Booking'}
+      </div>
+
+      {/* Summary: what the booking adds up to, in view while the form is filled in */}
+      <aside className="nb-side">
+        <div className="card nb-summary">
+          <div className="card-title">Summary</div>
+          <div className="nb-line nb-muted">
+            <span>{form.check_in_date && form.check_out_date ? `${fmtDay(form.check_in_date)} – ${fmtDay(form.check_out_date)}` : 'Pick the dates'}</span>
+            <span>{stayNights ? `${stayNights} night${stayNights > 1 ? 's' : ''}` : ''}</span>
+          </div>
+          <div className="nb-line nb-muted">
+            <span>{(mode === 'new' ? newGuest.name : guestSearch) || 'No guest yet'}</span>
+            <span>{sources.find(x => x.id === form.source)?.label || ''}</span>
+          </div>
+          <div className="nb-hr" />
+          {rooms.map((r, i) => {
+            const u = units.find(x => x.id === r.unit_id);
+            const plan = ratePlans.find(x => x.id === r.rate_plan_id);
+            const total = parseFloat(r.total_amount) || 0;
+            const n = roomNights(r);
+            return (
+              <div key={i} style={{ marginBottom: 6 }}>
+                <div className="nb-line">
+                  <span>{u ? `Room ${u.name}` : `Room ${isGroup ? i + 1 : ''} — not picked`}{plan ? ` · ${plan.name}` : ''}</span>
+                  <span>{total ? idr(total) : '—'}</span>
+                </div>
+                {total > 0 && n > 0 && <div className="nb-sub">{n} × {idr(total / n)}</div>}
+                {extraTotal(r) > 0 && (
+                  <div className="nb-line nb-muted"><span>+ {nightItems.find(p => p.id === r.extra.product_id)?.name || 'Extra'}</span><span>{idr(extraTotal(r))}</span></div>
+                )}
+              </div>
+            );
+          })}
+          {discountAmt > 0 && <div className="nb-line nb-muted"><span>Discount{form.discount_type === 'percentage' ? ` (${dValue}%)` : ''}</span><span>− {idr(discountAmt)}</span></div>}
+          <div className="nb-hr" />
+          <div className="nb-total"><span>Total</span><b>{idr(netAmt + extrasTotal)}</b></div>
+          <div className="nb-sub" style={{ marginLeft: 0 }}>Service &amp; tax included</div>
+          <div className="nb-line" style={{ marginTop: 8 }}>
+            <span>{comp.on && !isGroup ? 'Complimentary' : `Deposit to collect${form.deposit_mode === 'pct' ? ` (${form.deposit_pct}%)` : ''}`}</span>
+            <b>{comp.on && !isGroup ? '—' : idr(depositAmt)}</b>
+          </div>
+          {anyUnavailable ? (
+            <div className="nb-check nb-bad">A room is not free for these dates — pick another room or other dates</div>
+          ) : rooms.every((r, i) => r.unit_id && availabilities[i]?.available) ? (
+            <div className="nb-check nb-ok">✓ {rooms.length > 1 ? 'Every room is' : 'The room is'} free for these dates</div>
+          ) : null}
+          {error && <div className="alert alert-error" style={{ marginTop: 10 }}>{error}</div>}
+          <button type="submit" className="btn btn-primary nb-submit" disabled={loading || anyUnavailable}>
+            {isGroup ? 'Review group booking' : 'Review booking'}
           </button>
         </div>
+      </aside>
+      </div>
       </form>
 
       {review && (() => {

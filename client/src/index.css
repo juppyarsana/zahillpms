@@ -1110,3 +1110,26 @@ tr:hover td { background: #FAFAF8; }
   .detail-cols { grid-template-columns: 1fr; }
   .kv-rows { grid-template-columns: 1fr; }
 }
+
+/* ── New Booking (2026-10-22): the form on the left, the Summary on the right, in view while scrolling ── */
+.page-header .page-eyebrow { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.page-header .page-eyebrow a { color: var(--green-dark); font-weight: 600; }
+.nb-cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+.nb-main { min-width: 0; }
+.nb-side { position: sticky; top: 16px; }
+.nb-summary .card-title { margin-bottom: 10px; }
+.nb-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; }
+.nb-line > span:last-child, .nb-line > b:last-child { text-align: right; white-space: nowrap; }
+.nb-muted { color: var(--text-muted); }
+.nb-sub { font-size: 12px; color: var(--text-muted); margin-left: 12px; }
+.nb-hr { border-top: 1px solid var(--border); margin: 8px 0; }
+.nb-total { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; padding-top: 2px; }
+.nb-total b { font-size: 22px; font-weight: 700; white-space: nowrap; }
+.nb-check { font-size: 12px; font-weight: 600; border-radius: var(--radius-md); padding: 8px 10px; margin-top: 12px; }
+.nb-ok { background: #ECFDF5; color: #065F46; }
+.nb-bad { background: var(--danger-bg); color: var(--danger-text); }
+.nb-submit { width: 100%; justify-content: center; margin-top: 12px; padding: 12px 18px; font-size: var(--text-base); }
+@media (max-width: 1000px) {
+  .nb-cols { grid-template-columns: 1fr; }
+  .nb-side { position: static; }
+}
