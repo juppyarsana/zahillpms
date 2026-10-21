@@ -1,26 +1,25 @@
 import { Fragment } from 'react';
 import BackLink from './BackLink';
 
-// Header card for detail pages (booking, group, event):
+// Header for detail pages (booking, group, event) — same look as the list
+// pages' header since 2026-10-22, no card:
 //
-//   ▌ ← Reservations · BOOKING #880BDFB2         [Call] [Message] [Documents ▾] [Check In] [More ▾]
-//   ▌ Lia Fadlia  [Pending]
-//   ▌ ROOM        STAY                   GUESTS   SOURCE    BALANCE DUE
-//   ▌ 103 · Delx  16 Oct → 17 Oct · 1 n  2        Direct    Rp 869.946
-//   └──────────────────────────────────────────────────────────────────
-//     Details   Folio   Activities      ← under the card, pinned while scrolling
+//   ← Reservations · Booking #880BDFB2
+//   Lia Fadlia  [Pending]                        [Call] [Message] [Documents ▾] [More ▾] [Check In]
+//   ┌ ROOM ──────┬ STAY ─────────────┬ GUESTS ─┬ SOURCE ─┬ BALANCE DUE ┐
+//   │ 103 · Delx │ 16 Oct → 17 Oct   │ 2       │ Direct  │ Rp 869.946  │
+//   └────────────┴───────────────────┴─────────┴─────────┴─────────────┘
+//   Details   Folio   Activities      ← underline tabs, pinned while scrolling
 //
 // back:    { to, label }   small back link (BackLink: back to where the user came from)
 // kind:    'Booking #…'    what this page is, next to the back link
 // title:   the name people know it by (guest, company…)
 // badge:   status pill after the title
-// tone:    the card's left edge — booking / group: lib/stayTone.js (arriving / occupied / departing / gray,
-//          the Dashboard room board's colours); event: its status colour (amber / green / red / gray)
-// facts:   [{ label, value, sub? }] — the key facts strip (falsy skipped)
+// tone:    kept for callers (lib/stayTone.js / event status); no longer drawn
+// facts:   [{ label, value, sub? }] — the key facts bar (falsy skipped)
 // meta:    [node, …] — older one-line facts, joined with dots (when no `facts`)
-// actions: node — right side: labeled outline buttons, the primary button, then the More menu
-// tabs:    node — the page's tab buttons, under the card, pinned to the top while scrolling
-// (List pages keep the plain `.page-header` — this card is for detail pages only.)
+// actions: node — right side: labeled outline buttons, the More menu, then the primary button
+// tabs:    node — the page's tab buttons, under the header, pinned to the top while scrolling
 export default function PageHeader({ back, kind, title, badge, tone = 'gray', facts = [], meta = [], actions, tabs }) {
   const strip = facts.filter(Boolean);
   const line = meta.filter(Boolean);

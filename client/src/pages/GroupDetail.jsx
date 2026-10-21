@@ -504,7 +504,7 @@ export default function GroupDetail() {
   }
 
   return (
-    <div style={{ maxWidth: 880, margin: '0 auto' }}>
+    <div>
       <PageHeader
         back={{ to: '/reservations', label: 'Reservations' }}
         kind="Group booking"
@@ -547,12 +547,12 @@ export default function GroupDetail() {
                 { label: data.bill ? 'Group Pro Forma' : 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma },
               ].filter(Boolean)}
             />
+          {groupMenu.length > 0 && <ActionMenu items={groupMenu} icon={<Icon name="more" />} label="More" />}
           {anyEligibleForCheckin && (
             <button className="btn btn-primary" onClick={checkInGroup} disabled={checkingIn}>
               <Icon name="login" />{checkingIn ? 'Checking in…' : 'Check In Group'}
             </button>
           )}
-          {groupMenu.length > 0 && <ActionMenu items={groupMenu} icon={<Icon name="more" />} label="More" />}
         </>}
       />
 

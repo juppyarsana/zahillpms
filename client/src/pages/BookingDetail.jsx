@@ -287,6 +287,7 @@ export default function BookingDetail() {
   // ticked on New Booking (passed in the navigation state).
   const [compMode, setCompMode] = useState(null);
   const [compInitial, setCompInitial] = useState(null);
+  const [allEvents, setAllEvents] = useState(false);
   const [tab, setTab] = useState('details');
   const [folio, setFolio] = useState(null);
   const [billTransfer, setBillTransfer] = useState(false);   // Transfer bill window (migration 113)
@@ -1027,7 +1028,7 @@ export default function BookingDetail() {
   })();
 
   return (
-    <div style={{ maxWidth: 880, margin: '0 auto' }}>
+    <div>
       <PageHeader
         back={{ to: '/reservations', label: 'Reservations' }}
         kind={`Booking #${id.slice(0, 8).toUpperCase()}`}
@@ -1097,8 +1098,8 @@ export default function BookingDetail() {
                 ]),
               ]}
             />
-          {primaryAction}
           {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} icon={<Icon name="more" />} label="More" />}
+          {primaryAction}
         </>}
       />
 
@@ -1160,348 +1161,352 @@ export default function BookingDetail() {
 
       {tab === 'details' && (
       <>
-      <div className="grid-2" style={{ gap: 12 }}>
-        <div className="card">
-          <div className="card-title">Guest</div>
-          <div style={{ fontWeight: 700, fontSize: 16 }}>{booking.guest_name}</div>
-          <div className="text-muted" style={{ fontSize: 13 }}>{booking.nationality}</div>
-          {booking.guest_whatsapp && <div style={{ fontSize: 13 }}>📱 {booking.guest_whatsapp}</div>}
-          {booking.guest_email && <div style={{ fontSize: 13 }}>✉️ {booking.guest_email}</div>}
-          <div className="mt-2">
-            <Link to={`/guests/${booking.guest_id}`} className="btn btn-sm btn-secondary">View Profile</Link>
-          </div>
-          <GuestIdDocument guestId={booking.guest_id} hasDocument={!!booking.guest_has_id_document} onChanged={load} compact />
-          <OtherGuests bookingId={booking.id} guests={booking.other_guests} onChanged={load} compact
-            readOnly={['cancelled', 'no_show'].includes(booking.status)} />
-        </div>
-
-        <div className="card">
-          <div className="card-title">Stay Details</div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Unit</span><span style={{ fontWeight: 600 }}>{booking.unit_name}</span>
-          </div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Check-in</span><span>{booking.check_in_date?.slice(0,10)}</span>
-          </div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Check-out</span><span>{booking.check_out_date?.slice(0,10)}</span>
-          </div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Nights</span><span>{booking.nights}</span>
-          </div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Guests</span><span>{booking.num_guests}{booking.children > 0 && <> + {booking.children} child{booking.children > 1 ? 'ren' : ''}{booking.kids_free_breakfast && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>breakfast free</span>}</>}</span>
-          </div>
-          {(booking.rate_plan_code || booking.rate_plan_name) && (
+      <div className="detail-cols">
+        <div className="detail-col">
+          <div className="card">
+            <div className="card-title">Stay Details</div>
+            <div className="kv-rows">
             <div className="flex-between" style={{ marginBottom: 6 }}>
-              <span className="text-muted">Rate Plan</span>
-              <span>{booking.rate_plan_code}{booking.rate_plan_name ? ` — ${booking.rate_plan_name}` : ''}</span>
+              <span className="text-muted">Unit</span><span style={{ fontWeight: 600 }}>{booking.unit_name}</span>
             </div>
-          )}
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Bed</span>
-            <span>
-              {booking.bed_preference
-                ? `${booking.bed_preference === 'twin' ? 'Twin' : booking.bed_preference === 'double' ? 'Double' : booking.bed_preference} (requested)`
-                : booking.bed_config === 'twin' ? 'Twin'
-                : booking.bed_config === 'twin_or_double' ? 'Twin or double'
-                : booking.bed_config === 'other' ? '—'
-                : 'Double'}
-            </span>
-          </div>
-          <div className="flex-between" style={{ marginBottom: 6 }}>
-            <span className="text-muted">Source</span>
-            <SourceBadge sourceId={booking.source} />
-          </div>
-          {booking.agent_id && (
-            <div className="flex-between" style={{ marginBottom: 6, gap: 8, alignItems: 'flex-start' }}>
-              <span className="text-muted">{agentRoleLabel(booking.agent_type)}</span>
-              <span style={{ textAlign: 'right' }}>
-                {isOwner ? <Link to={`/agents/${booking.agent_id}`} style={{ fontWeight: 600 }}>{booking.agent_name}</Link> : <b>{booking.agent_name}</b>}
-                {bookingCommission && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Commission {bookingCommission}</div>}
-              </span>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Check-in</span><span>{booking.check_in_date?.slice(0,10)}</span>
             </div>
-          )}
-          <div className="flex-between">
-            <span className="text-muted">Status</span>
-            <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
-          </div>
-          {booking.complimentary_scope && (
-            <div className="flex-between" style={{ marginTop: 6, gap: 8, alignItems: 'flex-start' }}>
-              <span className="text-muted">Complimentary</span>
-              <span style={{ textAlign: 'right' }}>
-                <span className="badge badge-green">🎁 {COMP_LABEL[booking.complimentary_scope]}</span>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {booking.complimentary_reason}
-                  {booking.complimentary_approved_by && booking.complimentary_approved_by !== booking.complimentary_by_name
-                    ? ` · approved by ${booking.complimentary_approved_by} (code)`
-                    : booking.complimentary_by_name ? ` · by ${booking.complimentary_by_name}` : ''}
-                </div>
-                {parseFloat(booking.complimentary_night_value) > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Value {fmtIDR(parseFloat(booking.complimentary_night_value) * booking.nights)} before tax
-                  </div>
-                )}
-              </span>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Check-out</span><span>{booking.check_out_date?.slice(0,10)}</span>
             </div>
-          )}
-          {!booking.complimentary_scope && booking.complimentary_request_pending && (
-            <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
-              <span className="text-muted">Complimentary</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => { setCompInitial(null); setCompMode('grant'); }}>
-                ⏳ Waiting for approval
-              </button>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Nights</span><span>{booking.nights}</span>
             </div>
-          )}
-          {AGENT_BILLING[booking.folio_status] && (
-            <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
-              <span className="text-muted">Agent billing</span>
-              <span style={{ textAlign: 'right' }}>
-                <span className={`badge badge-${AGENT_BILLING[booking.folio_status].badge}`}>{AGENT_BILLING[booking.folio_status].label}</span>
-                {booking.agent_invoice_number && <span style={{ fontSize: 12, marginLeft: 6 }}>{booking.agent_invoice_number}</span>}
-                {booking.folio_status === 'invoiced' && parseFloat(booking.agent_paid_amount) > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtIDR(booking.agent_paid_amount)} received so far</div>
-                )}
-                {isOwner && (
-                  <div style={{ fontSize: 12 }}>{booking.agent_id ? <Link to={`/agents/${booking.agent_id}`}>Agent statement →</Link> : <span className="text-muted">No agent on this booking</span>}</div>
-                )}
-              </span>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Guests</span><span>{booking.num_guests}{booking.children > 0 && <> + {booking.children} child{booking.children > 1 ? 'ren' : ''}{booking.kids_free_breakfast && <span className="badge badge-green" style={{ marginLeft: 6, fontSize: 10 }}>breakfast free</span>}</>}</span>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* A room of a group billed as a whole (migration 097): the room price is on
-          the group's bill and paid by the group — nothing to collect here. */}
-      {booking.group_billed && (
-        <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
-          <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
-          <div style={{ fontSize: 14, marginBottom: 8 }}>
-            <b>Paid by the group.</b> The room price{parseFloat(booking.fnb_revenue || 0) > 0 ? ' and meal plan' : ''} ({fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0))})
-            {booking.group_billing_mode === 'everything' ? ', and the extras charged to this room,' : ''} {booking.group_billing_mode === 'everything' ? 'are' : 'is'} on the group's bill.
-          </div>
-          <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
-            {booking.group_billing_mode === 'everything'
-              ? 'Payments are recorded once, on the group.'
-              : 'Payments are recorded once, on the group. Extras charged to this room are paid by its guest — see the Folio tab.'}
-          </div>
-          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-            <Link to={`/reservations/group/${booking.reservation_group_id}`} className="btn btn-secondary btn-sm">Group bill & payments →</Link>
-            {booking.group_billing_mode !== 'everything' && !['cancelled', 'no_show'].includes(booking.status) && (
-              <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment for extras →</button>
+            {(booking.rate_plan_code || booking.rate_plan_name) && (
+              <div className="flex-between" style={{ marginBottom: 6 }}>
+                <span className="text-muted">Rate Plan</span>
+                <span>{booking.rate_plan_code}{booking.rate_plan_name ? ` — ${booking.rate_plan_name}` : ''}</span>
+              </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {!booking.group_billed && <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
-        <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
-        {/* Room price only — extras / restaurant / activities are on the Folio tab. */}
-        <div className="text-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
-          The room price only (room{parseFloat(booking.fnb_revenue || 0) > 0 ? ' + meal plan' : ''}): its deposit and balance.
-          Extras, restaurant charges and activities are not counted here — see the{' '}
-          <button type="button" onClick={() => setTab('folio')}
-            style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
-          {' '}for the whole stay.
-        </div>
-        {/* Agent pays the hotel (city ledger): where its money is recorded. */}
-        {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status) && (
-          <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 12 }}><div>
-            {booking.folio_status
-              ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Agent Billing → Record Payment</b>, not here.</>
-              : <><b>{booking.agent_name}</b> pays the hotel. Money the agent sends <b>before check-out</b> (e.g. H-7) is recorded here — Mark Received, with the transfer reference.
-                  At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Agent Billing.</>}
-            {' '}<Link to="/guide/agent-payments">📘 Guide</Link>
-          </div></div>
-        )}
-        {booking.night_prices?.length > 1 && (
-          <div style={{ fontSize: 12, marginBottom: 10 }}>
-            <span className="text-muted">Price per night{parseFloat(booking.discount_amount) > 0 ? ' (before discount)' : ''}: </span>
-            {booking.night_prices.map(n => `${new Date(n.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${fmtIDR(n.price)}`).join(' · ')}
-          </div>
-        )}
-        {parseFloat(booking.fnb_revenue || 0) > 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-            Net revenue split — Room {fmtIDR(booking.room_revenue)} · F&amp;B {fmtIDR(booking.fnb_revenue)}
-          </div>
-        )}
-        {parseFloat(booking.discount_amount) > 0 && (
-          <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--cream, #fffbeb)', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-              <span className="text-muted">Rack Rate</span>
-              <span>{fmtIDR(booking.total_amount)}</span>
-            </div>
-            <div className="flex-between" style={{ fontSize: 13, marginBottom: 4, color: 'var(--color-success, #16a34a)' }}>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Bed</span>
               <span>
-                Discount{booking.discount_type === 'percentage' ? ` (${booking.discount_value}%)` : ' (fixed)'}
+                {booking.bed_preference
+                  ? `${booking.bed_preference === 'twin' ? 'Twin' : booking.bed_preference === 'double' ? 'Double' : booking.bed_preference} (requested)`
+                  : booking.bed_config === 'twin' ? 'Twin'
+                  : booking.bed_config === 'twin_or_double' ? 'Twin or double'
+                  : booking.bed_config === 'other' ? '—'
+                  : 'Double'}
               </span>
-              <span>− {fmtIDR(booking.discount_amount)}</span>
             </div>
-            <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-              <span>Net Total</span>
-              <span>{fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount))}</span>
+            <div className="flex-between" style={{ marginBottom: 6 }}>
+              <span className="text-muted">Source</span>
+              <SourceBadge sourceId={booking.source} />
             </div>
-          </div>
-        )}
-        <div className="grid-2">
-          {roomPaymentLines.map(p => (
-            <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 12 }}>
-              <div className="flex-between mb-3">
-                <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{p.type}</span>
-                <span className="flex gap-2 items-center">
-                  <span className={`badge badge-${p.status === 'received' ? 'green' : 'orange'}`}>{p.status}</span>
-                  {canCorrect && p.status === 'received' && <PaymentFixMenu payment={p} onDone={afterMoneyFix} />}
+            {booking.agent_id && (
+              <div className="flex-between" style={{ marginBottom: 6, gap: 8, alignItems: 'flex-start' }}>
+                <span className="text-muted">{agentRoleLabel(booking.agent_type)}</span>
+                <span style={{ textAlign: 'right' }}>
+                  {isOwner ? <Link to={`/agents/${booking.agent_id}`} style={{ fontWeight: 600 }}>{booking.agent_name}</Link> : <b>{booking.agent_name}</b>}
+                  {bookingCommission && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Commission {bookingCommission}</div>}
                 </span>
               </div>
-              {p.status === 'pending' && p.notes && (
-                <div className="text-muted" style={{ fontSize: 11, marginTop: -8, marginBottom: 8 }}>{p.notes}</div>
-              )}
-              <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>Amount</div>
-              {editingAmount === p.id ? (
-                <>
-                  <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
-                    <input className="form-input" type="number" value={newAmount} autoFocus
-                      style={{ maxWidth: 160 }} onChange={e => setNewAmount(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && saveAmount(p)} />
-                    <button className="btn btn-sm btn-primary" onClick={() => saveAmount(p)}>Save</button>
-                    <button className="btn btn-sm btn-secondary" onClick={() => setEditingAmount(null)}>✕</button>
+            )}
+            <div className="flex-between">
+              <span className="text-muted">Status</span>
+              <span className={`badge badge-${STATUS_BADGE[booking.status]||'gray'}`}>{STATUS_LABEL[booking.status]||booking.status}</span>
+            </div>
+            {booking.complimentary_scope && (
+              <div className="flex-between" style={{ marginTop: 6, gap: 8, alignItems: 'flex-start' }}>
+                <span className="text-muted">Complimentary</span>
+                <span style={{ textAlign: 'right' }}>
+                  <span className="badge badge-green">🎁 {COMP_LABEL[booking.complimentary_scope]}</span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {booking.complimentary_reason}
+                    {booking.complimentary_approved_by && booking.complimentary_approved_by !== booking.complimentary_by_name
+                      ? ` · approved by ${booking.complimentary_approved_by} (code)`
+                      : booking.complimentary_by_name ? ` · by ${booking.complimentary_by_name}` : ''}
                   </div>
-                  {/* Only the split moves: the lines always add up to the unpaid part of the price. */}
-                  <div className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: 1.4 }}>
-                    This only changes how the unpaid {fmtIDR(Math.max(0, bookingNet - roomPaid))} is split — the rest goes on the other line.
-                    It does not change the price{canEditPrice ? ': use ⋮ → Edit Price for that.' : ' — ask the owner to use Edit Price for that.'}
+                  {parseFloat(booking.complimentary_night_value) > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      Value {fmtIDR(parseFloat(booking.complimentary_night_value) * booking.nights)} before tax
+                    </div>
+                  )}
+                </span>
+              </div>
+            )}
+            {!booking.complimentary_scope && booking.complimentary_request_pending && (
+              <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
+                <span className="text-muted">Complimentary</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => { setCompInitial(null); setCompMode('grant'); }}>
+                  ⏳ Waiting for approval
+                </button>
+              </div>
+            )}
+            {AGENT_BILLING[booking.folio_status] && (
+              <div className="flex-between" style={{ marginTop: 6, gap: 8 }}>
+                <span className="text-muted">Agent billing</span>
+                <span style={{ textAlign: 'right' }}>
+                  <span className={`badge badge-${AGENT_BILLING[booking.folio_status].badge}`}>{AGENT_BILLING[booking.folio_status].label}</span>
+                  {booking.agent_invoice_number && <span style={{ fontSize: 12, marginLeft: 6 }}>{booking.agent_invoice_number}</span>}
+                  {booking.folio_status === 'invoiced' && parseFloat(booking.agent_paid_amount) > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtIDR(booking.agent_paid_amount)} received so far</div>
+                  )}
+                  {isOwner && (
+                    <div style={{ fontSize: 12 }}>{booking.agent_id ? <Link to={`/agents/${booking.agent_id}`}>Agent statement →</Link> : <span className="text-muted">No agent on this booking</span>}</div>
+                  )}
+                </span>
+              </div>
+            )}
+            </div>
+            {booking.checkin_record && (
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {booking.checkin_record.checkin_time && (
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span className="text-muted">Checked in</span>
+                      <span>{new Date(booking.checkin_record.checkin_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                    </div>
+                  )}
+                  {booking.checkin_record.checkout_time && (
+                    <div className="flex-between" style={{ fontSize: 13 }}>
+                      <span className="text-muted">Checked out</span>
+                      <span>{new Date(booking.checkin_record.checkout_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                    </div>
+                  )}
+                  <div className="flex-between" style={{ fontSize: 13 }}>
+                    <span className="text-muted">ID captured</span>
+                    <span>{booking.checkin_record.id_captured ? '✓ Yes' : '— No'}</span>
                   </div>
-                </>
-              ) : (
-                <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: 18 }}>{fmtIDR(p.amount)}</span>
-                  {p.status === 'pending' && (
-                    <button className="btn btn-icon btn-sm" title="Change the deposit / balance split (not the price)"
-                      onClick={() => { setEditingAmount(p.id); setNewAmount(p.amount); }}>✏️</button>
+                  {booking.checkin_record.condition_notes && (
+                    <>
+                      <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 10 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Unit condition notes</div>
+                        <div style={{ fontSize: 13, background: '#fefce8', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px' }}>
+                          {booking.checkin_record.condition_notes}
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+        {/* A room of a group billed as a whole (migration 097): the room price is on
+            the group's bill and paid by the group — nothing to collect here. */}
+        {booking.group_billed && (
+          <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
+            <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
+            <div style={{ fontSize: 14, marginBottom: 8 }}>
+              <b>Paid by the group.</b> The room price{parseFloat(booking.fnb_revenue || 0) > 0 ? ' and meal plan' : ''} ({fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount || 0))})
+              {booking.group_billing_mode === 'everything' ? ', and the extras charged to this room,' : ''} {booking.group_billing_mode === 'everything' ? 'are' : 'is'} on the group's bill.
+            </div>
+            <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              {booking.group_billing_mode === 'everything'
+                ? 'Payments are recorded once, on the group.'
+                : 'Payments are recorded once, on the group. Extras charged to this room are paid by its guest — see the Folio tab.'}
+            </div>
+            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+              <Link to={`/reservations/group/${booking.reservation_group_id}`} className="btn btn-secondary btn-sm">Group bill & payments →</Link>
+              {booking.group_billing_mode !== 'everything' && !['cancelled', 'no_show'].includes(booking.status) && (
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment for extras →</button>
               )}
-              {p.status === 'received' ? (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                  {/* received_at is a timestamp — show the local (Bali) date, not the UTC one */}
-                  ✓ {p.method?.replace('_',' ')} · {p.received_at ? new Date(p.received_at).toLocaleDateString('en-CA') : ''}
+            </div>
+          </div>
+        )}
+
+        {!booking.group_billed && <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
+          <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
+          {/* Room price only — extras / restaurant / activities are on the Folio tab. */}
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+            The room price only (room{parseFloat(booking.fnb_revenue || 0) > 0 ? ' + meal plan' : ''}): its deposit and balance.
+            Extras, restaurant charges and activities are not counted here — see the{' '}
+            <button type="button" onClick={() => setTab('folio')}
+              style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
+            {' '}for the whole stay.
+          </div>
+          {/* Agent pays the hotel (city ledger): where its money is recorded. */}
+          {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status) && (
+            <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 12 }}><div>
+              {booking.folio_status
+                ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Agent Billing → Record Payment</b>, not here.</>
+                : <><b>{booking.agent_name}</b> pays the hotel. Money the agent sends <b>before check-out</b> (e.g. H-7) is recorded here — Mark Received, with the transfer reference.
+                    At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Agent Billing.</>}
+              {' '}<Link to="/guide/agent-payments">📘 Guide</Link>
+            </div></div>
+          )}
+          {booking.night_prices?.length > 1 && (
+            <div style={{ fontSize: 12, marginBottom: 10 }}>
+              <span className="text-muted">Price per night{parseFloat(booking.discount_amount) > 0 ? ' (before discount)' : ''}: </span>
+              {booking.night_prices.map(n => `${new Date(n.date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${fmtIDR(n.price)}`).join(' · ')}
+            </div>
+          )}
+          {parseFloat(booking.fnb_revenue || 0) > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+              Net revenue split — Room {fmtIDR(booking.room_revenue)} · F&amp;B {fmtIDR(booking.fnb_revenue)}
+            </div>
+          )}
+          {parseFloat(booking.discount_amount) > 0 && (
+            <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--cream, #fffbeb)', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
+                <span className="text-muted">Rack Rate</span>
+                <span>{fmtIDR(booking.total_amount)}</span>
+              </div>
+              <div className="flex-between" style={{ fontSize: 13, marginBottom: 4, color: 'var(--color-success, #16a34a)' }}>
+                <span>
+                  Discount{booking.discount_type === 'percentage' ? ` (${booking.discount_value}%)` : ' (fixed)'}
+                </span>
+                <span>− {fmtIDR(booking.discount_amount)}</span>
+              </div>
+              <div className="flex-between" style={{ fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                <span>Net Total</span>
+                <span>{fmtIDR(parseFloat(booking.total_amount) - parseFloat(booking.discount_amount))}</span>
+              </div>
+            </div>
+          )}
+          <div className="grid-2">
+            {roomPaymentLines.map(p => (
+              <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 12 }}>
+                <div className="flex-between mb-3">
+                  <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{p.type}</span>
+                  <span className="flex gap-2 items-center">
+                    <span className={`badge badge-${p.status === 'received' ? 'green' : 'orange'}`}>{p.status}</span>
+                    {canCorrect && p.status === 'received' && <PaymentFixMenu payment={p} onDone={afterMoneyFix} />}
+                  </span>
                 </div>
-              ) : (
-                <button className="btn btn-sm btn-primary mt-2" onClick={() => markPaid(p)}>Mark Received</button>
+                {p.status === 'pending' && p.notes && (
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: -8, marginBottom: 8 }}>{p.notes}</div>
+                )}
+                <div className="text-muted" style={{ fontSize: 12, marginBottom: 4 }}>Amount</div>
+                {editingAmount === p.id ? (
+                  <>
+                    <div className="flex gap-2 flex-center" style={{ marginBottom: 6 }}>
+                      <input className="form-input" type="number" value={newAmount} autoFocus
+                        style={{ maxWidth: 160 }} onChange={e => setNewAmount(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveAmount(p)} />
+                      <button className="btn btn-sm btn-primary" onClick={() => saveAmount(p)}>Save</button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => setEditingAmount(null)}>✕</button>
+                    </div>
+                    {/* Only the split moves: the lines always add up to the unpaid part of the price. */}
+                    <div className="text-muted" style={{ fontSize: 11, marginBottom: 8, lineHeight: 1.4 }}>
+                      This only changes how the unpaid {fmtIDR(Math.max(0, bookingNet - roomPaid))} is split — the rest goes on the other line.
+                      It does not change the price{canEditPrice ? ': use ⋮ → Edit Price for that.' : ' — ask the owner to use Edit Price for that.'}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 18 }}>{fmtIDR(p.amount)}</span>
+                    {p.status === 'pending' && (
+                      <button className="btn btn-icon btn-sm" title="Change the deposit / balance split (not the price)"
+                        onClick={() => { setEditingAmount(p.id); setNewAmount(p.amount); }}>✏️</button>
+                    )}
+                  </div>
+                )}
+                {p.status === 'received' ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                    {/* received_at is a timestamp — show the local (Bali) date, not the UTC one */}
+                    ✓ {p.method?.replace('_',' ')} · {p.received_at ? new Date(p.received_at).toLocaleDateString('en-CA') : ''}
+                  </div>
+                ) : (
+                  <button className="btn btn-sm btn-primary mt-2" onClick={() => markPaid(p)}>Mark Received</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="divider" />
+          <div className="flex-between" style={{ fontWeight: 700 }}>
+            <span>Room price</span>
+            <span>{fmtIDR(bookingNet)}</span>
+          </div>
+          {roomPaymentLines.length > 0 && (
+            <>
+              <div className="flex-between" style={{ fontSize: 13, marginTop: 6 }}>
+                <span className="text-muted">Paid for the room</span>
+                <span>{fmtIDR(roomPaid)}</span>
+              </div>
+              {Math.abs(bookingNet - roomPaid) >= 1 && (
+                <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
+                  color: roomPaid > bookingNet ? 'var(--color-danger, #dc2626)' : undefined }}>
+                  <span>{roomPaid > bookingNet ? 'Room overpaid — refund to guest' : otaOpen >= 1 ? `Room still to pay — by ${ota}` : 'Room still to pay'}</span>
+                  <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
+                </div>
               )}
+              {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} />}
+            </>
+          )}
+          {!['cancelled', 'no_show'].includes(booking.status) && (
+            <div className="flex-between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
+              <span className="text-muted" style={{ fontSize: 12, flex: '1 1 220px' }}>
+                Taking money for the room and extras together, or a part payment? Use Record Payment on the folio.
+              </span>
+              <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment on the folio →</button>
+            </div>
+          )}
+        </div>}
+
+        <StayExtrasCard booking={booking} openAdd={openAddItem}
+          onBookActivity={hasModule('activities') ? startBookActivity : null}
+          onChanged={() => { load(); if (folio) loadFolio(); }} />
+
+        {hasModule('pos_integration') && <RestaurantRequestsCard booking={booking} />}
+
+        {/* Minibar: ask housekeeping, see their answer, add it to the bill (migration 091) */}
+        {hasModule('sales') && ['checked_in', 'checked_out'].includes(booking.status) && (
+          <RoomCheckPanel card bookingId={booking.id} onCharged={() => { load(); if (folio) loadFolio(); }} />
+        )}
+        </div>
+        <div className="detail-col">
+          <div className="card">
+            <div className="card-title">Guest</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{booking.guest_name}</div>
+            <div className="text-muted" style={{ fontSize: 13 }}>{booking.nationality}</div>
+            {booking.guest_whatsapp && <div style={{ fontSize: 13 }}>📱 {booking.guest_whatsapp}</div>}
+            {booking.guest_email && <div style={{ fontSize: 13 }}>✉️ {booking.guest_email}</div>}
+            <div className="mt-2">
+              <Link to={`/guests/${booking.guest_id}`} className="btn btn-sm btn-secondary">View Profile</Link>
+            </div>
+            <GuestIdDocument guestId={booking.guest_id} hasDocument={!!booking.guest_has_id_document} onChanged={load} compact />
+            <OtherGuests bookingId={booking.id} guests={booking.other_guests} onChanged={load} compact
+              readOnly={['cancelled', 'no_show'].includes(booking.status)} />
+          </div>
+        {booking.special_requests && (
+          <div className="card card-note">
+            <div className="card-title">Special Requests</div>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{booking.special_requests}</p>
+          </div>
+        )}
+        <div className="card mt-3">
+          <div className="card-title">Staff Notes</div>
+          {booking.notes?.map(n => (
+            <div key={n.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.author_name} · {n.created_at?.slice(0,10)}</div>
+              <div>{n.content}</div>
             </div>
           ))}
-        </div>
-        <div className="divider" />
-        <div className="flex-between" style={{ fontWeight: 700 }}>
-          <span>Room price</span>
-          <span>{fmtIDR(bookingNet)}</span>
-        </div>
-        {roomPaymentLines.length > 0 && (
-          <>
-            <div className="flex-between" style={{ fontSize: 13, marginTop: 6 }}>
-              <span className="text-muted">Paid for the room</span>
-              <span>{fmtIDR(roomPaid)}</span>
-            </div>
-            {Math.abs(bookingNet - roomPaid) >= 1 && (
-              <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, marginTop: 4,
-                color: roomPaid > bookingNet ? 'var(--color-danger, #dc2626)' : undefined }}>
-                <span>{roomPaid > bookingNet ? 'Room overpaid — refund to guest' : otaOpen >= 1 ? `Room still to pay — by ${ota}` : 'Room still to pay'}</span>
-                <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
-              </div>
-            )}
-            {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} />}
-          </>
-        )}
-        {!['cancelled', 'no_show'].includes(booking.status) && (
-          <div className="flex-between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', gap: 12, flexWrap: 'wrap' }}>
-            <span className="text-muted" style={{ fontSize: 12, flex: '1 1 220px' }}>
-              Taking money for the room and extras together, or a part payment? Use Record Payment on the folio.
-            </span>
-            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/reservations/${id}#record-payment`, { replace: true })}>💳 Record payment on the folio →</button>
+          <div className="flex gap-2 mt-2">
+            <input className="form-input" placeholder="Add a note…" value={note} onChange={e => setNote(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addNote()} />
+            <button className="btn btn-secondary" onClick={addNote}>Add</button>
           </div>
-        )}
-      </div>}
-
-      <StayExtrasCard booking={booking} openAdd={openAddItem}
-        onBookActivity={hasModule('activities') ? startBookActivity : null}
-        onChanged={() => { load(); if (folio) loadFolio(); }} />
-
-      {hasModule('pos_integration') && <RestaurantRequestsCard booking={booking} />}
-
-      {/* Minibar: ask housekeeping, see their answer, add it to the bill (migration 091) */}
-      {hasModule('sales') && ['checked_in', 'checked_out'].includes(booking.status) && (
-        <RoomCheckPanel card bookingId={booking.id} onCharged={() => { load(); if (folio) loadFolio(); }} />
-      )}
-
-      {booking.special_requests && (
+        </div>
         <div className="card mt-3">
-          <div className="card-title">Special Requests</div>
-          <p>{booking.special_requests}</p>
-        </div>
-      )}
-
-      {booking.checkin_record && (
-        <div className="card mt-3">
-          <div className="card-title">Check-in / Check-out Record</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {booking.checkin_record.checkin_time && (
-              <div className="flex-between" style={{ fontSize: 13 }}>
-                <span className="text-muted">Checked in</span>
-                <span>{new Date(booking.checkin_record.checkin_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+          <div className="card-title">Edit History</div>
+          {booking.events?.length > 0 ? (allEvents ? booking.events : booking.events.slice(0, 8)).map(ev => (
+            <div key={ev.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {ev.author_name || 'System'} · {new Date(ev.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
               </div>
-            )}
-            {booking.checkin_record.checkout_time && (
-              <div className="flex-between" style={{ fontSize: 13 }}>
-                <span className="text-muted">Checked out</span>
-                <span>{new Date(booking.checkin_record.checkout_time).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-              </div>
-            )}
-            <div className="flex-between" style={{ fontSize: 13 }}>
-              <span className="text-muted">ID captured</span>
-              <span>{booking.checkin_record.id_captured ? '✓ Yes' : '— No'}</span>
+              <div style={{ fontSize: 13 }}>{ev.note}</div>
             </div>
-            {booking.checkin_record.condition_notes && (
-              <>
-                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 10 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Unit condition notes</div>
-                  <div style={{ fontSize: 13, background: '#fefce8', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px' }}>
-                    {booking.checkin_record.condition_notes}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          )) : (
+            <div className="text-muted" style={{ fontSize: 13 }}>No changes logged yet.</div>
+          )}
+          {booking.events?.length > 8 && (
+            <button className="btn btn-sm btn-secondary mt-2" onClick={() => setAllEvents(v => !v)}>
+              {allEvents ? 'Show the latest 8' : `Show all ${booking.events.length}`}
+            </button>
+          )}
         </div>
-      )}
-
-      <div className="card mt-3">
-        <div className="card-title">Staff Notes</div>
-        {booking.notes?.map(n => (
-          <div key={n.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.author_name} · {n.created_at?.slice(0,10)}</div>
-            <div>{n.content}</div>
-          </div>
-        ))}
-        <div className="flex gap-2 mt-2">
-          <input className="form-input" placeholder="Add a note…" value={note} onChange={e => setNote(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addNote()} />
-          <button className="btn btn-secondary" onClick={addNote}>Add</button>
         </div>
-      </div>
-
-      <div className="card mt-3">
-        <div className="card-title">Edit History</div>
-        {booking.events?.length > 0 ? booking.events.map(ev => (
-          <div key={ev.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {ev.author_name || 'System'} · {new Date(ev.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
-            </div>
-            <div style={{ fontSize: 13 }}>{ev.note}</div>
-          </div>
-        )) : (
-          <div className="text-muted" style={{ fontSize: 13 }}>No changes logged yet.</div>
-        )}
       </div>
       </>
       )}

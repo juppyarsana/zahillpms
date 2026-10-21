@@ -979,56 +979,39 @@ tr:hover td { background: #FAFAF8; }
   .guide-table table { min-width: 0; }
 }
 
-/* ── Detail page header card (components/PageHeader.jsx: booking, group, event) ── */
-.detail-header {
-  background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm); margin-bottom: 18px;   /* no overflow:hidden — the Documents / More menus open over the card edge */
-  border-left: 4px solid var(--dh-tone, var(--border));
-}
-.detail-header.tone-amber { --dh-tone: var(--warning); }
-.detail-header.tone-green { --dh-tone: var(--success); }
-.detail-header.tone-blue  { --dh-tone: var(--info); }
-.detail-header.tone-red   { --dh-tone: var(--danger); }
-.detail-header.tone-gray  { --dh-tone: #9CA3AF; }
-/* booking / group: the Dashboard room board's colours (lib/stayTone.js, Dashboard TILE_BG) */
-.detail-header.tone-arriving  { --dh-tone: #3B82F6; }
-.detail-header.tone-occupied  { --dh-tone: #DC2626; }
-.detail-header.tone-departing { --dh-tone: #9333EA; }
-.dh-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; padding: 18px 20px 14px; }
+/* ── Detail page header (components/PageHeader.jsx: booking, group, event) — 2026-10-22:
+   no card; back link · kind above the title, actions on the right, then a flat
+   facts bar and the underline tabs (pinned while scrolling). ── */
+.detail-header { margin-bottom: 18px; }
+.dh-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; }
 .dh-titles { flex: 1 1 260px; min-width: 0; }
+.dh-titles .page-eyebrow { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.dh-titles .page-eyebrow a { color: var(--green-dark); font-weight: 600; }
 .dh-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.dh-title { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; color: var(--text); line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
+.dh-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--text); line-height: 1.15; margin: 0; overflow-wrap: anywhere; }
 .dh-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.dh-actions .btn-secondary { background: var(--white); }
 .dh-actions .btn svg { opacity: 0.85; }
 .dh-facts {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px 20px;
-  padding: 12px 20px 14px; border-top: 1px solid var(--border); background: var(--bg-subtle);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin-top: 18px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
 }
-.dh-fact { min-width: 0; }
-.dh-fact-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
-.dh-fact-value { font-size: var(--text-sm); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.dh-fact { min-width: 0; padding: 13px 18px; border-left: 1px solid var(--border); }
+.dh-fact:first-child { border-left: none; }
+.dh-fact-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.dh-fact-value { font-size: 15px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 .dh-fact-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-/* tabs under the card, pinned to the top of the scrolling area while scrolling */
-.dh-tabs { position: sticky; top: 0; z-index: 30; background: var(--bg); margin: -6px 0 16px; padding-top: 6px; }
-/* a white bar like the cards; the active tab is a soft maroon pill */
-.dh-tabs .tab-bar {
-  margin-bottom: 0; box-shadow: var(--shadow-sm); background: var(--white);
-  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 5px; gap: 4px;
-}
-.dh-tabs .tab-bar-item { border-bottom: none; border-radius: var(--radius-md); padding: 8px 16px; }
-.dh-tabs .tab-bar-item:hover { background: var(--cream); color: var(--text); }
-.dh-tabs .tab-bar-item.active { background: var(--green-light); color: var(--green-dark); }
+/* tabs under the header, pinned to the top of the scrolling area while scrolling */
+.dh-tabs { position: sticky; top: 0; z-index: 30; background: var(--bg); margin: -4px 0 18px; padding-top: 4px; }
+.dh-tabs .tab-bar { margin-bottom: 0; }
 @media (max-width: 768px) {
-  .dh-top { padding: 14px 14px 12px; }
   .dh-actions { justify-content: flex-start; width: 100%; }
   .dh-actions .btn-primary { order: -1; flex: 1 1 100%; justify-content: center; }
-  .dh-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px 14px 12px; }
+  .dh-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dh-fact { border-left: none; border-top: 1px solid var(--border); padding: 10px 14px; }
+  .dh-fact:nth-child(-n+2) { border-top: none; }
+  .dh-fact:nth-child(even) { border-left: 1px solid var(--border); }
 }
 @media print { .detail-header { display: none !important; } }
-/* the last band (facts or tabs) follows the card's rounded bottom corners */
-.detail-header > :last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
-.detail-header .dh-top { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 
 /* ── OTA bookings: pop-up + menu counter (migration 123) ── */
 .nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #DC2626; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; flex-shrink: 0; }
@@ -1111,4 +1094,19 @@ tr:hover td { background: #FAFAF8; }
   .settings-cols { grid-template-columns: 1fr; gap: 0; }
   .settings-subnav, .settings-shell-header { display: none; }
   .settings-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; }
+}
+
+/* ── Detail page body (booking page, 2026-10-22): the work on the left, who / what to know on the right ── */
+.detail-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+.detail-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.detail-col > * { margin-top: 0 !important; }
+.kv-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
+.kv-rows > .flex-between { padding: 3px 0; gap: 10px; }
+/* special requests: yellow, so they are not missed */
+.card.card-note { background: #FFFBEB; border-color: #FDE68A; }
+.card.card-note .card-title { color: #92400E; }
+.card.card-note p { color: #78350F; font-size: 14px; margin: 0; }
+@media (max-width: 1000px) {
+  .detail-cols { grid-template-columns: 1fr; }
+  .kv-rows { grid-template-columns: 1fr; }
 }

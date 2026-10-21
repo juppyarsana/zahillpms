@@ -274,7 +274,7 @@ export default function EventDetail() {
   ];
 
   return (
-    <div style={{ maxWidth: 920, margin: '0 auto' }}>
+    <div>
       <PageHeader
         back={{ to: '/events', label: 'Events' }} kind={`Event #${e.event_no}`} title={e.name}
         tone={STATUS[e.status]?.badge || 'gray'}
@@ -291,8 +291,8 @@ export default function EventDetail() {
               { label: 'Invoice', onClick: () => pdf('invoice') },
               { label: 'Function sheet', onClick: () => pdf('function-sheet'), hint: 'For kitchen, housekeeping and front desk — no prices' },
             ]} />
-          {primary}
           <ActionMenu items={menu} icon={<Icon name="more" />} label="More" />
+          {primary}
         </>}
       />
 
