@@ -266,7 +266,7 @@ async function createFromRevision(client, propertyId, r, L) {
   const guest = await guestFor(client, propertyId, r.customer);
   const source = await sourceFor(client, propertyId, r.ota);
   const special = [r.notes, r.arrivalHour ? `Arrival time (OTA): ${String(r.arrivalHour).slice(0, 5)}` : ''].filter(Boolean).join('\n') || null;
-  const internal = `OTA · ${r.ota} ${r.code}`.trim();
+  const internal = `CM · ${r.ota} ${r.code}`.trim();
   const roomInput = p => ({
     unit_id: p.unit.id, check_in_date: p.room.ci, check_out_date: p.room.co,
     num_guests: p.room.adults, children: p.room.children,
