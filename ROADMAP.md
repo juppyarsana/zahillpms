@@ -25,6 +25,8 @@ Next migration number: **126**.
 
 ### Channex re-certification run sheet (2026-10-21)
 
+**Result: passed (2026-10-21)** — run on pms-dev with "Test Property - HALV"; tests 5–7 declared not supported.
+
 Do everything from the PMS screens (Channex rejects scripts / certification-only screens), on Channex **staging**, after deploying migration 125 to the machine that runs the test (it must have `CHANNEX_API_KEY` = staging). Note each send's **task ID** from Settings → Channel Manager → card 3 → *Last sends*. Make no other change in the test property while a test is running.
 
 **Setup (once).** Superadmin → new property **"Test Property - HALF"**, modules `channel_manager` + `reservations` on, owner user. In it: Property Details → service 0 %, tax 0 %, prices entered before tax (++). Room types **Twin Room** (max 2 guests, base rate 100, **8 rooms**) and **Double Room** (max 2, base rate 110, **5 rooms**). Meal plans: **Best Available Rate** (room only, default) and **Bed & Breakfast** (breakfast, meal price 10 per person → B&B = 120 / 130). Add a weekend pricing period (+20 %) and two or three bookings so the full sync isn't uniform. Settings → Channel Manager: *Create in Channex* for the property (USD isn't possible — the PMS links IDR properties only; say so in the form), each room type and both meal plans of each. Delete the old "Zahill IDR" / "Demo Property" in the Channex staging dashboard, or say in the form which property is the test one.
