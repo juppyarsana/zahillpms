@@ -1,11 +1,11 @@
 # Bookings from the OTAs
 
-When the hotel is connected to the channel manager (Channex), bookings made on Agoda, Booking.com, Traveloka and the other OTAs come into the PMS **by themselves**, usually within seconds (at most a minute). Changes and cancellations made on the OTA come in the same way. You don't type them in.
+When the hotel is connected to the channel manager, bookings made on Agoda, Booking.com, Traveloka and the other OTAs come into the PMS **by themselves**, usually within seconds (at most a minute). Changes and cancellations made on the OTA come in the same way. You don't type them in.
 
 ## How you see them
 
 - A **pop-up** at the top right of every page: *New Agoda booking*, *booking changed*, *booking cancelled* or *needs you*, with the guest, room and dates, and a short sound. **Open** goes to the booking, **OK** clears it — for everyone at the desk, so one person presses it. **All seen** clears them all.
-- **🌐 OTA bookings** in the menu (Front Desk), with a red number while something is new or needs you: everything that needs you first, then today's, then earlier ones. **↻ Check now** reads Channex at once.
+- **🌐 OTA bookings** in the menu (Front Desk), with a red number while something is new or needs you: everything that needs you first, then today's, then earlier ones. **↻ Check now** reads the channel manager at once.
 - The **Dashboard** box *From the OTAs — today*: how many new / changed / cancelled today and what needs you.
 
 ## A new OTA booking
@@ -34,7 +34,7 @@ A *Guest pays at the hotel* booking stays **Pending** until the guest pays, like
 
 ## Bookings already in the PMS
 
-When an OTA is first connected, Channex may send bookings the hotel already has in the PMS (typed in, or from the old system). The PMS recognises them — same room type, same dates, and the guest's name or the OTA reservation number in the notes — and **links** them instead of booking them twice. They show on **To check** ("…was matched to this booking"), with the OTA's price when it differs from the PMS. From then on, changes on the OTA change that booking.
+When an OTA is first connected, the channel manager may send bookings the hotel already has in the PMS (typed in, or from the old system). The PMS recognises them — same room type, same dates, and the guest's name or the OTA reservation number in the notes — and **links** them instead of booking them twice. They show on **To check** ("…was matched to this booking"), with the OTA's price when it differs from the PMS. From then on, changes on the OTA change that booking.
 
 ## When the PMS needs you
 

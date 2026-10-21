@@ -131,7 +131,7 @@ async function getSetup(propertyId) {
 }
 
 function requireConfigured() {
-  if (!channex.isConfigured()) throw httpError(400, 'Channex is not set up on this server (CHANNEX_API_KEY is missing)', 'NOT_CONFIGURED');
+  if (!channex.isConfigured()) throw httpError(400, 'The channel manager is not set up on this server (CHANNEX_API_KEY is missing)', 'NOT_CONFIGURED');
 }
 
 // { external_id } links an existing Channex property; { create: true } makes
@@ -142,7 +142,7 @@ async function linkProperty(propertyId, { external_id, create }) {
   const { rows: [{ n }] } = await db.query(
     'SELECT count(*)::int AS n FROM channel_room_types WHERE property_id = $1 AND provider = $2', [propertyId, PROVIDER]);
   if (current && n > 0) {
-    throw httpError(409, 'Unlink every room type first — they belong to the Channex property linked now', 'HAS_ROOM_TYPES');
+    throw httpError(409, 'Unlink every room type first — they belong to the channel manager property linked now', 'HAS_ROOM_TYPES');
   }
 
   let target;
@@ -153,18 +153,18 @@ async function linkProperty(propertyId, { external_id, create }) {
     const made = await channex.createProperty({ title: p.name });
     target = made.id;
   } else {
-    if (!external_id) throw httpError(400, 'Choose a Channex property');
+    if (!external_id) throw httpError(400, 'Choose a channel manager property');
     const props = await channex.listProperties();
     const found = props.find(p => p.id === external_id);
-    if (!found) throw httpError(404, 'That Channex property is not in this Channex account');
+    if (!found) throw httpError(404, 'That channel manager property is not in this channel manager account');
     if (found.currency && found.currency !== 'IDR') {
-      throw httpError(400, `That Channex property uses ${found.currency} — the PMS sends prices in IDR`, 'CURRENCY');
+      throw httpError(400, `That channel manager property uses ${found.currency} — the PMS sends prices in IDR`, 'CURRENCY');
     }
     target = external_id;
   }
   const { rows: [other] } = await db.query(
     'SELECT name FROM properties WHERE channex_property_id = $1 AND id <> $2', [target, propertyId]);
-  if (other) throw httpError(409, `That Channex property is already linked to ${other.name}`, 'TAKEN');
+  if (other) throw httpError(409, `That channel manager property is already linked to ${other.name}`, 'TAKEN');
 
   await db.query('UPDATE properties SET channex_property_id = $1 WHERE id = $2', [target, propertyId]);
   return target;
@@ -186,7 +186,7 @@ async function loadRoomType(propertyId, roomTypeId) {
 
 async function requireLinkedProperty(propertyId) {
   const external = await linkedPropertyId(propertyId);
-  if (!external) throw httpError(400, 'Link the Channex property first', 'NO_PROPERTY');
+  if (!external) throw httpError(400, 'Link the channel manager property first', 'NO_PROPERTY');
   return external;
 }
 
@@ -207,18 +207,18 @@ async function linkRoomType(propertyId, roomTypeId, { external_id, create }) {
   if (create) {
     const cxTypes = await channex.listRoomTypes(cxProperty);
     if (cxTypes.some(t => (t.title || '').trim().toLowerCase() === rt.name.trim().toLowerCase())) {
-      throw httpError(409, `Channex already has a room type called "${rt.name}" — link that one instead`, 'TITLE_EXISTS');
+      throw httpError(409, `The channel manager already has a room type called "${rt.name}" — link that one instead`, 'TITLE_EXISTS');
     }
     const made = await channex.createRoomType(cxProperty, { title: rt.name, count: rt.rooms, maxGuests: rt.max_guests });
     externalId = made.id;
   } else {
-    if (!external_id) throw httpError(400, 'Choose a Channex room type');
+    if (!external_id) throw httpError(400, 'Choose a channel manager room type');
     const cxTypes = await channex.listRoomTypes(cxProperty);
-    if (!cxTypes.some(t => t.id === external_id)) throw httpError(404, 'That room type is not in the linked Channex property');
+    if (!cxTypes.some(t => t.id === external_id)) throw httpError(404, 'That room type is not in the linked channel manager property');
     const { rows: [taken] } = await db.query(`
       SELECT rt.name FROM channel_room_types c JOIN room_types rt ON rt.id = c.room_type_id
       WHERE c.property_id = $1 AND c.provider = $2 AND c.external_room_type_id = $3`, [propertyId, PROVIDER, external_id]);
-    if (taken) throw httpError(409, `That Channex room type is already linked to ${taken.name}`, 'TAKEN');
+    if (taken) throw httpError(409, `That channel manager room type is already linked to ${taken.name}`, 'TAKEN');
     await channex.updateRoomType(external_id, { count: rt.rooms, maxGuests: rt.max_guests });
     externalId = external_id;
   }
@@ -284,14 +284,14 @@ async function linkRatePlan(propertyId, roomTypeId, ratePlanId, { external_id, c
     });
     externalId = made.id;
   } else {
-    if (!external_id) throw httpError(400, 'Choose a Channex rate plan');
+    if (!external_id) throw httpError(400, 'Choose a channel manager rate plan');
     const found = cxPlans.find(p => p.id === external_id);
-    if (!found) throw httpError(404, `That rate plan is not one of ${rt.name}'s in Channex`);
+    if (!found) throw httpError(404, `That rate plan is not one of ${rt.name}'s in the channel manager`);
     if (found.currency && found.currency !== 'IDR') throw httpError(400, `That rate plan is in ${found.currency}`, 'CURRENCY');
     const { rows: [taken] } = await db.query(
       'SELECT 1 FROM channel_rate_plans WHERE property_id = $1 AND provider = $2 AND external_rate_plan_id = $3',
       [propertyId, PROVIDER, external_id]);
-    if (taken) throw httpError(409, 'That Channex rate plan is already linked', 'TAKEN');
+    if (taken) throw httpError(409, 'That channel manager rate plan is already linked', 'TAKEN');
     externalId = external_id;
   }
   await db.query(

@@ -36,7 +36,7 @@ async function save(propertyId, fields) {
 // Make sure Channex has this property's webhook, pointing at this server.
 // Returns { state: 'on' | 'no_url' | 'not_linked' | 'error', ... }.
 async function ensure(propertyId) {
-  if (!channex.isConfigured()) return { state: 'error', error: 'Channex is not configured' };
+  if (!channex.isConfigured()) return { state: 'error', error: 'The channel manager is not configured' };
   const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
   if (!p?.channex_property_id) return { state: 'not_linked' };
   const base = publicBase();

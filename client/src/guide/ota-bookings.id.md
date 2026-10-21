@@ -1,11 +1,11 @@
 # Booking dari OTA
 
-Kalau hotel sudah terhubung ke channel manager (Channex), booking dari Agoda, Booking.com, Traveloka dan OTA lain masuk ke PMS **sendiri**, biasanya dalam beberapa detik (paling lama satu menit). Perubahan dan pembatalan di OTA juga masuk sendiri. Tidak perlu diketik.
+Kalau hotel sudah terhubung ke channel manager, booking dari Agoda, Booking.com, Traveloka dan OTA lain masuk ke PMS **sendiri**, biasanya dalam beberapa detik (paling lama satu menit). Perubahan dan pembatalan di OTA juga masuk sendiri. Tidak perlu diketik.
 
 ## Cara melihatnya
 
 - **Pop-up** di kanan atas setiap halaman: *New Agoda booking*, *booking changed*, *booking cancelled* atau *needs you*, dengan nama tamu, kamar dan tanggal, plus bunyi singkat. **Open** membuka booking-nya, **OK** menutupnya — untuk semua orang di front desk, jadi cukup satu orang yang menekan. **All seen** menutup semuanya.
-- **🌐 OTA bookings** di menu (Front Desk), dengan angka merah selama ada yang baru atau butuh Anda: yang butuh Anda paling atas, lalu hari ini, lalu sebelumnya. **↻ Check now** langsung membaca Channex.
+- **🌐 OTA bookings** di menu (Front Desk), dengan angka merah selama ada yang baru atau butuh Anda: yang butuh Anda paling atas, lalu hari ini, lalu sebelumnya. **↻ Check now** langsung membaca channel manager.
 - Kotak **Dashboard** *From the OTAs — today*: berapa yang baru / diubah / dibatalkan hari ini dan apa yang butuh Anda.
 
 ## Booking OTA baru
@@ -34,7 +34,7 @@ Booking *Guest pays at the hotel* tetap **Pending** sampai tamu membayar, sepert
 
 ## Booking yang sudah ada di PMS
 
-Saat OTA pertama kali dihubungkan, Channex bisa mengirim booking yang sudah ada di PMS (diketik manual, atau dari sistem lama). PMS mengenalinya — tipe kamar sama, tanggal sama, dan nama tamu atau nomor reservasi OTA di catatan — lalu **menautkannya**, tidak membuat booking kedua. Booking itu muncul di **To check** ("…was matched to this booking"), dengan harga dari OTA kalau berbeda dengan PMS. Setelah itu, perubahan di OTA mengubah booking tersebut.
+Saat OTA pertama kali dihubungkan, channel manager bisa mengirim booking yang sudah ada di PMS (diketik manual, atau dari sistem lama). PMS mengenalinya — tipe kamar sama, tanggal sama, dan nama tamu atau nomor reservasi OTA di catatan — lalu **menautkannya**, tidak membuat booking kedua. Booking itu muncul di **To check** ("…was matched to this booking"), dengan harga dari OTA kalau berbeda dengan PMS. Setelah itu, perubahan di OTA mengubah booking tersebut.
 
 ## Kalau PMS butuh Anda
 

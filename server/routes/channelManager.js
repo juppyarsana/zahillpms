@@ -84,7 +84,7 @@ router.post('/webhook', async (req, res) => {
   try {
     const out = await channelWebhook.ensure(req.propertyId);
     if (out.state === 'no_url') return res.status(400).json({ error: 'This server has no public https address (SERVER_PUBLIC_URL) — bookings are read every minute instead', code: 'NO_URL' });
-    if (out.state === 'not_linked') return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    if (out.state === 'not_linked') return res.status(400).json({ error: 'Link the channel manager property first', code: 'NO_PROPERTY' });
     if (out.state === 'error') return res.status(502).json({ error: out.error, webhook: await channelWebhook.status(req.propertyId) });
     res.json({ ok: true, webhook: await channelWebhook.status(req.propertyId) });
   } catch (err) { send(res, err); }
@@ -95,7 +95,7 @@ router.post('/bookings/pull', async (req, res) => {
   try {
     const result = await channelBookings.pullProperty(req.propertyId);
     if (result.busy) return res.status(409).json({ error: 'Already reading — try again in a moment', code: 'BUSY' });
-    if (result.skipped) return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    if (result.skipped) return res.status(400).json({ error: 'Link the channel manager property first', code: 'NO_PROPERTY' });
     res.json({ ok: true, result, ...(await channelBookings.list(req.propertyId)) });
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -118,7 +118,7 @@ router.post('/sync', async (req, res) => {
       const at = result.next.toLocaleTimeString('en-GB', { timeZone: 'Asia/Makassar', hour: '2-digit', minute: '2-digit' });
       return res.status(409).json({ error: `Everything was sent less than an hour ago — changes keep going by themselves. Send everything again after ${at}.`, code: 'TOO_SOON', sync: await channelSync.status(req.propertyId) });
     }
-    if (result.skipped) return res.status(400).json({ error: 'Link the Channex property first', code: 'NO_PROPERTY' });
+    if (result.skipped) return res.status(400).json({ error: 'Link the channel manager property first', code: 'NO_PROPERTY' });
     res.json({ ok: true, result, sync: await channelSync.status(req.propertyId) });
   } catch (err) {
     res.status(502).json({ error: err.message, sync: await channelSync.status(req.propertyId).catch(() => null) });

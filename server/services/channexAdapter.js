@@ -24,7 +24,7 @@ const IP_FAMILY = process.env.CHANNEX_IP_FAMILY === '6' ? 6 : 4;
 const TIMEOUT_MS = 60_000;
 
 function request(method, path, body) {
-  if (!isConfigured()) return Promise.reject(new Error('Channex is not configured (CHANNEX_API_KEY unset)'));
+  if (!isConfigured()) return Promise.reject(new Error('The channel manager is not configured (CHANNEX_API_KEY unset)'));
   const url = new URL(`${BASE_URL}${path}`);
   const payload = body ? JSON.stringify(body) : null;
   const lib = url.protocol === 'http:' ? http : https;
@@ -44,12 +44,12 @@ function request(method, path, body) {
         let data = null;
         try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ }
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(`Channex ${method} ${path} failed (${res.statusCode}): ${JSON.stringify(data)}`));
+          reject(new Error(`Channel manager ${method} ${path} failed (${res.statusCode}): ${JSON.stringify(data)}`));
         } else resolve(data);
       });
       res.on('error', reject);
     });
-    req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error(`Channex ${method} ${path} timed out`)));
+    req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error(`Channel manager ${method} ${path} timed out`)));
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();

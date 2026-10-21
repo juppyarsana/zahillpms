@@ -27,9 +27,9 @@ export default function OtaBookings() {
     setBusy(true); setMsg('');
     try {
       const { data: out } = await api.post('/api/ota-inbox/check');
-      setMsg(out.busy ? 'Already reading — a moment…' : out.handled ? `${out.handled} new from Channex` : 'Nothing new from Channex');
+      setMsg(out.busy ? 'Already reading — a moment…' : out.handled ? `${out.handled} new from the channel manager` : 'Nothing new from the channel manager');
       await load(); refresh();
-    } catch (e) { setMsg(e.response?.data?.error || 'Could not reach Channex'); }
+    } catch (e) { setMsg(e.response?.data?.error || 'Could not reach the channel manager'); }
     finally { setBusy(false); }
   }
 

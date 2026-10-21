@@ -56,12 +56,12 @@ export default function SettingsChannelManager() {
         <div>
           <div className="page-title">Channel Manager</div>
           <div className="page-subtitle">
-            Link this hotel's rooms to Channex, which sends them to the OTAs (Agoda, Booking.com, Traveloka…) · Owner only
+            Link this hotel's rooms to the channel manager, which sends them to the OTAs (Agoda, Booking.com, Traveloka…) · Owner only
           </div>
         </div>
         {data && (
           <span className={`badge ${data.environment === 'staging' ? 'badge-yellow' : 'badge-green'}`}>
-            {data.environment === 'staging' ? 'Channex test system (staging)' : 'Channex live'}
+            {data.environment === 'staging' ? 'Channel manager — test system' : 'Channel manager live'}
           </span>
         )}
       </div>
@@ -69,12 +69,12 @@ export default function SettingsChannelManager() {
       {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
 
       {data && !data.configured && (
-        <div className="alert alert-warn"><div>Channex is not set up on this server yet (the Channex API key is missing). Ask the platform team.</div></div>
+        <div className="alert alert-warn"><div>The channel manager is not set up on this server yet (the API key is missing). Ask the platform team.</div></div>
       )}
 
       {data?.configured && data.channex_error && (
         <div className="alert alert-error" style={{ marginBottom: 12 }}>
-          <div>Channex could not be reached: {data.channex_error}</div>
+          <div>The channel manager could not be reached: {data.channex_error}</div>
         </div>
       )}
 
@@ -82,9 +82,9 @@ export default function SettingsChannelManager() {
         <>
           <div className="alert alert-info" style={{ marginBottom: 12 }}>
             <div>
-              Once a room type and its meal plans are linked, the PMS keeps Channex up to date by itself: free rooms and the nightly
+              Once a room type and its meal plans are linked, the PMS keeps the channel manager up to date by itself: free rooms and the nightly
               price for the next {data.sync_days || 365} nights, sent within about half a minute of any booking, room or price change.
-              Channex passes them to the OTAs only for channels connected there. OTA bookings come back into the PMS by themselves (card 4).
+              The channel manager passes them only to the OTAs connected there. OTA bookings come back into the PMS by themselves (card 4).
             </div>
           </div>
 
@@ -92,24 +92,24 @@ export default function SettingsChannelManager() {
 
           {/* ── 1. The Channex property ───────────────────────────── */}
           <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-title" style={{ marginBottom: 8 }}>1. Channex property</div>
+            <div className="card-title" style={{ marginBottom: 8 }}>1. Channel manager property</div>
             {data.property ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontWeight: 600 }}>{data.property.title || 'Unknown property'} {data.property.currency && <span className="badge badge-gray">{data.property.currency}</span>}</div>
-                  {data.property.found === false && <div style={{ color: 'var(--danger-text)', fontSize: 13 }}>This property is no longer in the Channex account.</div>}
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Channex ID {data.property.external_id}</div>
+                  {data.property.found === false && <div style={{ color: 'var(--danger-text)', fontSize: 13 }}>This property is no longer in the channel manager account.</div>}
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {data.property.external_id}</div>
                 </div>
                 <button className="btn btn-secondary btn-sm" disabled={!!busy || linkedTypes > 0}
                   title={linkedTypes > 0 ? 'Unlink every room type first' : ''}
-                  onClick={() => window.confirm('Unlink this Channex property?') && run('prop-off', () => api.delete('/api/channel-manager/property'))}>
+                  onClick={() => window.confirm('Unlink this channel manager property?') && run('prop-off', () => api.delete('/api/channel-manager/property'))}>
                   Unlink
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <select className="form-input" style={{ flex: '1 1 260px', maxWidth: 380 }} value={pickProperty} onChange={e => setPickProperty(e.target.value)}>
-                  <option value="">Choose the hotel in Channex…</option>
+                  <option value="">Choose the hotel in the channel manager…</option>
                   {data.channex_properties.map(p => (
                     <option key={p.id} value={p.id}>{p.title}{p.currency ? ` (${p.currency})` : ''}</option>
                   ))}
@@ -120,8 +120,8 @@ export default function SettingsChannelManager() {
                 </button>
                 <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>or</span>
                 <button className="btn btn-secondary btn-sm" disabled={!!busy}
-                  onClick={() => window.confirm('Create a new property in Channex with this hotel\'s name?') && run('prop-new', () => api.put('/api/channel-manager/property', { create: true }))}>
-                  {busy === 'prop-new' ? 'Creating…' : 'Create in Channex'}
+                  onClick={() => window.confirm('Create a new property in the channel manager with this hotel\'s name?') && run('prop-new', () => api.put('/api/channel-manager/property', { create: true }))}>
+                  {busy === 'prop-new' ? 'Creating…' : 'Create in the channel manager'}
                 </button>
               </div>
             )}
@@ -132,8 +132,8 @@ export default function SettingsChannelManager() {
             <div className="card">
               <div className="card-title" style={{ marginBottom: 4 }}>2. Room types &amp; meal plans</div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-                Each room type is one Channex room type with the same number of rooms; each meal plan of it is one Channex rate plan,
-                priced per room for the room type's maximum guests. The PMS is in charge: linking sets the room count and guests in Channex.
+                Each room type is one channel manager room type with the same number of rooms; each meal plan of it is one channel manager rate plan,
+                priced per room for the room type's maximum guests. The PMS is in charge: linking sets the room count and guests in the channel manager.
               </div>
 
               {data.room_types.length === 0 && <div style={{ color: 'var(--text-muted)' }}>No room types yet — add them under Units.</div>}
@@ -153,26 +153,26 @@ export default function SettingsChannelManager() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                           <div style={{ fontSize: 13 }}>
                             <span className="badge badge-green">Linked</span>{' '}
-                            Channex: <b>{rt.link.title || '?'}</b>
+                            Channel manager: <b>{rt.link.title || '?'}</b>
                             {rt.link.count_of_rooms != null && <span style={{ color: 'var(--text-muted)' }}> · {rt.link.count_of_rooms} rooms · {rt.link.occ_adults} guests</span>}
-                            {rt.link.found === false && <div style={{ color: 'var(--danger-text)' }}>No longer in Channex</div>}
+                            {rt.link.found === false && <div style={{ color: 'var(--danger-text)' }}>No longer in the channel manager</div>}
                             {rt.link.differs && <div style={{ color: 'var(--warning-text)' }}>Differs from the PMS ({rt.rooms} rooms · {rt.max_guests} guests)</div>}
                           </div>
                           {rt.link.differs && (
                             <button className="btn btn-primary btn-sm" disabled={!!busy}
                               onClick={() => run('ref-' + rt.id, () => api.post(`/api/channel-manager/room-types/${rt.id}/refresh`))}>
-                              {busy === 'ref-' + rt.id ? 'Updating…' : 'Update in Channex'}
+                              {busy === 'ref-' + rt.id ? 'Updating…' : 'Update in the channel manager'}
                             </button>
                           )}
                           <button className="btn btn-secondary btn-sm" disabled={!!busy}
-                            onClick={() => window.confirm(`Unlink ${rt.name} and its meal plans? Nothing is deleted in Channex.`) && run('off-' + rt.id, () => api.delete(`/api/channel-manager/room-types/${rt.id}`))}>
+                            onClick={() => window.confirm(`Unlink ${rt.name} and its meal plans? Nothing is deleted in the channel manager.`) && run('off-' + rt.id, () => api.delete(`/api/channel-manager/room-types/${rt.id}`))}>
                             Unlink
                           </button>
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                           <select className="form-input" style={{ width: 220 }} value={pick[rt.id] || ''} onChange={e => setPick(p => ({ ...p, [rt.id]: e.target.value }))}>
-                            <option value="">Channex room type…</option>
+                            <option value="">Channel manager room type…</option>
                             {freeTypes.map(c => <option key={c.id} value={c.id}>{c.title} ({c.count_of_rooms} rooms)</option>)}
                           </select>
                           <button className="btn btn-primary btn-sm" disabled={!pick[rt.id] || !!busy}
@@ -181,7 +181,7 @@ export default function SettingsChannelManager() {
                           </button>
                           <button className="btn btn-secondary btn-sm" disabled={!!busy || rt.rooms < 1}
                             onClick={() => run('rtn-' + rt.id, () => api.put(`/api/channel-manager/room-types/${rt.id}`, { create: true }))}>
-                            {busy === 'rtn-' + rt.id ? 'Creating…' : 'Create in Channex'}
+                            {busy === 'rtn-' + rt.id ? 'Creating…' : 'Create in the channel manager'}
                           </button>
                         </div>
                       )}
@@ -201,7 +201,7 @@ export default function SettingsChannelManager() {
                               {p.link ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
                                   <span><span className="badge badge-green">Linked</span> {p.link.title || '?'}</span>
-                                  {p.link.found === false && <span style={{ color: 'var(--danger-text)' }}>No longer in Channex</span>}
+                                  {p.link.found === false && <span style={{ color: 'var(--danger-text)' }}>No longer in the channel manager</span>}
                                   <button className="btn btn-secondary btn-sm" disabled={!!busy}
                                     onClick={() => window.confirm(`Unlink ${p.name} for ${rt.name}?`) && run('rpoff-' + key, () => api.delete(`/api/channel-manager/room-types/${rt.id}/rate-plans/${p.id}`))}>
                                     Unlink
@@ -212,7 +212,7 @@ export default function SettingsChannelManager() {
                                   {cxPlansOfType.length > 0 && (
                                     <>
                                       <select className="form-input" style={{ width: 200 }} value={pick[key] || ''} onChange={e => setPick(x => ({ ...x, [key]: e.target.value }))}>
-                                        <option value="">Channex rate plan…</option>
+                                        <option value="">Channel manager rate plan…</option>
                                         {cxPlansOfType.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
                                       </select>
                                       <button className="btn btn-primary btn-sm" disabled={!pick[key] || !!busy}
@@ -223,7 +223,7 @@ export default function SettingsChannelManager() {
                                   )}
                                   <button className="btn btn-secondary btn-sm" disabled={!!busy}
                                     onClick={() => run('rpn-' + key, () => api.put(`/api/channel-manager/room-types/${rt.id}/rate-plans/${p.id}`, { create: true }))}>
-                                    {busy === 'rpn-' + key ? 'Creating…' : 'Create in Channex'}
+                                    {busy === 'rpn-' + key ? 'Creating…' : 'Create in the channel manager'}
                                   </button>
                                 </div>
                               )}
@@ -272,11 +272,11 @@ function SendLog({ log }) {
   const copy = async (k, text) => { try { await navigator.clipboard.writeText(text); setCopied(k); setTimeout(() => setCopied(null), 1500); } catch { /* no clipboard */ } };
   return (
     <div style={{ marginTop: 14 }}>
-      <button className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▾' : '▸'} Last sends ({log.length}) — with Channex task IDs</button>
+      <button className="btn btn-secondary btn-sm" onClick={() => setOpen(o => !o)}>{open ? '▾' : '▸'} Last sends ({log.length}) — with task IDs</button>
       {open && (
         <div className="table-wrap" style={{ marginTop: 8 }}>
           <table className="table" style={{ minWidth: 640, fontSize: 12 }}>
-            <thead><tr><th>When</th><th>What</th><th>Channex task IDs</th></tr></thead>
+            <thead><tr><th>When</th><th>What</th><th>task IDs</th></tr></thead>
             <tbody>
               {log.map((e, k) => (
                 <tr key={k}>
@@ -285,7 +285,7 @@ function SendLog({ log }) {
                     {!e.ok ? <span style={{ color: 'var(--danger-text)' }}>Failed: {e.error}</span>
                       : e.mode !== 'change' ? `Everything: ${e.availability_ranges} room · ${e.rate_ranges} price updates (${e.nights} values)`
                       : <>{(e.items || []).map((t, n) => <div key={n}>{t}</div>)}{e.items_more > 0 && <div style={{ color: 'var(--text-muted)' }}>+ {e.items_more} more</div>}</>}
-                    {e.warnings > 0 && <div style={{ color: 'var(--warning-text)' }}>{e.warnings} value{e.warnings === 1 ? '' : 's'} not taken by Channex</div>}
+                    {e.warnings > 0 && <div style={{ color: 'var(--warning-text)' }}>{e.warnings} value{e.warnings === 1 ? '' : 's'} not taken by the channel manager</div>}
                   </td>
                   <td style={{ verticalAlign: 'top' }}>
                     {ids(e).map(([kind, id]) => (
@@ -320,13 +320,13 @@ function SyncCard({ sync, days, busy, onSend }) {
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-        <div className="card-title" style={{ margin: 0 }}>3. Sending to Channex</div>
+        <div className="card-title" style={{ margin: 0 }}>3. Sending to the channel manager</div>
         {failing ? <span className="badge badge-red">Not sending — retrying</span>
           : sync?.waiting || sync?.running ? <span className="badge badge-yellow">Sending changes…</span>
           : sync?.last_ok_at ? <span className="badge badge-green">Up to date</span>
           : <span className="badge badge-gray">Nothing sent yet</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary btn-sm" disabled={cmpBusy} onClick={compare}>{cmpBusy ? 'Comparing…' : 'Compare with Channex'}</button>
+          <button className="btn btn-secondary btn-sm" disabled={cmpBusy} onClick={compare}>{cmpBusy ? 'Comparing…' : 'Compare with the channel manager'}</button>
           <button className="btn btn-secondary btn-sm" disabled={!!busy} onClick={onSend}>
             {busy === 'sync' ? 'Sending…' : 'Send everything now'}
           </button>
@@ -348,7 +348,7 @@ function SyncCard({ sync, days, busy, onSend }) {
       </div>
       {failing && (
         <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}>
-          <div>Channex refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again after 1, 2, 4… up to 15 minutes: {sync.last_error}</div>
+          <div>The channel manager refused or could not be reached ({when(sync.last_error_at)}) — the PMS tries again after 1, 2, 4… up to 15 minutes: {sync.last_error}</div>
         </div>
       )}
       {cmpErr && <div className="alert alert-error" style={{ marginTop: 12, marginBottom: 0 }}><div>{cmpErr}</div></div>}
@@ -356,12 +356,12 @@ function SyncCard({ sync, days, busy, onSend }) {
         <div className={`alert ${cmp.different ? 'alert-warn' : 'alert-success'}`} style={{ marginTop: 12, marginBottom: 0 }}>
           <div style={{ width: '100%' }}>
             {cmp.different
-              ? <><b>{cmp.different} of {cmp.checked} values differ</b> in the next {cmp.days} nights — usually a change still on its way (wait half a minute and compare again) or a value changed by hand in Channex. <i>Send everything now</i> puts Channex back to the PMS's figures.</>
-              : <><b>Channex holds exactly what the PMS sends</b> — {cmp.checked} values over the next {cmp.days} nights.</>}
+              ? <><b>{cmp.different} of {cmp.checked} values differ</b> in the next {cmp.days} nights — usually a change still on its way (wait half a minute and compare again) or a value changed by hand in the channel manager. <i>Send everything now</i> puts the channel manager back to the PMS's figures.</>
+              : <><b>The channel manager holds exactly what the PMS sends</b> — {cmp.checked} values over the next {cmp.days} nights.</>}
             {cmp.differences.length > 0 && (
               <div className="table-wrap" style={{ marginTop: 8 }}>
                 <table className="table" style={{ fontSize: 12, minWidth: 420 }}>
-                  <thead><tr><th>Night</th><th>Room type / plan</th><th>What</th><th style={{ textAlign: 'right' }}>PMS</th><th style={{ textAlign: 'right' }}>Channex</th></tr></thead>
+                  <thead><tr><th>Night</th><th>Room type / plan</th><th>What</th><th style={{ textAlign: 'right' }}>PMS</th><th style={{ textAlign: 'right' }}>Channel manager</th></tr></thead>
                   <tbody>
                     {cmp.differences.slice(0, 20).map((d, i) => (
                       <tr key={i}>
@@ -379,7 +379,7 @@ function SyncCard({ sync, days, busy, onSend }) {
       )}
       {last?.warnings?.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 12, marginBottom: 0 }}>
-          <div>Channex did not take some values: {last.warnings.map(w => JSON.stringify(w)).join(' · ').slice(0, 400)}</div>
+          <div>The channel manager did not take some values: {last.warnings.map(w => JSON.stringify(w)).join(' · ').slice(0, 400)}</div>
         </div>
       )}
       <SendLog log={sync?.send_log || []} />
@@ -444,7 +444,7 @@ function BookingsCard() {
     try { const r = await api.post('/api/channel-manager/bookings/pull'); setD(r.data); } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   };
   const handled = async (r) => {
-    const what = r.result === 'error' ? 'You entered this booking by hand (or it is not needed)? It is then confirmed to Channex and taken off this list.'
+    const what = r.result === 'error' ? 'You entered this booking by hand (or it is not needed)? It is then confirmed to the channel manager and taken off this list.'
       : 'You have dealt with this by hand? It is taken off this list.';
     if (!window.confirm(what)) return;
     setBusy(true);
@@ -464,7 +464,7 @@ function BookingsCard() {
         <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} disabled={busy} onClick={pull}>{busy ? 'Checking…' : 'Check now'}</button>
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
-        The PMS reads new, changed and cancelled OTA bookings from Channex and puts them in: the first free room of the type,
+        The PMS reads new, changed and cancelled OTA bookings from the channel manager and puts them in: the first free room of the type,
         the guest, the OTA as the source, the price, who collects the money. Front desk sees each one as a pop-up and on
         🌐 OTA bookings (also Reservations → ⚠ To check and the Telegram New booking alert). What the PMS can't do safely — no free room,
         a guest already checked in — waits there and here for you. Last read: {when(d?.last_pull_at)}.
@@ -472,14 +472,14 @@ function BookingsCard() {
       {wh && (
         <div style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           {wh.on
-            ? <span>⚡ <b>Instant:</b> Channex tells the PMS the moment a booking comes in{wh.last_webhook_at ? ` — last call ${when(wh.last_webhook_at)}` : ''}. A back-up read every 15 minutes catches anything missed.</span>
+            ? <span>⚡ <b>Instant:</b> The channel manager tells the PMS the moment a booking comes in{wh.last_webhook_at ? ` — last call ${when(wh.last_webhook_at)}` : ''}. A back-up read every 15 minutes catches anything missed.</span>
             : !wh.public_url
               ? <span style={{ color: 'var(--text-muted)' }}>⏱ Read every minute. (Instant needs the server's public address — not on a test laptop.)</span>
-              : <><span style={{ color: 'var(--warning-text)' }}>⏱ Read every minute — Channex is not set to call the PMS{wh.error ? `: ${wh.error}` : ''}.</span>
+              : <><span style={{ color: 'var(--warning-text)' }}>⏱ Read every minute — The channel manager is not set to call the PMS{wh.error ? `: ${wh.error}` : ''}.</span>
                   <button className="btn btn-secondary btn-sm" disabled={busy} onClick={webhookOn}>Turn on instant</button></>}
         </div>
       )}
-      {(err || d?.last_pull_error) && <div className="alert alert-error"><div>{err || `Channex could not be read: ${d.last_pull_error}`}</div></div>}
+      {(err || d?.last_pull_error) && <div className="alert alert-error"><div>{err || `The channel manager could not be read: ${d.last_pull_error}`}</div></div>}
       {d?.open?.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {d.open.map(r => <RevisionRow key={r.id} r={r} onHandled={handled} busy={busy} />)}

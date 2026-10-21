@@ -256,7 +256,7 @@ async function createFromRevision(client, propertyId, r, L) {
   const picked = [];
   for (const room of rooms) {
     const type = L.roomType(room.roomType);
-    if (!type) return { result: 'attention', message: `A room type of this booking is not linked in the PMS (Channex ${room.roomType}) — enter it by hand and link the room type` };
+    if (!type) return { result: 'attention', message: `A room type of this booking is not linked in the PMS (channel manager room type ${room.roomType}) — enter it by hand and link the room type` };
     const plan = L.ratePlan(room.ratePlan);
     const unit = await freeUnit(client, propertyId, type.room_type_id, room.ci, room.co, { taken: picked.map(p => p.unit.id) });
     if (!unit) return { result: 'attention', message: `No free ${type.name} for ${span(room.ci, room.co)} — overbooked. Move a guest or call ${r.ota}, then enter the booking by hand` };
@@ -266,7 +266,7 @@ async function createFromRevision(client, propertyId, r, L) {
   const guest = await guestFor(client, propertyId, r.customer);
   const source = await sourceFor(client, propertyId, r.ota);
   const special = [r.notes, r.arrivalHour ? `Arrival time (OTA): ${String(r.arrivalHour).slice(0, 5)}` : ''].filter(Boolean).join('\n') || null;
-  const internal = `CHANNEX · ${r.ota} ${r.code}`.trim();
+  const internal = `OTA · ${r.ota} ${r.code}`.trim();
   const roomInput = p => ({
     unit_id: p.unit.id, check_in_date: p.room.ci, check_out_date: p.room.co,
     num_guests: p.room.adults, children: p.room.children,

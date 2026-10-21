@@ -14,7 +14,7 @@ const telegramService = require('./telegramService');
 
 const ALERT = 'alert_channel_manager';
 const FAIL_MINUTES = 15;
-const WHAT = { send: 'Sending free rooms and prices to Channex', pull: 'Reading OTA bookings from Channex' };
+const WHAT = { send: 'Sending free rooms and prices to the channel manager', pull: 'Reading OTA bookings from the channel manager' };
 
 async function failed(propertyId, kind) {
   await db.query(
@@ -43,7 +43,7 @@ async function checkAlerts() {
       const h = telegramService.escapeHtml;
       const since = new Date(r.since).toLocaleTimeString('en-GB', { timeZone: 'Asia/Makassar', hour: '2-digit', minute: '2-digit' });
       const lines = [`⚠️ <b>Channel manager not working</b>`, `${WHAT[kind]} has failed since ${since}.`,
-        kind === 'send' ? 'The OTAs may be selling rooms or prices that are out of date.' : 'New OTA bookings are not reaching the PMS yet (they wait in Channex).',
+        kind === 'send' ? 'The OTAs may be selling rooms or prices that are out of date.' : 'New OTA bookings are not reaching the PMS yet (they wait in the channel manager).',
         r.error ? `\n<i>${h(String(r.error).slice(0, 300))}</i>` : '', '\nThe PMS keeps trying — see Settings → Channel Manager.'];
       telegramService.sendAlert(r.property_id, ALERT, lines.filter(Boolean).join('\n'), { html: true }).catch(() => {});
     }
@@ -55,7 +55,7 @@ async function checkAlerts() {
 async function compare(propertyId, days = 30) {
   const channelSync = require('./channelSync');
   const { rows: [p] } = await db.query('SELECT channex_property_id FROM properties WHERE id = $1', [propertyId]);
-  if (!p?.channex_property_id) { const e = new Error('Link the Channex property first'); e.status = 400; throw e; }
+  if (!p?.channex_property_id) { const e = new Error('Link the channel manager property first'); e.status = 400; throw e; }
   const { values, from } = await channelSync.desiredValues(propertyId);
   const to = new Date(Date.parse(from + 'T00:00:00Z') + (days - 1) * 86400000).toISOString().slice(0, 10);
   const held = await channex.readAri(p.channex_property_id, from, to);
@@ -89,26 +89,26 @@ async function checklist(propertyId) {
   const out = [];
   const setup = await cm.getSetup(propertyId);
 
-  out.push(!setup.configured ? item('env', 'fail', 'Channex is not set up on this server', 'The platform team adds the Channex API key.')
-    : setup.environment === 'production' ? item('env', 'ok', 'Connected to Channex live')
-    : item('env', 'fail', 'Connected to the Channex TEST system (staging)', 'Before go-live the server must use the live Channex account (API key + address).'));
-  if (setup.channex_error) out.push(item('reach', 'fail', 'Channex could not be reached', setup.channex_error));
+  out.push(!setup.configured ? item('env', 'fail', 'The channel manager is not set up on this server', 'The platform team adds the API key.')
+    : setup.environment === 'production' ? item('env', 'ok', 'Connected to the live channel manager')
+    : item('env', 'fail', 'Connected to the channel manager TEST system', 'Before go-live the server must use the live channel manager account (API key + address).'));
+  if (setup.channex_error) out.push(item('reach', 'fail', 'The channel manager could not be reached', setup.channex_error));
 
   if (!setup.property) {
-    out.push(item('property', 'fail', 'The Channex property is not linked', 'Step 1 below.'));
+    out.push(item('property', 'fail', 'The channel manager property is not linked', 'Step 1 below.'));
     return { items: out, ready: false };
   }
-  out.push(setup.property.found === false ? item('property', 'fail', 'The linked property is no longer in the Channex account')
+  out.push(setup.property.found === false ? item('property', 'fail', 'The linked property is no longer in the channel manager account')
     : item('property', 'ok', `Linked to "${setup.property.title || setup.property.external_id}"${setup.property.currency && setup.property.currency !== 'IDR' ? ` (${setup.property.currency}!)` : ''}`));
 
   const withRooms = setup.room_types.filter(rt => rt.rooms > 0);
   const linked = withRooms.filter(rt => rt.link);
   const unlinked = withRooms.filter(rt => !rt.link);
   out.push(!linked.length ? item('types', 'fail', 'No room type is linked', 'Step 2 below.')
-    : unlinked.length ? item('types', 'warn', `${linked.length} of ${withRooms.length} room types linked`, `Not sold on the OTAs through Channex: ${unlinked.map(r => r.name).join(', ')}. Fine if on purpose.`)
+    : unlinked.length ? item('types', 'warn', `${linked.length} of ${withRooms.length} room types linked`, `Not sold on the OTAs through the channel manager: ${unlinked.map(r => r.name).join(', ')}. Fine if on purpose.`)
     : item('types', 'ok', `All ${linked.length} room types linked`));
   const differs = linked.filter(rt => rt.link.differs);
-  if (differs.length) out.push(item('counts', 'fail', 'Room count or guests differ in Channex', `${differs.map(r => r.name).join(', ')} — press Update in Channex.`));
+  if (differs.length) out.push(item('counts', 'fail', 'Room count or guests differ in the channel manager', `${differs.map(r => r.name).join(', ')} — press Update in the channel manager.`));
   const noPlan = linked.filter(rt => !(rt.rate_plans || []).some(p => p.link));
   if (noPlan.length) out.push(item('plans', 'fail', 'A room type has no meal plan linked — it has no price on the OTAs', noPlan.map(r => r.name).join(', ')));
   else if (linked.length) out.push(item('plans', 'ok', 'Every linked room type has a meal plan linked'));
@@ -129,7 +129,7 @@ async function checklist(propertyId) {
   const st = await channelSync.status(propertyId);
   const ago = t => (t ? Math.round((Date.now() - new Date(t).getTime()) / 60000) : null);
   if (!st?.last_ok_at) out.push(item('send', 'fail', 'Free rooms and prices have not been sent yet', 'Press Send everything now (card 3).'));
-  else if (st.last_error && new Date(st.last_error_at) > new Date(st.last_ok_at)) out.push(item('send', 'fail', 'Sending to Channex is failing', st.last_error));
+  else if (st.last_error && new Date(st.last_error_at) > new Date(st.last_ok_at)) out.push(item('send', 'fail', 'Sending to the channel manager is failing', st.last_error));
   else if (ago(st.last_full_at) == null || ago(st.last_full_at) > 26 * 60) out.push(item('send', 'warn', 'No full send in the last day', 'It runs every night at 04:10, or press Send everything now.'));
   else out.push(item('send', 'ok', 'Free rooms and prices are being sent'));
   const { rows: [pull] } = await db.query('SELECT last_pull_at, last_pull_error FROM channel_sync_state WHERE property_id = $1', [propertyId]);
@@ -140,9 +140,9 @@ async function checklist(propertyId) {
   if (pull?.last_pull_error) { /* above */ }
   else if (ago(pull?.last_pull_at) == null || ago(pull.last_pull_at) > limit) out.push(item('pull', 'warn', `OTA bookings have not been read in the last ${limit} minutes`, 'Press Check now (card 4).'));
   else out.push(item('pull', 'ok', instant ? 'OTA bookings come in by the webhook, with a back-up read every 15 minutes' : 'OTA bookings are being read every minute'));
-  out.push(wh.on ? item('webhook', 'ok', 'Channex tells the PMS the moment a booking comes in', wh.last_webhook_at ? `Last call ${new Date(wh.last_webhook_at).toLocaleString('en-GB', { timeZone: 'Asia/Makassar', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'No call yet — it comes with the first OTA booking.')
-    : !wh.public_url ? item('webhook', setup.environment === 'production' ? 'warn' : 'info', 'Bookings are read every minute only (no instant call from Channex)', 'The server needs its public https address (SERVER_PUBLIC_URL) for Channex to call it.')
-    : item('webhook', 'warn', 'Channex is not set to call the PMS when a booking comes in', `${wh.error ? `${wh.error} — ` : ''}press Turn on instant (card 4). Bookings are still read every minute.`));
+  out.push(wh.on ? item('webhook', 'ok', 'The channel manager tells the PMS the moment a booking comes in', wh.last_webhook_at ? `Last call ${new Date(wh.last_webhook_at).toLocaleString('en-GB', { timeZone: 'Asia/Makassar', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'No call yet — it comes with the first OTA booking.')
+    : !wh.public_url ? item('webhook', setup.environment === 'production' ? 'warn' : 'info', 'Bookings are read every minute only (no instant call from the channel manager)', 'The server needs its public https address (SERVER_PUBLIC_URL) for the channel manager to call it.')
+    : item('webhook', 'warn', 'The channel manager is not set to call the PMS when a booking comes in', `${wh.error ? `${wh.error} — ` : ''}press Turn on instant (card 4). Bookings are still read every minute.`));
   const { rows: [{ open }] } = await db.query(
     `SELECT count(*)::int AS open FROM channel_revisions WHERE property_id = $1 AND result IN ('attention', 'error') AND handled_at IS NULL`, [propertyId]);
   if (open) out.push(item('open', 'warn', `${open} OTA booking${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} you`, 'Card 4 below.'));
@@ -163,9 +163,9 @@ async function checklist(propertyId) {
        AND b.check_out_date >= (NOW() AT TIME ZONE 'Asia/Makassar')::date
        AND NOT EXISTS (SELECT 1 FROM channel_booking_rooms cr WHERE cr.booking_id = b.id)`, [propertyId]);
   if (n) out.push(item('existing', 'info', `${n} upcoming OTA booking${n === 1 ? '' : 's'} already in the PMS (typed in or imported)`,
-    'When an OTA is connected in Channex it may send these again. The PMS matches them (room type, dates, guest name or reservation code) and links them instead of booking twice — check Reservations → To check afterwards.'));
-  out.push(item('otas', 'info', 'Connect each OTA in Channex (Channels), one at a time',
-    'Until an OTA is connected there, keep its availability and prices in the OTA\'s own extranet. After connecting, compare a few nights on the OTA with the PMS (Compare with Channex, card 3).'));
+    'When an OTA is connected it may send these again. The PMS matches them (room type, dates, guest name or reservation code) and links them instead of booking twice — check Reservations → To check afterwards.'));
+  out.push(item('otas', 'info', 'Ask the platform team to connect each OTA, one at a time',
+    'Until an OTA is connected, keep its availability and prices in the OTA\'s own extranet. After connecting, compare a few nights on the OTA with the PMS (Compare with the channel manager, card 3).'));
 
   return { items: out, ready: !out.some(i => i.state === 'fail') };
 }
