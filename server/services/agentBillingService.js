@@ -1,5 +1,7 @@
 const db = require('../db');
 const { loadFolio, round2, agentDue, billRates, AGENT_PREPAID_SQL, PAID_AT_DESK_SQL } = require('./folioService');
+const { otaCollects } = require('./otaCollect');
+const { ensureOtaAgent } = require('./agentService');
 
 // Agent Accounts / Direct Billing — Slice B (see ROADMAP.md #13).
 //
@@ -49,20 +51,39 @@ function computeCommission(terms, folioTotal) {
 // request so the caller can ROLLBACK + 400.
 async function settleCheckout(client, { propertyId, bookingId, billToAgent, actorUserId }) {
   const { rows: [booking] } = await client.query(
-    'SELECT id, source FROM bookings WHERE id = $1 AND property_id = $2',
+    `SELECT b.id, b.source, b.agent_id, b.payment_collect, COALESCE(bs.is_ota, false) AS is_ota, bs.label AS source_label
+     FROM bookings b LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
   if (!booking) return { error: 'Booking not found' };
 
-  const agent = await resolveBookingAgent(client, propertyId, bookingId);
+  let agent = await resolveBookingAgent(client, propertyId, bookingId);
+  // The OTA pays the room (weekly payout, or a virtual card not charged in
+  // full — migration 126): what is still owed goes onto the OTA's account in
+  // Agent Billing, made / linked here when the booking has none. A booking
+  // with another kind of agent (a travel agent) keeps its own rules.
+  const otaPays = otaCollects(booking) && (!agent || agent.agent_type === 'ota');
+  if (otaPays && !agent) {
+    const ota = await ensureOtaAgent(client, propertyId, booking.source_label || booking.source);
+    if (ota) {
+      await client.query('UPDATE bookings SET agent_id = $1, updated_at = NOW() WHERE id = $2', [ota.id, bookingId]);
+      agent = await resolveBookingAgent(client, propertyId, bookingId);
+    }
+  }
+  // The guest pays at the hotel although the booking is on an OTA's account:
+  // nothing goes to the OTA.
+  const guestPaysOta = booking.payment_collect === 'property' && agent?.agent_type === 'ota';
   const paymentStatus = agent?.payment_status || 'normal';
-  // billToAgent null = not chosen on screen: bill a city-ledger agent by default.
-  if (billToAgent === null || billToAgent === undefined) billToAgent = !!agent && CITY_LEDGER.includes(paymentStatus);
+  // billToAgent null = not chosen on screen: bill a city-ledger agent (or the OTA) by default.
+  if (billToAgent === null || billToAgent === undefined) {
+    billToAgent = otaPays ? !!agent : (!!agent && !guestPaysOta && CITY_LEDGER.includes(paymentStatus));
+  }
 
   let folio_status = null;
   if (billToAgent) {
     if (!agent) return { error: 'This booking has no agent to bill' };
-    if (!CITY_LEDGER.includes(paymentStatus)) {
+    if (!otaPays && !CITY_LEDGER.includes(paymentStatus)) {
       return { error: `${agent.name} is not set up to be billed (city ledger) — change it in Agent Billing` };
     }
     // Only what is still owed goes to the agent (folioService.agentDue): a
@@ -85,6 +106,10 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
         [bookingId, propertyId]
       );
       folio_status = 'pending_agent_invoice';
+      if (otaPays) {
+        await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+          [bookingId, `Room money still owed by ${agent.name} put on ${agent.name}'s account in Agent Billing at check-out — paid by its payout.`, actorUserId || null]);
+      }
     }
   }
 

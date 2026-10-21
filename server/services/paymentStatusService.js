@@ -34,7 +34,8 @@ async function recomputeBookingStatus(client, bookingId) {
   // Paid to the OTA (channel manager, migration 121): the guest owes the hotel
   // nothing for the room — confirmed. Its pending room line is what the OTA
   // still has to pay the hotel, not something to chase the guest for.
-  if (bkg.payment_collect === 'ota') {
+  // A virtual card the hotel charges itself ('vcc', migration 126) is the same: the OTA pays.
+  if (bkg.payment_collect === 'ota' || bkg.payment_collect === 'vcc') {
     if (bkg.status !== 'confirmed') {
       await client.query("UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1", [bookingId]);
     }

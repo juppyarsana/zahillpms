@@ -38,6 +38,7 @@ const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 const { TODAY_WITA_SQL, checkoutDaySql, occupiedUntilSql, overdueSql } = require('../services/occupancySql');
 const toCheck = require('../services/toCheck');
 const splitStay = require('../services/splitStayService');
+const { otaCollectsSql, COLLECT_VALUES, COLLECT_LABEL } = require('../services/otaCollect');
 
 // A booking can carry more than one 'balance' payment line: a price
 // correction (PUT /:id/price) that raises an already fully-paid booking adds a
@@ -55,7 +56,8 @@ const BALANCE_AMOUNT_SQL = `COALESCE(
 // nothing for the room at the desk (like an OTA).
 const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.agent_id) AS agent_name,
              EXISTS (SELECT 1 FROM agents ag WHERE ag.id = b.agent_id
-                       AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')) AS agent_billed`;
+                       AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')
+                       AND ag.agent_type <> 'ota') AS agent_billed`;   // an OTA's account pays the room only (126) — shown as OTA-paid
 
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
@@ -160,6 +162,13 @@ async function logBookingChanges(client, { propertyId, bookingId, userId, before
   }
   if (norm(before.commission_type) !== norm(after.commission_type) || norm(before.commission_value) !== norm(after.commission_value)) {
     changes.push(`Commission: ${commissionLabel(before)} → ${commissionLabel(after)}`);
+  }
+  if (norm(before.payment_collect) !== norm(after.payment_collect)) {
+    const label = v => COLLECT_LABEL[v] || 'not set (follows the source)';
+    changes.push(`Who pays the room: ${label(before.payment_collect)} → ${label(after.payment_collect)}`);
+  }
+  if (norm(before.vcc_charge_from && String(before.vcc_charge_from).slice(0, 10)) !== norm(after.vcc_charge_from && String(after.vcc_charge_from).slice(0, 10)) && after.payment_collect === 'vcc') {
+    changes.push(`Virtual card can be charged from: ${after.vcc_charge_from ? String(after.vcc_charge_from).slice(0, 10) : 'not known'}`);
   }
 
   if (changes.length === 0) return;
@@ -448,7 +457,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
              g.name AS guest_name, g.nationality, g.whatsapp AS guest_whatsapp,
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
-             COALESCE(bs.label, b.source) AS source_label, CASE WHEN b.payment_collect IS NOT NULL THEN b.payment_collect = 'ota' ELSE COALESCE(bs.is_ota, false) END AS is_ota,
+             COALESCE(bs.label, b.source) AS source_label, ${otaCollectsSql('b', 'bs')} AS is_ota,
              CASE WHEN $2::date = $3::date THEN
                     CASE WHEN b.status IN ${PRE_ARRIVAL} THEN 'arrival'
                          WHEN b.status = 'checked_out' OR b.check_out_date <= $2::date THEN 'departure'
@@ -712,7 +721,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
   const { rows: candidates } = await db.query(`
     SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status, b.reservation_group_id,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
-           COALESCE(bs.label, b.source) AS source_label, CASE WHEN b.payment_collect IS NOT NULL THEN b.payment_collect = 'ota' ELSE COALESCE(bs.is_ota, false) END AS is_ota,
+           COALESCE(bs.label, b.source) AS source_label, ${otaCollectsSql('b', 'bs')} AS is_ota,
            COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name,
            CASE WHEN b.status = 'checked_out' OR b.check_out_date = $2::date THEN 'departing'
                 WHEN b.check_out_date < $2::date THEN 'overdue'
@@ -3169,11 +3178,25 @@ router.put('/:id', auth, async (req, res) => {
   if (childrenSent && !(Number.isInteger(childrenIn) && childrenIn >= 0 && childrenIn <= 20)) {
     return res.status(400).json({ error: 'children must be a whole number from 0 to 20' });
   }
+  // Who pays the room (migration 126): 'ota' | 'vcc' | 'property', '' = by
+  // the source (as before the channel manager); absent = unchanged.
+  const collectSent = req.body.payment_collect !== undefined;
+  const collectIn = collectSent ? (req.body.payment_collect || null) : undefined;
+  if (collectSent && collectIn !== null && !COLLECT_VALUES.includes(collectIn)) {
+    return res.status(400).json({ error: `payment_collect must be one of ${COLLECT_VALUES.join(', ')} or empty` });
+  }
+  const vccSent = req.body.vcc_charge_from !== undefined;
+  const vccIn = vccSent ? (req.body.vcc_charge_from || null) : undefined;
+  if (vccIn && !/^\d{4}-\d{2}-\d{2}$/.test(vccIn)) return res.status(400).json({ error: 'vcc_charge_from must be a date (YYYY-MM-DD)' });
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const { rows: [before] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (collectSent && (collectIn || null) !== (before.payment_collect || null) && before.folio_status) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This stay is already on an agent / OTA account — who pays the room cannot be changed now', code: 'COLLECT_LOCKED' });
+    }
 
     // After check-out, what the bill and the reports are built on (source,
     // agent + commission, guests, meal plan) is a correction: owner or the
@@ -3255,6 +3278,18 @@ router.put('/:id', auth, async (req, res) => {
       const { rows: [b3] } = await client.query(
         'UPDATE bookings SET children = $1, kids_free_breakfast = $2 WHERE id = $3 RETURNING *', [children, kidsFree, booking.id]);
       booking = b3;
+    }
+    if (collectSent || vccSent) {
+      const collect = collectSent ? collectIn : booking.payment_collect;
+      const vcc = collect === 'vcc' ? (vccSent ? vccIn : booking.vcc_charge_from) : null;
+      const { rows: [b4] } = await client.query(
+        'UPDATE bookings SET payment_collect = $1, vcc_charge_from = $2, updated_at = NOW() WHERE id = $3 RETURNING *', [collect, vcc, booking.id]);
+      booking = b4;
+      // Paid by the OTA = confirmed; paid at the hotel = by its own payments.
+      if ((collect || null) !== (before.payment_collect || null)) {
+        await recomputeBookingStatus(client, booking.id);
+        ({ rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1', [booking.id]));
+      }
     }
 
     // Rate plan or guest count changed → recompute the net F&B portion,

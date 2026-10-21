@@ -1,14 +1,16 @@
 const router = require('express').Router();
 const PDFDocument = require('pdfkit');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const svc = require('../services/agentStatementService');
 const { renderAgentInvoice } = require('../services/agentInvoicePdf');
 const { sendControlAlert } = require('../services/ownerAlerts');
 
 // Agent Accounts / Direct Billing — Slice C. Mounted at /api/agents behind
-// auth + moduleGuard('financial') in server/index.js; owner-only per handler.
-const ownerOnly = [auth, requireRole('owner')];
+// auth + moduleGuard('financial') in server/index.js. The owner, or the
+// accountant (the `accounting` permission) who records the agents' and OTAs'
+// payouts (migration 126).
+const ownerOnly = [auth, requireOwnerOrMenu('accounting')];
 
 // AR aging — one row per agent (migration 084: agents, not booking sources)
 router.get('/', ownerOnly, async (req, res) => {

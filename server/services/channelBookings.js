@@ -172,11 +172,17 @@ async function note(client, bookingId, text) {
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)', [bookingId, text.slice(0, 1000)]);
 }
 
+// What a booking saves as who collects: the OTA's own answer, or — when it
+// gives none — the hotel collects (the industry default, Channex's own
+// reading of an empty value): front desk asks the guest rather than the hotel
+// waiting for money no one will send. The To check point says to look.
+const bookingCollect = r => r.collect || 'property';
+
 function collectPoint(r) {
   if (r.collect === 'property') {
     return `Guest pays at the hotel (${r.ota}${r.paymentType ? ` · ${r.paymentType.replace(/_/g, ' ')}` : ''}) — collect the room price, it is not paid by ${r.ota}`;
   }
-  if (!r.collect) return `${r.ota} did not say who collects the money — check the reservation on ${r.ota}`;
+  if (!r.collect) return `${r.ota} did not say who collects the money, so the PMS treats the room as paid at the hotel — check the reservation on ${r.ota} and change it in Edit Details if ${r.ota} collects`;
   return null;
 }
 
@@ -225,7 +231,7 @@ async function linkExisting(client, propertyId, r, rooms, same) {
     await client.query(
       `UPDATE bookings SET payment_collect = COALESCE(payment_collect, $2),
               to_check = COALESCE(to_check, '[]'::jsonb) || $3::jsonb, to_check_done_at = NULL, to_check_done_by = NULL
-        WHERE id = $1`, [b.id, r.collect, JSON.stringify(points)]);
+        WHERE id = $1`, [b.id, bookingCollect(r), JSON.stringify(points)]);
     await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by ${how}; not booked again.`);
     await recomputeBookingStatus(client, b.id);
   }
@@ -304,11 +310,11 @@ async function createFromRevision(client, propertyId, r, L) {
     if (cp) points.push(cp);
     if (!p.plan) points.push(`The ${r.ota} rate plan is not linked to a meal plan in the PMS — meal plan set to ${defaultPlan?.name || 'the default'}; check it`);
     if (!(p.room.amount > 0)) points.push(`No price came from ${r.ota} — set it with Edit Price`);
-    await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb WHERE id = $1', [b.id, r.collect, JSON.stringify(points)]);
+    await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb WHERE id = $1', [b.id, bookingCollect(r), JSON.stringify(points)]);
     await recomputeBookingStatus(client, b.id);
     await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
       [cb.id, p.room.id, b.id]);
-    await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${r.collect === 'property' ? 'the hotel collects' : r.collect === 'ota' ? `paid to ${r.ota}` : 'who collects not given'}.`);
+    await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${r.collect === 'property' ? 'the hotel collects' : r.collect === 'ota' ? `paid to ${r.ota}` : 'who collects not given — treated as paid at the hotel'}.`);
   }
   const rooms_ = picked.map(p => p.unit.name).join(', ');
   return {
@@ -482,7 +488,7 @@ async function applyChange(client, propertyId, r, cb, L) {
         const points = [`Room picked automatically: ${unit.name} (${type.name}) — added on ${r.ota}${r.code ? ` (${r.code})` : ''}`];
         const cp = collectPoint(r); if (cp) points.push(cp);
         await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb, reservation_group_id = $4 WHERE id = $1',
-          [made.booking.id, r.collect, JSON.stringify(points), cb.reservation_group_id]);
+          [made.booking.id, bookingCollect(r), JSON.stringify(points), cb.reservation_group_id]);
         await recomputeBookingStatus(client, made.booking.id);
         await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, made.booking.id]);
         await note(client, made.booking.id, `Room added on ${r.ota} via the channel manager (reservation ${r.code}). ${fmtIDR(room.amount)}.`);
@@ -498,10 +504,10 @@ async function applyChange(client, propertyId, r, cb, L) {
     // Who collects may change (e.g. a virtual card added later).
     if (r.collect !== cb.payment_collect) {
       const ids = mapped.map(m => m.booking_id).filter(Boolean);
-      await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [ids, r.collect]);
+      await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [ids, bookingCollect(r)]);
       for (const id of ids) {
         await recomputeBookingStatus(client, id);
-        await note(client, id, `${r.ota} changed who collects the money: ${r.collect === 'property' ? 'the hotel collects now' : r.collect === 'ota' ? `paid to ${r.ota} now` : 'not given'} (channel manager, reservation ${r.code}).`);
+        await note(client, id, `${r.ota} changed who collects the money: ${r.collect === 'property' ? 'the hotel collects now' : r.collect === 'ota' ? `paid to ${r.ota} now` : 'not given — the hotel collects'} (channel manager, reservation ${r.code}).`);
       }
       const cp = collectPoint(r);
       if (cp) problems.push(cp);

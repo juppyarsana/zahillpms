@@ -12,21 +12,22 @@
 const db = require('../db');
 const { computeProforma, round2 } = require('./folioService');
 const { CITY_LEDGER } = require('./agentBillingService');
-
-const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];   // same as routes/checkin.js
+const { otaCollects } = require('./otaCollect');
 
 // billToAgent: the checkout choice when sent (BookingDetail); undefined = the
 // default (a city-ledger agent is billed).
 async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   const { rows: [b] } = await db.query(
     `SELECT b.id, b.source, b.folio_status, b.payment_collect, COALESCE(bs.is_ota, false) AS is_ota,
-            ag.name AS agent_name, ag.payment_status AS agent_payment_status
+            ag.name AS agent_name, ag.payment_status AS agent_payment_status, ag.agent_type
        FROM bookings b
        LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
        LEFT JOIN agents ag ON ag.id = b.agent_id
       WHERE b.id = $1 AND b.property_id = $2`, [bookingId, propertyId]);
   if (!b) return null;
-  const cityLedger = CITY_LEDGER.includes(b.agent_payment_status);
+  // An OTA's account (migration 126) pays only the room, never the guest's
+  // extras: the OTA rule below applies to it, not "the agent pays everything".
+  const cityLedger = CITY_LEDGER.includes(b.agent_payment_status) && b.agent_type !== 'ota';
   const alreadyBilled = ['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status);
   if (alreadyBilled || (cityLedger && billToAgent !== false)) {
     return { owed: 0, agent_billed: true, agent_name: b.agent_name || null, ota: false };
@@ -34,7 +35,7 @@ async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   const pf = await computeProforma(bookingId, propertyId);
   if (!pf) return null;
   // Who collects (migration 121, set by the channel manager) wins over the source.
-  const ota = b.payment_collect ? b.payment_collect === 'ota' : (OTA_SOURCES.includes(b.source) || b.is_ota);
+  const ota = otaCollects(b);
   let owed = pf.balance_due;
   if (ota) {
     const roomPending = pf.payments

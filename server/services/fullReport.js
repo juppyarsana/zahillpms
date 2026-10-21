@@ -1,4 +1,5 @@
 const db = require('../db');
+const { otaCollectsSql } = require('./otaCollect');
 const { round2, computeFolioTotals } = require('./folioService');
 
 // The full owner report for a period — the Reports page's sections and (later)
@@ -127,10 +128,12 @@ async function buildFullReport(propertyId, from, to) {
     // owes for its rooms (rooms' prices − group payments), counted as one.
     db.query(`
       WITH owed AS (
-        SELECT CASE WHEN b.status = 'checked_out' THEN 'checked_out'
+        SELECT CASE WHEN p.type IN ('deposit', 'balance') AND ${otaCollectsSql('b', 'bs')} THEN 'ota'
+                    WHEN b.status = 'checked_out' THEN 'checked_out'
                     WHEN b.status = 'checked_in' THEN 'in_house' ELSE 'upcoming' END AS stage,
                b.id::text AS ref, p.amount
         FROM payments p JOIN bookings b ON b.id = p.booking_id
+        LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
         WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
           AND b.status NOT IN ('cancelled', 'no_show') AND b.folio_status IS NULL
         UNION ALL
@@ -299,6 +302,10 @@ async function buildFullReport(propertyId, from, to) {
         in_house: pendingBy.in_house || { bookings: 0, amount: 0 },
         upcoming: pendingBy.upcoming || { bookings: 0, amount: 0 },
       },
+      // The room money of OTA-paid stays not checked out yet (migration 126):
+      // the OTA owes it, not the guest. At check-out it moves to the OTA's
+      // account (in `agents` below).
+      otas: pendingBy.ota || { bookings: 0, amount: 0 },
       agents: {
         total: r2(agentRows.reduce((s, a) => s + a.outstanding, 0)),
         overdue: r2(agentRows.reduce((s, a) => s + a.overdue, 0)),

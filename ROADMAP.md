@@ -21,7 +21,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Room tablets — WiFi connection history (migration 115, 2026-10-19, on `dev`):** Settings → Property → Room Tablets: drops per room per day (a tablet silent > 1 min), drops of 5+ rooms at once apart (internet line / router / server), signal and access point per room over 30 days, before / after a WiFi change, naming access points; `room_tablets` permission. The last 14 days are imported once from the nginx logs (`maintenance/tabletConnectivity.js --save`). Details: CLAUDE.md → "Room tablets — WiFi connection history".
 **Lobby TV + Guest Board videos (migration 116, 2026-10-19, on `dev`):** a Guest Board card shows in rooms, the lobby or both; the lobby TV (TV app, Room ID `lobby`) shows the lobby cards as a slideshow with short MP4 videos with sound, kept on the TV after one download. Details: CLAUDE.md → "Lobby TV + Guest Board videos".
 **OTA prices + IPv4 for Channex (migration 125, 2026-10-21, on `dev`):** Channex's first certification review failed the rate / availability tests. A price for one meal plan on the OTAs (Pricing → 🌐 OTA prices, several lines saved together = one Channex call, exact decimals) and every Channex call over IPv4. Details: CLAUDE.md → "OTA prices + Channex re-certification". Run sheet below.
-Next migration number: **126**.
+Next migration number: **127**.
 
 ### Channex re-certification run sheet (2026-10-21)
 

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
+import { propertyToday } from '../lib/propertyTime';
 import AgentFormModal from '../components/AgentFormModal';
 import ReasonModal from '../components/ReasonModal';
 import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, CITY_LEDGER, commissionText } from '../lib/agents';
@@ -258,7 +260,7 @@ function AgentDetail({ agentId }) {
             Generate Invoice
           </button>
           <button className="btn btn-primary" onClick={() => setPayOpen(true)} disabled={aging.total_outstanding <= 0}>
-            Record Payment
+            {agent.agent_type === 'ota' ? 'Record payout' : 'Record Payment'}
           </button>
         </div>
       </div>
@@ -323,6 +325,7 @@ function AgentDetail({ agentId }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <div style={p.is_voided ? { opacity: 0.6 } : undefined}>
                 <strong style={p.is_voided ? { textDecoration: 'line-through' } : undefined}>{fmtIDR(p.amount)}</strong>
+                {parseFloat(p.commission_amount) > 0 && <span style={{ fontSize: 13 }}> + {fmtIDR(p.commission_amount)} commission kept back</span>}
                 <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(p.received_on)}{p.method ? ` · ${p.method.replace('_', ' ')}` : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
                 {p.is_voided && <div style={{ fontSize: 12, color: '#B91C1C' }}>Voided {fmtDate(p.voided_at)}{p.voided_by_name ? ` by ${p.voided_by_name}` : ''} — {p.void_reason}</div>}
               </div>
@@ -373,7 +376,7 @@ function AgentDetail({ agentId }) {
       </Section>
 
       {editOpen && <AgentFormModal agent={agent} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); showToast('Saved'); load(); }} />}
-      {payOpen && <RecordPaymentModal agentId={agentId} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
+      {payOpen && <RecordPaymentModal agent={agent} openItems={open_items} outstanding={aging.total_outstanding} onClose={() => setPayOpen(false)} onDone={() => { setPayOpen(false); showToast('Payment recorded'); load(); }} onError={m => showToast(m, 'error')} />}
       {voidingPay && (
         <ReasonModal title="Void this agent payment?" confirmLabel="Void payment" danger placeholder="e.g. recorded twice"
           onClose={() => setVoidingPay(null)} onConfirm={reason => voidPayment(voidingPay, reason)}>
@@ -493,30 +496,55 @@ function Empty({ children }) {
 
 // ─────────────────────────────────────────── modals ──
 
-function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, onError }) {
+// Record a payment / payout from an agent or OTA. An OTA pays weekly, net of
+// its commission (migration 126): tick the stays the payout covers, type what
+// arrived in the bank — the difference is the commission it kept back (a cost
+// on the P&L, not money received). For other agents the amount is spread over
+// the oldest stays first, as before; a commission kept back can be typed too.
+function RecordPaymentModal({ agent, openItems, outstanding, onClose, onDone, onError }) {
+  const { paymentMethods } = useSettings();
+  const methods = (paymentMethods || []).filter(m => m.is_active !== false && m.id !== 'ota_managed');
+  const isOta = agent.agent_type === 'ota';
   const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('bank_transfer');
-  const [receivedOn, setReceivedOn] = useState(new Date().toISOString().slice(0, 10));
+  const [commission, setCommission] = useState('');
+  const [commissionTyped, setCommissionTyped] = useState(false);
+  const [method, setMethod] = useState(methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || 'bank_transfer');
+  const [receivedOn, setReceivedOn] = useState(propertyToday());
   const [reference, setReference] = useState('');
   const [allocations, setAllocations] = useState({}); // booking_id -> string amount
+  const [picked, setPicked] = useState(isOta);        // stays chosen by hand (no auto-fill)
   const [saving, setSaving] = useState(false);
 
-  const amt = parseFloat(amount || 0);
+  const r2 = n => Math.round(n * 100) / 100;
+  const amt = parseFloat(amount || 0) || 0;
+  const allocSum = r2(Object.values(allocations).reduce((s, v) => s + (parseFloat(v) || 0), 0));
+  // OTA: what was ticked and not received is the commission it kept back.
+  const comm = isOta && !commissionTyped ? Math.max(0, r2(allocSum - amt)) : (parseFloat(commission || 0) || 0);
+  const covers = r2(amt + comm);
 
-  // auto-fill allocations oldest-first whenever amount changes
+  // Other agents: spread the money (+ commission) over the oldest stays first.
   useEffect(() => {
-    let remaining = amt;
+    if (picked) return;
+    let remaining = covers;
     const next = {};
     for (const it of openItems) {
       if (remaining <= 0) break;
       const take = Math.min(remaining, it.balance);
-      next[it.booking_id] = String(Math.round(take));
-      remaining = Math.round((remaining - take) * 100) / 100;
+      next[it.booking_id] = String(r2(take));
+      remaining = r2(remaining - take);
     }
     setAllocations(next);
-  }, [amount]); // eslint-disable-line
+  }, [amount, commission, picked]); // eslint-disable-line
 
-  const allocSum = Object.values(allocations).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  function tick(it, on) {
+    setPicked(true);
+    setAllocations(a => {
+      const n = { ...a };
+      if (on) n[it.booking_id] = String(r2(it.balance)); else delete n[it.booking_id];
+      return n;
+    });
+  }
+  const allTicked = openItems.length > 0 && openItems.every(it => allocations[it.booking_id]);
 
   async function submit() {
     setSaving(true);
@@ -524,8 +552,8 @@ function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, 
       const allocationArr = Object.entries(allocations)
         .map(([booking_id, v]) => ({ booking_id, amount: parseFloat(v) || 0 }))
         .filter(a => a.amount > 0);
-      const { data } = await api.post(`/api/agents/${agentId}/payments`, {
-        amount: amt, method, received_on: receivedOn, reference,
+      const { data } = await api.post(`/api/agents/${agent.id}/payments`, {
+        amount: amt, commission_amount: comm, method, received_on: receivedOn, reference,
         allocations: allocationArr.length ? allocationArr : undefined,
       });
       onDone(data);
@@ -536,26 +564,36 @@ function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, 
     }
   }
 
+  const over = allocSum > covers + 0.5;
+  const credit = !over && covers - allocSum > 0.5 ? r2(covers - allocSum) : 0;
+  const pct = allocSum > 0 && comm > 0 ? Math.round(comm / allocSum * 1000) / 10 : null;
+
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 560 }}>
+      <div className="modal" style={{ maxWidth: 620 }}>
         <div className="modal-header">
-          <div className="modal-title">Record Agent Payment</div>
+          <div className="modal-title">{isOta ? `Record payout — ${agent.name}` : 'Record Agent Payment'}</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div className="alert alert-info mb-3" style={{ fontSize: 12 }}><div>
-            For stays <b>already checked out</b> and on this agent's bill. Money the agent sends <b>before</b> the guest checks out
-            (e.g. H-7) is recorded on the reservation instead — Room Payment → Mark Received, or Record Group Payment on the group.
-            {' '}<a href="/guide/agent-payments" target="_blank" rel="noreferrer">📘 Guide</a>
+            {isOta ? (
+              <>Tick the stays this payout covers (as on {agent.name}'s payout statement) and type what arrived in the bank.
+                The difference is the <b>commission {agent.name} kept back</b> — it goes to the OTA commission cost, not to money received.</>
+            ) : (
+              <>For stays <b>already checked out</b> and on this agent's bill. Money the agent sends <b>before</b> the guest checks out
+                (e.g. H-7) is recorded on the reservation instead — Room Payment → Mark Received, or Record Group Payment on the group.</>
+            )}
+            {' '}<a href={isOta ? '/guide/ota-payments' : '/guide/agent-payments'} target="_blank" rel="noreferrer">📘 Guide</a>
           </div></div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Amount received *</label>
-              <input className="form-input" type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`up to ${fmtIDR(outstanding)}`} />
+              <label className="form-label">Amount received in the bank</label>
+              <input className="form-input" type="number" value={amount} onChange={e => setAmount(e.target.value)}
+                placeholder={isOta ? '0 if it all went to commission' : `up to ${fmtIDR(outstanding)}`} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date</label>
+              <label className="form-label">Date received</label>
               <input className="form-input" type="date" value={receivedOn} onChange={e => setReceivedOn(e.target.value)} />
             </div>
           </div>
@@ -563,41 +601,62 @@ function RecordPaymentModal({ agentId, openItems, outstanding, onClose, onDone, 
             <div className="form-group">
               <label className="form-label">Method</label>
               <select className="form-select" value={method} onChange={e => setMethod(e.target.value)}>
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="cash">Cash</option>
-                <option value="qris">QRIS</option>
-                <option value="wise">Wise</option>
+                {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Reference</label>
-              <input className="form-input" value={reference} onChange={e => setReference(e.target.value)} placeholder="transfer ref / note" />
+              <input className="form-input" value={reference} onChange={e => setReference(e.target.value)}
+                placeholder={isOta ? 'payout ID / transfer ref' : 'transfer ref / note'} />
             </div>
           </div>
+          <div className="form-group">
+            <label className="form-label">Commission kept back{isOta && !commissionTyped ? ' — worked out from the stays ticked' : ''}</label>
+            <input className="form-input" type="number" value={isOta && !commissionTyped ? (comm ? String(Math.round(comm)) : '') : commission}
+              onChange={e => { setCommissionTyped(true); setCommission(e.target.value); }} placeholder="0" />
+            {isOta && commissionTyped && (
+              <button type="button" className="btn btn-sm btn-ghost" style={{ marginTop: 4 }}
+                onClick={() => { setCommissionTyped(false); setCommission(''); }}>Work it out from the stays ticked</button>
+            )}
+          </div>
 
-          <div className="form-label" style={{ marginTop: 8 }}>Allocation (auto oldest-first — adjust as needed)</div>
+          <div className="flex-between" style={{ marginTop: 8, alignItems: 'baseline' }}>
+            <div className="form-label">{isOta ? 'Stays this payout covers' : 'Allocation (auto oldest-first — adjust as needed)'}</div>
+            {openItems.length > 0 && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => openItems.forEach(it => tick(it, !allTicked))}>
+                {allTicked ? 'Untick all' : 'Tick all'}
+              </button>
+            )}
+          </div>
           <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <tbody>
               {openItems.map(it => (
-                <tr key={it.booking_id}>
-                  <td style={{ padding: '4px 0' }}>{it.guest_name} <span style={{ color: '#9CA3AF' }}>· {fmtDate(it.check_out_date)} · bal {fmtIDR(it.balance)}</span></td>
+                <tr key={it.booking_id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                  <td style={{ padding: '4px 6px 4px 0', width: 24 }}>
+                    <input type="checkbox" checked={!!allocations[it.booking_id]} onChange={e => tick(it, e.target.checked)} />
+                  </td>
+                  <td style={{ padding: '4px 0' }}>
+                    {it.guest_name} <span style={{ color: '#9CA3AF' }}>· {it.unit_name} · out {fmtDate(it.check_out_date)} · owes {fmtIDR(it.balance)}</span>
+                  </td>
                   <td style={{ padding: '4px 0', width: 130 }}>
                     <input className="form-input" type="number" style={{ padding: '4px 8px' }}
                       value={allocations[it.booking_id] || ''}
-                      onChange={e => setAllocations(a => ({ ...a, [it.booking_id]: e.target.value }))} />
+                      onChange={e => { setPicked(true); setAllocations(a => ({ ...a, [it.booking_id]: e.target.value })); }} />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table></div>
-          <div style={{ fontSize: 12, marginTop: 6, color: Math.abs(allocSum - amt) > 0.5 && amt > 0 ? '#D97706' : '#6B7280' }}>
-            Allocated {fmtIDR(allocSum)} of {fmtIDR(amt)}{allocSum > amt + 0.5 ? ' — over the payment amount' : ''}
+          <div style={{ fontSize: 12, marginTop: 8, color: over ? '#DC2626' : '#374151' }}>
+            Stays {fmtIDR(allocSum)} = received {fmtIDR(amt)} + commission {fmtIDR(comm)}{pct != null ? ` (${pct}%)` : ''}
+            {over && ' — the stays are more than the money received plus the commission'}
+            {credit > 0 && <span style={{ color: '#D97706' }}> · {fmtIDR(credit)} not on any stay — it stays on the account as a credit</span>}
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={saving || amt <= 0 || allocSum > amt + 0.5}>
-            {saving ? 'Saving…' : 'Record Payment'}
+          <button className="btn btn-primary" onClick={submit} disabled={saving || !(covers > 0) || over || amt < 0}>
+            {saving ? 'Saving…' : isOta ? 'Record payout' : 'Record Payment'}
           </button>
         </div>
       </div>

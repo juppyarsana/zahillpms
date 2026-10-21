@@ -587,7 +587,8 @@ export default function Reports() {
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 12 }}>
-                  Guests: {fmtIDR(guestOwed)} in room deposit / balance lines (extras charged to a room are on each Balance Due). Agents: {fmtIDR(owed.agents.total)}{owed.agents.overdue > 0 && `, ${fmtIDR(owed.agents.overdue)} overdue`}.
+                  Guests: {fmtIDR(guestOwed)} in room deposit / balance lines (extras charged to a room are on each Balance Due). Agents &amp; OTAs: {fmtIDR(owed.agents.total)}{owed.agents.overdue > 0 && `, ${fmtIDR(owed.agents.overdue)} overdue`}.
+                  {owed.otas?.amount > 0 && <> OTAs, for stays not checked out yet: {fmtIDR(owed.otas.amount)} ({plural(owed.otas.bookings, 'booking')}) — moves to each OTA's account in Agent Billing at check-out.</>}
                 </div>
                 {owed.agents.rows.length > 0 && (
                   <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>

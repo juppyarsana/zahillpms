@@ -168,7 +168,26 @@ async function agentForBooking(client, propertyId, { agentId, source }) {
   return { agentId: null, agent: null };
 }
 
+// The account of an OTA in Agent Billing (migration 126): the agent with the
+// OTA's name (any type — one the owner already made is used as it is), made
+// when missing as an OTA that pays the hotel later (city ledger), no commission
+// posted at check-out (an OTA keeps its commission back from the payout).
+// Takes the caller's `client`; returns the agent row or null.
+async function ensureOtaAgent(client, propertyId, name) {
+  const n = String(name || '').trim().slice(0, 150);
+  if (!n) return null;
+  const find = () => client.query('SELECT * FROM agents WHERE property_id = $1 AND lower(name) = lower($2)', [propertyId, n]);
+  const { rows: [found] } = await find();
+  if (found) return found;
+  const { rows: [made] } = await client.query(
+    `INSERT INTO agents (property_id, name, agent_type, payment_status, publish_rate, notes)
+     VALUES ($1, $2, 'ota', 'city_ledger', 'auto', 'Made by the PMS for the room money this OTA collects — paid by its weekly payout.')
+     ON CONFLICT DO NOTHING RETURNING *`, [propertyId, n]);
+  return made || (await find()).rows[0] || null;
+}
+
 module.exports = {
+  ensureOtaAgent,
   AGENT_TYPES, PAYMENT_STATUSES, COMMISSION_TYPES, BILLING_FIELDS,
   parseAgentFields, parseBookingCommission, listAgents, getAgent, createAgent, updateAgent, agentForBooking,
 };

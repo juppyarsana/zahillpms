@@ -43,7 +43,7 @@ export const MENU_DEFS = [
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
-  { key: 'accounting',       label: 'Accounting (accounts & daily journal)', group: 'Finance' },
+  { key: 'accounting',       label: 'Accounting (accounts, daily journal, Agent Billing & OTA payouts)', group: 'Finance' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
   { key: 'units',            label: 'Unit Settings',        group: 'Settings'  },

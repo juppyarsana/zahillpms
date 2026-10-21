@@ -25,7 +25,7 @@ const { basisFrom, shown } = require('../services/priceBasis');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const OTA_SOURCES = ['airbnb', 'booking_com', 'traveloka'];
+const { otaCollects } = require('../services/otaCollect');
 
 // Shared by the single-room route below and the group check-in route —
 // throws an Error with .code/.status set on a business-rule failure
@@ -45,15 +45,15 @@ async function checkinOneBooking(bookingId, propertyId, userId, { payLaterReason
   // hotel later (city ledger, migration 084) — the guest doesn't pay the
   // room at the desk, so the full-payment rule doesn't apply.
   const { rows: [chan] } = await db.query(
-    `SELECT COALESCE(bs.is_ota, false) AS is_ota, ag.payment_status AS agent_payment_status
+    `SELECT COALESCE(bs.is_ota, false) AS is_ota, ag.payment_status AS agent_payment_status, ag.agent_type
      FROM bookings b
      LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
      LEFT JOIN agents ag ON ag.id = b.agent_id
      WHERE b.id = $1`, [bookingId]);
   // Who collects (migration 121, channel manager) wins over the source:
   // a "pay at hotel" OTA booking is paid at the desk like a direct one.
-  const otaPays = booking.payment_collect ? booking.payment_collect === 'ota' : (OTA_SOURCES.includes(booking.source) || chan?.is_ota);
-  const isOTA = otaPays || agentBilling.CITY_LEDGER.includes(chan?.agent_payment_status);
+  const otaPays = otaCollects({ ...booking, is_ota: chan?.is_ota });
+  const isOTA = otaPays || (agentBilling.CITY_LEDGER.includes(chan?.agent_payment_status) && chan?.agent_type !== 'ota');
   let payLaterUnpaid = null;   // set when checked in without full payment
 
   if (isOTA) {

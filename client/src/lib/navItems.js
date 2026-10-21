@@ -37,7 +37,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
       isOwner && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
-      isOwner && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },
+      can('accounting') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },   // owner or the accountant (OTA payouts)
     ] },
     { id: 'finance', label: 'Finance', items: [
       can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },

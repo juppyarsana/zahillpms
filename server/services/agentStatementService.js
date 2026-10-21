@@ -280,9 +280,17 @@ function autoAllocate(amount, ledger) {
   return out;
 }
 
+// A payout can keep the agent's / OTA's commission back (migration 126):
+// `amount` = the money received, `commission_amount` = what it kept back;
+// both together pay the stays. A payout that is all commission (amount 0) is
+// allowed — e.g. the rest of a virtual card the OTA didn't load.
 async function recordPayment(propertyId, agentId, body, userId) {
-  const amount = round2(parseFloat(body.amount));
-  if (!Number.isFinite(amount) || amount <= 0) return { error: 'amount must be a positive number' };
+  const amount = round2(parseFloat(body.amount || 0));
+  const commission = round2(parseFloat(body.commission_amount || 0));
+  if (!Number.isFinite(amount) || amount < 0) return { error: 'amount must be 0 or more' };
+  if (!Number.isFinite(commission) || commission < 0) return { error: 'commission_amount must be 0 or more' };
+  const covers = round2(amount + commission);
+  if (covers <= 0) return { error: 'Enter the amount received or the commission kept back' };
   if (!isUuid(agentId)) return { error: 'Agent not found' };
 
   const client = await db.pool.connect();
@@ -306,18 +314,18 @@ async function recordPayment(propertyId, agentId, body, userId) {
         if (a.amount - balByBooking[a.booking_id] > 0.005) { await client.query('ROLLBACK'); return { error: `An allocation exceeds the open balance for booking ${a.booking_id.slice(0, 8)}` }; }
       }
     } else {
-      allocs = autoAllocate(amount, ledger);
+      allocs = autoAllocate(covers, ledger);
     }
 
-    if (round2(allocs.reduce((s, a) => s + a.amount, 0)) - amount > 0.005) {
+    if (round2(allocs.reduce((s, a) => s + a.amount, 0)) - covers > 0.005) {
       await client.query('ROLLBACK');
-      return { error: 'Allocations exceed the payment amount' };
+      return { error: 'The stays ticked are more than the money received plus the commission' };
     }
 
     const { rows: [payment] } = await client.query(
-      `INSERT INTO agent_payments (property_id, agent_id, amount, method, received_on, reference, notes, created_by)
-       VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7,$8) RETURNING *`,
-      [propertyId, agentId, amount, body.method || null, body.received_on || null,
+      `INSERT INTO agent_payments (property_id, agent_id, amount, commission_amount, method, received_on, reference, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6::date, CURRENT_DATE),$7,$8,$9) RETURNING *`,
+      [propertyId, agentId, amount, commission, body.method || null, body.received_on || null,
         body.reference || null, body.notes || null, userId || null]
     );
     for (const a of allocs) {
@@ -374,7 +382,7 @@ async function updatePayment(propertyId, paymentId, body, userId) {
         if (!(a.booking_id in availByBooking)) { await client.query('ROLLBACK'); return { error: 'An allocation references a booking that is not an open item' }; }
         if (a.amount - availByBooking[a.booking_id] > 0.005) { await client.query('ROLLBACK'); return { error: `An allocation exceeds the open balance for booking ${a.booking_id.slice(0, 8)}` }; }
       }
-      if (round2(allocs.reduce((s, a) => s + a.amount, 0)) - parseFloat(payment.amount) > 0.005) {
+      if (round2(allocs.reduce((s, a) => s + a.amount, 0)) - (parseFloat(payment.amount) + parseFloat(payment.commission_amount || 0)) > 0.005) {
         await client.query('ROLLBACK');
         return { error: 'Allocations exceed the payment amount' };
       }

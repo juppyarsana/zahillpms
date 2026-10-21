@@ -30,7 +30,7 @@ import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentB
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
-import { otaName, roomPending } from '../lib/otaDue';
+import { otaName, roomPending, COLLECT_OPTIONS } from '../lib/otaDue';
 import { propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -181,11 +181,22 @@ function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').m
 
 // OTA booking (e.g. Agoda): what of the balance is the OTA's to pay and what
 // the guest pays at the desk — so FO doesn't ask the guest for the room.
-function OtaNote({ ota, amount }) {
+// collect 'vcc' (migration 126): a virtual card front desk charges itself.
+function OtaNote({ ota, amount, collect, vccFrom }) {
+  const box = { fontSize: 12, marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'var(--cream)', border: '1px solid var(--border)', lineHeight: 1.45 };
+  if (collect === 'vcc') {
+    return (
+      <div style={box}>
+        💳 {fmtIDR(amount)} is paid with <b>{ota}'s virtual card</b>{vccFrom ? <> — it can be charged from <b>{fmtShortDate(vccFrom)}</b></> : ''}. <b>Don't collect it from the guest.</b>{' '}
+        Charge the card on the card machine, then <b>Record payment</b> with the method <b>OTA virtual card</b>.
+        Anything the card doesn't cover goes onto {ota}'s account in Agent Billing at check-out.
+      </div>
+    );
+  }
   return (
-    <div style={{ fontSize: 12, marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'var(--cream)', border: '1px solid var(--border)', lineHeight: 1.45 }}>
+    <div style={box}>
       🌐 {fmtIDR(amount)} is paid to the hotel by <b>{ota}</b> — the guest paid {ota}. <b>Don't collect it from the guest.</b>{' '}
-      Mark it received when {ota} pays the hotel.
+      Nothing to do at the desk: at check-out it goes onto {ota}'s account in Agent Billing, where the accountant records {ota}'s payout.
     </div>
   );
 }
@@ -727,6 +738,8 @@ export default function BookingDetail() {
       internal_notes: booking.internal_notes || '',
       bed_preference: booking.bed_preference || '',
       rate_plan_id: booking.rate_plan_id || '',
+      payment_collect: booking.payment_collect || '',
+      vcc_charge_from: booking.vcc_charge_from ? String(booking.vcc_charge_from).slice(0, 10) : '',
       reason: '',
     });
     setEditAgent(agentValueFromBooking(booking));
@@ -737,9 +750,13 @@ export default function BookingDetail() {
     setEditDetailsLoading(true);
     try {
       // The meal plan is only sent when it changed (the server then re-splits room / meals).
-      const { rate_plan_id, reason, ...fields } = editDetailsForm;
+      const { rate_plan_id, reason, payment_collect, vcc_charge_from, ...fields } = editDetailsForm;
       const planChanged = rate_plan_id && rate_plan_id !== booking.rate_plan_id;
+      // Who pays the room (migration 126): only sent when it changed.
+      const collectChanged = (payment_collect || '') !== (booking.payment_collect || '')
+        || (payment_collect === 'vcc' && (vcc_charge_from || '') !== (booking.vcc_charge_from ? String(booking.vcc_charge_from).slice(0, 10) : ''));
       await api.put(`/api/bookings/${id}`, { ...fields, ...(planChanged ? { rate_plan_id } : {}), ...agentBody(editAgent),
+        ...(collectChanged ? { payment_collect: payment_collect || '', vcc_charge_from: payment_collect === 'vcc' ? (vcc_charge_from || '') : '' } : {}),
         ...(booking.status === 'checked_out' ? { reason: (reason || '').trim() } : {}) });
       setEditingDetails(false);
       load();
@@ -1430,7 +1447,7 @@ export default function BookingDetail() {
                   <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
                 </div>
               )}
-              {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} />}
+              {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} collect={booking.payment_collect} vccFrom={booking.vcc_charge_from} />}
             </>
           )}
           {!['cancelled', 'no_show'].includes(booking.status) && (
@@ -2043,6 +2060,24 @@ export default function BookingDetail() {
                     {sources.filter(s => s.is_active || s.id === booking.source).map(s => <option key={s.id} value={s.id}>{s.label}{!s.is_active ? ' (inactive)' : ''}</option>)}
                   </select>
                 </div>
+                {(otaName(sources, editDetailsForm.source) || booking.payment_collect) && (
+                  <div className="form-group">
+                    <label className="form-label">Room paid by</label>
+                    <select className="form-select" value={editDetailsForm.payment_collect || ''} disabled={!!booking.folio_status}
+                      title={booking.folio_status ? 'Already on an agent / OTA account — cannot be changed now' : undefined}
+                      onChange={e => setEditDetailsForm(f => ({ ...f, payment_collect: e.target.value }))}>
+                      {COLLECT_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    {editDetailsForm.payment_collect === 'vcc' && (
+                      <div style={{ marginTop: 6 }}>
+                        <label className="form-label">Card can be charged from</label>
+                        <input className="form-input" type="date" value={editDetailsForm.vcc_charge_from || ''}
+                          onChange={e => setEditDetailsForm(f => ({ ...f, vcc_charge_from: e.target.value }))} />
+                        <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>From the OTA's extranet. Empty = not known.</div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="form-group">
                   <label className="form-label">Adults</label>
                   <input className="form-input" type="number" min="1" value={editDetailsForm.num_guests ?? ''}

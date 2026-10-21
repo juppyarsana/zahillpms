@@ -44,6 +44,7 @@ const ENTRIES = [
   ['deposits', 'Advance deposits of guests who checked in'],
   ['agent_billed', 'Stays billed to agents at check-out'],
   ['agent_paid', 'Money received from agents'],
+  ['agent_kept', 'Commission kept back from agent / OTA payouts'],
   ['commission', 'Agent commission'],
   ['expenses', 'Expenses'],
   ['opening', 'Opening balances'],
@@ -210,7 +211,7 @@ async function collectPosts(propertyId, from, to) {
              outlet_net, outlet_service, outlet_tax, outlet_total
       FROM pos_sessions WHERE property_id = $3 AND business_date BETWEEN $1::date AND $2::date`, P),
     db.query(`
-      SELECT ap.amount, ap.method, ap.reference, ${ymd('ap.received_on')} AS day, COALESCE(ag.name, 'Agent') AS agent
+      SELECT ap.amount, ap.commission_amount, ap.method, ap.reference, ${ymd('ap.received_on')} AS day, COALESCE(ag.name, 'Agent') AS agent
       FROM agent_payments ap LEFT JOIN agents ag ON ag.id = ap.agent_id
       WHERE ap.property_id = $3 AND NOT ap.is_voided AND ap.received_on BETWEEN $1::date AND $2::date`, P),
     // Billed to an agent at check-out (same amount as the Cashier Closing's "Agent ledger").
@@ -424,6 +425,10 @@ async function collectPosts(propertyId, from, to) {
   for (const p of agentPayments) {
     post(p.day, 'agent_paid', `pay.${p.method || 'other'}`, num(p.amount), p.agent, p.reference);
     post(p.day, 'agent_paid', 'ledger.agent', -num(p.amount), p.agent, p.reference);
+    // The commission an OTA / agent kept back from the payout (migration 126):
+    // a cost, and the stays it covered no longer owed.
+    post(p.day, 'agent_kept', 'commission.ota', num(p.commission_amount), p.agent, p.reference);
+    post(p.day, 'agent_kept', 'ledger.agent', -num(p.commission_amount), p.agent, p.reference);
   }
   for (const c of commissions) {
     const ref = who(c.room, c.guest);

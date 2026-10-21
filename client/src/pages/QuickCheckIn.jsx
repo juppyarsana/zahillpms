@@ -80,7 +80,7 @@ export default function QuickCheckIn() {
   const { sources } = useSettings();
   const otaSources = sources.filter(s => s.is_ota).map(s => s.id);
   // Who collects (channel manager, migration 121) wins over the source.
-  const otaPays = (b) => (b.payment_collect ? b.payment_collect === 'ota' : otaSources.includes(b.source));
+  const otaPays = (b) => (b.payment_collect ? ['ota', 'vcc'].includes(b.payment_collect) : otaSources.includes(b.source));
 
   const [tab, setTab] = useState('checkin');
 

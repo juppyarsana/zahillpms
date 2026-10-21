@@ -237,12 +237,15 @@ function buildReportPdf(report, property) {
     ], { total: { k: 'Total', bookings: g.checked_out.bookings + g.in_house.bookings + g.upcoming.bookings, amount: g.checked_out.amount + g.in_house.amount + g.upcoming.amount } });
 
     const ag = money.owed_now.agents;
-    subheading(`Still owed by agents — as of ${today}`, null, ag.rows.length + 1);
+    const otas = money.owed_now.otas || { bookings: 0, amount: 0 };
+    // OTA-paid rooms not checked out yet (migration 126) — the OTA owes them, not the guest.
+    const agRows = otas.amount > 0 ? [{ agent: 'OTAs — stays not checked out yet', open_bookings: otas.bookings, outstanding: otas.amount, overdue: 0 }, ...ag.rows] : ag.rows;
+    subheading(`Still owed by agents & OTAs — as of ${today}`, null, agRows.length + 1);
     table([
       { label: 'Agent', w: 0.28, key: 'agent' }, { label: 'Open', w: 0.08, align: 'right', get: r => (r.open_bookings === undefined ? '' : num(r.open_bookings)) },
       { label: 'Owed', w: 0.16, align: 'right', get: r => fmtIDR(r.outstanding) }, { label: 'Not due yet', w: 0.16, align: 'right', get: r => (r.current === undefined ? '' : fmtIDR(r.current)) },
       { label: 'Overdue', w: 0.16, align: 'right', get: r => fmtIDR(r.overdue) }, { label: 'Over 60 days', w: 0.16, align: 'right', get: r => (r.over_60 === undefined ? '' : fmtIDR(r.over_60)) },
-    ], ag.rows, { total: { agent: 'Total', outstanding: ag.total, overdue: ag.overdue }, empty: 'No agent owes anything.' });
+    ], agRows, { total: { agent: 'Total', outstanding: ag.total + otas.amount, overdue: ag.overdue }, empty: 'No agent owes anything.' });
 
     if (costs.by_category.length) {
       subheading('Costs by category', 'Back Office > Expenses logged in this period.', costs.by_category.length + 1);

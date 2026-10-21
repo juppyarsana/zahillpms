@@ -25,13 +25,15 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   // its lines start unticked so a guest's payment for extras is never marked
   // as the room's by mistake. Tick them only when the OTA's money arrives.
   const ota = otaName(sources, booking.source, booking.payment_collect);
+  // A virtual card (migration 126): front desk charges it — the room lines are ticked and the method is the card.
+  const vcc = booking.payment_collect === 'vcc';
   const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
   const [folio, setFolio] = useState(null);
   const [addons, setAddons] = useState([]);
   const [room, setRoom] = useState({});        // payment_id → { on, amount }
   const [items, setItems] = useState([]);      // folio charge ids
   const [nights, setNights] = useState([]);    // booking_addon ids (not posted yet)
-  const [form, setForm] = useState({ method: methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || '', received_at: todayYmd(), reference: '', notes: '' });
+  const [form, setForm] = useState({ method: (vcc && methods.find(m => m.id === 'ota_vcc')?.id) || methods.find(m => m.id === 'bank_transfer')?.id || methods[0]?.id || '', received_at: todayYmd(), reference: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
@@ -50,7 +52,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const futureNights = payableNights(addons);
 
   function selectAll(which, lines = itemLines, nightList = futureNights) {
-    setRoom(Object.fromEntries(roomLines.map(l => [l.id, { on: !ota && (which === 'all' || (which === 'deposit' && l.type === 'deposit')), amount: String(Math.round(parseFloat(l.amount))) }])));
+    setRoom(Object.fromEntries(roomLines.map(l => [l.id, { on: (!ota || vcc) && (which === 'all' || (which === 'deposit' && l.type === 'deposit')), amount: String(Math.round(parseFloat(l.amount))) }])));
     setExtrasTyped(null);
     setItems(which === 'all' ? lines.map(c => c.id) : []);
     setNights(which === 'all' ? nightList.map(a => a.id) : []);
@@ -164,10 +166,16 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
 
               {nothingOwed && <div className="alert"><div>Nothing is owed on this stay right now.</div></div>}
 
-              {roomLines.length > 0 && ota && (
+              {roomLines.length > 0 && ota && vcc && (
                 <div className="alert" style={{ marginBottom: 8 }}><div>
-                  <b>The room is paid by {ota}, not by the guest.</b> Tick it only when {ota}'s money has arrived in the bank
-                  (method = that bank, date = the day it arrived).
+                  <b>The room is paid with {ota}'s virtual card.</b> Charge the card on the card machine, then record it here
+                  with the method <b>OTA virtual card</b> and the amount actually charged. Anything the card doesn't cover goes onto {ota}'s account at check-out.
+                </div></div>
+              )}
+              {roomLines.length > 0 && ota && !vcc && (
+                <div className="alert" style={{ marginBottom: 8 }}><div>
+                  <b>The room is paid by {ota}, not by the guest.</b> Leave it unticked — at check-out it goes onto {ota}'s account in Agent Billing,
+                  where the accountant records {ota}'s payout. Tick it here only if {ota}'s money for this stay already arrived before check-out.
                 </div></div>
               )}
               {roomLines.length > 0 && (

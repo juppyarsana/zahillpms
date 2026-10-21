@@ -202,11 +202,14 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
   ], { k: 'Total', bookings: g.checked_out.bookings + g.in_house.bookings + g.upcoming.bookings, amount: g.checked_out.amount + g.in_house.amount + g.upcoming.amount },
   'Room deposit / balance lines not received yet (agent-billed stays are under agents). Not tied to the period.');
   const ag = money.owed_now.agents;
-  table(ws4, 'Still owed by agents — as of today', [
+  const otas = money.owed_now.otas || { bookings: 0, amount: 0 };
+  // OTA-paid rooms not checked out yet (migration 126) — the OTA owes them, not the guest.
+  const agRows = otas.amount > 0 ? [{ agent: 'OTAs — stays not checked out yet', open_bookings: otas.bookings, outstanding: otas.amount, overdue: 0 }, ...ag.rows] : ag.rows;
+  table(ws4, 'Still owed by agents & OTAs — as of today', [
     { header: 'Agent', key: 'agent' }, { header: 'Open bookings', key: 'open_bookings', fmt: INT, align: 'right' },
     { header: 'Owed (Rp)', key: 'outstanding', fmt: IDR, align: 'right' }, { header: 'Not due yet (Rp)', key: 'current', fmt: IDR, align: 'right' },
     { header: 'Overdue (Rp)', key: 'overdue', fmt: IDR, align: 'right' }, { header: 'Over 60 days (Rp)', key: 'over_60', fmt: IDR, align: 'right' },
-  ], ag.rows, { agent: 'Total', outstanding: ag.total, overdue: ag.overdue });
+  ], agRows, { agent: 'Total', outstanding: ag.total + otas.amount, overdue: ag.overdue });
   table(ws4, 'Costs by category', [
     { header: 'Category', key: 'label' }, { header: 'Entries', key: 'entries', fmt: INT, align: 'right' },
     { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },

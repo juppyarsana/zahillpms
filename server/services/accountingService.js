@@ -91,6 +91,7 @@ const MAP_KEYS = [
   ['ledger.agent', 'Agents & companies — stays billed to them', 'Guests & agents', '1220'],
   ['commission.expense', 'Agent commission (cost)', 'Guests & agents', '6110'],
   ['commission.payable', 'Agent commission still to pay', 'Guests & agents', '2140'],
+  ['commission.ota', 'Commission kept back by OTAs / agents from their payouts', 'Guests & agents', '5120'],
   ['pos.takings', 'Restaurant bills paid at the restaurant (from the POS sessions)', 'Money received', '1160'],
   ['expense.utilities', 'Utilities', 'Expenses', '6210'],
   ['expense.laundry', 'Laundry', 'Expenses', '6220'],
