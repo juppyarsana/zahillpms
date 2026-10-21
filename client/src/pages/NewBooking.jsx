@@ -484,11 +484,11 @@ export default function NewBooking() {
         && (!typed || Math.abs(typed - suggestion.grand_total) < 1);
       const each = dates.length ? Math.round(typed / dates.length) : 0;
       const night_amounts = Object.fromEntries(dates.map((d, k) => [d, String(
-        fromSuggestion ? bd[k].night_total : (k === dates.length - 1 ? Math.round(typed - each * (dates.length - 1)) : each))]));
+        fromSuggestion ? Math.round(bd[k].night_total) : (k === dates.length - 1 ? Math.round(typed - each * (dates.length - 1)) : each))]));
       return { ...r, per_night: true, night_amounts, total_amount: String(nightSum(r, night_amounts)) };
     }));
   }
-  function addRoom() { setRooms(rs => [...rs, { ...EMPTY_ROOM }]); }
+  function addRoom() { setRooms(rs => [...rs, { ...EMPTY_ROOM, rate_plan_id: defaultRatePlanId }]); }
   function removeRoom(i) { setRooms(rs => rs.filter((_, idx) => idx !== i)); }
 
   const perNightKey = rooms.map(r => (r.per_night ? `${roomIn(r)}|${roomOut(r)}` : '')).join(',');
@@ -862,25 +862,25 @@ export default function NewBooking() {
                     {!priceSuggestion.prices_include_tax && (
                     <div className="flex-between" style={{ marginBottom: 4, paddingTop: 4, borderTop: '1px solid var(--border)' }}>
                       <span className="text-muted">Subtotal</span>
-                      <span>Rp {Number(priceSuggestion.subtotal).toLocaleString('id-ID')}</span>
+                      <span>Rp {Math.round(priceSuggestion.subtotal).toLocaleString('id-ID')}</span>
                     </div>
                     )}
                     {!priceSuggestion.prices_include_tax && priceSuggestion.service_charge_amount > 0 && (
                       <div className="flex-between" style={{ marginBottom: 4 }}>
                         <span className="text-muted">Service Charge ({priceSuggestion.service_charge_rate}%)</span>
-                        <span>Rp {Number(priceSuggestion.service_charge_amount).toLocaleString('id-ID')}</span>
+                        <span>Rp {Math.round(priceSuggestion.service_charge_amount).toLocaleString('id-ID')}</span>
                       </div>
                     )}
                     {!priceSuggestion.prices_include_tax && priceSuggestion.tax_amount > 0 && (
                       <div className="flex-between" style={{ marginBottom: 4 }}>
                         <span className="text-muted">Tax ({priceSuggestion.tax_rate}%)</span>
-                        <span>Rp {Number(priceSuggestion.tax_amount).toLocaleString('id-ID')}</span>
+                        <span>Rp {Math.round(priceSuggestion.tax_amount).toLocaleString('id-ID')}</span>
                       </div>
                     )}
 
                     <div className="flex-between" style={{ fontWeight: 700, paddingTop: 4, borderTop: '1px solid var(--border)' }}>
                       <span>Grand Total</span>
-                      <span>Rp {Number(suggestedTotal).toLocaleString('id-ID')}</span>
+                      <span>Rp {Math.round(suggestedTotal).toLocaleString('id-ID')}</span>
                     </div>
                     {priceSuggestion.prices_include_tax && includesText(priceSuggestion, n => 'Rp ' + Math.round(n).toLocaleString('id-ID')) && (
                       <div className="text-muted" style={{ fontSize: 11, textAlign: 'right' }}>
@@ -890,7 +890,7 @@ export default function NewBooking() {
 
                     {!room.total_amount && (
                       <button type="button" className="btn btn-sm btn-secondary mt-2"
-                        onClick={() => (priceSuggestion.varies_by_night ? setPerNight(i, true, priceSuggestion) : setRoom(i, 'total_amount', suggestedTotal))}>
+                        onClick={() => (priceSuggestion.varies_by_night ? setPerNight(i, true, priceSuggestion) : setRoom(i, 'total_amount', Math.round(suggestedTotal)))}>
                         Use this
                       </button>
                     )}
@@ -932,7 +932,7 @@ export default function NewBooking() {
           <div className="card-title">{isGroup ? '4 · Group discount, deposit & notes' : '4 · Discount, deposit & notes'}</div>
           {isGroup && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-              Group total: Rp {groupTotal.toLocaleString('id-ID')} across {rooms.length} rooms
+              Group total: Rp {Math.round(groupTotal).toLocaleString('id-ID')} across {rooms.length} rooms
             </div>
           )}
           <div className="form-group">
@@ -958,7 +958,7 @@ export default function NewBooking() {
             )}
             {discountAmt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--color-success, green)', marginTop: 4 }}>
-                Discount: − Rp {discountAmt.toLocaleString('id-ID')} · Net: Rp {netAmt.toLocaleString('id-ID')}
+                Discount: − Rp {Math.round(discountAmt).toLocaleString('id-ID')} · Net: Rp {Math.round(netAmt).toLocaleString('id-ID')}
               </div>
             )}
           </div>
@@ -1032,15 +1032,15 @@ export default function NewBooking() {
             )}
             {depositOver && (
               <div style={{ fontSize: 12, color: 'var(--danger, #B91C1C)', marginTop: 4 }}>
-                More than the room price — the deposit will be Rp {netAmt.toLocaleString('id-ID')}.
+                More than the room price — the deposit will be Rp {Math.round(netAmt).toLocaleString('id-ID')}.
               </div>
             )}
             {netAmt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                {depositAmt > 0 ? <>Deposit: Rp {depositAmt.toLocaleString('id-ID')}</> : 'No deposit'}
+                {depositAmt > 0 ? <>Deposit: Rp {Math.round(depositAmt).toLocaleString('id-ID')}</> : 'No deposit'}
                 {form.deposit_mode === 'pct' && extrasTotal > 0 && (extrasInDeposit ? ' (on room + extra bed)' : ' (room only — the guest pays the extra bed at the hotel)')}
-                {' · '}Balance: Rp {(netAmt - depositAmt).toLocaleString('id-ID')}
-                {extrasTotal > 0 && <> · Extra bed: Rp {extrasTotal.toLocaleString('id-ID')}</>}
+                {' · '}Balance: Rp {Math.round(netAmt - depositAmt).toLocaleString('id-ID')}
+                {extrasTotal > 0 && <> · Extra bed: Rp {Math.round(extrasTotal).toLocaleString('id-ID')}</>}
               </div>
             )}
           </div>
@@ -1082,10 +1082,20 @@ export default function NewBooking() {
       <aside className="nb-side">
         <div className="card nb-summary">
           <div className="card-title">Summary</div>
-          <div className="nb-line nb-muted">
-            <span>{form.check_in_date && form.check_out_date ? `${fmtDay(form.check_in_date)} – ${fmtDay(form.check_out_date)}` : 'Pick the dates'}</span>
-            <span>{stayNights ? `${stayNights} night${stayNights > 1 ? 's' : ''}` : ''}</span>
-          </div>
+          {(() => {
+            // Rooms with their own dates: show the whole span and say so;
+            // each room then carries its own dates below.
+            const ins = rooms.map(roomIn).filter(Boolean).sort();
+            const outs = rooms.map(roomOut).filter(Boolean).sort();
+            const from = anyOwnDates ? ins[0] : form.check_in_date;
+            const to = anyOwnDates ? outs[outs.length - 1] : form.check_out_date;
+            return (
+              <div className="nb-line nb-muted">
+                <span>{from && to ? `${fmtDay(from)} – ${fmtDay(to)}` : 'Pick the dates'}</span>
+                <span>{anyOwnDates ? 'dates differ per room' : stayNights ? `${stayNights} night${stayNights > 1 ? 's' : ''}` : ''}</span>
+              </div>
+            );
+          })()}
           <div className="nb-line nb-muted">
             <span>{(mode === 'new' ? newGuest.name : guestSearch) || 'No guest yet'}</span>
             <span>{sources.find(x => x.id === form.source)?.label || ''}</span>
@@ -1102,6 +1112,9 @@ export default function NewBooking() {
                   <span>{u ? `Room ${u.name}` : `Room ${isGroup ? i + 1 : ''} — not picked`}{plan ? ` · ${plan.name}` : ''}</span>
                   <span>{total ? idr(total) : '—'}</span>
                 </div>
+                {anyOwnDates && roomIn(r) && roomOut(r) && (
+                  <div className="nb-sub">{fmtDay(roomIn(r))} – {fmtDay(roomOut(r))} · {n} night{n === 1 ? '' : 's'}</div>
+                )}
                 {total > 0 && n > 0 && <div className="nb-sub">{n} × {idr(total / n)}</div>}
                 {extraTotal(r) > 0 && (
                   <div className="nb-line nb-muted"><span>+ {nightItems.find(p => p.id === r.extra.product_id)?.name || 'Extra'}</span><span>{idr(extraTotal(r))}</span></div>
