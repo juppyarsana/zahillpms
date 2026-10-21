@@ -59,4 +59,4 @@ Normally the OTAs get the PMS price: the room rate plus the meal plan, service &
 
 > This price is for the OTAs only. New Booking and the guest's bill keep the PMS price.
 
-Where two OTA prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the normal price.
+A price can run up to 5 years ahead: the OTAs see about 16 months, and each later night is sent as it comes into view. Where two OTA prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the normal price.

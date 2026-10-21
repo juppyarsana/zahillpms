@@ -8,10 +8,12 @@
 // where two cover the same night; removing a line brings the earlier price back.
 const db = require('../db');
 const { TODAY_WITA_SQL } = require('./occupancySql');
-const { SYNC_DAYS } = require('./channelSync');
 
 const PROVIDER = 'channex';
 const MAX_LINES = 50;
+// A line may run past the nights sent today (500, moving forward every day):
+// it is kept and each new night is sent as it comes into the window.
+const MAX_DAYS_AHEAD = 5 * 366;
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -56,7 +58,7 @@ async function save(propertyId, userId, lines) {
   if (!Array.isArray(lines) || !lines.length) throw bad('Add at least one line');
   if (lines.length > MAX_LINES) throw bad(`At most ${MAX_LINES} lines at a time`);
   const { rows: [{ today }] } = await db.query(`SELECT to_char(${TODAY_WITA_SQL}, 'YYYY-MM-DD') AS today`);
-  const last = addDays(today, SYNC_DAYS - 1);
+  const last = addDays(today, MAX_DAYS_AHEAD);
   const allowed = new Set((await options(propertyId)).map(o => `${o.room_type_id}|${o.rate_plan_id}`));
 
   const clean = lines.map((l, i) => {

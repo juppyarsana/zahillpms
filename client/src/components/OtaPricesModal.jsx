@@ -131,7 +131,7 @@ export default function OtaPricesModal({ onClose }) {
                 </button>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                The first and last night are both included. Where two OTA prices cover the same night, the one saved last wins.
+                The first and last night are both included; a price can run up to 5 years ahead — the OTAs see about 16 months, and each later night is sent as it comes into view. Where two OTA prices cover the same night, the one saved last wins.
                 Each send and its Channex task IDs are listed in Settings → Channel Manager → Last sends.
               </div>
             </>

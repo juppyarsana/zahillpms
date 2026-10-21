@@ -59,4 +59,4 @@ Biasanya OTA mendapat harga PMS: harga kamar ditambah meal plan, sudah termasuk 
 
 > Harga ini hanya untuk OTA. New Booking dan tagihan tamu tetap memakai harga PMS.
 
-Kalau dua harga OTA mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke harga normal.
+Harga bisa diisi sampai 5 tahun ke depan: OTA melihat sekitar 16 bulan, dan malam berikutnya dikirim saat masuk jangkauan itu. Kalau dua harga OTA mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke harga normal.
