@@ -48,3 +48,15 @@ Beberapa hal tidak dikerjakan PMS sendiri:
 Semua itu muncul sebagai pop-up *needs you*, paling atas di **🌐 OTA bookings**, di Dashboard dan di Telegram. Selesaikan (pindahkan tamu, telepon OTA, masukkan atau ubah booking secara manual), lalu tekan **Done — handled**.
 
 > Jangan mengetik booking OTA secara manual kalau hotel sudah terhubung — booking-nya jadi dua. Masukkan manual hanya kalau PMS memintanya.
+
+## Harga lain untuk satu meal plan di OTA (owner)
+
+Biasanya OTA mendapat harga PMS: harga kamar ditambah meal plan, sudah termasuk service & pajak. Untuk memberi OTA harga lain untuk satu meal plan, misalnya promo Bed & Breakfast:
+
+1. **Pricing** → **🌐 OTA prices**.
+2. Di tiap baris pilih **tipe kamar**, **meal plan**, **malam pertama** dan **malam terakhir** (keduanya termasuk), lalu **harga** per kamar per malam, sudah termasuk service & pajak.
+3. Lebih dari satu? **+ Add line**, lalu **Save … — send together**. Semuanya sampai ke OTA bersama dalam sekitar 20 detik.
+
+> Harga ini hanya untuk OTA. New Booking dan tagihan tamu tetap memakai harga PMS.
+
+Kalau dua harga OTA mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke harga normal.

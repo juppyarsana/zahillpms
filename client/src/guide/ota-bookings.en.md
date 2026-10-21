@@ -48,3 +48,15 @@ Some things the PMS doesn't do by itself:
 These appear as a *needs you* pop-up, at the top of **🌐 OTA bookings**, on the Dashboard and on Telegram. Deal with them (move a guest, call the OTA, enter or change the booking by hand), then press **Done — handled**.
 
 > Don't type an OTA booking in by hand when the hotel is connected — it would be in twice. Enter it by hand only when the PMS says so.
+
+## A different price for one meal plan on the OTAs (owner)
+
+Normally the OTAs get the PMS price: the room rate plus the meal plan, service & tax included. To give the OTAs another price for one meal plan, e.g. a Bed & Breakfast promotion:
+
+1. **Pricing** → **🌐 OTA prices**.
+2. Per line pick the **room type**, the **meal plan**, the **first** and **last night** (both included) and the **price** per room per night, service & tax included.
+3. Need several? **+ Add line**, then **Save … — send together**. They reach the OTAs together within about 20 seconds.
+
+> This price is for the OTAs only. New Booking and the guest's bill keep the PMS price.
+
+Where two OTA prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the normal price.

@@ -9,7 +9,9 @@
 //   price of a rate plan = the room type's normal rate that night (base rate
 //     + pricing periods incl. the yield engine's, pricingService — from the
 //     type's first room) + the meal plan for the type's max guests, service &
-//     tax included, whole rupiah. The same figure New Booking suggests.
+//     tax included, whole rupiah. The same figure New Booking suggests —
+//     unless an OTA price was typed for that meal plan and night (migration
+//     125, channelRatePrices.js): then that, exactly as typed.
 //
 // When: the database triggers of migration 120 mark a linked property
 // "dirty" on any change of bookings, rooms, pricing periods, room types,
@@ -115,6 +117,21 @@ async function desiredValues(propertyId) {
       }
     }
   }
+
+  // OTA prices typed for one meal plan (migration 125) replace the worked-out
+  // price on their nights, sent exactly as typed; the last one saved wins.
+  const { rows: overrides } = await db.query(
+    `SELECT c.external_rate_plan_id, to_char(GREATEST(o.date_from, $2::date), 'YYYY-MM-DD') AS d1,
+            to_char(LEAST(o.date_to, $3::date - 1), 'YYYY-MM-DD') AS d2, o.price
+       FROM channel_rate_prices o
+       JOIN channel_rate_plans c ON c.property_id = o.property_id AND c.provider = $4
+                                AND c.room_type_id = o.room_type_id AND c.rate_plan_id = o.rate_plan_id
+       JOIN rate_plans rp ON rp.id = o.rate_plan_id AND rp.is_active = true
+      WHERE o.property_id = $1 AND o.date_to >= $2::date AND o.date_from < $3::date
+      ORDER BY o.created_at, o.id`, [propertyId, from, to, PROVIDER]);
+  for (const o of overrides) {
+    for (let d = o.d1; d <= o.d2; d = addDays(d, 1)) values.set(`r|${o.external_rate_plan_id}|${d}`, Number(o.price));
+  }
   return { values, from, to };
 }
 
@@ -191,7 +208,7 @@ async function syncProperty(propertyId, { full = false } = {}) {
   const rng = r => (r.date_from === r.date_to ? day(r.date_from) : `${day(r.date_from)} – ${day(r.date_to)}`);
   const items = [
     ...avail.map(r => `${label.get(r.room_type_id) || 'room type'}: ${r.availability} free · ${rng(r)}`),
-    ...rates.map(r => `${label.get(r.rate_plan_id) || 'rate'}: Rp ${Math.round(Number(r.rate)).toLocaleString('id-ID')} · ${rng(r)}`),
+    ...rates.map(r => `${label.get(r.rate_plan_id) || 'rate'}: Rp ${Number(r.rate).toLocaleString('id-ID', { maximumFractionDigits: 2 })} · ${rng(r)}`),
   ];
 
   return {

@@ -7,27 +7,53 @@
 // stage 1). CHANNEX_API_URL picks staging or production; one API key covers
 // every property in that Channex account.
 
+const http = require('http');
+const https = require('https');
+
 const BASE_URL = process.env.CHANNEX_API_URL || 'https://staging.channex.io/api/v1';
 
 function isConfigured() {
   return !!process.env.CHANNEX_API_KEY;
 }
 
-async function request(method, path, body) {
-  if (!isConfigured()) throw new Error('Channex is not configured (CHANNEX_API_KEY unset)');
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'user-api-key': process.env.CHANNEX_API_KEY,
-    },
-    body: body ? JSON.stringify(body) : undefined,
+// Every call goes out over ONE address family (IPv4 unless CHANNEX_IP_FAMILY=6):
+// Channex counts booking-feed reads and acknowledgements by the address they
+// come from, and a server with both IPv4 and IPv6 would otherwise mix them
+// (certification test 11 ignored the calls from the "other" address).
+const IP_FAMILY = process.env.CHANNEX_IP_FAMILY === '6' ? 6 : 4;
+const TIMEOUT_MS = 60_000;
+
+function request(method, path, body) {
+  if (!isConfigured()) return Promise.reject(new Error('Channex is not configured (CHANNEX_API_KEY unset)'));
+  const url = new URL(`${BASE_URL}${path}`);
+  const payload = body ? JSON.stringify(body) : null;
+  const lib = url.protocol === 'http:' ? http : https;
+  return new Promise((resolve, reject) => {
+    const req = lib.request(url, {
+      method,
+      family: IP_FAMILY,
+      headers: {
+        'Content-Type': 'application/json',
+        'user-api-key': process.env.CHANNEX_API_KEY,
+        ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+      },
+    }, res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        let data = null;
+        try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`Channex ${method} ${path} failed (${res.statusCode}): ${JSON.stringify(data)}`));
+        } else resolve(data);
+      });
+      res.on('error', reject);
+    });
+    req.setTimeout(TIMEOUT_MS, () => req.destroy(new Error(`Channex ${method} ${path} timed out`)));
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
   });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    throw new Error(`Channex ${method} ${path} failed (${res.status}): ${JSON.stringify(data)}`);
-  }
-  return data;
 }
 
 // ── Reading the account (setup screen) ───────────────────────

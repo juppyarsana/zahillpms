@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { RateCalendarTab, AutomaticTab, EventsTab, ReportsTab } from './pricing/YieldTabs';
+import OtaPricesModal from '../components/OtaPricesModal';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(d) { return d?.slice(0, 10) || ''; }
@@ -11,6 +12,9 @@ const PRESET_COLORS = ['#4D4D35', '#6b7280', '#b45309', '#1d4ed8', '#be185d', '#
 // "My rules": the owner's own pricing periods. Automatic (yield) periods are written by the
 // engine (source='auto') and managed from the Automatic tab, so they are hidden here.
 function MyRules() {
+  const { user, hasModule } = useAuth();
+  const otaOn = user?.role === 'owner' && hasModule('channel_manager');
+  const [otaPrices, setOtaPrices] = useState(false);
   const [periods, setPeriods] = useState([]);
   const [units, setUnits] = useState([]);
   const [modal, setModal] = useState(false);
@@ -102,8 +106,12 @@ function MyRules() {
           <div className="page-title">Pricing Periods</div>
           <div className="page-subtitle">Set seasonal and special date pricing — overrides base rate on booking</div>
         </div>
-        <button className="btn btn-primary" onClick={openNew}>+ New Period</button>
+        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+          {otaOn && <button className="btn btn-secondary" onClick={() => setOtaPrices(true)}>🌐 OTA prices</button>}
+          <button className="btn btn-primary" onClick={openNew}>+ New Period</button>
+        </div>
       </div>
+      {otaPrices && <OtaPricesModal onClose={() => setOtaPrices(false)} />}
 
       <div className="card mb-3" style={{ background: '#fefce8', borderColor: '#fde68a' }}>
         <div style={{ fontSize: 13 }}>

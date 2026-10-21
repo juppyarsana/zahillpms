@@ -20,7 +20,26 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Children & kids' free breakfast (migration 114, 2026-10-17, on `dev` + POS `pms-integration`):** a reservation records children next to adults; FO ticks "Kids eat breakfast free" (breakfast only, per reservation) and the kitchen, Guest Lists, Forecast and the POS breakfast list show the free kids apart from the paying pax; the POS pre-fills its free Kids Meal. Details: CLAUDE.md → "Children & kids' free breakfast".
 **Room tablets — WiFi connection history (migration 115, 2026-10-19, on `dev`):** Settings → Property → Room Tablets: drops per room per day (a tablet silent > 1 min), drops of 5+ rooms at once apart (internet line / router / server), signal and access point per room over 30 days, before / after a WiFi change, naming access points; `room_tablets` permission. The last 14 days are imported once from the nginx logs (`maintenance/tabletConnectivity.js --save`). Details: CLAUDE.md → "Room tablets — WiFi connection history".
 **Lobby TV + Guest Board videos (migration 116, 2026-10-19, on `dev`):** a Guest Board card shows in rooms, the lobby or both; the lobby TV (TV app, Room ID `lobby`) shows the lobby cards as a slideshow with short MP4 videos with sound, kept on the TV after one download. Details: CLAUDE.md → "Lobby TV + Guest Board videos".
-Next migration number: **125**.
+**OTA prices + IPv4 for Channex (migration 125, 2026-10-21, on `dev`):** Channex's first certification review failed the rate / availability tests. A price for one meal plan on the OTAs (Pricing → 🌐 OTA prices, several lines saved together = one Channex call, exact decimals) and every Channex call over IPv4. Details: CLAUDE.md → "OTA prices + Channex re-certification". Run sheet below.
+Next migration number: **126**.
+
+### Channex re-certification run sheet (2026-10-21)
+
+Do everything from the PMS screens (Channex rejects scripts / certification-only screens), on Channex **staging**, after deploying migration 125 to the machine that runs the test (it must have `CHANNEX_API_KEY` = staging). Note each send's **task ID** from Settings → Channel Manager → card 3 → *Last sends*. Make no other change in the test property while a test is running.
+
+**Setup (once).** Superadmin → new property **"Test Property - HALF"**, modules `channel_manager` + `reservations` on, owner user. In it: Property Details → service 0 %, tax 0 %, prices entered before tax (++). Room types **Twin Room** (max 2 guests, base rate 100, **8 rooms**) and **Double Room** (max 2, base rate 110, **5 rooms**). Meal plans: **Best Available Rate** (room only, default) and **Bed & Breakfast** (breakfast, meal price 10 per person → B&B = 120 / 130). Add a weekend pricing period (+20 %) and two or three bookings so the full sync isn't uniform. Settings → Channel Manager: *Create in Channex* for the property (USD isn't possible — the PMS links IDR properties only; say so in the form), each room type and both meal plans of each. Delete the old "Zahill IDR" / "Demo Property" in the Channex staging dashboard, or say in the form which property is the test one.
+
+1. **Full sync** — Channel Manager → *Send everything now* → 2 task IDs (availability + restrictions).
+2. **Single date, single rate** — Pricing → 🌐 OTA prices → 1 line: Twin Room · Best Available Rate · 22 Nov 2026 – 22 Nov 2026 · 333 → Save.
+3. **Single date, multiple rates** — 3 lines, ONE save: Twin BAR 21 Nov · 333; Double BAR 25 Nov · 444; Double B&B 29 Nov · 456.23.
+4. **Multiple dates, multiple rates** — 3 lines, ONE save: Twin BAR 1–10 Nov · 241; Double BAR 10–16 Nov · 312.66; Double B&B 1–20 Nov · 111.
+5–7. **Skipped** — min stay, stop sell, CTA / CTD not supported (say so in the form; a night with 0 free rooms is closed).
+8. **Half-year** — 2 lines, ONE save: Twin BAR 1 Dec 2026 – 1 May 2027 · 432; Double BAR same · 342 (rate only; min stay not supported).
+9. **Single date availability** — prep first: a booking of 4 Double rooms for 25–26 Nov (Double → 1 free). Then the test: ONE group booking, Twin Room 21–22 Nov + Double Room 25–26 Nov (*Different dates for this room*) → Twin 7, Double 0, one call.
+10. **Multiple date availability** — ONE group booking: 5 Twin rooms 10–17 Nov (Twin → 3) + 1 Double room 17–25 Nov (Double → 4) → one call.
+11. **Bookings** — Channex *Booking CRS* app (or a Booking.com test account): create → modify → cancel; each arrives by webhook, is acknowledged automatically (the PMS needs `SERVER_PUBLIC_URL` public for the webhook; without it the minute read picks it up). All calls now leave over IPv4.
+12–13. Rate limits / delta-only — as answered before (worker + backoff, 2 calls per full sync, nightly full at 04:10, *Send everything now* at most hourly).
+14. Extra notes: min stay — none; unsupported: stop sell, CTA, CTD, min / max stay; multiple room types and multiple rate plans per room type — yes; card details — not needed, not stored; PCI — not applicable.
 
 ---
 
@@ -2079,7 +2098,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 123
+## Next migration number: 126
 
 ---
 

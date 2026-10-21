@@ -10,6 +10,7 @@ const channelSync = require('../services/channelSync');
 const channelBookings = require('../services/channelBookings');
 const channelHealth = require('../services/channelHealth');
 const channelWebhook = require('../services/channelWebhook');
+const ratePrices = require('../services/channelRatePrices');
 
 router.use(requireRole('owner'));
 
@@ -19,6 +20,28 @@ function send(res, err) {
   // Channex refusing something comes back as a plain error with its reply.
   res.status(502).json({ error: err.message });
 }
+
+// OTA prices for one meal plan (migration 125).
+// GET /api/channel-manager/prices → { options, prices }
+router.get('/prices', async (req, res) => {
+  try {
+    const [options, prices] = await Promise.all([ratePrices.options(req.propertyId), ratePrices.list(req.propertyId)]);
+    res.json({ options, prices });
+  } catch (err) { send(res, err); }
+});
+
+// POST /api/channel-manager/prices { lines: [{ room_type_id, rate_plan_id, date_from, date_to, price }] }
+// All lines in one go — they reach Channex in one call.
+router.post('/prices', async (req, res) => {
+  try { res.status(201).json(await ratePrices.save(req.propertyId, req.user.id, req.body?.lines)); }
+  catch (err) { send(res, err); }
+});
+
+// DELETE /api/channel-manager/prices { ids }
+router.delete('/prices', async (req, res) => {
+  try { res.json(await ratePrices.remove(req.propertyId, req.body?.ids)); }
+  catch (err) { send(res, err); }
+});
 
 // GET /api/channel-manager/setup
 router.get('/setup', async (req, res) => {
