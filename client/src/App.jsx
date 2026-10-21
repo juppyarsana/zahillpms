@@ -54,6 +54,8 @@ import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
 import Accounting from './pages/Accounting';
 import OtaBookings from './pages/OtaBookings';
+import SettingsHub from './pages/SettingsHub';
+import { buildNav } from './lib/navItems';
 import { OtaInboxProvider, OtaPopup, useOtaInbox } from './components/OtaInbox';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
@@ -66,7 +68,6 @@ function BottomNav() {
   const nav = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const isOwner = user?.role === 'owner';
 
   const mainItems = [
     can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
@@ -78,59 +79,15 @@ function BottomNav() {
     can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
   ].filter(Boolean);
 
-  // Grouped "More" drawer — mirrors the desktop sidebar's grouping so the two
-  // navs stay in sync (and so nothing is unreachable on mobile, which used to
-  // be the case for Night Audit / Agent Billing / Room Controllers / Guest Board).
+  // Grouped "More" drawer — the same groups as the desktop sidebar
+  // (lib/navItems.js), then Guide and Settings (the Settings page).
   const { badge: otaBadge } = useOtaInbox();
+  const navDef = buildNav({ user, can, hasModule, otaBadge });
   const moreGroups = [
-    { label: 'Front Desk', items: [
-      can('reservations') && hasModule('reservations') && { to: '/availability', icon: '🔎', label: 'Availability' },
-      can('reservations') && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },
-      can('guest_lists') && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
-      can('forecast') && hasModule('reservations') && { to: '/forecast', icon: '🔭', label: 'Forecast' },
-      can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
-      can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
-      can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
-      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales' },
-    ]},
-    { label: 'Guest Experience', items: [
-      can('activities') && hasModule('activities') && { to: '/activities', icon: '🥾', label: 'Activities' },
-      can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
-    ]},
-    { label: 'Operations', items: [
-      can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
-      can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
-      can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
-    ]},
-    { label: 'Revenue & Billing', items: [
-      can('pricing') && hasModule('reservations') && { to: '/pricing', icon: '💰', label: 'Pricing' },
-      can('allotments') && hasModule('reservations') && { to: '/allotment', icon: '📡', label: 'Channels' },
-      isOwner && hasModule('reservations') && { to: '/settings/rate-plans', icon: '🍳', label: 'Rate Plans' },
-      isOwner && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },
-      isOwner && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
-    ]},
-    { label: 'Back Office', items: [
-      isOwner && hasModule('back_office') && { to: '/back-office', icon: '🏭', label: 'Back Office' },
-      can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
-    ]},
-    { label: 'Settings · Property', items: [
-      isOwner && { to: '/settings/property', icon: '🏢', label: 'Property Details' },
-      can('units') && { to: '/units', icon: '🏕', label: 'Units' },
-      isOwner && { to: '/settings', icon: '💳', label: 'Sources & Methods' },
-      isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
-      isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
-      can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
-      can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets' },
-      isOwner && hasModule('channel_manager') && { to: '/settings/channel-manager', icon: '🔗', label: 'Channel Manager' },
-    ]},
-    { label: 'Help', items: [
-      { to: '/guide', icon: '📘', label: 'Guide / Panduan' },
-    ]},
-    { label: 'Settings · Access', items: [
-      can('users') && { to: '/users', icon: '👥', label: 'Users' },
-      isOwner && { to: '/settings/roles', icon: '🔑', label: 'Roles & Permissions' },
-    ]},
-  ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length > 0);
+    ...navDef.groups,
+    { label: 'Help', items: [navDef.guide] },
+    navDef.settingsGroups.length && { label: 'Setup', items: [{ to: '/settings', icon: '⚙️', label: 'Settings' }] },
+  ].filter(Boolean);
 
   const moreItems = moreGroups.flatMap(g => g.items);
 
@@ -138,7 +95,7 @@ function BottomNav() {
     return end ? location.pathname === to : location.pathname.startsWith(to);
   }
 
-  const moreActive = moreItems.some(item => location.pathname.startsWith(item.to));
+  const moreActive = moreItems.some(item => location.pathname.startsWith(item.to)) || navDef.settingsPaths.some(p => location.pathname.startsWith(p));
 
   useEffect(() => { setDrawerOpen(false); }, [location.pathname]);
 
@@ -336,7 +293,8 @@ export default function App() {
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
                   <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
-                  <Route path="/settings"         element={<RequireOwner><Settings /></RequireOwner>} />
+                  <Route path="/settings"         element={<SettingsHub />} />
+                  <Route path="/settings/sources" element={<RequireOwner><Settings /></RequireOwner>} />
                   <Route path="/settings/property" element={<RequireOwner><SettingsProperty /></RequireOwner>} />
                   <Route path="/settings/communications" element={<RequireOwner><SettingsCommunications /></RequireOwner>} />
                   <Route path="/settings/reports" element={<RequireOwner><SettingsReports /></RequireOwner>} />

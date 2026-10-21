@@ -182,9 +182,9 @@ function requestJson(r) {
 // { status, error }.
 async function requestApproval({ propertyId, bookingId, scope, reason, user }) {
   const token = await telegram.botTokenFor(propertyId);
-  if (!token) return { status: 409, error: 'Telegram is not set up for this property (Settings → Reports & Alerts), so approval codes cannot be sent', code: 'NO_TELEGRAM' };
+  if (!token) return { status: 409, error: 'Telegram is not set up for this property (Settings → Notifications), so approval codes cannot be sent', code: 'NO_TELEGRAM' };
   const list = await approvers(propertyId);
-  if (!list.length) return { status: 409, error: 'Nobody can approve yet — in Settings → Reports & Alerts, tick "Approve complimentary stays" for a manager with a connected personal Telegram', code: 'NO_APPROVERS' };
+  if (!list.length) return { status: 409, error: 'Nobody can approve yet — in Settings → Notifications, tick "Approve complimentary stays" for a manager with a connected personal Telegram', code: 'NO_APPROVERS' };
 
   const client = await db.pool.connect();
   let request, codes, booking, q, replaced;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
+import { buildNav } from '../lib/navItems';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { useOtaInbox } from './OtaInbox';
@@ -14,39 +15,34 @@ function SidebarLink({ to, end, icon, label, badge }) {
   );
 }
 
-// Non-collapsible label + its links. Renders nothing when the current
-// user/property has none of the links — keeps empty headers from showing.
-function NavGroup({ label, items }) {
-  if (!items.length) return null;
-  return (
-    <div className="sidebar-navgroup">
-      <div className="sidebar-navgroup-label">{label}</div>
-      {items.map(item => <SidebarLink key={item.to} {...item} />)}
-    </div>
-  );
-}
-
-function SidebarSection({ id, label, defaultOpen = false, children }) {
+// A collapsible group (Front Desk, Services, …): the whole header row
+// toggles it, a drawn chevron points right when closed and down when open,
+// and the state is remembered on this device. Closed, the header still shows
+// how many pages it holds, a new-OTA-bookings count, and stands out when the
+// page you are on is inside it.
+function SidebarSection({ id, label, items, defaultOpen = true }) {
+  const location = useLocation();
   const storageKey = `sidebar-section-${id}`;
   const [open, setOpen] = useState(() => {
-    const stored = localStorage.getItem(storageKey);
-    return stored ? stored === 'open' : defaultOpen;
+    try { const v = localStorage.getItem(storageKey); return v ? v === 'open' : defaultOpen; } catch { return defaultOpen; }
   });
-
   function toggle() {
-    setOpen(o => {
-      localStorage.setItem(storageKey, !o ? 'open' : 'closed');
-      return !o;
-    });
+    setOpen(o => { try { localStorage.setItem(storageKey, !o ? 'open' : 'closed'); } catch { /* private window */ } return !o; });
   }
-
+  if (!items.length) return null;
+  const badge = items.reduce((n, i) => n + (i.badge || 0), 0);
+  const here = items.some(i => (i.end ? location.pathname === i.to : location.pathname.startsWith(i.to)));
   return (
     <div className="sidebar-group">
-      <button className="sidebar-group-header" onClick={toggle}>
-        <span>{label}</span>
-        <span className={`sidebar-group-chevron${open ? ' open' : ''}`}>▸</span>
+      <button className={`sidebar-group-header${!open && here ? ' here' : ''}`} onClick={toggle} aria-expanded={open}>
+        <span className="sidebar-group-title">{label}</span>
+        {!open && <span className="sidebar-group-count">{items.length}</span>}
+        {!open && badge > 0 && <span className="nav-badge">{badge}</span>}
+        <svg className={`sidebar-group-chevron${open ? ' open' : ''}`} width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
-      {open && <div className="sidebar-group-items">{children}</div>}
+      {open && <div className="sidebar-group-items">{items.map(item => <SidebarLink key={item.to} {...item} />)}</div>}
     </div>
   );
 }
@@ -54,64 +50,12 @@ function SidebarSection({ id, label, defaultOpen = false, children }) {
 export default function Sidebar() {
   const { user, logout, can, hasModule } = useAuth();
   const { branding } = useSettings();
-  const isOwner = user?.role === 'owner';
+  const location = useLocation();
   const { badge: otaBadge } = useOtaInbox();
-
-  // ── daily nav ──────────────────────────────────────────
-  const frontDeskItems = [
-    can('reservations')  && hasModule('reservations') && { to: '/availability',  icon: '🔎', label: 'Availability' },
-    can('reservations')  && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Reservations' },
-    can('reservations')  && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },
-    // Quick Check-in is reached from Check-in / out (⚡ Quick Mode); only staff
-    // who can't open Check-in / out get it as its own menu item.
-    can('quick_checkin') && !can('checkin_full') && hasModule('reservations') && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick Check-in' },
-    can('checkin_full')  && hasModule('reservations') && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
-    can('guest_lists')   && hasModule('reservations') && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
-    can('forecast')      && hasModule('reservations') && { to: '/forecast', icon: '🔭', label: 'Forecast' },
-    can('events')        && hasModule('events')       && { to: '/events',   icon: '🗓', label: 'Events' },
-    can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
-    can('guests')        && hasModule('guest_crm')    && { to: '/guests',  icon: '👤', label: 'Guests' },
-    can('loyalty')       && hasModule('guest_crm')    && { to: '/loyalty', icon: '⭐', label: 'Loyalty' },
-    can('sales')         && hasModule('sales')        && { to: '/sales',   icon: '🛍', label: 'Sales' },
-  ].filter(Boolean);
-
-  const guestExperienceItems = [
-    can('activities')   && hasModule('activities')    && { to: '/activities',     icon: '🥾', label: 'Activities' },
-    can('guest_board')  && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
-  ].filter(Boolean);
-
-  const operationsItems = [
-    can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
-    can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
-    can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
-  ].filter(Boolean);
-
-  const revenueItems = [
-    can('pricing')    && hasModule('reservations') && { to: '/pricing',   icon: '💰', label: 'Pricing' },
-    can('allotments') && hasModule('reservations') && { to: '/allotment', icon: '📡', label: 'Channels' },
-    isOwner && hasModule('reservations')           && { to: '/settings/rate-plans', icon: '🍳', label: 'Rate Plans' },
-    isOwner && hasModule('financial')              && { to: '/agents',    icon: '🧾', label: 'Agent Billing' },
-    isOwner && hasModule('financial')              && { to: '/reports',   icon: '📈', label: 'Reports' },
-  ].filter(Boolean);
-
-  // ── settings (pinned, collapsed) ───────────────────────
-  const propertyItems = [
-    isOwner && { to: '/settings/property',       icon: '🏢', label: 'Property Details' },
-    can('units') && { to: '/units',              icon: '🏕', label: 'Units' },
-    isOwner && { to: '/settings', end: true,     icon: '💳', label: 'Sources & Methods' },
-    isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Communication' },
-    isOwner && { to: '/settings/reports', icon: '📬', label: 'Reports & Alerts' },
-    can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers' },
-    can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets' },
-    isOwner && hasModule('channel_manager') && { to: '/settings/channel-manager', icon: '🔗', label: 'Channel Manager' },
-  ].filter(Boolean);
-
-  const accessItems = [
-    can('users') && { to: '/users',       icon: '👥', label: 'Users' },
-    isOwner && { to: '/settings/roles',   icon: '🔑', label: 'Roles & Permissions' },
-  ].filter(Boolean);
-
-  const hasSettings = propertyItems.length > 0 || accessItems.length > 0;
+  const nav = buildNav({ user, can, hasModule, otaBadge });
+  // Settings is one link to the Settings page (pages/SettingsHub.jsx) — it is
+  // visited rarely and used to take most of the sidebar when expanded.
+  const inSettings = location.pathname === '/settings' || nav.settingsPaths.some(p => location.pathname.startsWith(p));
 
   return (
     <aside className="sidebar">
@@ -121,41 +65,18 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav">
-        {can('dashboard') && <SidebarLink to="/" end icon="📊" label="Dashboard" />}
-
-        <NavGroup label="Front Desk" items={frontDeskItems} />
-        <NavGroup label="Guest Experience" items={guestExperienceItems} />
-        <NavGroup label="Operations" items={operationsItems} />
-
-        {revenueItems.length > 0 && (
-          <SidebarSection id="revenue" label="Revenue & Billing" defaultOpen>
-            {revenueItems.map(item => <SidebarLink key={item.to} {...item} />)}
-          </SidebarSection>
-        )}
-
-        {isOwner && hasModule('back_office') && (
-          <SidebarLink to="/back-office" icon="🏭" label="Back Office" />
-        )}
-        {can('accounting') && hasModule('accounting') && (
-          <SidebarLink to="/accounting" icon="📒" label="Accounting" />
-        )}
+        {nav.dashboard && <SidebarLink {...nav.dashboard} />}
+        {nav.groups.map(g => <SidebarSection key={g.id} id={g.id} label={g.label} items={g.items} />)}
         {/* How to use the PMS — every signed-in user (pages/Guide.jsx) */}
-        <SidebarLink to="/guide" icon="📘" label="Guide / Panduan" />
+        <div className="sidebar-navgroup"><SidebarLink {...nav.guide} /></div>
       </nav>
 
-      {hasSettings && (
+      {nav.settingsGroups.length > 0 && (
         <div className="sidebar-settings">
-          <div className="sidebar-section-label">⚙ Settings</div>
-          {propertyItems.length > 0 && (
-            <SidebarSection id="settings-property" label="Property">
-              {propertyItems.map(item => <SidebarLink key={item.to} {...item} />)}
-            </SidebarSection>
-          )}
-          {accessItems.length > 0 && (
-            <SidebarSection id="settings-access" label="Access">
-              {accessItems.map(item => <SidebarLink key={item.to} {...item} />)}
-            </SidebarSection>
-          )}
+          <NavLink to="/settings" className={`sidebar-link${inSettings ? ' active' : ''}`}>
+            <span className="sidebar-link-icon">⚙️</span>
+            <span className="sidebar-link-label">Settings</span>
+          </NavLink>
         </div>
       )}
 

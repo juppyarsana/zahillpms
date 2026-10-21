@@ -333,7 +333,7 @@ export default function ComplimentaryModal({ booking, mode = 'grant', initial = 
         )}
         {noApprovers && (
           <div className="alert alert-error" style={{ marginBottom: 8 }}>
-            Needs a manager's approval, but nobody is set up to approve yet. The owner can tick "Approve complimentary stays" for a manager in Settings → Reports &amp; Alerts.
+            Needs a manager's approval, but nobody is set up to approve yet. The owner can tick "Approve complimentary stays" for a manager in Settings → Notifications.
           </div>
         )}
         {error && <div className="alert alert-error">{error}</div>}

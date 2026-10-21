@@ -74,7 +74,7 @@ async function handleStart(botToken, linkToken, chat) {
   // The link must belong to a property that sends with THIS bot.
   const recipientBot = rec && (rec.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN);
   if (!rec || recipientBot !== botToken || !rec.link_expires_at || new Date(rec.link_expires_at) < new Date()) {
-    await reply('This link has expired or was already used. Ask your hotel for a new one (Settings → Reports & Alerts → New link).');
+    await reply('This link has expired or was already used. Ask your hotel for a new one (Settings → Notifications → New link).');
     return;
   }
   try {

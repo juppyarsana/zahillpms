@@ -298,7 +298,7 @@ export default function SettingsReports() {
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <div className="page-title">Reports &amp; Alerts</div>
+          <div className="page-title">Notifications</div>
           <div className="page-subtitle">Telegram alerts and routine reports for your owner, manager and team</div>
         </div>
       </div>

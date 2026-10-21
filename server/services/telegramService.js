@@ -30,7 +30,7 @@ async function callBot(token, method, body) {
 // must escape any text they insert (see escapeHtml). replyMarkup: e.g. an
 // inline keyboard (buttons under the message).
 async function sendToChat(token, chatId, text, { html = false, replyMarkup = null } = {}) {
-  if (!token) return { ok: false, error: 'No Telegram bot set up (Settings → Reports & Alerts → Telegram bot)' };
+  if (!token) return { ok: false, error: 'No Telegram bot set up (Settings → Notifications → Telegram bot)' };
   try {
     const r = await callBot(token, 'sendMessage', {
       chat_id: chatId,

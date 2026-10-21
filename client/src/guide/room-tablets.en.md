@@ -1,6 +1,6 @@
 # Room tablets — WiFi connection
 
-**Settings → Property → Room Tablets** shows how well each room tablet stays connected, so you can find weak WiFi spots and check whether a WiFi change helped.
+**Settings → Devices → Room Tablets** shows how well each room tablet stays connected, so you can find weak WiFi spots and check whether a WiFi change helped.
 
 > Owners always see it. Anyone else needs the permission **Room Tablets** (Roles & Permissions → Settings).
 

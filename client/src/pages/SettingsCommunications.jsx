@@ -141,7 +141,7 @@ export default function SettingsCommunications() {
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <div className="page-title">Email &amp; Communication</div>
+          <div className="page-title">Email &amp; Messages</div>
           <div className="page-subtitle">SMTP settings and automated guest emails</div>
         </div>
       </div>
@@ -213,7 +213,7 @@ export default function SettingsCommunications() {
         <div className="card-title">Telegram Notifications</div>
         <p style={{ color: 'var(--text-muted)', margin: 0 }}>
           Telegram alerts (new bookings, guest requests &amp; calls) now live in{' '}
-          <Link to="/settings/reports">Reports &amp; Alerts</Link>, where each person chooses which alerts they get
+          <Link to="/settings/reports">Notifications</Link>, where each person chooses which alerts they get
           and connects with a link — no Chat ID needed.
         </p>
       </div>

@@ -12,7 +12,7 @@ export const MENU_DEFS = [
   { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
   { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
-  { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Front Desk' },
+  { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Revenue' },
   { key: 'cashier_closing',  label: 'Cashier Closing (payments received, all users)', group: 'Front Desk' },
   // An action permission, not a page: make a stay free without asking for a
   // manager's Telegram approval code (see ComplimentaryModal.jsx).
@@ -25,29 +25,29 @@ export const MENU_DEFS = [
   // (reason required, logged, owner alerted). Owners always can.
   { key: 'corrections',      label: 'Corrections (undo check-out / check-in, reinstate, edit after check-out, refund / undo / move a payment, void a sale)', group: 'Front Desk' },
   // Events: the meeting room's calendar, an event's bill, payments and meals.
-  { key: 'events',           label: 'Events (meeting room)', group: 'Front Desk' },
+  { key: 'events',           label: 'Events (meeting room)', group: 'Services' },
   // The Ask page: ask by voice or typing. It only answers from the pages this
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
-  { key: 'loyalty',          label: 'Loyalty',              group: 'Front Desk' },
-  { key: 'sales',            label: 'Sales',                group: 'Guest Experience' },
-  { key: 'activities',       label: 'Activities',           group: 'Guest Experience' },
-  { key: 'guest_board',      label: 'Guest Board',          group: 'Guest Experience' },
+  { key: 'loyalty',          label: 'Loyalty',              group: 'Settings' },
+  { key: 'sales',            label: 'Sales (extras)',                group: 'Services' },
+  { key: 'activities',       label: 'Activities',           group: 'Services' },
+  { key: 'guest_board',      label: 'Guest Board',          group: 'Operations' },
   { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
-  { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Operations' },
+  { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Services' },
   // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
-  { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Operations' },
+  { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Front Desk' },
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
-  { key: 'accounting',       label: 'Accounting (accounts & daily journal)', group: 'Revenue' },
+  { key: 'accounting',       label: 'Accounting (accounts & daily journal)', group: 'Finance' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
-  { key: 'allotments',       label: 'Channels',             group: 'Revenue'   },
+  { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
   { key: 'units',            label: 'Unit Settings',        group: 'Settings'  },
   { key: 'users',            label: 'Staff Accounts',       group: 'Settings'  },
-  { key: 'settings',         label: 'Sources & Methods',    group: 'Settings'  },
+  { key: 'settings',         label: 'Sources & Payments',    group: 'Settings'  },
   { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'  },
   { key: 'room_tablets',     label: 'Room Tablets (WiFi connection history)', group: 'Settings' },
   { key: 'resto_take_order',    label: 'Resto — Take Order',       group: 'Resto' },
@@ -63,7 +63,7 @@ export default function SettingsRoles() {
   const { user, hasModule } = useAuth();
   // 'Resto' only shown to properties with the resto_ordering add-on enabled —
   // there's nothing to grant otherwise.
-  const BASE_GROUPS = ['Front Desk', 'Guest Experience', 'Operations', 'Revenue', 'Settings'];
+  const BASE_GROUPS = ['Front Desk', 'Services', 'Operations', 'Revenue', 'Finance', 'Settings'];
   const GROUPS = hasModule('resto_ordering') ? [...BASE_GROUPS, 'Resto'] : BASE_GROUPS;
 
   const [roles, setRoles] = useState([]);

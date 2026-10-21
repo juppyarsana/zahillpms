@@ -1,6 +1,6 @@
 # Tablet kamar — koneksi WiFi
 
-**Settings → Property → Room Tablets** menunjukkan seberapa stabil koneksi setiap tablet kamar, supaya titik WiFi yang lemah ketahuan dan bisa dicek apakah perubahan WiFi membantu.
+**Settings → Devices → Room Tablets** menunjukkan seberapa stabil koneksi setiap tablet kamar, supaya titik WiFi yang lemah ketahuan dan bisa dicek apakah perubahan WiFi membantu.
 
 > Owner selalu bisa melihat. Yang lain perlu izin **Room Tablets** (Roles & Permissions → Settings).
 

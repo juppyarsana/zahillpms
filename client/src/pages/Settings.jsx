@@ -138,7 +138,7 @@ export default function Settings() {
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <div className="page-title">Booking Sources & Methods</div>
+          <div className="page-title">Sources & Payments</div>
           <div className="page-subtitle">Configure booking channels and payment methods</div>
         </div>
       </div>

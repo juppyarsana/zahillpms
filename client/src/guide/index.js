@@ -24,13 +24,15 @@ export const GROUPS = [
     { id: 'extras-payments', icon: '💳', title: { id: 'Extras: bayar sebagian & pindah tagihan', en: 'Extras: paying in parts & transferring the bill' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
   ] },
-  { label: { id: 'Akuntansi', en: 'Accounting' }, chapters: [
+  { label: { id: 'Operasional', en: 'Operations' }, chapters: [
+    { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
+  ] },
+  { label: { id: 'Keuangan', en: 'Finance' }, chapters: [
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
     { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },
   ] },
   { label: { id: 'Pengaturan', en: 'Settings' }, chapters: [
     { id: 'room-tablets', icon: '📶', title: { id: 'Tablet kamar — koneksi WiFi', en: 'Room tablets — WiFi connection' } },
-    { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
   ] },
 ];
 

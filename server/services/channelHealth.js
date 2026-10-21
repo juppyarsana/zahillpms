@@ -153,7 +153,7 @@ async function checklist(propertyId) {
      WHERE NOT EXISTS (SELECT 1 FROM notification_recipients n WHERE n.property_id = $1 AND n.is_active AND n.channel = 'telegram'
                          AND n.address IS NOT NULL AND r = ANY(n.reports))`, [propertyId, ALERT]);
   const missing = rec.map(r => r.r === ALERT ? 'Channel manager problems' : 'New booking');
-  out.push(missing.length ? item('alerts', 'warn', `No one gets the "${missing.join('" / "')}" Telegram alert`, 'Settings → Reports & Alerts: tick it for the owner / front desk.')
+  out.push(missing.length ? item('alerts', 'warn', `No one gets the "${missing.join('" / "')}" Telegram alert`, 'Settings → Notifications: tick it for the owner / front desk.')
     : item('alerts', 'ok', 'Telegram alerts for new OTA bookings and connection problems are on'));
 
   // Bookings already in the PMS.

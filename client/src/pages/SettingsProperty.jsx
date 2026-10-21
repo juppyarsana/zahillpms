@@ -147,7 +147,7 @@ function HousekeepingPinCard() {
         Housekeeping opens <b>Housekeeping</b> on the room tablet with this PIN and ticks what was taken from the minibar;
         front desk then adds it to the guest's bill. The list is the Sales items in the <b>Minibar</b> category
         ({items} now). Front desk can also ask for a check from the reservation or the check-out window — the request goes to
-        Telegram (Reports &amp; Alerts → Room checks) with a link to answer from a phone. Leave the PIN empty to switch the tablet entry off.
+        Telegram (Notifications → Room checks) with a link to answer from a phone. Leave the PIN empty to switch the tablet entry off.
       </p>
       <div className="flex gap-2 items-center">
         <input className="form-input" inputMode="numeric" maxLength={6} placeholder="4–6 digits" value={pin}
