@@ -317,7 +317,7 @@ export default function Sales() {
       <div className="tab-bar">
         {TABS.map(t => (
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
-            <span>{t.icon}</span>{t.label}
+            {t.label}
           </button>
         ))}
       </div>

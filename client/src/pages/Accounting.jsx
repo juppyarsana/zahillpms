@@ -25,19 +25,19 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const KINDS = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenue: 'Revenue', expense: 'Expense' };
 
 const TABS = [
-  { key: 'journal', label: '📒 Daily journal' },
-  { key: 'entries', label: '✍ Journal entries' },
-  { key: 'pl', label: '📊 Profit & Loss' },
-  { key: 'bs', label: '⚖ Balance sheet' },
-  { key: 'tb', label: '🧮 Trial balance' },
-  { key: 'accounts', label: '🗂 Accounts' },
+  { key: 'journal', label: 'Daily journal' },
+  { key: 'entries', label: 'Journal entries' },
+  { key: 'pl', label: 'Profit & Loss' },
+  { key: 'bs', label: 'Balance sheet' },
+  { key: 'tb', label: 'Trial balance' },
+  { key: 'accounts', label: 'Accounts' },
 ];
 
 export default function Accounting() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState(TABS.some(t => t.key === params.get('tab')) ? params.get('tab') : 'journal');
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Accounting</div>

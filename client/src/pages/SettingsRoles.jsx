@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -139,13 +140,13 @@ export default function SettingsRoles() {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Roles & Permissions</div>
           <div className="page-subtitle">Control which menus each role can access</div>
         </div>
-        <button className="btn btn-primary" onClick={openAdd}>+ Add Role</button>
+        <button className="btn btn-primary" onClick={openAdd}><Icon name="plus" />Add role</button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

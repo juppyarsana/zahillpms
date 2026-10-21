@@ -7,7 +7,7 @@ export default function Ask() {
     <div style={{ maxWidth: 760, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <div className="page-title">🎙 Ask</div>
+          <div className="page-title">Ask</div>
           <div className="page-subtitle">Ask about rooms, prices and how busy a date is — by voice or typing, in Indonesian or English.</div>
         </div>
         <div className="flex gap-2" style={{ alignItems: 'center' }}><AskControls /></div>

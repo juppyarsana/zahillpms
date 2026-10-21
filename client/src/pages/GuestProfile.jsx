@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import BackLink from '../components/BackLink';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import GuestIdDocument from '../components/GuestIdDocument';
 import { SourceBadge } from '../context/SettingsContext';
@@ -55,7 +56,7 @@ export default function GuestProfile() {
   const { lifetime } = guest;
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">{guest.name}</div>
@@ -63,7 +64,7 @@ export default function GuestProfile() {
         </div>
         <div className="flex gap-2">
           {guest.whatsapp && (
-            <a href={`https://wa.me/${toWaNum(guest.whatsapp)}`} target="_blank" rel="noreferrer" className="btn btn-secondary">💬 WhatsApp</a>
+            <a href={`https://wa.me/${toWaNum(guest.whatsapp)}`} target="_blank" rel="noreferrer" className="btn btn-secondary"><Icon name="whatsapp" />WhatsApp</a>
           )}
           <button className="btn btn-primary" onClick={() => setEditing(!editing)}>{editing ? 'Cancel' : 'Edit'}</button>
         </div>

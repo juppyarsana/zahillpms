@@ -62,7 +62,7 @@ export default function BackOffice() {
 
   return (
     <div>
-      <div className="page-header" style={{ marginBottom: 8 }}>
+      <div className="page-header">
         <div>
           <div className="page-title">Back Office</div>
           <div className="page-subtitle">Suppliers, Purchasing &amp; Expenses · Owner only</div>
@@ -76,7 +76,7 @@ export default function BackOffice() {
             className={`tab-bar-item${tab === t.key ? ' active' : ''}`}
             onClick={() => setTab(t.key)}
           >
-            <span>{t.icon}</span>{t.label}
+            {t.label}
           </button>
         ))}
       </div>

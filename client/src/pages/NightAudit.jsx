@@ -90,7 +90,7 @@ export default function NightAudit() {
         </div>
         {isOwner && (
           <button className="btn btn-primary" onClick={handleRunNow} disabled={running}>
-            {running ? 'Running…' : '▶ Run Audit Now'}
+            {running ? 'Running…' : 'Run audit now'}
           </button>
         )}
       </div>

@@ -11,11 +11,12 @@
 //   Room charges — POS room charges checked against the guests' folios.
 import { Fragment, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import DateNav from '../components/DateNav';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
 
-const TABS = [['today', '📊 Today'], ['sessions', '🧾 Sessions'], ['kitchen', '🍳 Kitchen'], ['room-charges', '🛏 Room charges']];
+const TABS = [['today', 'Today'], ['sessions', 'Sessions'], ['kitchen', 'Kitchen'], ['room-charges', 'Room charges']];
 const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -46,13 +47,15 @@ export default function Restaurant() {
           <div className="page-title">Restaurant</div>
           <div className="page-subtitle">From the restaurant POS — sessions, kitchen and room charges</div>
         </div>
-        {(tab === 'today' || tab === 'kitchen') && <DatePicker date={date} setDate={setDate} />}
       </div>
       <div className="tab-bar">
         {TABS.map(([id, label]) => (
           <button key={id} className={`tab-bar-item${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
+      {(tab === 'today' || tab === 'kitchen') && (
+        <div className="page-toolbar"><DatePicker date={date} setDate={setDate} /></div>
+      )}
       {tab === 'today' && <TodayTab date={date} onOpenSession={openSession} onTab={setTab} />}
       {tab === 'sessions' && <SessionsTab selected={params.get('session')} onOpen={openSession} onClose={() => setTab('sessions')} />}
       {tab === 'kitchen' && <KitchenTab date={date} />}
@@ -62,14 +65,9 @@ export default function Restaurant() {
 }
 
 function DatePicker({ date, setDate }) {
-  const isToday = date === propertyToday();
   return (
-    <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-      <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, -1))} aria-label="Previous day">←</button>
-      <input className="form-input" type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} style={{ width: 170 }} aria-label="Date" />
-      <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day">→</button>
-      {!isToday && <button className="btn btn-secondary" onClick={() => setDate(propertyToday())}>Today</button>}
-    </div>
+    <DateNav value={date} onChange={setDate} today={propertyToday()} onToday={() => setDate(propertyToday())}
+      onPrev={() => setDate(d => shiftDate(d, -1))} onNext={() => setDate(d => shiftDate(d, 1))} />
   );
 }
 

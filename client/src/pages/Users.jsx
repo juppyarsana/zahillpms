@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 
 const ROLE_BADGE = { owner: 'badge-green', staff: 'badge-blue' };
@@ -75,13 +76,13 @@ export default function Users() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Staff Accounts</div>
           <div className="page-subtitle">Manage who can access the PMS</div>
         </div>
-        <button className="btn btn-primary" onClick={openAdd}>+ Add User</button>
+        <button className="btn btn-primary" onClick={openAdd}><Icon name="plus" />Add user</button>
       </div>
 
       <div className="card">

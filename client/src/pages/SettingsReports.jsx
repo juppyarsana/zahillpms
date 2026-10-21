@@ -295,7 +295,7 @@ export default function SettingsReports() {
   const bot = catalog?.telegram_bot;
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Notifications</div>

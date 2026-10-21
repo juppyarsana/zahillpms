@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import EventFormModal from '../components/EventFormModal';
@@ -153,8 +154,35 @@ export default function Events() {
         </div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
           {isOwner && <button className="btn btn-secondary" onClick={() => setManaging(true)}>Venues</button>}
-          <button className="btn btn-primary" disabled={noVenue} onClick={() => setAdding({ date: today })}>+ New event</button>
+          <button className="btn btn-primary" disabled={noVenue} onClick={() => setAdding({ date: today })}><Icon name="plus" />New event</button>
         </div>
+      </div>
+
+      <div className="tab-bar">
+        <button type="button" className={`tab-bar-item${view === 'calendar' ? ' active' : ''}`} onClick={() => pickView('calendar')}>Calendar</button>
+        <button type="button" className={`tab-bar-item${view === 'list' ? ' active' : ''}`} onClick={() => pickView('list')}>List</button>
+      </div>
+
+      <div className="page-toolbar">
+        {view === 'calendar' ? (
+          <>
+            <div className="date-nav">
+              <button type="button" onClick={() => setMonth(m => addMonths(m, -1))} aria-label="Previous month"><Icon name="chevronLeft" /></button>
+              <span className="date-nav-label">{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</span>
+              <button type="button" onClick={() => setMonth(m => addMonths(m, 1))} aria-label="Next month"><Icon name="chevronRight" /></button>
+            </div>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setMonth(monthStart(parseYmd(today)))}>Today</button>
+          </>
+        ) : (
+          <>
+            <div className="seg">
+              {[['upcoming', 'Upcoming'], ['past', 'Past'], ['all', 'All']].map(([k, l]) => (
+                <button key={k} type="button" className={when === k ? 'active' : ''} onClick={() => setWhen(k)}>{l}</button>
+              ))}
+            </div>
+            <input className="form-input" style={{ width: 220, height: 34 }} placeholder="Search name or company…" value={q} onChange={e => setQ(e.target.value)} />
+          </>
+        )}
       </div>
 
       {noVenue && (
@@ -163,28 +191,6 @@ export default function Events() {
         </div></div>
       )}
       {error && <div className="alert alert-error"><div>{error}</div></div>}
-
-      <div className="flex-between mb-3" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <div className="flex gap-2">
-          <button className={`btn btn-sm ${view === 'calendar' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => pickView('calendar')}>Calendar</button>
-          <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => pickView('list')}>List</button>
-        </div>
-        {view === 'calendar' ? (
-          <div className="flex gap-2" style={{ alignItems: 'center' }}>
-            <button className="btn btn-sm btn-secondary" onClick={() => setMonth(m => addMonths(m, -1))}>←</button>
-            <b style={{ minWidth: 130, textAlign: 'center' }}>{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</b>
-            <button className="btn btn-sm btn-secondary" onClick={() => setMonth(m => addMonths(m, 1))}>→</button>
-            <button className="btn btn-sm btn-secondary" onClick={() => setMonth(monthStart(parseYmd(today)))}>Today</button>
-          </div>
-        ) : (
-          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-            {[['upcoming', 'Upcoming'], ['past', 'Past'], ['all', 'All']].map(([k, l]) => (
-              <button key={k} className={`btn btn-sm ${when === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setWhen(k)}>{l}</button>
-            ))}
-            <input className="form-input" style={{ width: 200 }} placeholder="Search name or company…" value={q} onChange={e => setQ(e.target.value)} />
-          </div>
-        )}
-      </div>
 
       {view === 'calendar' && (
         <div className="card" style={{ padding: 0, overflow: 'hidden', opacity: loading ? 0.6 : 1 }}>

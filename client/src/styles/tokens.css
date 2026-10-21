@@ -20,6 +20,8 @@
   --text:         #1A1A1A;   /* Primary text */
   --text-muted:   #6B7280;   /* Labels, secondary text */
   --border:       #E5E7EB;   /* Default border */
+  --border-strong: #DDD3C8;  /* Buttons and inputs on the warm page background */
+  --rule:         #E2D8CC;   /* Line under page headers and tab bars */
 
   /* ── Channel Colors ── */
   --ch-direct:    #5C1A2E;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BalanceLine, CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import RoomCheckPanel from '../components/RoomCheck';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import PayLaterOption from '../components/PayLaterOption';
 import EarlyDepartureOption from '../components/EarlyDepartureOption';
@@ -268,7 +269,7 @@ export default function CheckIn() {
         </div>
         {can('quick_checkin') && (
           <button className="btn btn-primary btn-sm" onClick={() => navigate('/quick-checkin')}>
-            ⚡ Quick Mode
+            <Icon name="zap" />Quick mode
           </button>
         )}
       </div>

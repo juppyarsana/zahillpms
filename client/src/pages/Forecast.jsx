@@ -4,6 +4,8 @@
 // projected. Counted like Guest Lists and Reports (server/services/forecast.js).
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import DateNav from '../components/DateNav';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday, addDaysYmd } from '../lib/propertyTime';
@@ -88,7 +90,7 @@ export default function Forecast() {
   const peakBreakfast = data ? data.rows.reduce((a, r) => (r.breakfast > a.breakfast ? r : a), data.rows[0]) : null;
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Forecast</div>
@@ -96,21 +98,22 @@ export default function Forecast() {
             {data ? fmtRange(data.from, data.to) : ' '} — reservations on the books now, day by day. Nothing is projected.
           </div>
         </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <button className="btn btn-secondary" onClick={() => setFrom(d => addDaysYmd(d, -days))} aria-label="Earlier">←</button>
-          <input className="form-input" type="date" value={from} onChange={e => e.target.value && setFrom(e.target.value)} style={{ width: 170 }} aria-label="First day" />
-          <button className="btn btn-secondary" onClick={() => setFrom(d => addDaysYmd(d, days))} aria-label="Later">→</button>
-          {from !== today && <button className="btn btn-secondary" onClick={() => setFrom(today)}>Today</button>}
+        <div>
           <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !data || downloading}>
-            {downloading ? 'Generating…' : '⬇ Download PDF'}
+            <Icon name="download" />{downloading ? 'Generating…' : 'Download PDF'}
           </button>
         </div>
       </div>
 
-      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        {RANGES.map(n => (
-          <button key={n} className={`btn btn-sm ${days === n ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDays(n)}>{n} days</button>
-        ))}
+      <div className="page-toolbar">
+        <DateNav value={from} onChange={setFrom} today={today} onToday={() => setFrom(today)} dateLabel="First day"
+          prevLabel="Earlier" nextLabel="Later"
+          onPrev={() => setFrom(d => addDaysYmd(d, -days))} onNext={() => setFrom(d => addDaysYmd(d, days))} />
+        <div className="seg">
+          {RANGES.map(n => (
+            <button key={n} type="button" className={days === n ? 'active' : ''} onClick={() => setDays(n)}>{n} days</button>
+          ))}
+        </div>
         {data?.room_types?.length > 1 && (
           <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={byType} onChange={e => setByType(e.target.checked)} /> Rooms sold by room type

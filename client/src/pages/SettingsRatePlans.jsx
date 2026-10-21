@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSettings } from '../context/SettingsContext';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import PriceBasisHint from '../components/PriceBasisHint';
 
@@ -84,13 +85,13 @@ export default function SettingsRatePlans() {
   const rowStyle = { padding: '12px 0', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' };
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Rate Plans</div>
           <div className="page-subtitle">The "arrangement" a room is sold as — Room Only, Bed &amp; Breakfast… · Owner only</div>
         </div>
-        {editingId === null && <button className="btn btn-primary" onClick={startNew}>+ New Rate Plan</button>}
+        {editingId === null && <button className="btn btn-primary" onClick={startNew}><Icon name="plus" />New rate plan</button>}
       </div>
 
       <div className="card">

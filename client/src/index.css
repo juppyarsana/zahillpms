@@ -357,10 +357,16 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 /* Title block first, actions second. The title keeps its room (≥ 280px) and
    the actions wrap underneath on narrow screens instead of squeezing the
    title into several lines. */
-.page-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; gap: var(--space-3) var(--space-4); }
+.page-header {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+  padding-bottom: 18px; margin-bottom: 16px; border-bottom: 1px solid var(--rule);
+}
+/* tabs right under the header carry the line themselves */
+.page-header:has(+ .tab-bar) { border-bottom: none; padding-bottom: 0; margin-bottom: 14px; }
 .page-header > :first-child { flex: 1 1 280px; min-width: 0; }
 .page-header > div:last-child:not(:first-child) { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.page-title  { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; color: var(--text); line-height: 1.2; }
+.page-title  { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--text); line-height: 1.15; }
 .page-subtitle { font-size: var(--text-sm); color: var(--text-muted); margin-top: 3px; }
 /* PageHeader component: small back link + kind above the title, one line of
    key facts under it. */
@@ -400,15 +406,15 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary  { background: var(--green-dark); color: white; }
 .btn-primary:hover:not(:disabled) { background: var(--green-mid); }
-.btn-secondary { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+.btn-secondary { background: var(--white); color: var(--text); border: 1px solid var(--border-strong); }
 .btn-secondary:hover:not(:disabled) { background: var(--green-light); border-color: var(--green-dark); }
 .btn-outline  { background: transparent; color: var(--green-dark); border: 1.5px solid var(--green-dark); }
 .btn-outline:hover:not(:disabled) { background: var(--green-light); }
-.btn-ghost    { background: transparent; color: var(--text-muted); border: 1.5px solid var(--border); }
+.btn-ghost    { background: transparent; color: var(--text-muted); border: 1px solid var(--border-strong); }
 .btn-ghost:hover:not(:disabled) { background: var(--bg-subtle); }
 .btn-danger   { background: transparent; color: var(--danger-text); border: 1.5px solid var(--danger-bg); }
 .btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
-.btn-sm   { padding: 5px 12px; font-size: var(--text-xs); }
+.btn-sm   { padding: 6px 12px; font-size: var(--text-xs); }
 .btn-lg   { padding: 13px 24px; font-size: var(--text-base); }
 .btn-icon { padding: 6px 8px; border-radius: var(--radius-md); background: var(--white); border: 1.5px solid var(--border); font-size: 14px; }
 .btn-icon:hover { background: var(--green-light); border-color: var(--green-dark); }
@@ -448,20 +454,21 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 /* ── Tab Bar (underline tabs, reusable across pages with 3+ sub-views) ── */
 .tab-bar {
   /* The base line is an inset shadow (inside the box), so the active tab's
-     underline sits fully inside the scroll area and is never clipped — with a
-     border + negative margin, overflow clipping cut most of it off. */
-  display: flex; gap: 4px; box-shadow: inset 0 -1.5px 0 var(--border);
-  margin-bottom: 20px; overflow-x: auto; overflow-y: hidden;
+     underline sits fully inside the scroll area and is never clipped. */
+  display: flex; gap: 24px; box-shadow: inset 0 -1px 0 var(--rule);
+  margin-bottom: 18px; overflow-x: auto; overflow-y: hidden;
 }
 .tab-bar-item {
-  display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  padding: 10px 16px; font-size: var(--text-sm); font-weight: 600;
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
+  padding: 10px 0 11px; font-size: var(--text-sm); font-weight: 600;
   color: var(--text-muted); background: none; border: none; cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: color var(--transition), border-color var(--transition);
 }
 .tab-bar-item:hover { color: var(--text); }
 .tab-bar-item.active { color: var(--green-dark); border-bottom-color: var(--green-dark); }
+/* a count on a tab (e.g. To check 60) */
+.tab-count { font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 999px; background: var(--warning-bg); color: var(--warning-text); }
 
 /* Channel badges — from mockup .ch class */
 .ch {
@@ -1055,3 +1062,53 @@ tr:hover td { background: #FAFAF8; }
 .settings-hub-title { display: block; font-weight: 700; font-size: 14px; }
 .settings-hub-hint { display: block; font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.35; }
 @media (max-width: 520px) { .settings-hub-grid { grid-template-columns: 1fr; } }
+
+/* ── List page toolbar (2026-10-22): the row under the header / tabs with the
+   date or month control, filters, and quieter things on the right ── */
+.page-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.page-toolbar-end { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.page-toolbar .btn-sm, .date-nav { height: 34px; }
+.page-toolbar .btn-sm { padding: 0 12px; }
+.date-nav { display: inline-flex; align-items: center; background: var(--white); border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; }
+.date-nav button { width: 32px; height: 100%; border: none; background: none; color: var(--text-muted); display: grid; place-items: center; cursor: pointer; }
+.date-nav button:hover { background: var(--green-light); color: var(--green-dark); }
+.date-nav input { border: none; background: none; font: 600 13px var(--font-base); color: var(--text); padding: 0 4px; height: 100%; min-width: 0; width: 132px; text-align: center; }
+.date-nav input:focus { outline: none; }
+.date-nav .date-nav-label { font: 600 13px var(--font-base); color: var(--text); min-width: 124px; text-align: center; padding: 0 4px; }
+/* colour key pop-over (Reservations calendar) */
+.key-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.key-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,0.06); }
+.key-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; border: 1px solid rgba(0,0,0,0.12); }
+.key-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 41; width: 360px; max-width: calc(100vw - 32px); background: var(--white); border: 1px solid var(--rule); border-radius: var(--radius-lg); box-shadow: 0 12px 32px rgba(60,30,20,0.14); padding: 14px 16px; }
+.key-pop h4 { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 2px 0 8px; }
+.key-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; font-size: 12.5px; color: var(--text); margin-bottom: 12px; }
+.key-grid:last-child { margin-bottom: 0; }
+@media (max-width: 768px) {
+  .key-hint { display: none; }
+  .page-toolbar-end { margin-left: 0; }
+}
+/* segmented choice (7 / 14 / 30 days, To check / Waiting / Done…) */
+.seg { display: inline-flex; background: var(--white); border: 1px solid var(--border-strong); border-radius: var(--radius-md); overflow: hidden; height: 34px; flex-shrink: 0; max-width: 100%; overflow-x: auto; }
+.seg button { border: none; border-right: 1px solid var(--border-strong); background: none; padding: 0 12px; font: 600 12.5px var(--font-base); color: var(--text-muted); cursor: pointer; white-space: nowrap; }
+.seg button:last-child { border-right: none; }
+.seg button:hover:not(.active) { background: var(--bg-subtle); color: var(--text); }
+.seg button.active { background: var(--green-dark); color: #fff; }
+.page-toolbar .form-select, .page-toolbar .form-input { height: 34px; padding-top: 0; padding-bottom: 0; }
+
+/* ── Settings frame (2026-10-22): settings menu on the left of every settings page ── */
+.settings-cols { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.settings-subnav { position: sticky; top: 16px; }
+.settings-subnav-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 16px 0 6px; }
+.settings-subnav > div:first-child .settings-subnav-label { margin-top: 2px; }
+.settings-subnav-item { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); padding: 7px 10px; border-radius: 7px; text-decoration: none; }
+.settings-subnav-item:hover { color: var(--text); background: rgba(255,255,255,0.6); }
+.settings-subnav-item.active { background: var(--white); color: var(--green-dark); font-weight: 700; box-shadow: 0 0 0 1px var(--border); }
+/* the page inside keeps its own header, smaller and without the line */
+.settings-body > div > .page-header, .settings-body > .page-header { border-bottom: none; padding-bottom: 0; margin-bottom: 16px; }
+.settings-body .page-title { font-family: var(--font-base); font-size: 20px; }
+.settings-back { display: none; }
+@media (max-width: 900px) {
+  .settings-cols { grid-template-columns: 1fr; gap: 0; }
+  .settings-subnav, .settings-shell-header { display: none; }
+  .settings-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; }
+}

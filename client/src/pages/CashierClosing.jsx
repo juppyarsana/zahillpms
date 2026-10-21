@@ -5,6 +5,8 @@
 // money received.
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import DateNav from '../components/DateNav';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
@@ -72,26 +74,25 @@ export default function CashierClosing() {
   if (user?.id && !users.some(u => u.id === user.id)) users.unshift({ id: user.id, name: user.name, total: 0, count: 0 });
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Cashier Closing</div>
-          <div className="page-subtitle">{fmtLong(date)}{isToday ? ' · Today' : ''} — payments received, to check against slips, transfers and cash</div>
+          <div className="page-subtitle">Payments received — tick them off against slips, transfers and cash</div>
         </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, -1))} aria-label="Previous day">←</button>
-          <input className="form-input" type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} style={{ width: 170 }} aria-label="Date" />
-          <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day">→</button>
-          {!isToday && <button className="btn btn-secondary" onClick={() => setDate(propertyToday())}>Today</button>}
+        <div>
           <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !data || downloading}>
-            {downloading ? 'Generating…' : '⬇ Download PDF'}
+            <Icon name="download" />{downloading ? 'Generating…' : 'Download PDF'}
           </button>
         </div>
       </div>
 
-      <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+      <div className="page-toolbar">
+        <DateNav value={date} onChange={setDate} today={propertyToday()} onToday={() => setDate(propertyToday())}
+          onPrev={() => setDate(d => shiftDate(d, -1))} onNext={() => setDate(d => shiftDate(d, 1))} />
+        <span className="text-muted" style={{ fontSize: 13, marginRight: 8 }}>{fmtLong(date)}{isToday ? ' · Today' : ''}</span>
         <span className="text-muted" style={{ fontSize: 13 }}>Payments taken by</span>
-        <select className="form-select" value={userId} onChange={e => setUserId(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
+        <select className="form-select" value={userId} onChange={e => setUserId(e.target.value)} style={{ width: 'auto', minWidth: 200, height: 34, padding: '0 10px' }}>
           <option value="">All users{data ? ` — ${idr(data.day_total)}` : ''}</option>
           {users.map(u => <option key={u.id} value={u.id}>{u.name}{u.id === user?.id ? ' (me)' : ''} — {idr(u.total)}</option>)}
         </select>

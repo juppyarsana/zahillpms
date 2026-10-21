@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import LobbyMusicCard from '../components/LobbyMusicCard';
 
@@ -194,13 +195,13 @@ export default function SettingsBoardCards() {
   }));
 
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Guest Board</div>
           <div className="page-subtitle">Pictures, notices and lobby videos — shown on the room TVs and tablets, and on the lobby TV</div>
         </div>
-        <button className="btn btn-primary" onClick={openNew}>+ New Card</button>
+        <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New card</button>
       </div>
 
       {loading ? (

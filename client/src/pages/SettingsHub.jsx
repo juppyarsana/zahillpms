@@ -11,7 +11,7 @@ export default function SettingsHub() {
   const { settingsGroups } = buildNav({ user, can, hasModule });
 
   return (
-    <div className="page-wrap" style={{ maxWidth: 960, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Settings</div>

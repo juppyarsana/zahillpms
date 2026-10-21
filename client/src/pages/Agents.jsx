@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import AgentFormModal from '../components/AgentFormModal';
 import ReasonModal from '../components/ReasonModal';
@@ -75,7 +76,7 @@ function AgentList() {
           <div className="page-title">Agent Billing</div>
           <div className="page-subtitle">Travel agents, companies and wholesalers — billing terms and what they owe · Owner only</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>+ New agent</button>
+        <button className="btn btn-primary" onClick={() => setEditing('new')}><Icon name="plus" />New agent</button>
       </div>
 
       <div className="stat-grid stat-grid-money" style={{ marginBottom: 16 }}>

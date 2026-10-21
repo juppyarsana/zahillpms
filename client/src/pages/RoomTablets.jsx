@@ -5,6 +5,7 @@
 // counted against a room. Kept 30 days. Owner, or the room_tablets permission.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { PROPERTY_TZ, fmtYmd } from '../lib/propertyTime';
 
@@ -82,25 +83,30 @@ export default function RoomTablets() {
   }, [days]);
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Room tablets</div>
           <div className="page-subtitle">How well the room tablets stay connected — a drop is a tablet that could not reach the PMS for more than a minute</div>
         </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          {[7, 14, 30].map((n) => (
-            <button key={n} className={`btn ${days === n ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDays(n)}>{n} days</button>
-          ))}
-          <button className="btn btn-secondary" onClick={load} disabled={loading}>↻</button>
-          <Link className="btn btn-secondary" to="/guide/room-tablets">📘 Guide</Link>
+        <div>
+          <button className="btn btn-secondary" onClick={load} disabled={loading}><Icon name="refresh" />Refresh</button>
+          <Link className="btn btn-secondary" to="/guide/room-tablets"><Icon name="book" />Guide</Link>
         </div>
       </div>
 
-      <div className="tab-bar" style={{ marginBottom: 16 }}>
+      <div className="tab-bar">
         {[['overview', 'Overview'], ['compare', 'Before / after'], ['aps', 'Access points']].map(([id, label]) => (
           <button key={id} className={`tab-bar-item${tab === id ? ' active' : ''}`} onClick={() => setTab(id)}>{label}</button>
         ))}
+      </div>
+
+      <div className="page-toolbar">
+        <div className="seg">
+          {[7, 14, 30].map((n) => (
+            <button key={n} type="button" className={days === n ? 'active' : ''} onClick={() => setDays(n)}>{n} days</button>
+          ))}
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

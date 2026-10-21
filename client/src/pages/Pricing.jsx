@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { RateCalendarTab, AutomaticTab, EventsTab, ReportsTab } from './pricing/YieldTabs';
@@ -100,15 +101,15 @@ function MyRules() {
     : fmtIDR(p.value) + '/night';
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Pricing Periods</div>
           <div className="page-subtitle">Set seasonal and special date pricing — overrides base rate on booking</div>
         </div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          {otaOn && <button className="btn btn-secondary" onClick={() => setOtaPrices(true)}>🌐 OTA prices</button>}
-          <button className="btn btn-primary" onClick={openNew}>+ New Period</button>
+          {otaOn && <button className="btn btn-secondary" onClick={() => setOtaPrices(true)}><Icon name="globe" />OTA prices</button>}
+          <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New period</button>
         </div>
       </div>
       {otaPrices && <OtaPricesModal onClose={() => setOtaPrices(false)} />}
@@ -298,7 +299,7 @@ export default function Pricing() {
   const yieldOn = user?.role === 'owner' && hasModule('yield_management');
   if (!yieldOn) return <MyRules />;
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Pricing</div>
@@ -308,7 +309,7 @@ export default function Pricing() {
       <div className="tab-bar">
         {YIELD_TABS.map(t => (
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
-            <span>{t.icon}</span>{t.label}
+            {t.label}
           </button>
         ))}
       </div>

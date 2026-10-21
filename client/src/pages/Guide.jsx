@@ -32,7 +32,7 @@ export default function Guide() {
     <div className="guide-page">
       <div className="page-header guide-noprint">
         <div>
-          <h1 className="page-title">📘 {t('Panduan', 'Guide')}</h1>
+          <h1 className="page-title">{t('Panduan', 'Guide')}</h1>
           <p className="page-subtitle">{t('Cara memakai PMS, bab demi bab', 'How to use the PMS, chapter by chapter')}</p>
         </div>
         <div className="flex gap-2">

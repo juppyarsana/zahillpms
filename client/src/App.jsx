@@ -56,6 +56,7 @@ import Accounting from './pages/Accounting';
 import OtaBookings from './pages/OtaBookings';
 import SettingsHub from './pages/SettingsHub';
 import { buildNav } from './lib/navItems';
+import SettingsShell from './components/SettingsShell';
 import { OtaInboxProvider, OtaPopup, useOtaInbox } from './components/OtaInbox';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
@@ -185,7 +186,7 @@ function Layout({ children }) {
         <Sidebar />
         <div className="app-main">
           <main className="main-content">
-            <div className="page-wrap">{children}</div>
+            <div className="page-wrap"><SettingsShell>{children}</SettingsShell></div>
           </main>
           <BottomNav />
         </div>

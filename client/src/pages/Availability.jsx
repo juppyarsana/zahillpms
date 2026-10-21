@@ -125,7 +125,7 @@ export default function Availability() {
   }
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Check Availability</div>

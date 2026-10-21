@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import PriceBasisHint from '../components/PriceBasisHint';
 
@@ -187,7 +188,7 @@ export default function UnitSettings() {
   ];
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto' }}>
+    <div>
       <style>{CSS}</style>
 
       <div className="page-header">
@@ -195,7 +196,7 @@ export default function UnitSettings() {
           <div className="page-title">Unit Settings</div>
           <div className="page-subtitle">Rooms grouped by room type — set the rate and capacity once per type</div>
         </div>
-        <button className="btn btn-primary" onClick={openNewType}>+ Add Room Type</button>
+        <button className="btn btn-primary" onClick={openNewType}><Icon name="plus" />Add room type</button>
       </div>
 
       {msg && <div className="alert alert-success">{msg}</div>}

@@ -1373,16 +1373,11 @@ export default function Dashboard() {
       {/* ── Page Header ── */}
       <div className="page-header">
         <div>
-          <div className="page-title">{greeting()}, {user?.name?.split(' ')[0]} 👋</div>
+          <div className="page-title">{greeting()}, {user?.name?.split(' ')[0]}</div>
           {/* Property time — the hotel's day, wherever the viewer is. */}
           <div className="page-subtitle" title="The property's local time — every 'today' on this page is the property's day">
             {propertyClock()}{branding?.area ? ` · ${branding.area}` : ''}
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span className="badge badge-green" style={{ padding: '6px 14px', fontSize: 12 }}>
-            🟢 All Systems Normal
-          </span>
         </div>
       </div>
 

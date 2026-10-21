@@ -47,7 +47,7 @@ export default function SettingsProperty() {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Property Details</div>

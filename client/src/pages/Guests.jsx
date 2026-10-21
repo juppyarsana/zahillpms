@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import CountrySelect from '../components/CountrySelect';
 import { useSettings } from '../context/SettingsContext';
@@ -106,8 +107,11 @@ export default function Guests() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Guests</div>
-        <button className="btn btn-primary" onClick={openAdd}>+ Add Guest</button>
+        <div>
+          <div className="page-title">Guests</div>
+          <div className="page-subtitle">Guest profiles, their stays and upcoming birthdays</div>
+        </div>
+        <button className="btn btn-primary" onClick={openAdd}><Icon name="plus" />Add guest</button>
       </div>
 
       {birthdays.length > 0 && (

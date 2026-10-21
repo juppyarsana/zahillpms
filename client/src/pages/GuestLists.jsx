@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { propertyToday } from '../lib/propertyTime';
+import DateNav from '../components/DateNav';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
@@ -334,30 +336,32 @@ export default function GuestLists() {
       <div className="page-header">
         <div>
           <div className="page-title">Guest Lists</div>
-          <div className="page-subtitle">{fmtLong(date)}{isToday ? ' · Today' : ''}</div>
+          <div className="page-subtitle">Who arrives, stays and leaves on a day — for front desk, housekeeping and the kitchen</div>
         </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, -1))} aria-label="Previous day">←</button>
-          <input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 170 }} aria-label="Date" />
-          <button className="btn btn-secondary" onClick={() => setDate(d => shiftDate(d, 1))} aria-label="Next day">→</button>
-          {!isToday && <button className="btn btn-secondary" onClick={() => setDate(propertyToday())}>Today</button>}
+        <div>
           <button className="btn btn-secondary" onClick={downloadPdf} disabled={loading || !current || downloading}>
-            {downloading ? 'Generating…' : '⬇ Download PDF'}
+            <Icon name="download" />{downloading ? 'Generating…' : 'Download PDF'}
           </button>
         </div>
       </div>
 
       <div className="tab-bar">
-        <button className={`tab-bar-item${tab === 'lists' ? ' active' : ''}`} onClick={() => setTab('lists')}>🗂 Guest Lists</button>
+        <button className={`tab-bar-item${tab === 'lists' ? ' active' : ''}`} onClick={() => setTab('lists')}>Guest Lists</button>
         {canSeeBalances && (
-          <button className={`tab-bar-item${tab === 'balance' ? ' active' : ''}`} onClick={() => setTab('balance')}>💰 Balance Due</button>
+          <button className={`tab-bar-item${tab === 'balance' ? ' active' : ''}`} onClick={() => setTab('balance')}>Balance Due</button>
         )}
         {!kitchenMoved && (
-          <button className={`tab-bar-item${tab === 'kitchen' ? ' active' : ''}`} onClick={() => setTab('kitchen')}>🍳 Kitchen</button>
+          <button className={`tab-bar-item${tab === 'kitchen' ? ' active' : ''}`} onClick={() => setTab('kitchen')}>Kitchen</button>
         )}
         {kitchenMoved && can('restaurant') && (
-          <Link to="/restaurant?tab=kitchen" className="tab-bar-item" style={{ marginLeft: 'auto', fontSize: 12 }}>🍳 Kitchen is now under Restaurant →</Link>
+          <Link to="/restaurant?tab=kitchen" className="tab-bar-item" style={{ marginLeft: 'auto', fontSize: 12 }}>Kitchen is now under Restaurant →</Link>
         )}
+      </div>
+
+      <div className="page-toolbar">
+        <DateNav value={date} onChange={setDate} today={propertyToday()} onToday={() => setDate(propertyToday())}
+          onPrev={() => setDate(d => shiftDate(d, -1))} onNext={() => setDate(d => shiftDate(d, 1))} />
+        <span className="text-muted" style={{ fontSize: 13 }}>{fmtLong(date)}{isToday ? ' · Today' : ''}</span>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

@@ -112,7 +112,10 @@ export default function Activities() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Activities</h1>
+        <div>
+          <div className="page-title">Activities</div>
+          <div className="page-subtitle">Tours, transfers and classes — bookings and the catalog</div>
+        </div>
       </div>
 
       <div className="tab-bar">

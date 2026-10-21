@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { OtaRow, useOtaInbox, timeText } from '../components/OtaInbox';
 
@@ -39,16 +40,16 @@ export default function OtaBookings() {
     <div>
       <div className="page-header">
         <div>
-          <h1>🌐 OTA bookings</h1>
-          <p className="page-subtitle">
+          <div className="page-title">OTA bookings</div>
+          <div className="page-subtitle">
             Bookings from Agoda, Booking.com and the other OTAs come in by themselves through the channel manager.
             {data?.last_pull_at && <> Last checked {timeText(data.last_pull_at)}.</>}
-          </p>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {unseen.length > 0 && <button className="btn btn-secondary" onClick={markAll}>All seen ({unseen.length})</button>}
-          <button className="btn btn-secondary" disabled={busy} onClick={check}>{busy ? 'Checking…' : '↻ Check now'}</button>
-          <Link className="btn btn-secondary" to="/guide/ota-bookings">📘 Guide</Link>
+          <button className="btn btn-secondary" disabled={busy} onClick={check}><Icon name="refresh" />{busy ? 'Checking…' : 'Check now'}</button>
+          <Link className="btn btn-secondary" to="/guide/ota-bookings"><Icon name="book" />Guide</Link>
         </div>
       </div>
       {msg && <div className="alert alert-info" style={{ marginBottom: 12 }}><div>{msg}</div></div>}

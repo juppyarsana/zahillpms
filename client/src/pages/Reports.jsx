@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 import { Link } from 'react-router-dom';
 
@@ -334,37 +335,40 @@ export default function Reports() {
           <div className="page-title">Reports</div>
           <div className="page-subtitle">{label} · Owner only · amounts are net (after discounts, before service charge &amp; tax)</div>
         </div>
-        <div className="flex gap-2" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <select className="form-select" style={{ width: 160 }} value={preset} onChange={e => setPreset(e.target.value)} aria-label="Period">
-            {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-          </select>
-          {preset === 'month' && (
-            <>
-              <select className="form-select" style={{ width: 150 }} value={month} onChange={e => setMonth(Number(e.target.value))}>
-                {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-              </select>
-              <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </>
-          )}
-          {preset === 'custom' && (
-            <>
-              <input className="form-input" type="date" style={{ width: 160 }} value={customFrom} max={customTo || undefined}
-                onChange={e => setCustomFrom(e.target.value)} aria-label="From" />
-              <input className="form-input" type="date" style={{ width: 160 }} value={customTo} min={customFrom || undefined}
-                onChange={e => setCustomTo(e.target.value)} aria-label="To" />
-            </>
-          )}
+        <div>
           <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus Daily, Room nights (every room, every night) and Reservations"
             onClick={() => downloadCsv(`/api/reports/full/xlsx?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.xlsx`,
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').catch(() => alert('Could not download the Excel file'))}>⬇ Excel</button>
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').catch(() => alert('Could not download the Excel file'))}><Icon name="download" />Excel</button>
           <button className="btn btn-secondary" disabled={!rangeValid} title="Printable report with every section and a daily breakdown"
             onClick={() => downloadCsv(`/api/reports/full/pdf?from=${from}&to=${to}`, `report-${singleDay ? from : `${from}_to_${to}`}.pdf`, 'application/pdf')
-              .catch(() => alert('Could not download the PDF'))}>⬇ PDF</button>
+              .catch(() => alert('Could not download the PDF'))}><Icon name="download" />PDF</button>
           <button className="btn btn-secondary" disabled={!rangeValid} title="Revenue summary as a simple CSV file"
-            onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}>⬇ CSV</button>
+            onClick={() => downloadCsv(`/api/reports/revenue/export?from=${from}&to=${to}`, `revenue-${singleDay ? from : `${from}_to_${to}`}.csv`)}><Icon name="download" />CSV</button>
         </div>
+      </div>
+
+      <div className="page-toolbar">
+        <select className="form-select" style={{ width: 160 }} value={preset} onChange={e => setPreset(e.target.value)} aria-label="Period">
+          {PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+        {preset === 'month' && (
+          <>
+            <select className="form-select" style={{ width: 150 }} value={month} onChange={e => setMonth(Number(e.target.value))}>
+              {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <select className="form-select" style={{ width: 100 }} value={year} onChange={e => setYear(Number(e.target.value))}>
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </>
+        )}
+        {preset === 'custom' && (
+          <>
+            <input className="form-input" type="date" style={{ width: 160 }} value={customFrom} max={customTo || undefined}
+              onChange={e => setCustomFrom(e.target.value)} aria-label="From" />
+            <input className="form-input" type="date" style={{ width: 160 }} value={customTo} min={customFrom || undefined}
+              onChange={e => setCustomTo(e.target.value)} aria-label="To" />
+          </>
+        )}
       </div>
 
       {!rangeValid && <div className="alert alert-error">Choose a start date on or before the end date.</div>}
@@ -404,14 +408,14 @@ export default function Reports() {
             {/* Pinned section bar: jump to any section, or back to the top, from anywhere on the page. */}
             <div style={{ position: 'sticky', top: 0, zIndex: 30, margin: '0 -4px 16px', padding: '8px 4px',
               background: 'var(--bg)', borderBottom: scrolled ? '1px solid var(--border, #E5E7EB)' : '1px solid transparent',
-              boxShadow: scrolled ? '0 6px 12px -10px rgba(0,0,0,0.25)' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              boxShadow: scrolled ? '0 6px 12px -10px rgba(0,0,0,0.25)' : 'none', display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
               {SECTIONS.map(s => (
-                <button key={s.id} className={`btn btn-sm ${active === s.id ? 'btn-primary' : 'btn-secondary'}`}
+                <button key={s.id} type="button" className={`tab-bar-item${active === s.id ? ' active' : ''}`}
                   aria-current={active === s.id ? 'true' : undefined} onClick={() => jump(s.id)}>{s.label}</button>
               ))}
               <span style={{ flex: 1 }} />
               {scrolled && window.innerWidth >= 640 && <span className="text-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{label}</span>}
-              {scrolled && <button className="btn btn-sm btn-secondary" onClick={toTop} title="Back to the top: period and downloads">↑ Top</button>}
+              {scrolled && <button className="btn btn-sm btn-secondary" onClick={toTop} title="Back to the top: period and downloads">Back to top</button>}
             </div>
 
             {/* ── 1. Revenue ── */}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { propertyToday, addDaysYmd, fmtYmd, PROPERTY_TZ } from '../lib/propertyTime';
 import api from '../services/api';
+import Icon from '../components/Icon';
 import { SourceBadge, useSettings } from '../context/SettingsContext';
 
 const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
@@ -251,11 +252,13 @@ function ToCheckView({ nav, onCount }) {
   return (
     <div className="card">
       <div className="flex-between mb-3" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <div className="text-muted" style={{ fontSize: 13, maxWidth: 640 }}>{intro} <Link to="/guide/to-check">📘 Guide</Link></div>
+        <div className="text-muted" style={{ fontSize: 13, maxWidth: 640 }}>{intro} <Link to="/guide/to-check">Guide →</Link></div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          <button className={`btn btn-sm ${tab === 'open' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('open')}>To check</button>
-          <button className={`btn btn-sm ${tab === 'names' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('names')}>Waiting for guest names</button>
-          <button className={`btn btn-sm ${tab === 'done' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab('done')}>Done</button>
+          <div className="seg">
+            <button type="button" className={tab === 'open' ? 'active' : ''} onClick={() => setTab('open')}>To check</button>
+            <button type="button" className={tab === 'names' ? 'active' : ''} onClick={() => setTab('names')}>Waiting for guest names</button>
+            <button type="button" className={tab === 'done' ? 'active' : ''} onClick={() => setTab('done')}>Done</button>
+          </div>
         </div>
       </div>
       {err && <div className="alert alert-error mb-3"><div>{err}</div></div>}
@@ -428,9 +431,9 @@ function BookedView({ nav }) {
         <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Booked on</label>
-            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+            <div className="seg">
               {[['today', 'Today'], ['yesterday', 'Yesterday'], ['week', 'This week'], ['month', 'This month'], ['custom', 'Pick dates']].map(([k, l]) => (
-                <button key={k} className={`btn btn-sm ${pick === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPick(k)}>{l}</button>
+                <button key={k} type="button" className={pick === k ? 'active' : ''} onClick={() => setPick(k)}>{l}</button>
               ))}
             </div>
           </div>
@@ -578,6 +581,7 @@ export default function Reservations() {
     catch { return null; }
   });
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [keyOpen, setKeyOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => new Set());
 
   useEffect(() => { api.get('/api/units').then(r => setUnits(r.data)); }, []);
@@ -811,87 +815,102 @@ export default function Reservations() {
         <div>
           <div className="page-title">Reservations</div>
           <div className="page-subtitle">
-            {view === 'tocheck' ? 'Bookings with points front desk still has to look at'
-              : view === 'booked' ? `${units.length} units · By the day they were booked` : <>{monthName} {year} · {selTypes && view === 'calendar' ? `${visibleUnits.length}/${units.length}` : units.length} units · {view === 'calendar' ? 'Timeline view' : view === 'groups' ? 'Group bookings' : 'List view'}</>}
+            {units.length} rooms{allTypes.length > 1 ? ` · ${allTypes.length} room types` : ''}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Link to="/availability" className="btn btn-secondary">🔎 Check Availability</Link>
-          <Link to="/reservations/new" className="btn btn-primary">+ New Booking</Link>
+        <div>
+          <Link to="/availability" className="btn btn-secondary"><Icon name="search" />Check availability</Link>
+          <Link to="/reservations/new" className="btn btn-primary"><Icon name="plus" />New booking</Link>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-3" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        {view !== 'groups' && view !== 'booked' && view !== 'tocheck' && (
-          <>
-            <button className="btn btn-ghost btn-sm" onClick={prevMonth}>← {new Date(year, month - 2).toLocaleString('en', { month: 'short' })}</button>
-            <button className="btn btn-ghost btn-sm" onClick={nextMonth}>{new Date(year, month).toLocaleString('en', { month: 'short' })} →</button>
-          </>
+      <div className="tab-bar">
+        {[['calendar', 'Calendar'], ['list', 'List'], ['groups', 'Groups'], ['booked', 'Booked on', 'Reservations by the day they were made — e.g. how many we took today']].map(([k, l, hint]) => (
+          <button key={k} type="button" className={`tab-bar-item${view === k ? ' active' : ''}`} onClick={() => setView(k)} title={hint}>{l}</button>
+        ))}
+        {(toCheckCount > 0 || namesWaiting > 0 || view === 'tocheck') && (
+          <button type="button" className={`tab-bar-item${view === 'tocheck' ? ' active' : ''}`} onClick={() => setView('tocheck')}
+            title="Bookings with points to look at (e.g. imported from the old system)">
+            To check{toCheckCount > 0 && <span className="tab-count">{toCheckCount}</span>}
+          </button>
         )}
+      </div>
 
-        {view === 'calendar' && allTypes.length > 1 && (
-          <div style={{ position: 'relative' }}>
-            <button className="btn btn-sm btn-secondary" onClick={() => setTypeMenuOpen(o => !o)}>
-              {selTypes ? `${selTypes.size} type${selTypes.size !== 1 ? 's' : ''}` : 'All types'} ▾
-            </button>
-            {typeMenuOpen && (
-              <>
-                <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setTypeMenuOpen(false)} />
-                <div className="card" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 41, padding: 8, minWidth: 160, boxShadow: 'var(--shadow-md)' }}>
-                  {[...allTypes].sort((a, b) => typeRank(a) - typeRank(b) || a.localeCompare(b)).map(t => (
-                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 13, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={selTypes ? selTypes.has(t) : true} onChange={() => toggleType(t)} />
-                      {t}
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
+      {(view === 'calendar' || view === 'list') && (
+        <div className="page-toolbar">
+          <div className="date-nav">
+            <button type="button" onClick={prevMonth} aria-label="Previous month" title={new Date(year, month - 2).toLocaleString('en', { month: 'long' })}><Icon name="chevronLeft" /></button>
+            <span className="date-nav-label">{monthName} {year}</span>
+            <button type="button" onClick={nextMonth} aria-label="Next month" title={new Date(year, month).toLocaleString('en', { month: 'long' })}><Icon name="chevronRight" /></button>
           </div>
-        )}
+          {(month !== today.getMonth() + 1 || year !== today.getFullYear()) && (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setMonth(today.getMonth() + 1); setYear(today.getFullYear()); }}>Today</button>
+          )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button className={`btn btn-sm ${view === 'calendar' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('calendar')}>Calendar</button>
-          <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('list')}>List</button>
-          <button className={`btn btn-sm ${view === 'groups' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('groups')}>👥 Groups</button>
-          <button className={`btn btn-sm ${view === 'booked' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('booked')}
-            title="Reservations by the day they were made — e.g. how many we took today">🆕 Booked on</button>
-          {(toCheckCount > 0 || namesWaiting > 0 || view === 'tocheck') && (
-            <button className={`btn btn-sm ${view === 'tocheck' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('tocheck')}
-              title="Bookings with points to look at (e.g. imported from the old system)">
-              ⚠ To check{toCheckCount > 0 ? ` (${toCheckCount})` : ''}
-            </button>
+          {view === 'calendar' && allTypes.length > 1 && (
+            <div style={{ position: 'relative' }}>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => setTypeMenuOpen(o => !o)}>
+                {selTypes ? `${selTypes.size} of ${allTypes.length} room types` : 'All room types'}<Icon name="chevronDown" size={14} />
+              </button>
+              {typeMenuOpen && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setTypeMenuOpen(false)} />
+                  <div className="card" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 41, padding: 8, minWidth: 180, boxShadow: 'var(--shadow-md)' }}>
+                    {[...allTypes].sort((a, b) => typeRank(a) - typeRank(b) || a.localeCompare(b)).map(t => (
+                      <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 13, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={selTypes ? selTypes.has(t) : true} onChange={() => toggleType(t)} />
+                        {t}
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {view === 'calendar' && (
+            <div className="page-toolbar-end">
+              <div className="key-hint">
+                {STATUS_LEGEND.slice(0, 4).map(l => (
+                  <span key={l.label}><i className="key-swatch" style={{ background: l.bg }} />{l.label}</span>
+                ))}
+              </div>
+              <div style={{ position: 'relative' }}>
+                <button type="button" className="btn btn-ghost btn-sm" style={{ borderColor: 'transparent' }} onClick={() => setKeyOpen(o => !o)} aria-expanded={keyOpen}>
+                  <Icon name="info" size={15} />Colour key
+                </button>
+                {keyOpen && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setKeyOpen(false)} />
+                    <div className="key-pop">
+                      <h4>Status</h4>
+                      <div className="key-grid">
+                        {STATUS_LEGEND.map(l => (
+                          <span key={l.label}>
+                            <i className="key-swatch" style={{
+                              background: l.diagonal ? 'linear-gradient(135deg, #FED7AA 50%, #F3F4F6 50%)' : l.bg,
+                              border: l.dashed ? '1px dashed #9CA3AF' : undefined,
+                            }} />{l.label}
+                          </span>
+                        ))}
+                      </div>
+                      <h4>Source (dot on the booking)</h4>
+                      <div className="key-grid">
+                        {sources.filter(s => s.is_active).map(s => (
+                          <span key={s.id}><i className="key-dot" style={{ background: s.color || '#9CA3AF' }} />{s.label}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       {view === 'calendar' ? (
         <>
-          {/* Legend */}
-          <div className="flex gap-3 mb-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status:</span>
-            {STATUS_LEGEND.map(l => (
-              <div key={l.label} className="flex gap-2" style={{ alignItems: 'center' }}>
-                <div style={{
-                  width: 14, height: 14, borderRadius: 3,
-                  background: l.diagonal ? 'linear-gradient(135deg, #FED7AA 50%, #F3F4F6 50%)' : l.bg,
-                  border: l.dashed ? '1px dashed #9CA3AF' : '1px solid rgba(0,0,0,0.08)',
-                  flexShrink: 0,
-                }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{l.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-3 mb-3" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Source:</span>
-            {sources.filter(s => s.is_active).map(s => (
-              <div key={s.id} className="flex gap-2" style={{ alignItems: 'center' }}>
-                <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color || '#9CA3AF', border: '1.5px solid rgba(0,0,0,0.12)', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{s.label}</span>
-              </div>
-            ))}
-          </div>
-
           {/* Calendar grid — frozen header row + room-label column */}
           <div className="card mb-3" style={{ padding: 0 }}>
             <div className="cal-scroll" ref={calScrollRef}>

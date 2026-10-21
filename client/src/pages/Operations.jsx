@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 
 const COLS = ['todo', 'in_progress', 'done'];
@@ -44,8 +45,11 @@ export default function Operations() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Operations Board</div>
-        <button className="btn btn-primary" onClick={() => setModal(true)}>+ New Task</button>
+        <div>
+          <div className="page-title">Operations</div>
+          <div className="page-subtitle">Housekeeping, maintenance and guest requests</div>
+        </div>
+        <button className="btn btn-primary" onClick={() => setModal(true)}><Icon name="plus" />New task</button>
       </div>
 
       <div className="kanban">

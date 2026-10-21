@@ -51,7 +51,7 @@ export default function SettingsChannelManager() {
   const linkedTypes = data?.room_types.filter(r => r.link).length || 0;
 
   return (
-    <div className="page-wrap" style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div>
       <div className="page-header">
         <div>
           <div className="page-title">Channel Manager</div>

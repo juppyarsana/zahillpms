@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 
 export default function Loyalty() {
@@ -58,7 +59,7 @@ export default function Loyalty() {
           <div className="page-title">Loyalty Program</div>
           <div className="page-subtitle">Configure tiers — changes apply to all guests instantly</div>
         </div>
-        <button className="btn btn-primary" onClick={openNew}>+ New Tier</button>
+        <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New tier</button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

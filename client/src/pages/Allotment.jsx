@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Icon from '../components/Icon';
 import api from '../services/api';
 
 const CHANNELS = ['direct', 'airbnb', 'booking_com', 'traveloka', 'buffer'];
@@ -89,11 +90,16 @@ export default function Allotment() {
           <div className="page-title">Room Allotment</div>
           <div className="page-subtitle">Manage channel distribution across your {units.length} units</div>
         </div>
-        <div className="flex gap-2" style={{ alignItems: 'center' }}>
-          <button className="btn btn-icon" onClick={() => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); }}>‹</button>
-          <span style={{ fontWeight: 700 }}>{monthName} {year}</span>
-          <button className="btn btn-icon" onClick={() => { if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1); }}>›</button>
+        <div>
           {dirty && <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>}
+        </div>
+      </div>
+
+      <div className="page-toolbar">
+        <div className="date-nav">
+          <button type="button" aria-label="Previous month" onClick={() => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); }}><Icon name="chevronLeft" /></button>
+          <span className="date-nav-label">{monthName} {year}</span>
+          <button type="button" aria-label="Next month" onClick={() => { if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1); }}><Icon name="chevronRight" /></button>
         </div>
       </div>
 
