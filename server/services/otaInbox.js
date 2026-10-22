@@ -4,11 +4,12 @@
 // and the 🌐 OTA bookings page. The rows are channel_revisions
 // (channelBookings.js); this only reads them and marks them seen / handled.
 const db = require('../db');
+const { OTA_LABEL_SQL } = require('./channelBookings');
 
 const SHOWN = "('applied', 'attention', 'error')";
 
 const COLS = `
-  r.id, r.revision_status, r.result, r.ota_name, r.ota_code, r.guest_name, r.message, r.received_at,
+  r.id, r.revision_status, r.result, ${OTA_LABEL_SQL} AS ota_name, r.ota_code, r.guest_name, r.message, r.received_at,
   to_char(r.arrival, 'YYYY-MM-DD') AS arrival, to_char(r.departure, 'YYYY-MM-DD') AS departure,
   r.seen_at, su.name AS seen_by_name, r.handled_at, hu.name AS handled_by_name,
   r.booking_ids[1] AS booking_id, cb.reservation_group_id AS group_id,

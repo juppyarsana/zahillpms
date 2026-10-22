@@ -168,6 +168,22 @@ async function sourceFor(client, propertyId, ota) {
   return id;
 }
 
+// The OTA as the hotel names it: the label of its booking source (Channex
+// sends e.g. "BookingCom" for the source "Booking.com"). Used for every text
+// the PMS writes — notes, To check, alerts, the OTA bookings list.
+async function otaLabel(propertyId, ota) {
+  const n = norm(ota);
+  if (!n) return ota;
+  const { rows } = await db.query('SELECT id, label FROM booking_sources WHERE property_id = $1', [propertyId]);
+  const hit = rows.find(s => norm(s.id) === n || norm(s.label) === n || s.id === SOURCE_ALIAS[n]);
+  return hit?.label || ota;
+}
+// Same for rows saved before (r = channel_revisions alias).
+const OTA_LABEL_SQL = `COALESCE((SELECT bs.label FROM booking_sources bs
+   WHERE bs.property_id = r.property_id
+     AND regexp_replace(lower(bs.label), '[^a-z0-9]', '', 'g') = regexp_replace(lower(r.ota_name), '[^a-z0-9]', '', 'g')
+   LIMIT 1), r.ota_name)`;
+
 async function note(client, bookingId, text) {
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)', [bookingId, text.slice(0, 1000)]);
 }
@@ -591,6 +607,7 @@ async function saveRevisionRow(client, propertyId, r, raw, out) {
 // Returns true when the revision is done (saved and confirmed).
 async function handleRevision(propertyId, raw) {
   const r = parseRevision(raw);
+  r.ota = await otaLabel(propertyId, r.ota);
   const { rows: [seen] } = await db.query(
     'SELECT result, acked_at FROM channel_revisions WHERE property_id = $1 AND provider = $2 AND external_revision_id = $3', [propertyId, PROVIDER, r.revisionId]);
   if (seen && seen.result !== 'error') {
@@ -781,7 +798,7 @@ function start() {
 
 // For the Channel Manager page: open items first, then the latest.
 async function list(propertyId, { limit = 30 } = {}) {
-  const cols = `r.id, r.revision_status, r.ota_name, r.ota_code, r.guest_name, to_char(r.arrival, 'YYYY-MM-DD') AS arrival,
+  const cols = `r.id, r.revision_status, ${OTA_LABEL_SQL} AS ota_name, r.ota_code, r.guest_name, to_char(r.arrival, 'YYYY-MM-DD') AS arrival,
                 to_char(r.departure, 'YYYY-MM-DD') AS departure, r.result, r.message, r.booking_ids, r.tries,
                 r.received_at, r.processed_at, r.acked_at, r.handled_at, hu.name AS handled_by_name`;
   const [{ rows: open }, { rows: recent }, { rows: [st] }] = await Promise.all([
@@ -806,4 +823,4 @@ async function markHandled(propertyId, id, userId) {
   return row;
 }
 
-module.exports = { parseRevision, handleRevision, pullProperty, pullAll, handleWebhook, tick, start, list, markHandled };
+module.exports = { OTA_LABEL_SQL, parseRevision, handleRevision, pullProperty, pullAll, handleWebhook, tick, start, list, markHandled };
