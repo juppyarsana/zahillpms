@@ -15,8 +15,11 @@ Jangan pernah mencatat tagihan yang sama di dua tempat.
 2. Pilih **Supplier** (atau **+ New supplier…** di bawah daftar).
 3. **Their invoice number** = nomor invoice seperti tertulis di tagihan.
 4. **Bill date** = tanggal di tagihan. **Due date** terisi sendiri dari tempo supplier (boleh diubah).
-5. Satu baris per jenis biaya: **Account** (mis. *5220 F&B — cost of food*, *6220 Laundry cost*), keterangan, **jumlah**. Termasuk pajak, sesuai tagihan. Diskon di tagihan = baris dengan jumlah minus.
-6. **Save bill**.
+5. **What it is for** (Food, Drinks, Laundry, Utilities, Maintenance…) — daftar yang sama dengan Expenses. Terisi sendiri kalau supplier sudah punya kategori biasanya.
+6. **Amount** = total di tagihan, termasuk pajak.
+7. **Save bill**.
+
+Tagihan campuran (mis. nota pasar berisi makanan dan sabun): pilih yang paling besar, atau catat sebagai dua tagihan.
 
 PMS memberi peringatan kalau nomor invoice yang sama dari supplier itu sudah pernah dicatat.
 
@@ -24,7 +27,7 @@ PMS memberi peringatan kalau nomor invoice yang sama dari supplier itu sudah per
 
 ## Dari purchase order
 
-Di purchase order yang sudah diterima (**Operations → Purchasing & Stock → Purchase Orders**) tekan **Make bill**. Supplier dan baris terisi dari barang yang sudah diterima dan belum ditagihkan. Isi nomor invoice, perbaiki harga kalau tagihan berbeda, lalu simpan.
+Di purchase order yang sudah diterima (**Operations → Purchasing & Stock → Purchase Orders**) tekan **Make bill**. Supplier dan jumlah terisi dari barang yang sudah diterima dan belum ditagihkan (daftar barang masuk ke catatan). Isi nomor invoice, perbaiki jumlah kalau tagihan berbeda, lalu simpan.
 
 ## Membayar supplier
 
@@ -36,7 +39,7 @@ Di purchase order yang sudah diterima (**Operations → Purchasing & Stock → P
 
 ## Melihat hutang
 
-- Tab **Suppliers**: per supplier berapa hutangnya, yang belum jatuh tempo, terlambat 1–30 / 31–60 / lebih dari 60 hari, dan jatuh tempo berikutnya. **Edit** untuk mengatur tempo (hari) dan akun biasa supplier itu.
+- Tab **Suppliers**: per supplier berapa hutangnya, yang belum jatuh tempo, terlambat 1–30 / 31–60 / lebih dari 60 hari, dan jatuh tempo berikutnya. **Edit** untuk mengatur tempo (hari) dan kategori biasa supplier itu.
 - Tab **Bills**: Not paid / Overdue / Paid / Voided / All, per supplier, cari nomor bill atau nomor invoice. Klik tagihan untuk melihat baris dan pembayarannya.
 - Tab **Payments**: semua pembayaran dan tagihan yang dibayarnya.
 
@@ -50,6 +53,6 @@ Tidak ada yang dihapus: tagihan dan pembayaran yang di-void tetap tampil dengan 
 
 ## Di pembukuan
 
-- Tagihan: biaya masuk ke akunnya pada **bill date** (di Laba Rugi bulan itu), hutang di **2150 Accounts payable — suppliers**.
+- Tagihan: biaya tercatat pada **bill date** (di Laba Rugi dan Reports → Costs bulan itu), hutang di **2150 Accounts payable — suppliers**. Akun tiap kategori diatur sekali di **Accounting → Accounts** (sama seperti Expenses).
 - Pembayaran: 2150 berkurang, uang keluar dari kas / bank pada **date paid**.
 - Akun 2150 di neraca = total hutang di tab Suppliers.

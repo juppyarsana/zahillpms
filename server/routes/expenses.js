@@ -9,7 +9,7 @@ const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 // Owner or the accountant (the `accounting` permission) — Finance → Expenses.
 const ownerOnly = [auth, requireOwnerOrMenu('expenses')];
 
-const CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
+const { CATEGORY_KEYS: CATEGORIES } = require('../services/costCategories');
 
 // Builds the WHERE clause + params shared by GET / and GET /export —
 // month/year default to the current month, matching Reports.jsx's convention

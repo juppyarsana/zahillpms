@@ -22,10 +22,7 @@ const EXTRA_CATEGORIES = {
   service: 'Services', merchandise: 'Merchandise', minibar: 'Minibar', other: 'Other',
 };
 
-const EXPENSE_CATEGORIES = {
-  utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
-  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', ota_commission: 'OTA Commission', other: 'Other',
-};
+const { CATEGORY_LABEL: EXPENSE_CATEGORIES, COSTS_SQL } = require('./costCategories');   // shared with Payables
 
 const r2 = n => round2(parseFloat(n) || 0);
 
@@ -159,11 +156,11 @@ async function buildFullReport(propertyId, from, to) {
              COALESCE(SUM(COALESCE(b.room_revenue + b.fnb_revenue, b.total_amount - COALESCE(b.discount_amount, 0))), 0) AS value
       FROM bookings b WHERE b.property_id = $3 AND b.status = 'no_show'
         AND b.check_in_date BETWEEN $1::date AND $2::date`, P),
-    // Costs by expense category (same rule as the Expenses total).
+    // Costs by category: Expenses + supplier bills (same rule as getReport's expenses_total).
     db.query(`
       SELECT category, COUNT(*) AS entries, SUM(amount) AS amount
-      FROM expenses WHERE property_id = $3 AND is_voided = false
-        AND incurred_on BETWEEN $1::date AND $2::date
+      FROM ${COSTS_SQL} c WHERE property_id = $3
+        AND day BETWEEN $1::date AND $2::date
       GROUP BY category`, P),
   ]);
 

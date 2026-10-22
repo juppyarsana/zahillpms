@@ -16,8 +16,8 @@
 //                Cr Guest ledger;  agent_paid: Dr Cash · Cr Agent receivable
 //   commission   Dr Commission cost · Cr Commission payable
 //   expenses     Back Office expenses: Dr Expense · Cr Cash / Bank
-//   bills        supplier bills (Payables, migration 129) on the bill date:
-//                Dr each line's account · Cr Accounts payable — suppliers
+//   bills        supplier bills (Payables, migrations 129–130) on the bill date:
+//                Dr the category's cost (same keys as Expenses) · Cr Accounts payable — suppliers
 //   bill_paid    payments to suppliers: Dr Accounts payable · Cr Cash / Bank
 //
 // Service charge + tax on a stay are the folio's own figures: worked out on
@@ -248,10 +248,10 @@ async function collectPosts(propertyId, from, to) {
       FROM expenses e
       WHERE e.property_id = $3 AND e.is_voided = false AND e.incurred_on BETWEEN $1::date AND $2::date`, P),
     db.query(`
-      SELECT ${ymd('b.bill_date')} AS day, b.bill_no, b.supplier_ref, s.name AS supplier, l.account_id, l.amount, l.description
-      FROM supplier_bills b JOIN supplier_bill_lines l ON l.bill_id = b.id JOIN suppliers s ON s.id = b.supplier_id
+      SELECT ${ymd('b.bill_date')} AS day, b.bill_no, b.supplier_ref, s.name AS supplier, b.category, b.total, b.notes
+      FROM supplier_bills b JOIN suppliers s ON s.id = b.supplier_id
       WHERE b.property_id = $3 AND b.is_voided = false AND b.bill_date BETWEEN $1::date AND $2::date
-      ORDER BY b.bill_no, l.line_no`, P),
+      ORDER BY b.bill_no`, P),
     db.query(`
       SELECT ${ymd('p.paid_on')} AS day, p.amount, p.method, p.reference, s.name AS supplier
       FROM supplier_payments p JOIN suppliers s ON s.id = p.supplier_id
@@ -458,11 +458,11 @@ async function collectPosts(propertyId, from, to) {
   }
 
   // ── Payables (migration 129): bills on the bill date, payments on the day paid ──
-  for (const l of billLines) {
-    const ref = `BILL-${String(l.bill_no).padStart(4, '0')}`;
-    const memo = [l.supplier, l.supplier_ref, l.description].filter(Boolean).join(' · ');
-    post(l.day, 'bills', `acct.${l.account_id}`, num(l.amount), ref, memo);
-    post(l.day, 'bills', 'payables.supplier', -num(l.amount), ref, memo);
+  for (const b of billLines) {
+    const ref = `BILL-${String(b.bill_no).padStart(4, '0')}`;
+    const memo = [b.supplier, b.supplier_ref].filter(Boolean).join(' · ');
+    post(b.day, 'bills', `expense.${b.category}`, num(b.total), ref, memo);
+    post(b.day, 'bills', 'payables.supplier', -num(b.total), ref, memo);
   }
   for (const p of billPayments) {
     const memo = [p.supplier, p.reference].filter(Boolean).join(' · ');

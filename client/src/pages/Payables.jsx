@@ -13,20 +13,14 @@ const idr = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const STATUS = { open: ['Not paid', 'amber'], part_paid: ['Part paid', 'blue'], paid: ['Paid', 'green'], voided: ['Voided', 'gray'] };
-const TYPE_LABEL = { expense: 'Costs', asset: 'Assets (stock, prepaid, equipment)', liability: 'Liabilities', equity: 'Equity', revenue: 'Revenue' };
 const errText = err => err.response?.data?.error || err.message || 'Something went wrong';
 
-function AccountSelect({ accounts, value, onChange }) {
-  const groups = ['expense', 'asset', 'liability', 'equity', 'revenue']
-    .map(t => [t, accounts.filter(a => a.type === t)]).filter(([, l]) => l.length);
+// What a bill is for: the cost categories shared with Expenses.
+function CategorySelect({ categories, value, onChange, empty = 'Choose…' }) {
   return (
     <select className="form-select" value={value || ''} onChange={e => onChange(e.target.value)}>
-      <option value="">Choose an account…</option>
-      {groups.map(([t, list]) => (
-        <optgroup key={t} label={TYPE_LABEL[t]}>
-          {list.map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-        </optgroup>
-      ))}
+      <option value="">{empty}</option>
+      {categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
     </select>
   );
 }
@@ -67,10 +61,10 @@ export default function Payables() {
     if (!po || !setup) return;
     api.get(`/api/payables/from-po/${po}`).then(r => {
       const d = r.data;
-      if (!d.lines.length) { setError(`Everything received on ${d.purchase_order.po_number} is already on a bill.`); return; }
+      if (!(d.amount > 0)) { setError(`Everything received on ${d.purchase_order.po_number} is already on a bill.`); return; }
       setBillForm({ prefill: {
         supplier_id: d.supplier.id, purchase_order_id: d.purchase_order.id, po_number: d.purchase_order.po_number,
-        lines: d.lines.map(l => ({ account_id: d.supplier.default_account_id || '', description: l.description, amount: String(l.amount), po_item_id: l.po_item_id })),
+        category: d.supplier.default_category || '', amount: String(d.amount), notes: `${d.purchase_order.po_number}: ${d.items}`,
       } });
     }).catch(e => setError(errText(e)));
     params.delete('from_po'); setParams(params, { replace: true });
@@ -134,13 +128,14 @@ export default function Payables() {
           <div className="card">
             <div className="table-wrap">
               <table style={{ minWidth: 820 }}>
-                <thead><tr><th>Bill</th><th>Supplier</th><th>Their invoice</th><th>Bill date</th><th>Due</th>
+                <thead><tr><th>Bill</th><th>Supplier</th><th>For</th><th>Their invoice</th><th>Bill date</th><th>Due</th>
                   <th style={{ textAlign: 'right' }}>Total</th><th style={{ textAlign: 'right' }}>Still owed</th><th>Status</th></tr></thead>
                 <tbody>
                   {bills.map(b => (
                     <tr key={b.id} style={{ cursor: 'pointer', opacity: b.is_voided ? 0.6 : 1 }} onClick={() => setViewing(b.id)}>
                       <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{b.bill_no_text}</td>
                       <td>{b.supplier_name}{b.po_number && <div className="text-muted" style={{ fontSize: 12 }}>{b.po_number}</div>}</td>
+                      <td>{b.category_label}</td>
                       <td>{b.supplier_ref || <span className="text-muted">—</span>}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.bill_date)}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.due_date)}
@@ -150,7 +145,7 @@ export default function Payables() {
                       <td><span className={`badge badge-${STATUS[b.status][1]}`}>{STATUS[b.status][0]}</span></td>
                     </tr>
                   ))}
-                  {!bills.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No bills here</td></tr>}
+                  {!bills.length && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No bills here</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -227,7 +222,7 @@ function SuppliersTab({ summary, setup, onOpen, onPay, onEdit, onAdd }) {
   const owing = new Map(summary.suppliers.map(s => [s.supplier_id, s]));
   const rows = [...summary.suppliers, ...setup.suppliers.filter(s => !owing.has(s.id) && s.is_active)
     .map(s => ({ supplier_id: s.id, supplier_name: s.name, owed: 0 }))];
-  const acct = id => setup.accounts.find(a => a.id === id);
+  const catLabel = k => setup.categories.find(c => c.key === k)?.label;
   const cell = (v, red) => v > 0 ? <span style={{ color: red ? '#DC2626' : undefined }}>{idr(v)}</span> : <span className="text-muted">—</span>;
   return (
     <div className="card">
@@ -243,12 +238,11 @@ function SuppliersTab({ summary, setup, onOpen, onPay, onEdit, onAdd }) {
           <tbody>
             {rows.map(s => {
               const sup = setup.suppliers.find(x => x.id === s.supplier_id) || {};
-              const a = acct(sup.default_account_id);
               return (
                 <tr key={s.supplier_id}>
                   <td><a href="#" onClick={e => { e.preventDefault(); onOpen(s.supplier_id); }} style={{ fontWeight: 600 }}>{s.supplier_name}</a>
                     <div className="text-muted" style={{ fontSize: 12 }}>
-                      {sup.payment_terms_days != null ? `Pays in ${sup.payment_terms_days} days` : 'No payment terms'}{a ? ` · ${a.code} ${a.name}` : ''}</div></td>
+                      {sup.payment_terms_days != null ? `Pays in ${sup.payment_terms_days} days` : 'No payment terms'}{sup.default_category ? ` · ${catLabel(sup.default_category)}` : ''}</div></td>
                   <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{cell(s.owed)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{cell(s.not_due)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{cell(s.d1_30, true)}</td>
@@ -278,7 +272,7 @@ function SuppliersTab({ summary, setup, onOpen, onPay, onEdit, onAdd }) {
 
 function SupplierModal({ setup, supplier, onClose, onSaved }) {
   const isNew = !supplier.id;
-  const [f, setF] = useState({ name: supplier.name || '', payment_terms_days: supplier.payment_terms_days ?? '', default_account_id: supplier.default_account_id || '' });
+  const [f, setF] = useState({ name: supplier.name || '', payment_terms_days: supplier.payment_terms_days ?? '', default_category: supplier.default_category || '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   async function save() {
@@ -302,9 +296,9 @@ function SupplierModal({ setup, supplier, onClose, onSaved }) {
             <input className="form-input" type="number" min="0" value={f.payment_terms_days} placeholder="e.g. 14 — empty = due the day it arrives"
               onChange={e => setF({ ...f, payment_terms_days: e.target.value })} />
             <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>A new bill's due date = bill date + these days.</div></div>
-          <div className="form-group"><label className="form-label">Usual account</label>
-            <AccountSelect accounts={setup.accounts} value={f.default_account_id} onChange={v => setF({ ...f, default_account_id: v })} />
-            <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>New bill lines from this supplier start on it (e.g. 5220 F&amp;B — cost of food).</div></div>
+          <div className="form-group"><label className="form-label">Usually bills for</label>
+            <CategorySelect categories={setup.categories} value={f.default_category} empty="—" onChange={v => setF({ ...f, default_category: v })} />
+            <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>A new bill from this supplier starts on it (e.g. Food for a vegetable seller).</div></div>
           {!isNew && <div className="text-muted" style={{ fontSize: 12 }}>Name, contact and address: Operations → Purchasing &amp; Stock → Suppliers.</div>}
         </div>
         <div className="modal-footer">
@@ -321,12 +315,10 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
   const [suppliers, setSuppliers] = useState(setup.suppliers);
   const [f, setF] = useState(() => bill ? {
     supplier_id: bill.supplier_id, supplier_ref: bill.supplier_ref || '', bill_date: bill.bill_date, due_date: bill.due_date,
-    notes: bill.notes || '', purchase_order_id: bill.purchase_order_id || null,
-    lines: bill.lines.map(l => ({ account_id: l.account_id, description: l.description || '', amount: String(l.amount), po_item_id: l.po_item_id })),
+    notes: bill.notes || '', purchase_order_id: bill.purchase_order_id || null, category: bill.category, amount: String(bill.total),
   } : {
-    supplier_id: p.supplier_id || '', supplier_ref: '', bill_date: setup.today, due_date: '', notes: '',
-    purchase_order_id: p.purchase_order_id || null,
-    lines: p.lines || [{ account_id: '', description: '', amount: '' }],
+    supplier_id: p.supplier_id || '', supplier_ref: '', bill_date: setup.today, due_date: '', notes: p.notes || '',
+    purchase_order_id: p.purchase_order_id || null, category: p.category || '', amount: p.amount || '',
   });
   const [dueTouched, setDueTouched] = useState(!!bill);
   const [newSupplier, setNewSupplier] = useState(null);
@@ -343,8 +335,7 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
 
   function pickSupplier(id) {
     const s = suppliers.find(x => x.id === id);
-    setF(x => ({ ...x, supplier_id: id,
-      lines: x.lines.map(l => l.account_id || !s?.default_account_id ? l : { ...l, account_id: s.default_account_id }) }));
+    setF(x => ({ ...x, supplier_id: id, category: x.category || s?.default_category || '' }));
   }
   async function addSupplier() {
     try {
@@ -354,13 +345,11 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
       setNewSupplier(null); onSupplierAdded();
     } catch (e) { setErr(errText(e)); }
   }
-  const setLine = (i, k, v) => setF(x => ({ ...x, lines: x.lines.map((l, j) => j === i ? { ...l, [k]: v } : l) }));
-  const total = f.lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
+  const total = parseFloat(f.amount) || 0;
 
   async function save(confirmDuplicate = false) {
     setBusy(true); setErr('');
-    const body = { ...f, confirm_duplicate: confirmDuplicate,
-      lines: f.lines.filter(l => l.amount !== '' || l.account_id).map(l => ({ ...l, amount: parseFloat(l.amount) })) };
+    const body = { ...f, amount: total, confirm_duplicate: confirmDuplicate };
     try {
       const { data } = bill ? await api.put(`/api/payables/bills/${bill.id}`, body) : await api.post('/api/payables/bills', body);
       onSaved(data.bill);
@@ -373,10 +362,10 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 760, width: '100%' }}>
+      <div className="modal" style={{ maxWidth: 640, width: '100%' }}>
         <div className="modal-header">
           <div><div className="modal-title">{bill ? `Edit ${bill.bill_no_text}` : 'New supplier bill'}</div>
-            {p.po_number && <div className="text-muted" style={{ fontSize: 12 }}>From {p.po_number} — what was received and isn't on a bill yet</div>}</div>
+            {p.po_number && <div className="text-muted" style={{ fontSize: 12 }}>From {p.po_number} — the amount is what was received and isn't on a bill yet; change it if the bill differs</div>}</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -410,29 +399,13 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
                 {sup.payment_terms_days != null ? `${sup.name} is paid ${sup.payment_terms_days} days after the bill` : 'No payment terms set for this supplier'}</div>}</div>
           </div>
 
-          <label className="form-label">What the bill is for</label>
-          <div className="table-wrap">
-            <table style={{ minWidth: 600 }}>
-              <thead><tr><th style={{ width: '38%' }}>Account</th><th>Description</th><th style={{ width: 150, textAlign: 'right' }}>Amount (IDR)</th><th></th></tr></thead>
-              <tbody>
-                {f.lines.map((l, i) => (
-                  <tr key={i}>
-                    <td><AccountSelect accounts={setup.accounts} value={l.account_id} onChange={v => setLine(i, 'account_id', v)} /></td>
-                    <td><input className="form-input" value={l.description} onChange={e => setLine(i, 'description', e.target.value)} /></td>
-                    <td><input className="form-input" type="number" style={{ textAlign: 'right' }} value={l.amount} onChange={e => setLine(i, 'amount', e.target.value)} /></td>
-                    <td>{f.lines.length > 1 && <button className="btn btn-icon" onClick={() => setF(x => ({ ...x, lines: x.lines.filter((_, j) => j !== i) }))}>✕</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">What it is for *</label>
+              <CategorySelect categories={setup.categories} value={f.category} onChange={v => setF({ ...f, category: v })} /></div>
+            <div className="form-group"><label className="form-label">Amount (IDR) *</label>
+              <input className="form-input" type="number" style={{ textAlign: 'right' }} value={f.amount} placeholder="total on the bill, tax included"
+                onChange={e => setF({ ...f, amount: e.target.value })} /></div>
           </div>
-          <div className="flex" style={{ justifyContent: 'space-between', alignItems: 'center', margin: '8px 0 12px' }}>
-            <button className="btn btn-sm btn-secondary" onClick={() => setF(x => ({ ...x, lines: [...x.lines, { account_id: sup?.default_account_id || '', description: '', amount: '' }] }))}>
-              <Icon name="plus" />Add line</button>
-            <div style={{ fontWeight: 700 }}>Total {idr(total)}</div>
-          </div>
-          <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-            Enter the bill as printed, tax included. A discount on the bill = a line with a minus amount.</div>
           <div className="form-group"><label className="form-label">Notes</label>
             <textarea className="form-textarea" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="optional" /></div>
           {dupWarn && (
@@ -444,7 +417,7 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !(total > 0)}>
+          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !f.category || !(total > 0)}>
             {busy ? 'Saving…' : bill ? 'Save changes' : `Save bill · ${idr(total)}`}</button>
         </div>
       </div>
@@ -478,11 +451,7 @@ function BillDetailModal({ id, onClose, onEdit, onPay, onChanged }) {
                 <span>· Due <b>{fmtDate(b.due_date)}</b>{b.days_overdue > 0 && <span style={{ color: '#DC2626' }}> ({b.days_overdue} days overdue)</span>}</span>
                 {b.po_number && <span>· {b.po_number}</span>}
               </div>
-              <table style={{ width: '100%', fontSize: 13, marginBottom: 8 }}>
-                <thead><tr><th style={{ textAlign: 'left' }}>Account</th><th style={{ textAlign: 'left' }}>Description</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
-                <tbody>{b.lines.map(l => (
-                  <tr key={l.id}><td>{l.account_code} · {l.account_name}</td><td>{l.description || '—'}</td><td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{idr(l.amount)}</td></tr>))}</tbody>
-              </table>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>For: <b>{b.category_label}</b></div>
               <div style={{ textAlign: 'right', fontSize: 14 }}>
                 <div>Total <b>{idr(b.total)}</b></div>
                 {!b.is_voided && <><div>Paid {idr(b.paid)}</div><div style={{ fontWeight: 700, fontSize: 16 }}>Still owed {idr(b.balance)}</div></>}

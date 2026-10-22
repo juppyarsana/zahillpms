@@ -33,11 +33,14 @@ async function downloadCsv(url, filename) {
   window.URL.revokeObjectURL(blobUrl);
 }
 
+// Same list as server/services/costCategories.js (shared with Payables).
 const EXPENSE_CATEGORY_LABELS = {
-  utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
-  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', ota_commission: 'OTA Commission', other: 'Other',
+  food: 'Food', drinks: 'Drinks', guest_supplies: 'Guest supplies & amenities',
+  laundry: 'Laundry', utilities: 'Utilities', maintenance: 'Maintenance & repairs', supplies: 'Supplies',
+  marketing: 'Marketing', staff: 'Staff', admin_fees: 'Admin & Bank Fees', ota_commission: 'OTA Commission', other: 'Other',
 };
 const EXPENSE_CATEGORY_COLORS = {
+  food: 'green', drinks: 'blue', guest_supplies: 'purple',
   utilities: 'blue', laundry: 'purple', maintenance: 'orange', staff: 'pink',
   supplies: 'amber', marketing: 'green', admin_fees: 'gray', ota_commission: 'blue', other: 'gray',
 };

@@ -3,6 +3,7 @@
 // loadMapping() for the account behind a key such as 'revenue.room'.
 const db = require('../db');
 const { PL_LINES, plLineFor } = require('./plLayout');
+const { COST_CATEGORIES, CATEGORY_KEYS } = require('./costCategories');
 
 const TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 
@@ -94,18 +95,11 @@ const MAP_KEYS = [
   ['commission.ota', 'Commission kept back by OTAs / agents from their payouts', 'Guests & agents', '5120'],
   ['pos.takings', 'Restaurant bills paid at the restaurant (from the POS sessions)', 'Money received', '1160'],
   ['payables.supplier', 'Supplier bills not paid yet (Payables)', 'Suppliers', '2150'],
-  ['expense.utilities', 'Utilities', 'Expenses', '6210'],
-  ['expense.laundry', 'Laundry', 'Expenses', '6220'],
-  ['expense.maintenance', 'Maintenance', 'Expenses', '6230'],
-  ['expense.staff', 'Staff', 'Expenses', '6240'],
-  ['expense.supplies', 'Supplies', 'Expenses', '6250'],
-  ['expense.marketing', 'Marketing', 'Expenses', '6260'],
-  ['expense.admin_fees', 'Admin & bank fees', 'Expenses', '6270'],
-  ['expense.ota_commission', 'OTA commission (bills for bookings paid at the hotel)', 'Expenses', '5120'],
-  ['expense.other', 'Other', 'Expenses', '6290'],
+  // one key per cost category, used by Expenses and Payables (costCategories.js)
+  ...COST_CATEGORIES.map(([k, label, code]) => [`expense.${k}`, label, 'Expenses & supplier bills', code]),
 ];
 const EXTRA_CATEGORIES = ['room_addon', 'transport', 'laundry', 'service', 'merchandise', 'minibar', 'other'];
-const EXPENSE_CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
+const EXPENSE_CATEGORIES = CATEGORY_KEYS;
 
 // A payment method's starting account, guessed from its id / label — so a
 // method added later in Settings works without visiting the mapping screen.

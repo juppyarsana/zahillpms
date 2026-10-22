@@ -15,8 +15,11 @@ Never record the same bill in both places.
 2. Choose the **Supplier** (or **+ New supplier…** at the bottom of the list).
 3. **Their invoice number**, as printed on the bill.
 4. **Bill date** = the date on the bill. The **Due date** fills itself in from the supplier's payment terms (you can change it).
-5. One line per kind of cost: the **Account** (e.g. *5220 F&B — cost of food*, *6220 Laundry cost*), a description, the **amount**. Tax included, as printed. A discount on the bill = a line with a minus amount.
-6. **Save bill**.
+5. **What it is for** (Food, Drinks, Laundry, Utilities, Maintenance…) — the same list as Expenses. It fills itself in when the supplier has a usual category.
+6. **Amount** = the total on the bill, tax included.
+7. **Save bill**.
+
+A bill that mixes things (e.g. a market bill with food and soap): choose what most of it is, or record it as two bills.
 
 The PMS warns you when the same invoice number of that supplier is already recorded.
 
@@ -24,7 +27,7 @@ The PMS warns you when the same invoice number of that supplier is already recor
 
 ## From a purchase order
 
-On a received purchase order (**Operations → Purchasing & Stock → Purchase Orders**) press **Make bill**. Supplier and lines are filled from what was received and not billed yet. Add the invoice number and correct the prices if the bill differs, then save.
+On a received purchase order (**Operations → Purchasing & Stock → Purchase Orders**) press **Make bill**. The supplier and the amount are filled from what was received and not billed yet (the items go in the notes). Add the invoice number, correct the amount if the bill differs, then save.
 
 ## Pay a supplier
 
@@ -36,7 +39,7 @@ On a received purchase order (**Operations → Purchasing & Stock → Purchase O
 
 ## See what is owed
 
-- **Suppliers** tab: per supplier what is owed, not due yet, 1–30 / 31–60 / over 60 days late, and the next due date. **Edit** sets the supplier's payment terms (days) and usual account.
+- **Suppliers** tab: per supplier what is owed, not due yet, 1–30 / 31–60 / over 60 days late, and the next due date. **Edit** sets the supplier's payment terms (days) and what it usually bills for.
 - **Bills** tab: Not paid / Overdue / Paid / Voided / All, by supplier, search by bill number or invoice number. Click a bill to see its lines and payments.
 - **Payments** tab: every payment and the bills it paid.
 
@@ -50,6 +53,6 @@ Nothing is deleted: voided bills and payments stay listed with who voided them a
 
 ## In the books
 
-- A bill: the cost on its account on the **bill date** (on the Profit & Loss that month), owed under **2150 Accounts payable — suppliers**.
+- A bill: the cost on the **bill date** (on the Profit & Loss and on Reports → Costs that month), owed under **2150 Accounts payable — suppliers**. Which account each category goes to is set once in **Accounting → Accounts** (the same as Expenses).
 - A payment: 2150 goes down, the money leaves cash / bank on the **date paid**.
 - The balance sheet's 2150 = what the Suppliers tab shows as owed.

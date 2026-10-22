@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const { round2 } = require('../services/folioService');
 const { roomRevPerNightSql } = require('../services/nightRates');
+const { COSTS_SQL } = require('../services/costCategories');
 const auth = require('../middleware/auth');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
@@ -237,9 +238,9 @@ async function getReport(propertyId, from, to) {
   `, [from, to, propertyId]);
   const eventsQ = db.query(EVENT_SQL, [from, to, propertyId]);
   const expensesDailyQ = db.query(`
-    SELECT incurred_on AS date, COALESCE(SUM(amount), 0) AS amount
-    FROM expenses
-    WHERE property_id = $3 AND is_voided = false AND incurred_on BETWEEN $1::date AND $2::date
+    SELECT day AS date, COALESCE(SUM(amount), 0) AS amount
+    FROM ${COSTS_SQL} c
+    WHERE property_id = $3 AND day BETWEEN $1::date AND $2::date
     GROUP BY 1
   `, [from, to, propertyId]);
 
@@ -258,7 +259,7 @@ async function getReport(propertyId, from, to) {
     GROUP BY COALESCE(bs.label, nights.source, 'Unspecified')
   `, [from, to, propertyId]);
 
-  // Expenses (Back Office Slice B) aren't night-based — recognized on the
+  // Expenses + supplier bills (Payables, on the bill date — costCategories.COSTS_SQL) aren't night-based — recognized on the
   // date incurred, same as ancillary/sales revenue above. Safe to query
   // regardless of whether the property has back_office enabled: an
   // unused table just returns 0, so Net Income quietly degrades to
@@ -266,9 +267,8 @@ async function getReport(propertyId, from, to) {
   // Expenses at all.
   const expensesQ = db.query(`
     SELECT COALESCE(SUM(amount), 0) as total
-    FROM expenses
-    WHERE property_id = $3 AND is_voided = false
-      AND incurred_on BETWEEN $1::date AND $2::date
+    FROM ${COSTS_SQL} c
+    WHERE property_id = $3 AND day BETWEEN $1::date AND $2::date
   `, [from, to, propertyId]);
 
   const [{ rows: [room] }, { rows: [ancillary] }, { rows: daily }, { rows: bySource }, { rows: [expenses] }, { rows: [addon] }, { rows: [activity] }] =
