@@ -11,11 +11,11 @@ const { sendControlAlert } = require('../services/ownerAlerts');
 // auth + moduleGuard('financial') in server/index.js. The owner, or the
 // accountant (the `accounting` permission) who records the agents' and OTAs'
 // payouts (migration 126).
-const ownerOnly = [auth, requireOwnerOrMenu('accounting')];
+const ownerOnly = [auth, requireOwnerOrMenu('receivables')];
 // Front desk with the `ota_payouts` permission (migration 126): the OTAs'
 // accounts only — see them and record the weekly withdrawal. Voids, invoices,
 // commissions and every other agent stay with the owner / accounting.
-const fullAccess = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('accounting');
+const fullAccess = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('receivables');
 const otaAccess = [auth, (req, res, next) => (fullAccess(req) || (req.user?.allowed_menus || []).includes('ota_payouts')
   ? next() : res.status(403).json({ error: 'Forbidden' }))];
 async function agentAllowed(req, agentId) {

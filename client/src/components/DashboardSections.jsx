@@ -167,7 +167,7 @@ function MonthChart({ daily, todayYmd }) {
   );
 }
 
-export function MonthSection({ isOwner }) {
+export function MonthSection({ showReportLink }) {
   const [m, setM] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -187,7 +187,7 @@ export function MonthSection({ isOwner }) {
   return (
     <div style={{ marginTop: 24 }}>
       <SectionHeading title="This Month" sub={m ? `${monthName} · so far = ${range} (tonight included), compared with ${prevRange}` : ''}
-        right={isOwner && <Link to="/reports" className="tomorrow-link">Full report →</Link>} />
+        right={showReportLink && <Link to="/reports" className="tomorrow-link">Full report →</Link>} />
       {error && <div className="alert alert-error">{error}</div>}
       {!m ? (!error && <div className="text-muted" style={{ padding: 20 }}>Loading…</div>) : (
         <>

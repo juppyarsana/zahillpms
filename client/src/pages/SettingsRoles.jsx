@@ -5,8 +5,8 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 // Groups mirror the sidebar's nav grouping so the two stay in sync.
-// rate_plans / agents aren't listed — they're owner-only
-// (RequireOwner), not delegatable menu keys.
+// Pages not listed here (Rate Plans, Users, Sources & Payments, Property
+// Details…) are owner-only (RequireOwner), not delegatable menu keys.
 export const MENU_DEFS = [
   { key: 'dashboard',        label: 'Dashboard',            group: 'Front Desk' },
   { key: 'reservations',     label: 'Reservations',         group: 'Front Desk' },
@@ -32,7 +32,7 @@ export const MENU_DEFS = [
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
-  { key: 'loyalty',          label: 'Loyalty',              group: 'Settings' },
+  { key: 'loyalty',          label: 'Loyalty (view — changes are owner-only)', group: 'Settings' },
   { key: 'sales',            label: 'Sales (extras)',                group: 'Services' },
   { key: 'activities',       label: 'Activities',           group: 'Services' },
   { key: 'guest_board',      label: 'Guest Board',          group: 'Operations' },
@@ -43,13 +43,19 @@ export const MENU_DEFS = [
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },
+  // Finance, one key per page (migration 128 split the old "accounting" key).
+  { key: 'receivables',      label: 'Receivables (agents, companies and OTAs — statements, invoices, payments)', group: 'Finance' },
+  { key: 'expenses',         label: 'Expenses', group: 'Finance' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
-  { key: 'accounting',       label: 'Accounting (Receivables, Expenses, the books — journal, P&L, balance sheet)', group: 'Finance' },
+  { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
+  { key: 'reports',          label: 'Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },
+  { key: 'purchasing',       label: 'Purchasing & Stock (suppliers, purchase orders, stock)', group: 'Operations' },
+  // An action permission: approve a purchase order (needs Purchasing & Stock too).
+  { key: 'approve_po',       label: 'Approve purchase orders', group: 'Operations' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
-  { key: 'units',            label: 'Unit Settings',        group: 'Settings'  },
-  { key: 'users',            label: 'Staff Accounts',       group: 'Settings'  },
-  { key: 'settings',         label: 'Sources & Payments',    group: 'Settings'  },
+  // Users and Sources & Payments are owner-only (no tick box, migration 128).
+  { key: 'units',            label: 'Units (view — changes are owner-only)', group: 'Settings'  },
   { key: 'room_controllers', label: 'Room Controllers',     group: 'Settings'  },
   { key: 'room_tablets',     label: 'Room Tablets (WiFi connection history)', group: 'Settings' },
   { key: 'resto_take_order',    label: 'Resto — Take Order',       group: 'Resto' },

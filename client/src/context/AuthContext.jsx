@@ -18,7 +18,11 @@ const ORDERED_PATHS = [
   { key: 'operations',    path: '/operations' },
   { key: 'restaurant',    path: '/restaurant' },
   { key: 'night_audit',   path: '/night-audit' },
+  { key: 'receivables',   path: '/agents' },
+  { key: 'expenses',      path: '/expenses' },
   { key: 'accounting',    path: '/accounting' },
+  { key: 'reports',       path: '/reports' },
+  { key: 'purchasing',    path: '/purchasing' },
   { key: 'sales',         path: '/sales' },
   { key: 'activities',    path: '/activities' },
   { key: 'guest_board',   path: '/settings/board' },
@@ -26,7 +30,6 @@ const ORDERED_PATHS = [
   { key: 'allotments',    path: '/allotment' },
   { key: 'pricing',       path: '/pricing' },
   { key: 'units',         path: '/units' },
-  { key: 'users',         path: '/users' },
   { key: 'room_tablets',  path: '/settings/room-tablets' },
 ];
 

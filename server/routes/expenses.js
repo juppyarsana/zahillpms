@@ -7,7 +7,7 @@ const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 // auth + moduleGuard('back_office') in server/index.js; owner-only per
 // handler, same convention as routes/purchasing.js.
 // Owner or the accountant (the `accounting` permission) — Finance → Expenses.
-const ownerOnly = [auth, requireOwnerOrMenu('accounting')];
+const ownerOnly = [auth, requireOwnerOrMenu('expenses')];
 
 const CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
 

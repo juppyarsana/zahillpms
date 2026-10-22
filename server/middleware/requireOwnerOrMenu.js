@@ -9,11 +9,13 @@
 // routes to a non-owner role that's been granted resto_menu/resto_tables,
 // so a resto manager can maintain the menu/tables from resto-display without
 // needing the property's actual owner login.
+// menuKey may be an array: any one of the keys is enough.
 function requireOwnerOrMenu(menuKey) {
+  const keys = Array.isArray(menuKey) ? menuKey : [menuKey];
   return (req, res, next) => {
     if (!req.user) return res.status(403).json({ error: 'Forbidden' });
     if (req.user.role === 'owner') return next();
-    if (Array.isArray(req.user.allowed_menus) && req.user.allowed_menus.includes(menuKey)) return next();
+    if (Array.isArray(req.user.allowed_menus) && keys.some(k => req.user.allowed_menus.includes(k))) return next();
     return res.status(403).json({ error: 'Forbidden' });
   };
 }

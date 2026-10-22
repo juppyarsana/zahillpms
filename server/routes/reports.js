@@ -3,7 +3,7 @@ const db = require('../db');
 const { round2 } = require('../services/folioService');
 const { roomRevPerNightSql } = require('../services/nightRates');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
 // Shared CTE: expands every in-scope booking into one row per night that
 // actually falls within the requested period (clipped at its first/last
@@ -372,7 +372,7 @@ function resolvePeriod(query) {
 }
 
 // GET /api/reports/revenue?from=&to=  (or legacy ?month=&year=)
-router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
+router.get('/revenue', auth, requireOwnerOrMenu('reports'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {
@@ -384,7 +384,7 @@ router.get('/revenue', auth, requireRole('owner'), async (req, res) => {
 
 // GET /api/reports/full?from=&to= — every section of the Reports page
 // (services/fullReport.js): revenue, rooms, channels, money.
-router.get('/full', auth, requireRole('owner'), async (req, res) => {
+router.get('/full', auth, requireOwnerOrMenu('reports'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {
@@ -397,7 +397,7 @@ router.get('/full', auth, requireRole('owner'), async (req, res) => {
 
 // GET /api/reports/full/xlsx?from=&to= — the same report as an Excel
 // workbook (services/reportXlsx.js): Revenue, Rooms, Channels, Money, Daily.
-router.get('/full/xlsx', auth, requireRole('owner'), async (req, res) => {
+router.get('/full/xlsx', auth, requireOwnerOrMenu('reports'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {
@@ -421,7 +421,7 @@ router.get('/full/xlsx', auth, requireRole('owner'), async (req, res) => {
 
 // GET /api/reports/full/pdf?from=&to= — the same report as a printable PDF
 // (services/reportPdf.js), with the property's document header.
-router.get('/full/pdf', auth, requireRole('owner'), async (req, res) => {
+router.get('/full/pdf', auth, requireOwnerOrMenu('reports'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {
@@ -453,7 +453,7 @@ function csvEscape(v) {
 // Orders exports. Blocks in one file: a summary, the revenue-by-source
 // breakdown, and (multi-day periods) a daily breakdown — mirrors exactly what the Reports page
 // itself shows for the same period, via the same getReport().
-router.get('/revenue/export', auth, requireRole('owner'), async (req, res) => {
+router.get('/revenue/export', auth, requireOwnerOrMenu('reports'), async (req, res) => {
   const period = resolvePeriod(req.query);
   if (period.error) return res.status(400).json({ error: period.error });
   try {

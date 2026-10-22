@@ -57,4 +57,4 @@ Untuk booking yang tamunya bayar di hotel, OTA mengirim tagihan komisi (mis. Boo
 ## Hak akses
 
 - **OTA payouts** (Roles & Permissions → Front Desk): front desk melihat akun OTA saja dan mencatat withdrawal. Tidak bisa void, membuat invoice, atau membuka agen lain.
-- **Accounting** (Roles & Permissions → Finance): seluruh **Receivables** — untuk akuntan.
+- **Receivables** (Roles & Permissions → Finance): seluruh halaman Receivables — untuk akuntan. **Expenses** (grup yang sama) untuk mencatat tagihan komisi OTA.

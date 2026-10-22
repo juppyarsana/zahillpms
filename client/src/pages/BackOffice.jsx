@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(str) {
@@ -578,10 +579,11 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
 
 function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const { can } = useAuth();   // approving needs the approve_po permission (owners always)
 
   const transitions = {
     draft: [['pending_approval', 'Submit for Approval'], ['cancelled', 'Cancel']],
-    pending_approval: [['approved', 'Approve'], ['draft', 'Back to Draft'], ['cancelled', 'Cancel']],
+    pending_approval: [can('approve_po') && ['approved', 'Approve'], ['draft', 'Back to Draft'], ['cancelled', 'Cancel']].filter(Boolean),
     approved: [['cancelled', 'Cancel']],
     received: [],
     cancelled: [],

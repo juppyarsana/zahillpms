@@ -57,4 +57,4 @@ For bookings the guest paid at the hotel, the OTA sends a commission bill (e.g. 
 ## Who can do it
 
 - **OTA payouts** (Roles & Permissions → Front Desk): front desk sees the OTA accounts only and records the withdrawals. No voids, invoices or other agents.
-- **Accounting** (Roles & Permissions → Finance): all of **Receivables** — for the accountant.
+- **Receivables** (Roles & Permissions → Finance): the whole Receivables page — for the accountant. **Expenses** (same group) for the OTA commission bills.

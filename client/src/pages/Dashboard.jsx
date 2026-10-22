@@ -1554,7 +1554,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── This Month — owner or month_summary permission ── */}
-      {showMonth && <MonthSection isOwner={isOwner} />}
+      {showMonth && <MonthSection showReportLink={can('reports')} />}
 
       {/* ── Market (insights module) ── */}
       {hasModule('insights') && (<>

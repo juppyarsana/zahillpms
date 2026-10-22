@@ -45,7 +45,7 @@ function AgentList() {
   const nav = useNavigate();
   // Front desk with only "OTA payouts" (migration 126): the OTA accounts, nothing to edit.
   const { can } = useAuth();
-  const full = can('accounting');
+  const full = can('receivables');
   const [agents, setAgents] = useState([]);
   const [aging, setAging] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,7 +175,7 @@ function AgentList() {
 function AgentDetail({ agentId }) {
   const nav = useNavigate();
   const { can } = useAuth();
-  const full = can('accounting');   // else only "OTA payouts": record the withdrawal, nothing else
+  const full = can('receivables');   // else only "OTA payouts": record the withdrawal, nothing else
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);

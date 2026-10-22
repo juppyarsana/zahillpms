@@ -333,7 +333,7 @@ export default function Reports() {
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">{label} · Owner only · amounts are net (after discounts, before service charge &amp; tax)</div>
+          <div className="page-subtitle">{label} · amounts are net (after discounts, before service charge &amp; tax)</div>
         </div>
         <div>
           <button className="btn btn-primary" disabled={!rangeValid} title="Every section of this page, one sheet each, plus Daily, Room nights (every room, every night) and Reservations"

@@ -295,7 +295,7 @@ export default function App() {
                   <Route path="/activities"       element={<RequireMenu menuKey="activities"><RequireModule moduleName="activities"><Activities /></RequireModule></RequireMenu>} />
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
-                  <Route path="/users"            element={<RequireMenu menuKey="users"><Users /></RequireMenu>} />
+                  <Route path="/users"            element={<RequireOwner><Users /></RequireOwner>} />
                   <Route path="/settings"         element={<SettingsHub />} />
                   <Route path="/settings/sources" element={<RequireOwner><Settings /></RequireOwner>} />
                   <Route path="/settings/property" element={<RequireOwner><SettingsProperty /></RequireOwner>} />
@@ -309,12 +309,12 @@ export default function App() {
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
                   <Route path="/cashier-closing"  element={<RequireMenu menuKey="cashier_closing"><RequireModule moduleName="financial"><CashierClosing /></RequireModule></RequireMenu>} />
                   <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
-                  <Route path="/agents"          element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
-                  <Route path="/agents/:agentId" element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
-                  <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />
-                  <Route path="/purchasing"      element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
+                  <Route path="/agents"          element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
+                  <Route path="/agents/:agentId" element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
+                  <Route path="/reports"         element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
+                  <Route path="/purchasing"      element={<RequireMenu menuKey="purchasing"><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
-                  <Route path="/expenses"        element={<RequireMenu menuKey="accounting"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />
+                  <Route path="/expenses"        element={<RequireMenu menuKey="expenses"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />
                   <Route path="/accounting"      element={<RequireMenu menuKey="accounting"><RequireModule moduleName="accounting"><Accounting /></RequireModule></RequireMenu>} />
                 </Routes>
               </Layout>

@@ -1,19 +1,21 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const svc = require('../services/purchasingService');
 
 // Back Office Slice A. Mounted at /api/purchasing behind
 // auth + moduleGuard('back_office') in server/index.js; owner-only per
 // handler, same convention as routes/agents.js.
-const ownerOnly = [auth, requireRole('owner')];
+// Purchasing & Stock: owner or the `purchasing` permission; approving a
+// purchase order needs `approve_po` as well (see the status route).
+const ownerOnly = [auth, requireOwnerOrMenu('purchasing')];
+const canApprove = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('approve_po');
 
 // ───────────────────────────── Suppliers ─────────────────────────────
 
 // The supplier list is also read by Finance → Expenses (the accountant).
-router.get('/suppliers', [auth, requireOwnerOrMenu('accounting')], async (req, res) => {
+router.get('/suppliers', [auth, requireOwnerOrMenu(['purchasing', 'expenses'])], async (req, res) => {
   try {
     const { rows } = await db.query(
       'SELECT * FROM suppliers WHERE property_id = $1 ORDER BY is_active DESC, name',
@@ -313,6 +315,7 @@ router.put('/purchase-orders/:id', ownerOnly, async (req, res) => {
 router.patch('/purchase-orders/:id/status', ownerOnly, async (req, res) => {
   const { status } = req.body;
   if (!status) return res.status(400).json({ error: 'status required' });
+  if (status === 'approved' && !canApprove(req)) return res.status(403).json({ error: 'You may not approve purchase orders', code: 'NO_APPROVE' });
   try {
     const result = await svc.setPurchaseOrderStatus(req.propertyId, req.params.id, status, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
