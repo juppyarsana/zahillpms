@@ -501,10 +501,10 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
       if (!qty || qty <= 0) { setFormError('Every line needs a positive quantity'); return; }
       if (!Number.isFinite(cost) || cost < 0) { setFormError('Every line needs a unit cost'); return; }
       if (l.kind === 'product') {
-        if (!l.product_id) { setFormError('Pick a product for every product line'); return; }
+        if (!l.product_id) { setFormError('Choose the item on every "For resale" line'); return; }
         items.push({ product_id: l.product_id, quantity: qty, unit_cost: cost });
       } else {
-        if (!l.raw_material_id) { setFormError('Pick a stock item for every ingredient line'); return; }
+        if (!l.raw_material_id) { setFormError('Choose the stock item on every line'); return; }
         items.push({ raw_material_id: l.raw_material_id, quantity: qty, unit_cost: cost });
       }
     }
@@ -521,7 +521,7 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 640 }}>
+      <div className="modal" style={{ maxWidth: 980, width: '100%' }}>
         <div className="modal-header">
           <div className="modal-title">New Purchase Order</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
@@ -536,34 +536,58 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
             </select>
           </div>
 
-          <div className="form-label" style={{ marginTop: 8 }}>Line items</div>
-          {lines.map((l, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8, flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <select className="form-select" style={{ width: 150 }} value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
-                  <option value="material">Stock item</option>
-                  <option value="product">Sales item (resale)</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ margin: 0, flex: 2, minWidth: 140 }}>
-                {l.kind === 'product' ? (
-                  <select className="form-select" value={l.product_id} onChange={e => updateLine(i, { product_id: e.target.value })}>
-                    <option value="">{products.length ? 'Select sales item…' : 'No sales item has Track stock on'}</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                ) : (
-                  <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
-                    <option value="">{materials.length ? 'Select stock item…' : 'No stock items yet — add them in Stock items'}</option>
-                    {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit_of_measure})</option>)}
-                  </select>
-                )}
-              </div>
-              <input className="form-input" style={{ width: 90 }} type="number" step={l.kind === 'material' ? '0.001' : '1'} placeholder="Qty" value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
-              <input className="form-input" style={{ width: 130 }} type="number" placeholder="Unit cost" value={l.unit_cost} onChange={e => updateLine(i, { unit_cost: e.target.value })} />
-              {lines.length > 1 && <button className="btn btn-sm btn-secondary" onClick={() => removeLine(i)}>✕</button>}
-            </div>
-          ))}
-          <button className="btn btn-sm btn-secondary" onClick={addLine}>+ Add Line</button>
+          <div className="form-label" style={{ marginTop: 8 }}>What you are ordering</div>
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            <b>Stock item</b> — used by the hotel (rice, vegetables, cleaning supplies; see the Stock items tab).{' '}
+            <b>For resale</b> — sold to guests as it is (bottled water, minibar drinks, souvenirs): Sales items with Track stock on.
+          </div>
+          <div className="table-wrap">
+            <table style={{ minWidth: 760 }}>
+              <thead><tr>
+                <th style={{ width: 170 }}>Kind</th><th>Item</th><th style={{ width: 110, textAlign: 'right' }}>Qty</th>
+                <th style={{ width: 160, textAlign: 'right' }}>Unit cost (IDR)</th><th style={{ width: 140, textAlign: 'right' }}>Line total</th><th style={{ width: 40 }}></th>
+              </tr></thead>
+              <tbody>
+                {lines.map((l, i) => {
+                  const m = l.kind === 'material' ? materials.find(x => x.id === l.raw_material_id) : null;
+                  const lineTotal = (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0);
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <select className="form-select" value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
+                          <option value="material">Stock item</option>
+                          <option value="product">For resale</option>
+                        </select>
+                      </td>
+                      <td>
+                        {l.kind === 'product' ? (
+                          <select className="form-select" value={l.product_id} onChange={e => updateLine(i, { product_id: e.target.value })}>
+                            <option value="">{products.length ? 'Choose the item…' : 'No Sales item has Track stock on'}</option>
+                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        ) : (
+                          <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
+                            <option value="">{materials.length ? 'Choose the stock item…' : 'No stock items yet — add them in Stock items'}</option>
+                            {materials.map(x => <option key={x.id} value={x.id}>{x.name} ({x.unit_of_measure})</option>)}
+                          </select>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input className="form-input" style={{ textAlign: 'right' }} type="number" step={l.kind === 'material' ? '0.001' : '1'} value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
+                          {m && <span className="text-muted" style={{ fontSize: 12 }}>{m.unit_of_measure}</span>}
+                        </div>
+                      </td>
+                      <td><input className="form-input" style={{ textAlign: 'right' }} type="number" placeholder={m ? `per ${m.unit_of_measure}` : 'per unit'} value={l.unit_cost} onChange={e => updateLine(i, { unit_cost: e.target.value })} /></td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{lineTotal ? fmtIDR(lineTotal) : <span className="text-muted">—</span>}</td>
+                      <td>{lines.length > 1 && <button className="btn btn-icon" title="Remove line" onClick={() => removeLine(i)}>✕</button>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn btn-sm btn-secondary" style={{ marginTop: 8 }} onClick={addLine}>+ Add line</button>
 
           <div style={{ fontWeight: 700, marginTop: 12, textAlign: 'right' }}>Total: {fmtIDR(total)}</div>
           <div className="form-group" style={{ marginTop: 10 }}>
