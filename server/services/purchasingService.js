@@ -76,9 +76,10 @@ async function createPurchaseOrder(propertyId, body, userId) {
       if (hasProduct) {
         if (!Number.isInteger(quantity)) { await client.query('ROLLBACK'); return { error: 'Sellable product quantities must be whole numbers' }; }
         const { rows: [product] } = await client.query(
-          'SELECT id, name FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]
+          'SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]
         );
         if (!product) { await client.query('ROLLBACK'); return { error: 'A referenced product was not found' }; }
+        if (!product.track_stock || product.per_night || product.open_price) { await client.query('ROLLBACK'); return { error: `${product.name} is not kept in stock — only sales items with Track stock (Sales → Items) can be bought on a purchase order` }; }
         resolvedItems.push({ product_id: product.id, raw_material_id: null, description: product.name, quantity, unit_cost: unitCost });
       } else {
         const { rows: [material] } = await client.query(
@@ -144,8 +145,9 @@ async function updatePurchaseOrderItems(propertyId, poId, body) {
 
       if (hasProduct) {
         if (!Number.isInteger(quantity)) { await client.query('ROLLBACK'); return { error: 'Sellable product quantities must be whole numbers' }; }
-        const { rows: [product] } = await client.query('SELECT id, name FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]);
+        const { rows: [product] } = await client.query('SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]);
         if (!product) { await client.query('ROLLBACK'); return { error: 'A referenced product was not found' }; }
+        if (!product.track_stock || product.per_night || product.open_price) { await client.query('ROLLBACK'); return { error: `${product.name} is not kept in stock — only sales items with Track stock (Sales → Items) can be bought on a purchase order` }; }
         resolvedItems.push({ product_id: product.id, raw_material_id: null, description: product.name, quantity, unit_cost: unitCost });
       } else {
         const { rows: [material] } = await client.query('SELECT id, name FROM raw_materials WHERE id = $1 AND property_id = $2', [raw.raw_material_id, propertyId]);

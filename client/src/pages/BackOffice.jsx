@@ -386,7 +386,9 @@ function PurchaseOrdersTab() {
   useEffect(() => {
     api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});
     api.get('/api/purchasing/raw-materials').then(r => setMaterials(r.data.filter(m => m.is_active))).catch(() => {});
-    api.get('/api/products').then(r => setProducts(r.data)).catch(() => setProducts([])); // sales module may be off
+    // Only sales items kept in stock (bottled water, minibar, merchandise…) can be bought on a PO —
+    // not extra beds, typed-price charges or anything else that isn't counted.
+    api.get('/api/products').then(r => setProducts(r.data.filter(p => p.track_stock && !p.per_night && !p.open_price))).catch(() => setProducts([])); // sales module may be off
   }, []);
 
   function openDetail(po) {
@@ -477,14 +479,14 @@ function PurchaseOrdersTab() {
 function NewPOModal({ suppliers, products, materials, onClose, onCreated, onError }) {
   const [supplierId, setSupplierId] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState([{ kind: 'product', product_id: '', raw_material_id: '', quantity: '', unit_cost: '' }]);
+  const [lines, setLines] = useState([{ kind: 'material', product_id: '', raw_material_id: '', quantity: '', unit_cost: '' }]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
   function updateLine(i, patch) {
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
   }
-  function addLine() { setLines(ls => [...ls, { kind: 'product', product_id: '', raw_material_id: '', quantity: '', unit_cost: '' }]); }
+  function addLine() { setLines(ls => [...ls, { kind: 'material', product_id: '', raw_material_id: '', quantity: '', unit_cost: '' }]); }
   function removeLine(i) { setLines(ls => ls.filter((_, idx) => idx !== i)); }
 
   const total = lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0), 0);
@@ -538,20 +540,20 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
           {lines.map((l, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', marginBottom: 8, flexWrap: 'wrap' }}>
               <div className="form-group" style={{ margin: 0 }}>
-                <select className="form-select" style={{ width: 110 }} value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
-                  <option value="product">Product</option>
-                  <option value="material">Ingredient</option>
+                <select className="form-select" style={{ width: 150 }} value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
+                  <option value="material">Stock item</option>
+                  <option value="product">Sales item (resale)</option>
                 </select>
               </div>
               <div className="form-group" style={{ margin: 0, flex: 2, minWidth: 140 }}>
                 {l.kind === 'product' ? (
                   <select className="form-select" value={l.product_id} onChange={e => updateLine(i, { product_id: e.target.value })}>
-                    <option value="">Select product…</option>
+                    <option value="">{products.length ? 'Select sales item…' : 'No sales item has Track stock on'}</option>
                     {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 ) : (
                   <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
-                    <option value="">Select ingredient…</option>
+                    <option value="">{materials.length ? 'Select stock item…' : 'No stock items yet — add them in Stock items'}</option>
                     {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit_of_measure})</option>)}
                   </select>
                 )}
