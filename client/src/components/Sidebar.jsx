@@ -68,7 +68,7 @@ export default function Sidebar() {
         {nav.dashboard && <SidebarLink {...nav.dashboard} />}
         {nav.groups.map(g => <SidebarSection key={g.id} id={g.id} label={g.label} items={g.items} />)}
         {/* How to use the PMS — every signed-in user (pages/Guide.jsx) */}
-        <div className="sidebar-navgroup"><SidebarLink {...nav.guide} /></div>
+        <div className="sidebar-navgroup sidebar-help"><SidebarLink {...nav.guide} /></div>
       </nav>
 
       {nav.settingsGroups.length > 0 && (
