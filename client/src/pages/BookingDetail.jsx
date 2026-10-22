@@ -189,7 +189,7 @@ function OtaNote({ ota, amount, collect, vccFrom }) {
       <div style={box}>
         💳 {fmtIDR(amount)} is paid with <b>{ota}'s virtual card</b>{vccFrom ? <> — it can be charged from <b>{fmtShortDate(vccFrom)}</b></> : ''}. <b>Don't collect it from the guest.</b>{' '}
         Charge the card on the card machine, then <b>Record payment</b> with the method <b>OTA virtual card</b>.
-        Anything the card doesn't cover goes onto {ota}'s account in Agent Billing at check-out.
+        Anything the card doesn't cover goes onto {ota}'s account in Receivables at check-out.
       </div>
     );
   }
@@ -1345,9 +1345,9 @@ export default function BookingDetail() {
           {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status) && (
             <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 12 }}><div>
               {booking.folio_status
-                ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Agent Billing → Record Payment</b>, not here.</>
+                ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Receivables → Record Payment</b>, not here.</>
                 : <><b>{booking.agent_name}</b> pays the hotel. Money the agent sends <b>before check-out</b> (e.g. H-7) is recorded here — Mark Received, with the transfer reference.
-                    At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Agent Billing.</>}
+                    At check-out only what is still unpaid goes on the agent's bill; after that, its payments go in Receivables.</>}
               {' '}<Link to="/guide/agent-payments">📘 Guide</Link>
             </div></div>
           )}
@@ -1993,8 +1993,8 @@ export default function BookingDetail() {
                     Bill this stay to the agent
                     <div className="text-muted" style={{ fontSize: 12 }}>
                       {!picked ? 'No agent — the guest pays the hotel.'
-                        : canBill ? 'Ticked: the stay goes on the agent\'s bill (Agent Billing). Not ticked: the guest pays the hotel.'
-                        : `${picked.name} is not set up to be billed — the guest pays the hotel. Change how this agent pays in Agent Billing first.`}
+                        : canBill ? 'Ticked: the stay goes on the agent\'s bill (Receivables). Not ticked: the guest pays the hotel.'
+                        : `${picked.name} is not set up to be billed — the guest pays the hotel. Change how this agent pays in Receivables first.`}
                     </div>
                   </span>
                 </label>
@@ -2099,7 +2099,7 @@ export default function BookingDetail() {
               {editAgent && (booking.folio_status
                 ? <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Agent: <b>{booking.agent_name || '—'}</b> — already billed to the agent, so it can't be changed here.</div>
                 : <BookingAgentFields value={editAgent} onChange={setEditAgent} sourceType={sources.find(s => s.id === editDetailsForm.source)?.source_type}
-                    hint={AGENT_SOURCE_TYPES.includes(sources.find(s => s.id === editDetailsForm.source)?.source_type) && !editAgent.agent ? 'This source usually comes with an agent — pick one so it shows in Agent Billing.' : null} />)}
+                    hint={AGENT_SOURCE_TYPES.includes(sources.find(s => s.id === editDetailsForm.source)?.source_type) && !editAgent.agent ? 'This source usually comes with an agent — pick one so it shows in Receivables.' : null} />)}
               {ratePlans.length > 0 && (
                 <div className="form-group">
                   <label className="form-label">Meal plan</label>

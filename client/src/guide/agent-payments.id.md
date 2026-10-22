@@ -1,11 +1,11 @@
 # Pembayaran dari agen
 
-**Uang dari agen sebelum tamu check-out → catat di reservasi. Uang dari agen setelah check-out → catat di Agent Billing.**
+**Uang dari agen sebelum tamu check-out → catat di reservasi. Uang dari agen setelah check-out → catat di Receivables.**
 
 | Kapan uang masuk | Catat di mana |
 | --- | --- |
 | Sebelum check-out (biasanya H-7) | Reservasi: **Room Payment → Mark Received** (grup: **Record Group Payment**) |
-| Setelah check-out | [Agent Billing](/agents) → agen → **Record Payment** |
+| Setelah check-out | [Receivables](/agents) → agen → **Record Payment** |
 
 ## Sebelum check-out (H-7)
 
@@ -31,7 +31,7 @@ Satu transfer untuk beberapa reservasi terpisah: catat di setiap reservasi denga
 
 Check-out seperti biasa. PMS hanya menagihkan ke agen **sisa yang belum dibayar** — tidak perlu memilih apa-apa.
 
-| Sudah dibayar agen sebelum check-out | Masuk ke tagihan agen | Label di Agent Billing |
+| Sudah dibayar agen sebelum check-out | Masuk ke tagihan agen | Label di Receivables |
 | --- | --- | --- |
 | Lunas | Tidak ada | Paid before check-out |
 | Sebagian, mis. 40% | Sisanya, mis. 60% | On the bill · not invoiced |
@@ -41,9 +41,9 @@ Tamu tidak membayar kamar — hanya ekstra yang ia bayar sendiri di meja depan (
 
 ## Setelah check-out
 
-Kalau agen membayar setelah tamu pulang, catat di **Agent Billing**, bukan di reservasi.
+Kalau agen membayar setelah tamu pulang, catat di **Receivables**, bukan di reservasi.
 
-1. Buka [Agent Billing](/agents) → klik nama agen.
+1. Buka [Receivables](/agents) → klik nama agen.
 2. Klik **Record Payment**.
 3. Isi jumlah, metode, tanggal transfer dan referensi.
 4. PMS mencocokkan pembayaran ke menginap yang paling lama dulu — cek dan ubah kalau perlu.
@@ -54,7 +54,7 @@ Setelah dicocokkan, menginap itu berlabel **Paid by agent** dan hilang dari daft
 
 | Kesalahan | Akibatnya | Perbaikan |
 | --- | --- | --- |
-| Transfer H-7 dicatat di Agent Billing | Reservasi terlihat belum dibayar; uangnya menunggu sebagai kredit agen | Void pembayaran di Agent Billing (dengan alasan), lalu catat di reservasi |
-| Pembayaran setelah check-out dicatat di reservasi | Tagihan agen ikut turun, tapi angka "Agent ledger" di Cashier Closing hari check-out berubah | Beri tahu owner; lain kali catat di Agent Billing |
+| Transfer H-7 dicatat di Receivables | Reservasi terlihat belum dibayar; uangnya menunggu sebagai kredit agen | Void pembayaran di Receivables (dengan alasan), lalu catat di reservasi |
+| Pembayaran setelah check-out dicatat di reservasi | Tagihan agen ikut turun, tapi angka "Agent ledger" di Cashier Closing hari check-out berubah | Beri tahu owner; lain kali catat di Receivables |
 
-> Tanda bantu di PMS: reservasi dengan agen yang ditagih menampilkan kotak biru di kartu **Room Payment** (di sini sebelum check-out, di Agent Billing setelahnya). Jendela **Record Payment** di Agent Billing mengingatkan bahwa itu hanya untuk menginap yang sudah check-out.
+> Tanda bantu di PMS: reservasi dengan agen yang ditagih menampilkan kotak biru di kartu **Room Payment** (di sini sebelum check-out, di Receivables setelahnya). Jendela **Record Payment** di Receivables mengingatkan bahwa itu hanya untuk menginap yang sudah check-out.

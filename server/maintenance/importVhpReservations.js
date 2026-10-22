@@ -225,8 +225,8 @@ async function run() {
         `INSERT INTO agents (property_id, name, agent_type, payment_status, created_by) VALUES ($1, $2, $3, 'city_ledger', $4) RETURNING id, name, payment_status`,
         [pid, name, M.AGENT_TYPE_FOR_SOURCE[sourceId] || 'travel_agent', user.id]);
       agents.push(a); created.agents.push(a.id);
-      res = { agent: a, point: `Agent "${a.name}" was created by the import (billed to the agent) — add its contact / credit terms in Agent Billing` };
-    } else res = { point: `Agent not in the PMS — VHP: "${company}". Add it in Agent Billing, then choose it in Edit Details` };
+      res = { agent: a, point: `Agent "${a.name}" was created by the import (billed to the agent) — add its contact / credit terms in Receivables` };
+    } else res = { point: `Agent not in the PMS — VHP: "${company}". Add it in Receivables, then choose it in Edit Details` };
     agentCache.set(k, res);
     return res;
   }
@@ -503,7 +503,7 @@ function printReport(report, created) {
   console.log(`Not imported: ${report.skipped.filter(s => !s.quiet).length} to look at · ${quiet.length} already in the PMS`);
   if (guestPaysAgents.size) console.log(`
 ⚠ Agents set to "guest pays" in the PMS: ${[...guestPaysAgents].join(', ')}.
-  If the agent pays the hotel, switch each to "bill to agent" in Agent Billing BEFORE --apply:
+  If the agent pays the hotel, switch each to "bill to agent" in Receivables BEFORE --apply:
   a group is set up at import as one bill for the group (guest pays) or one bill per room for the agent.`);
   console.log(`New guests: ${created.guests.length} · new agents: ${created.agents.length} · new sources: ${created.sources.join(', ') || 'none'}`);
   console.log('\n"To check" points on the imported bookings (rooms):');

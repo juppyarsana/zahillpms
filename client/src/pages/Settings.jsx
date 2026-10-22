@@ -36,7 +36,7 @@ function SourceAgentFields({ form, set }) {
       </select>
       {AGENT_TYPES.includes(sourceType) && (
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-          Bookings on this source ask for the agent / company. Each agent's billing and commission are set in Agent Billing, not here.
+          Bookings on this source ask for the agent / company. Each agent's billing and commission are set in Receivables, not here.
         </div>
       )}
     </div>
@@ -149,7 +149,7 @@ export default function Settings() {
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
           Channels guests book through — keep this list short (Direct, Walk-in, each OTA, Travel Agent, Corporate, Wholesaler). Mark OTA sources — their check-in flow will skip the payment gate since payment is handled by the platform.
           Agents and companies themselves, with their billing and commission, are in{' '}
-          <a href="/agents" onClick={e => { e.preventDefault(); nav('/agents'); }}>Agent Billing</a>.
+          <a href="/agents" onClick={e => { e.preventDefault(); nav('/agents'); }}>Receivables</a>.
         </p>
 
         {sources.map(s => (

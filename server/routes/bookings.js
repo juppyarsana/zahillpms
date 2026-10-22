@@ -1788,7 +1788,7 @@ router.put('/:id/dates', auth, async (req, res) => {
     const amount = charge === 'complimentary' ? 0 : charge === 'custom' ? round2(custom) : quote.difference;
     if (amount !== 0 && ['invoiced', 'paid'].includes(booking.folio_status)) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing' });
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the dates without a charge, or correct it through Receivables' });
     }
 
     const done = await applyNewDates(client, {
@@ -1873,7 +1873,7 @@ router.put('/:id/price', auth, requireOwnerOrMenu('edit_price'), async (req, res
     }
     if (['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Agent Billing' });
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — correct it through Receivables' });
     }
     if (before.complimentary_scope) {
       await client.query('ROLLBACK');
@@ -1977,7 +1977,7 @@ router.put('/group/:groupId/price', auth, requireOwnerOrMenu('edit_price'), asyn
       let err = null;
       if (!before) err = fail(404, 'A room is not in this group');
       else if (['cancelled', 'no_show'].includes(before.status)) err = fail(409, `Room ${before.unit_name} is ${before.status.replace('_', '-')}`);
-      else if (['invoiced', 'paid'].includes(before.folio_status)) err = fail(409, `Room ${before.unit_name} is already on an agent invoice — correct it through Agent Billing`);
+      else if (['invoiced', 'paid'].includes(before.folio_status)) err = fail(409, `Room ${before.unit_name} is already on an agent invoice — correct it through Receivables`);
       else if (before.complimentary_scope) err = fail(409, `Room ${before.unit_name} is complimentary — remove complimentary first to set a price`);
       if (err) { await client.query('ROLLBACK'); return res.status(err.status).json({ error: err.error }); }
 
@@ -2259,7 +2259,7 @@ router.put('/group/:groupId/dates', auth, async (req, res) => {
     const invoiced = moving.filter(r => amounts.get(r.booking_id) !== 0 && ['invoiced', 'paid'].includes(r.booking.folio_status));
     if (invoiced.length) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing` });
+      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Receivables` });
     }
 
     let credit = 0;
@@ -2366,7 +2366,7 @@ router.put('/group/:groupId/dates/rooms', auth, async (req, res) => {
     const invoiced = moving.filter(r => amounts.get(r.booking_id) !== 0 && ['invoiced', 'paid'].includes(r.booking.folio_status));
     if (invoiced.length) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Agent Billing` });
+      return res.status(409).json({ error: `Room ${invoiced.map(r => r.unit_name).join(', ')} is already on an agent invoice — change the dates without a charge, or correct it through Receivables` });
     }
     let credit = 0;
     for (const r of moving) {
@@ -2991,7 +2991,7 @@ router.put('/:id/change-room', auth, async (req, res) => {
     }
     if (amount !== 0 && ['invoiced', 'paid'].includes(before.folio_status)) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the room without a charge, or correct it through Agent Billing' });
+      return res.status(409).json({ error: 'This stay is already on an agent invoice — change the room without a charge, or correct it through Receivables' });
     }
     if (amount !== 0 && before.complimentary_scope) {
       await client.query('ROLLBACK');

@@ -34,12 +34,12 @@ Nama tamu boleh menunggu: tekan Checked setelah hal lain beres, reservasinya pin
 
 **Agent not in the PMS** — agen belum ada di PMS
 
-1. Buka [Agent Billing](/agents) → **+ New agent** → isi nama, tipe, kontak. Cukup sekali per agen.
+1. Buka [Receivables](/agents) → **+ New agent** → isi nama, tipe, kontak. Cukup sekali per agen.
 2. Kembali ke booking → **⋮ → Edit Details** → kolom **Agent** → pilih agennya → simpan. Untuk grup: di setiap kamar.
 
 **Agent … was created by the import** — agen dibuat otomatis
 
-- Untuk owner: lengkapi kontak dan syarat kredit agen di [Agent Billing](/agents). Poin ini dicoret sendiri setelah agen punya kontak.
+- Untuk owner: lengkapi kontak dan syarat kredit agen di [Receivables](/agents). Poin ini dicoret sendiri setelah agen punya kontak.
 
 **Guest name not known yet** — nama tamu belum ada
 

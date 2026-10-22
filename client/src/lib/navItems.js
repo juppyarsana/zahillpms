@@ -34,16 +34,18 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
     { id: 'operations', label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
       can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
+      isOwner && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing & Stock' },
     ] },
     { id: 'revenue', label: 'Revenue', items: [
       can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
       isOwner && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
-      can('accounting') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Agent Billing' },   // owner or the accountant (OTA payouts)
     ] },
     { id: 'finance', label: 'Finance', items: [
+      // In the money's order: what is owed to the hotel, what it spends, the books.
+      can('accounting') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Receivables' },   // agents, companies, OTAs (owner or the accountant)
+      can('accounting') && hasModule('back_office') && { to: '/expenses', icon: '💸', label: 'Expenses' },
       can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
-      isOwner && hasModule('back_office') && { to: '/back-office', icon: '🏭', label: 'Back Office' },
     ] },
   ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length);
 

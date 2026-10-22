@@ -1,12 +1,13 @@
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
-const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
 // Back Office Slice B. Mounted at /api/expenses behind
 // auth + moduleGuard('back_office') in server/index.js; owner-only per
 // handler, same convention as routes/purchasing.js.
-const ownerOnly = [auth, requireRole('owner')];
+// Owner or the accountant (the `accounting` permission) — Finance → Expenses.
+const ownerOnly = [auth, requireOwnerOrMenu('accounting')];
 
 const CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
 

@@ -248,7 +248,7 @@ function buildReportPdf(report, property) {
     ], agRows, { total: { agent: 'Total', outstanding: ag.total + otas.amount, overdue: ag.overdue }, empty: 'No agent owes anything.' });
 
     if (costs.by_category.length) {
-      subheading('Costs by category', 'Back Office > Expenses logged in this period.', costs.by_category.length + 1);
+      subheading('Costs by category', 'Finance > Expenses logged in this period.', costs.by_category.length + 1);
       table([
         { label: 'Category', w: 0.4, key: 'label' }, { label: 'Entries', w: 0.15, align: 'right', get: r => num(r.entries) },
         { label: 'Amount', w: 0.25, align: 'right', get: r => fmtIDR(r.amount) }, { label: 'Share', w: 0.2, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
@@ -257,7 +257,7 @@ function buildReportPdf(report, property) {
 
     subheading('Net income', null, 3);
     table([{ label: 'Item', w: 0.6, key: 'k' }, { label: 'Amount', w: 0.4, align: 'right', get: r => fmtIDR(r.v) }], [
-      { k: 'Total revenue', v: total }, { k: 'Expenses (Back Office)', v: -(report.expenses_total || 0) },
+      { k: 'Total revenue', v: total }, { k: 'Expenses', v: -(report.expenses_total || 0) },
     ], { total: { k: 'Net income', v: report.net_income } });
 
     // ── Daily breakdown (multi-day periods) ──

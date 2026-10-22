@@ -84,7 +84,7 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
   if (billToAgent) {
     if (!agent) return { error: 'This booking has no agent to bill' };
     if (!otaPays && !CITY_LEDGER.includes(paymentStatus)) {
-      return { error: `${agent.name} is not set up to be billed (city ledger) — change it in Agent Billing` };
+      return { error: `${agent.name} is not set up to be billed (city ledger) — change it in Receivables` };
     }
     // Only what is still owed goes to the agent (folioService.agentDue): a
     // stay the agent already paid (usually before arrival, recorded on the
@@ -108,7 +108,7 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
       folio_status = 'pending_agent_invoice';
       if (otaPays) {
         await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
-          [bookingId, `Room money still owed by ${agent.name} put on ${agent.name}'s account in Agent Billing at check-out — paid by its payout.`, actorUserId || null]);
+          [bookingId, `Room money still owed by ${agent.name} put on ${agent.name}'s account in Receivables at check-out — paid by its payout.`, actorUserId || null]);
       }
     }
   }

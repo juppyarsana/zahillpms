@@ -79,7 +79,7 @@ function AgentList() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">{full ? 'Agent Billing' : 'OTA payouts'}</div>
+          <div className="page-title">{full ? 'Receivables' : 'OTA payouts'}</div>
           <div className="page-subtitle">{full
             ? 'Travel agents, companies, wholesalers and OTAs — billing terms and what they owe'
             : 'What each OTA still owes for stays checked out — open one to record its weekly withdrawal'}</div>
@@ -248,7 +248,7 @@ function AgentDetail({ agentId }) {
       <div className="page-header">
         <div>
           <div className="page-title">
-            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>{full ? 'Agent Billing' : 'OTA payouts'}</span>
+            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>{full ? 'Receivables' : 'OTA payouts'}</span>
             {' / '}{agent.label}
             {!agent.is_active && <span className="badge badge-gray" style={{ marginLeft: 8, fontSize: 11 }}>Inactive</span>}
           </div>

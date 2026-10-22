@@ -174,12 +174,12 @@ router.put('/:id/reinstate', auth, canCorrect, correction(async (client, b, { re
 router.put('/:id/agent-billing', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId, body }) => {
   if (b.status !== 'checked_out') return { error: 'Agent billing is corrected here only after check-out — before that, use Edit Details' };
   if (['invoiced', 'paid'].includes(b.folio_status) || b.agent_invoice_id) {
-    return { error: 'This stay is on an agent invoice — void the invoice first (Agent Billing → the agent → Invoices)', code: 'ON_AGENT_INVOICE' };
+    return { error: 'This stay is on an agent invoice — void the invoice first (Receivables → the agent → Invoices)', code: 'ON_AGENT_INVOICE' };
   }
   const { rows: [alloc] } = await client.query('SELECT 1 FROM agent_payment_allocations WHERE booking_id = $1 LIMIT 1', [b.id]);
-  if (alloc) return { error: 'The agent has already paid towards this stay — take that payment off it first (Agent Billing → the agent → Payments)', code: 'AGENT_PAID' };
+  if (alloc) return { error: 'The agent has already paid towards this stay — take that payment off it first (Receivables → the agent → Payments)', code: 'AGENT_PAID' };
   const { rows: [paidOut] } = await client.query("SELECT 1 FROM agent_commissions WHERE booking_id = $1 AND status <> 'unpaid'", [b.id]);
-  if (paidOut) return { error: 'The commission of this stay is already paid out — mark it unpaid first (Agent Billing → the agent → Commissions)', code: 'COMMISSION_PAID' };
+  if (paidOut) return { error: 'The commission of this stay is already paid out — mark it unpaid first (Receivables → the agent → Commissions)', code: 'COMMISSION_PAID' };
 
   let agentId = b.agent_id;
   if (body.agent_id !== undefined) {

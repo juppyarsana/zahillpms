@@ -1,11 +1,11 @@
 # Payments from agents
 
-**Money from the agent before the guest checks out → record it on the reservation. Money from the agent after check-out → record it in Agent Billing.**
+**Money from the agent before the guest checks out → record it on the reservation. Money from the agent after check-out → record it in Receivables.**
 
 | When the money arrives | Where to record it |
 | --- | --- |
 | Before check-out (usually H-7) | The reservation: **Room Payment → Mark Received** (a group: **Record Group Payment**) |
-| After check-out | [Agent Billing](/agents) → the agent → **Record Payment** |
+| After check-out | [Receivables](/agents) → the agent → **Record Payment** |
 
 ## Before check-out (H-7)
 
@@ -31,7 +31,7 @@ One transfer for several separate reservations: record it on each one with the s
 
 Check out as usual. The PMS bills the agent only **what is still unpaid** — nothing to choose.
 
-| Paid by the agent before check-out | Goes on the agent's bill | Label in Agent Billing |
+| Paid by the agent before check-out | Goes on the agent's bill | Label in Receivables |
 | --- | --- | --- |
 | In full | Nothing | Paid before check-out |
 | Part, e.g. 40% | The rest, e.g. 60% | On the bill · not invoiced |
@@ -41,9 +41,9 @@ The guest doesn't pay for the room — only extras they pay themselves at the de
 
 ## After check-out
 
-If the agent pays after the guest has left, record it in **Agent Billing**, not on the reservation.
+If the agent pays after the guest has left, record it in **Receivables**, not on the reservation.
 
-1. Open [Agent Billing](/agents) → click the agent.
+1. Open [Receivables](/agents) → click the agent.
 2. Click **Record Payment**.
 3. Enter the amount, method, transfer date and reference.
 4. The PMS matches it to the oldest stays first — check and adjust if needed.
@@ -54,7 +54,7 @@ Once matched, those stays read **Paid by agent** and leave the overdue list (agi
 
 | Mistake | What happens | Fix |
 | --- | --- | --- |
-| H-7 transfer recorded in Agent Billing | The reservation looks unpaid; the money waits as an agent credit | Void it in Agent Billing (with a reason), then record it on the reservation |
-| Payment after check-out recorded on the reservation | The agent's bill goes down, but the Cashier Closing "Agent ledger" figure of the check-out day changes | Tell the owner; next time record it in Agent Billing |
+| H-7 transfer recorded in Receivables | The reservation looks unpaid; the money waits as an agent credit | Void it in Receivables (with a reason), then record it on the reservation |
+| Payment after check-out recorded on the reservation | The agent's bill goes down, but the Cashier Closing "Agent ledger" figure of the check-out day changes | Tell the owner; next time record it in Receivables |
 
-> Hints in the PMS: a booking with a billed agent shows a blue box on the **Room Payment** card (here before check-out, Agent Billing after). Agent Billing's **Record Payment** window reminds you it is only for stays already checked out.
+> Hints in the PMS: a booking with a billed agent shows a blue box on the **Room Payment** card (here before check-out, Receivables after). Receivables's **Record Payment** window reminds you it is only for stays already checked out.

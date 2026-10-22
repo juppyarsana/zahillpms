@@ -588,7 +588,7 @@ export default function Reports() {
                 </div>
                 <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 12 }}>
                   Guests: {fmtIDR(guestOwed)} in room deposit / balance lines (extras charged to a room are on each Balance Due). Agents &amp; OTAs: {fmtIDR(owed.agents.total)}{owed.agents.overdue > 0 && `, ${fmtIDR(owed.agents.overdue)} overdue`}.
-                  {owed.otas?.amount > 0 && <> OTAs, for stays not checked out yet: {fmtIDR(owed.otas.amount)} ({plural(owed.otas.bookings, 'booking')}) — moves to each OTA's account in Agent Billing at check-out.</>}
+                  {owed.otas?.amount > 0 && <> OTAs, for stays not checked out yet: {fmtIDR(owed.otas.amount)} ({plural(owed.otas.bookings, 'booking')}) — moves to each OTA's account in Receivables at check-out.</>}
                 </div>
                 {owed.agents.rows.length > 0 && (
                   <div className="table-wrap"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -613,7 +613,7 @@ export default function Reports() {
 
               {costs.by_category.length > 0 && (
                 <TableCard title={`Costs — ${fmtIDR(costs.total)}`} rows={costs.by_category}
-                  note="Back Office → Expenses logged in this period, by category."
+                  note="Finance → Expenses logged in this period, by category."
                   columns={[
                     { key: 'label', label: 'Category', render: r => <b>{r.label}</b> },
                     { key: 'entries', label: 'Entries', align: 'right' },
@@ -632,7 +632,7 @@ export default function Reports() {
                     <div style={{ fontSize: 20, fontWeight: 800, color: data.net_income >= 0 ? '#16A34A' : '#DC2626' }}>{fmtIDR(data.net_income)}</div></div>
                 </div>
                 {data.expenses_total === 0 && (
-                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>No expenses logged in this period — record costs under Back Office → Expenses to see a real profit figure.</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>No expenses logged in this period — record costs under Finance → Expenses to see a real profit figure.</div>
                 )}
               </div>
             </Section>

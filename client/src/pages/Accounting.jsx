@@ -142,7 +142,7 @@ function PlTab() {
         <div className="card">
           <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
             Net amounts — service charge (paid to staff) and tax are not revenue. Revenue is counted night by night as it is posted to guests' bills;
-            costs from <b>Back Office → Expenses</b>, agent commission and the <b>journal entries</b>.{' '}
+            costs from <b>Finance → Expenses</b>, agent commission and the <b>journal entries</b>.{' '}
             {cols.period.partial && <>{cols.period.label} is the month so far. </>}
             {data.closed_through ? <>Days up to {fmtLong(data.closed_through)} are closed; later days can still change.</> : <>No day is closed yet, so every figure can still change.</>}
             {' '}% is of total revenue, or of the department's own revenue for its expenses and profit. Click a line to see its accounts.{' '}

@@ -34,12 +34,12 @@ Guest names can wait: press Checked once the rest is done, and the reservation m
 
 **Agent not in the PMS**
 
-1. Open [Agent Billing](/agents) → **+ New agent** → name, type, contact. Once per agent.
+1. Open [Receivables](/agents) → **+ New agent** → name, type, contact. Once per agent.
 2. Back on the booking → **⋮ → Edit Details** → **Agent** → pick it → save. A group: on each room.
 
 **Agent … was created by the import**
 
-- For the owner: complete the agent's contact and credit terms in [Agent Billing](/agents). The point is crossed off once the agent has a contact.
+- For the owner: complete the agent's contact and credit terms in [Receivables](/agents). The point is crossed off once the agent has a contact.
 
 **Guest name not known yet**
 

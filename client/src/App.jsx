@@ -52,6 +52,7 @@ import CashierClosing from './pages/CashierClosing';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
+import Expenses from './pages/Expenses';
 import Accounting from './pages/Accounting';
 import OtaBookings from './pages/OtaBookings';
 import SettingsHub from './pages/SettingsHub';
@@ -311,7 +312,9 @@ export default function App() {
                   <Route path="/agents"          element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/agents/:agentId" element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />
-                  <Route path="/back-office"     element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
+                  <Route path="/purchasing"      element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
+                  <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
+                  <Route path="/expenses"        element={<RequireMenu menuKey="accounting"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />
                   <Route path="/accounting"      element={<RequireMenu menuKey="accounting"><RequireModule moduleName="accounting"><Accounting /></RequireModule></RequireMenu>} />
                 </Routes>
               </Layout>

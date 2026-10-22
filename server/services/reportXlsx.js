@@ -104,7 +104,7 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     ], [{ nights: rev.complimentary.nights, value: rev.complimentary.value }]);
   }
   table(ws1, 'Net income', [{ header: 'Item', key: 'item' }, { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }], [
-    { item: 'Total revenue', amount: total }, { item: 'Expenses (Back Office)', amount: -(report.expenses_total || 0) },
+    { item: 'Total revenue', amount: total }, { item: 'Expenses', amount: -(report.expenses_total || 0) },
   ], { item: 'Net income', amount: report.net_income });
   widths(ws1, [34, 36, 18, 18]);
 
@@ -214,7 +214,7 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     { header: 'Category', key: 'label' }, { header: 'Entries', key: 'entries', fmt: INT, align: 'right' },
     { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
   ], costs.by_category, { label: 'Total costs', entries: costs.by_category.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: costs.total ? 100 : 0 },
-  'Back Office → Expenses logged in this period.');
+  'Finance → Expenses logged in this period.');
   widths(ws4, [40, 16, 18, 18, 16, 18]);
 
   // ── Daily ──

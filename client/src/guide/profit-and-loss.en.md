@@ -22,7 +22,7 @@
 ## Where the figures come from
 
 - **Revenue**: the guests' bills, night by night — the same as the Daily journal.
-- **Costs**: [Back Office → Expenses](/back-office), agent commission, and the accountant's [journal entries](/guide/journal-entries) (payroll, depreciation, rent…). A cost entered in none of these is not on the P&L.
+- **Costs**: [Finance → Expenses](/back-office), agent commission, and the accountant's [journal entries](/guide/journal-entries) (payroll, depreciation, rent…). A cost entered in none of these is not on the P&L.
 - A month is final once its days are closed (**Daily journal → Close days**). Before that, a correction changes the figures.
 
 ## Moving an account to another line

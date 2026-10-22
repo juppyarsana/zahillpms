@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const svc = require('../services/purchasingService');
 
 // Back Office Slice A. Mounted at /api/purchasing behind
@@ -11,7 +12,8 @@ const ownerOnly = [auth, requireRole('owner')];
 
 // ───────────────────────────── Suppliers ─────────────────────────────
 
-router.get('/suppliers', ownerOnly, async (req, res) => {
+// The supplier list is also read by Finance → Expenses (the accountant).
+router.get('/suppliers', [auth, requireOwnerOrMenu('accounting')], async (req, res) => {
   try {
     const { rows } = await db.query(
       'SELECT * FROM suppliers WHERE property_id = $1 ORDER BY is_active DESC, name',

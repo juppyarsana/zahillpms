@@ -49,12 +49,13 @@ function materialStockBadge(m) {
   return <span className="badge badge-gray">{m.stock_quantity} {m.unit_of_measure}</span>;
 }
 
+// Purchasing & Stock (Operations menu). Expenses has its own page under
+// Finance (pages/Expenses.jsx, which uses ExpensesTab below).
 const TABS = [
-  { key: 'suppliers', icon: '🚚', label: 'Suppliers' },
-  { key: 'raw_materials', icon: '🌾', label: 'Raw Materials' },
-  { key: 'purchase_orders', icon: '📦', label: 'Purchase Orders' },
-  { key: 'expenses', icon: '🧾', label: 'Expenses' },
-  { key: 'inventory_value', icon: '📊', label: 'Inventory Value' },
+  { key: 'suppliers', label: 'Suppliers' },
+  { key: 'purchase_orders', label: 'Purchase Orders' },
+  { key: 'raw_materials', label: 'Stock items' },
+  { key: 'inventory_value', label: 'Stock value' },
 ];
 
 export default function BackOffice() {
@@ -64,8 +65,8 @@ export default function BackOffice() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Back Office</div>
-          <div className="page-subtitle">Suppliers, Purchasing &amp; Expenses · Owner only</div>
+          <div className="page-title">Purchasing &amp; Stock</div>
+          <div className="page-subtitle">Suppliers, purchase orders and the stock they fill — what it is worth</div>
         </div>
       </div>
 
@@ -84,7 +85,6 @@ export default function BackOffice() {
       {tab === 'suppliers' && <SuppliersTab />}
       {tab === 'raw_materials' && <RawMaterialsTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
-      {tab === 'expenses' && <ExpensesTab />}
       {tab === 'inventory_value' && <InventoryValueTab />}
     </div>
   );
@@ -267,8 +267,8 @@ function RawMaterialsTab() {
   return (
     <div>
       <div className="flex-between" style={{ marginBottom: 12 }}>
-        <input className="form-input" style={{ maxWidth: 320 }} placeholder="Search raw materials…" value={search} onChange={e => setSearch(e.target.value)} />
-        <button className="btn btn-primary" onClick={openAdd}>+ Add Raw Material</button>
+        <input className="form-input" style={{ maxWidth: 320 }} placeholder="Search stock items…" value={search} onChange={e => setSearch(e.target.value)} />
+        <button className="btn btn-primary" onClick={openAdd}>+ Add stock item</button>
       </div>
       <div className="card">
         <div className="table-wrap">
@@ -291,7 +291,7 @@ function RawMaterialsTab() {
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>{materials.length === 0 ? 'No raw materials yet' : 'No raw materials match your search'}</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>{materials.length === 0 ? 'No stock items yet' : 'No stock items match your search'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -301,7 +301,7 @@ function RawMaterialsTab() {
         <div className="modal-backdrop">
           <div className="modal">
             <div className="modal-header">
-              <div className="modal-title">{modal.mode === 'add' ? 'Add Raw Material' : 'Edit Raw Material'}</div>
+              <div className="modal-title">{modal.mode === 'add' ? 'Add stock item' : 'Edit stock item'}</div>
               <button className="btn btn-icon" onClick={() => setModal(null)}>✕</button>
             </div>
             <div className="modal-body">
@@ -322,7 +322,7 @@ function RawMaterialsTab() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>{modal.mode === 'add' ? 'Add Raw Material' : 'Save Changes'}</button>
+              <button className="btn btn-primary" onClick={save}>{modal.mode === 'add' ? 'Add stock item' : 'Save Changes'}</button>
             </div>
           </div>
         </div>
@@ -500,7 +500,7 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
         if (!l.product_id) { setFormError('Pick a product for every product line'); return; }
         items.push({ product_id: l.product_id, quantity: qty, unit_cost: cost });
       } else {
-        if (!l.raw_material_id) { setFormError('Pick a raw material for every ingredient line'); return; }
+        if (!l.raw_material_id) { setFormError('Pick a stock item for every ingredient line'); return; }
         items.push({ raw_material_id: l.raw_material_id, quantity: qty, unit_cost: cost });
       }
     }
@@ -708,7 +708,7 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-function ExpensesTab() {
+export function ExpensesTab() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -881,10 +881,10 @@ function InventoryValueTab() {
   return (
     <div>
       <div className="card" style={{ marginBottom: 16, padding: 14 }}>
-        <div className="stat-label">Total Inventory Value (at cost)</div>
+        <div className="stat-label">Total stock value (at cost)</div>
         <div style={{ fontSize: 26, fontWeight: 700 }}>{fmtIDR(data.grand_total)}</div>
         <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-          Raw Materials {fmtIDR(data.raw_materials_total)} · Products {fmtIDR(data.products_total)}
+          Stock items {fmtIDR(data.raw_materials_total)} · Sales items {fmtIDR(data.products_total)}
         </div>
         {data.uncosted_count > 0 && (
           <div style={{ fontSize: 12, color: '#D97706', marginTop: 8 }}>
@@ -894,7 +894,7 @@ function InventoryValueTab() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title" style={{ marginBottom: 8 }}>Raw Materials</div>
+        <div className="card-title" style={{ marginBottom: 8 }}>Stock items</div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
@@ -907,14 +907,14 @@ function InventoryValueTab() {
                   <td style={{ fontWeight: 600 }}>{m.value != null ? fmtIDR(m.value) : <span className="text-muted">—</span>}</td>
                 </tr>
               ))}
-              {data.raw_materials.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No raw materials yet</td></tr>}
+              {data.raw_materials.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No stock items yet</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
       <div className="card">
-        <div className="card-title" style={{ marginBottom: 8 }}>Products</div>
+        <div className="card-title" style={{ marginBottom: 8 }}>Sales items</div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
