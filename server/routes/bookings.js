@@ -3006,6 +3006,13 @@ router.put('/:id/change-room', auth, async (req, res) => {
         "UPDATE units SET status = 'available', housekeeping_status = 'dirty', housekeeping_updated_at = NOW() WHERE id = $1 AND property_id = $2",
         [before.unit_id, req.propertyId]
       );
+      // Do Not Disturb belongs to the stay — the guest leaving switches it off.
+      await client.query(
+        `UPDATE tasks SET status = 'done', updated_at = NOW()
+         WHERE unit_id = $1 AND property_id = $2 AND type = 'guest_request'
+           AND title LIKE 'Do Not Disturb%' AND status <> 'done'`,
+        [before.unit_id, req.propertyId]
+      );
       await client.query("UPDATE units SET status = 'occupied' WHERE id = $1 AND property_id = $2", [unit_id, req.propertyId]);
     }
 

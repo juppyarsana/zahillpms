@@ -7,7 +7,7 @@ import AlarmTimePicker, { formatDisplay } from './AlarmTimePicker';
 // alarm. Lives in the Stay panel's own empty space rather than the cramped
 // sidebar rail.
 export default function QuickActions({
-  roomId, operationsEnabled,
+  roomId, operationsEnabled, serverDndTaskId,
   callingEnabled, onCallFrontDesk, callActive,
   alarmTime, alarmEnabled, onSetAlarm,
 }) {
@@ -24,6 +24,17 @@ export default function QuickActions({
   useEffect(() => {
     setDndTaskId(localStorage.getItem(dndStorageKey) || null);
   }, [dndStorageKey]);
+
+  // Follow the server: front desk can switch DND off from the Dashboard and
+  // check-out clears it, so the next guest never finds it still on. Only a
+  // change in the server's value moves the button, so a poll that started
+  // before the guest's own tap can't flip it back.
+  useEffect(() => {
+    if (serverDndTaskId === undefined) return;
+    if (serverDndTaskId) localStorage.setItem(dndStorageKey, serverDndTaskId);
+    else localStorage.removeItem(dndStorageKey);
+    setDndTaskId(serverDndTaskId || null);
+  }, [serverDndTaskId, dndStorageKey]);
 
   const toggleDnd = async () => {
     if (dndBusy) return;

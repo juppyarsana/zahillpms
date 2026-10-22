@@ -536,6 +536,7 @@ export default function App() {
         roomControllerEnabled={state.roomControllerEnabled}
         callingEnabled={state.callingEnabled}
         operationsEnabled={state.operationsEnabled}
+        dndTaskId={state.dnd ? state.dnd.task_id : null}
         roomCheck={state.roomCheck}
         onOpenRoomCheck={() => setShowRoomCheck(true)}
         onRefresh={fetchState}

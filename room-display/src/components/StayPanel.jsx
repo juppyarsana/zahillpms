@@ -6,7 +6,7 @@ function fmt(dateStr) {
 
 export default function StayPanel({
   unit, booking, relays, controller, property, roomControllerEnabled,
-  roomId, operationsEnabled, callingEnabled, onCallFrontDesk, callActive,
+  roomId, operationsEnabled, dndTaskId: serverDndTaskId, callingEnabled, onCallFrontDesk, callActive,
   alarmTime, alarmEnabled, onSetAlarm,
 }) {
   const today = new Date();
@@ -131,6 +131,7 @@ export default function StayPanel({
         <QuickActions
           roomId={roomId}
           operationsEnabled={operationsEnabled}
+          serverDndTaskId={serverDndTaskId}
           callingEnabled={callingEnabled}
           onCallFrontDesk={onCallFrontDesk}
           callActive={callActive}

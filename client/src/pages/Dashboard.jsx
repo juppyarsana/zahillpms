@@ -167,6 +167,20 @@ function UnitCard({ unit, flags, health, onChanged }) {
   const [oooBusy, setOooBusy] = useState(false);
   const [oooError, setOooError] = useState('');
   const [oooReturnConfirm, setOooReturnConfirm] = useState(false);
+  const [dndBusy, setDndBusy] = useState(false);
+
+  // DND left on (e.g. the guest checked out without switching it off) — the
+  // tablet follows the server, so closing the task turns it off there too.
+  const turnOffDnd = async () => {
+    setDndBusy(true);
+    try {
+      await Promise.all((flags?.dndIds || []).map(id => api.put(`/api/tasks/${id}`, { status: 'done' })));
+      onChanged?.();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Could not switch Do Not Disturb off');
+    }
+    setDndBusy(false);
+  };
 
   async function markOutOfOrder() {
     if (!oooReason.trim()) { setOooError('A reason is required'); return; }
@@ -290,8 +304,17 @@ function UnitCard({ unit, flags, health, onChanged }) {
       {(flags?.dnd || flags?.clean) && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
           {flags.dnd && (
-            <span style={{ background: '#EDE9FE', color: '#5B21B6', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+            <span style={{ background: '#EDE9FE', color: '#5B21B6', padding: '3px 4px 3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               🔕 Do Not Disturb
+              <button
+                type="button"
+                disabled={dndBusy}
+                title="Switch Do Not Disturb off — also on the room tablet"
+                onClick={turnOffDnd}
+                style={{ border: 'none', background: '#fff', color: '#5B21B6', borderRadius: 12, padding: '1px 8px', fontSize: 11, fontWeight: 700, cursor: dndBusy ? 'default' : 'pointer' }}
+              >
+                {dndBusy ? '…' : 'Turn off'}
+              </button>
             </span>
           )}
           {flags.clean && (
@@ -658,8 +681,8 @@ function unitRequestFlags(guestRequests) {
   const map = new Map();
   for (const t of guestRequests) {
     if (!t.unit_id) continue;
-    const flags = map.get(t.unit_id) || { dnd: false, clean: false };
-    if (isDndTask(t)) flags.dnd = true;
+    const flags = map.get(t.unit_id) || { dnd: false, clean: false, dndIds: [] };
+    if (isDndTask(t)) { flags.dnd = true; flags.dndIds.push(t.id); }
     else if (t.title.startsWith('Please clean room')) flags.clean = true;
     map.set(t.unit_id, flags);
   }

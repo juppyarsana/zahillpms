@@ -151,6 +151,15 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       [unit.id]
     );
 
+    // Do Not Disturb as the server has it — front desk can switch it off and
+    // check-out clears it, so the tablet follows this rather than its own memory.
+    const { rows: dndRows } = await db.query(
+      `SELECT id FROM tasks
+       WHERE unit_id = $1 AND type = 'guest_request' AND title LIKE 'Do Not Disturb%' AND status <> 'done'
+       ORDER BY created_at DESC LIMIT 1`,
+      [unit.id]
+    );
+
     const weather = await getWeather();
 
     // Polling fallback for the calls SSE stream — a staff-to-room call that
@@ -174,6 +183,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       relays: relayRows,
       cards: cardRows,
       message: messageRows[0] || null,
+      dnd: dndRows[0] ? { task_id: dndRows[0].id } : null,
       incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
       weather,
       property: propertyRows[0] || null,
