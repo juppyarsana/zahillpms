@@ -372,6 +372,13 @@ function LobbyMusic({ music, quiet }) {
   }, [track?.url, pos]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const next = () => {
+    // One song: "the next one" is the same song at the same place, which
+    // changes nothing and would leave the lobby silent — play it again.
+    if (queue.length <= 1) {
+      const a = audioRef.current;
+      if (a) { a.currentTime = 0; a.play().catch(() => setBlocked(true)); }
+      return;
+    }
     if (pos + 1 >= queue.length && music?.shuffle && queue.length > 1) { setQueue(shuffled(tracks)); setPos(0); }
     else setPos(p => (queue.length ? (p + 1) % queue.length : 0));
   };
