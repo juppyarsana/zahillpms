@@ -9,7 +9,7 @@
 // reason. A bill can be changed or voided only while nothing is paid on it.
 const db = require('../db');
 const { todayWITA } = require('./roomChargeService');
-const { COST_CATEGORIES, CATEGORY_KEYS, CATEGORY_LABEL } = require('./costCategories');
+const { COST_CATEGORIES, CATEGORY_KEYS, CATEGORY_LABEL, DEPARTMENTS, DEPARTMENT_KEYS, DEPARTMENT_LABEL, departmentFor } = require('./costCategories');
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const num = v => parseFloat(v) || 0;
@@ -25,7 +25,7 @@ const PAID_SQL = `COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocatio
 
 const BILL_COLS = `b.id, b.bill_no, b.supplier_id, s.name AS supplier_name, b.supplier_ref,
   to_char(b.bill_date, 'YYYY-MM-DD') AS bill_date, to_char(b.due_date, 'YYYY-MM-DD') AS due_date,
-  b.category, b.purchase_order_id, po.po_number, b.notes, b.total, ${PAID_SQL} AS paid,
+  b.category, b.department, b.purchase_order_id, po.po_number, b.notes, b.total, ${PAID_SQL} AS paid,
   b.is_voided, b.voided_at, b.void_reason, vu.name AS voided_by_name, cu.name AS created_by_name, b.created_at`;
 const BILL_FROM = `FROM supplier_bills b
   JOIN suppliers s ON s.id = b.supplier_id
@@ -39,18 +39,19 @@ function shapeBill(b, today) {
   const status = b.is_voided ? 'voided' : balance <= 0.004 ? 'paid' : paid > 0 ? 'part_paid' : 'open';
   const daysOverdue = balance > 0 && b.due_date < today
     ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${b.due_date}T00:00:00Z`)) / 86400000) : 0;
-  return { ...b, bill_no_text: billNo(b.bill_no), category_label: CATEGORY_LABEL[b.category] || b.category, total, paid, balance, status, days_overdue: daysOverdue };
+  return { ...b, bill_no_text: billNo(b.bill_no), category_label: CATEGORY_LABEL[b.category] || b.category, department_label: DEPARTMENT_LABEL[b.department] || b.department, total, paid, balance, status, days_overdue: daysOverdue };
 }
 
 // ── Setup for the screens ──
 async function setup(propertyId) {
   const [{ rows: suppliers }, { rows: methods }] = await Promise.all([
-    db.query(`SELECT id, name, payment_terms_days, default_category, is_active
+    db.query(`SELECT id, name, payment_terms_days, default_category, default_department, is_active
               FROM suppliers WHERE property_id = $1 ORDER BY name`, [propertyId]),
     db.query(`SELECT id, label FROM payment_methods WHERE property_id = $1 AND is_active AND id NOT LIKE 'ota%'
               ORDER BY sort_order, label`, [propertyId]),
   ]);
-  return { categories: COST_CATEGORIES.map(([key, label]) => ({ key, label })), suppliers, payment_methods: methods, today: todayWITA() };
+  return { categories: COST_CATEGORIES.map(([key, label, , department]) => ({ key, label, department })),
+    departments: DEPARTMENTS.map(([key, label]) => ({ key, label })), suppliers, payment_methods: methods, today: todayWITA() };
 }
 
 // ── Suppliers (the Payables page can add one and set its terms) ──
@@ -59,10 +60,12 @@ async function saveSupplier(propertyId, body, supplierId = null) {
   if (terms != null && (!Number.isInteger(terms) || terms < 0 || terms > 365)) return fail(400, 'Payment terms must be 0–365 days');
   const category = body.default_category || null;
   if (category && !CATEGORY_KEYS.includes(category)) return fail(400, 'Choose a category');
+  const department = body.default_department || null;
+  if (department && !DEPARTMENT_KEYS.includes(department)) return fail(400, 'Choose a department');
   if (supplierId) {
     const { rows: [s] } = await db.query(
-      `UPDATE suppliers SET payment_terms_days = $1, default_category = $2 WHERE id = $3 AND property_id = $4
-       RETURNING id, name, payment_terms_days, default_category, is_active`, [terms, category, supplierId, propertyId]);
+      `UPDATE suppliers SET payment_terms_days = $1, default_category = $2, default_department = $3 WHERE id = $4 AND property_id = $5
+       RETURNING id, name, payment_terms_days, default_category, default_department, is_active`, [terms, category, department, supplierId, propertyId]);
     return s ? { supplier: s } : fail(404, 'Supplier not found');
   }
   const name = String(body.name || '').trim();
@@ -70,8 +73,8 @@ async function saveSupplier(propertyId, body, supplierId = null) {
   const { rows: [dup] } = await db.query('SELECT id FROM suppliers WHERE property_id = $1 AND lower(name) = lower($2)', [propertyId, name]);
   if (dup) return fail(409, 'A supplier with this name already exists', 'DUPLICATE');
   const { rows: [s] } = await db.query(
-    `INSERT INTO suppliers (property_id, name, payment_terms_days, default_category) VALUES ($1, $2, $3, $4)
-     RETURNING id, name, payment_terms_days, default_category, is_active`, [propertyId, name, terms, category]);
+    `INSERT INTO suppliers (property_id, name, payment_terms_days, default_category, default_department) VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, payment_terms_days, default_category, default_department, is_active`, [propertyId, name, terms, category, department]);
   return { supplier: s };
 }
 
@@ -79,7 +82,7 @@ async function saveSupplier(propertyId, body, supplierId = null) {
 async function cleanBill(client, propertyId, body) {
   const supplierId = body.supplier_id;
   const { rows: [supplier] } = supplierId
-    ? await client.query('SELECT id, payment_terms_days FROM suppliers WHERE id = $1 AND property_id = $2', [supplierId, propertyId])
+    ? await client.query('SELECT id, payment_terms_days, default_department FROM suppliers WHERE id = $1 AND property_id = $2', [supplierId, propertyId])
     : { rows: [] };
   if (!supplier) return fail(400, 'Choose the supplier');
   const billDate = body.bill_date;
@@ -98,10 +101,12 @@ async function cleanBill(client, propertyId, body) {
   }
   const category = body.category;
   if (!CATEGORY_KEYS.includes(category)) return fail(400, 'Choose what the bill is for');
+  if (body.department && !DEPARTMENT_KEYS.includes(body.department)) return fail(400, 'Choose a department');
+  const department = departmentFor(body.department, supplier.default_department, category);
   const total = Number(body.amount);
   if (!Number.isFinite(total) || !(total > 0) || total >= 1e12) return fail(400, "Enter the bill's amount");
   if (Math.abs(total * 100 - Math.round(total * 100)) > 1e-6) return fail(400, 'At most 2 decimals');
-  return { value: { supplier_id: supplierId, bill_date: billDate, due_date: dueDate, supplier_ref: ref, notes, purchase_order_id: poId, category, total: r2(total) } };
+  return { value: { supplier_id: supplierId, bill_date: billDate, due_date: dueDate, supplier_ref: ref, notes, purchase_order_id: poId, category, department, total: r2(total) } };
 }
 
 async function sameRefWarning(client, propertyId, v, exceptId) {
@@ -127,9 +132,9 @@ async function createBill(propertyId, body, userId) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`supplier_bill:${propertyId}`]);
     const { rows: [n] } = await client.query('SELECT COALESCE(MAX(bill_no), 0) + 1 AS no FROM supplier_bills WHERE property_id = $1', [propertyId]);
     const { rows: [b] } = await client.query(
-      `INSERT INTO supplier_bills (property_id, bill_no, supplier_id, supplier_ref, bill_date, due_date, purchase_order_id, notes, category, total, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-      [propertyId, n.no, v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, userId || null]);
+      `INSERT INTO supplier_bills (property_id, bill_no, supplier_id, supplier_ref, bill_date, due_date, purchase_order_id, notes, category, total, created_by, department)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [propertyId, n.no, v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, userId || null, v.department]);
     await client.query('COMMIT');
     return { bill: await getBill(propertyId, b.id) };
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
@@ -159,8 +164,8 @@ async function updateBill(propertyId, billId, body) {
     }
     await client.query(
       `UPDATE supplier_bills SET supplier_id = $1, supplier_ref = $2, bill_date = $3, due_date = $4, purchase_order_id = $5,
-         notes = $6, category = $7, total = $8, updated_at = NOW() WHERE id = $9`,
-      [v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, billId]);
+         notes = $6, category = $7, total = $8, department = $9, updated_at = NOW() WHERE id = $10`,
+      [v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, v.department, billId]);
     await client.query('COMMIT');
     return { bill: await getBill(propertyId, billId) };
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
@@ -198,11 +203,12 @@ async function getBill(propertyId, billId) {
   return { ...shapeBill(b, today), payments: payments.map(p => ({ ...p, amount: num(p.amount), payment_amount: num(p.payment_amount) })) };
 }
 
-async function listBills(propertyId, { supplier_id, status = 'open', q, from, to } = {}) {
+async function listBills(propertyId, { supplier_id, department, status = 'open', q, from, to } = {}) {
   const today = todayWITA();
   const P = [propertyId];
   const where = ['b.property_id = $1'];
   if (supplier_id) { P.push(supplier_id); where.push(`b.supplier_id = $${P.length}`); }
+  if (department) { P.push(department); where.push(`b.department = $${P.length}`); }
   if (validDay(from)) { P.push(from); where.push(`b.bill_date >= $${P.length}`); }
   if (validDay(to)) { P.push(to); where.push(`b.bill_date <= $${P.length}`); }
   if (q && String(q).trim()) {
@@ -329,7 +335,7 @@ async function listPayments(propertyId, { supplier_id, from, to } = {}) {
 // ── A bill from a purchase order: what was received and not billed yet ──
 async function fromPurchaseOrder(propertyId, poId) {
   const { rows: [po] } = await db.query(
-    `SELECT po.id, po.po_number, po.status, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category
+    `SELECT po.id, po.po_number, po.status, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category, s.default_department
      FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1 AND po.property_id = $2`, [poId, propertyId]);
   if (!po) return fail(404, 'Purchase order not found');
   const [{ rows: items }, { rows: [billed] }] = await Promise.all([
@@ -342,7 +348,7 @@ async function fromPurchaseOrder(propertyId, poId) {
   const already = r2(num(billed.amount));
   return {
     purchase_order: { id: po.id, po_number: po.po_number, status: po.status },
-    supplier: { id: po.supplier_id, name: po.supplier_name, payment_terms_days: po.payment_terms_days, default_category: po.default_category },
+    supplier: { id: po.supplier_id, name: po.supplier_name, payment_terms_days: po.payment_terms_days, default_category: po.default_category, default_department: po.default_department },
     received, billed: already, amount: r2(Math.max(0, received - already)),
     // what came in, for the bill's notes
     items: items.map(i => `${i.description} ${num(i.received_quantity)}${i.unit_of_measure ? ' ' + i.unit_of_measure : ''}`).join(', '),

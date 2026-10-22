@@ -210,11 +210,18 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     { header: 'Owed (Rp)', key: 'outstanding', fmt: IDR, align: 'right' }, { header: 'Not due yet (Rp)', key: 'current', fmt: IDR, align: 'right' },
     { header: 'Overdue (Rp)', key: 'overdue', fmt: IDR, align: 'right' }, { header: 'Over 60 days (Rp)', key: 'over_60', fmt: IDR, align: 'right' },
   ], agRows, { agent: 'Total', outstanding: ag.total + otas.amount, overdue: ag.overdue });
+  const deptRows = (costs.by_department || []).map(d => ({ ...d, change: d.change == null ? null : d.change }));
+  table(ws4, 'Costs by department', [
+    { header: 'Department', key: 'label' }, { header: 'Entries', key: 'entries', fmt: INT, align: 'right' },
+    { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
+    { header: 'Days before (Rp)', key: 'before', fmt: IDR, align: 'right' }, { header: 'Change (%)', key: 'change', fmt: PCT, align: 'right' },
+  ], deptRows, { label: 'Total costs', entries: deptRows.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: costs.total ? 100 : 0 },
+  'Expenses and supplier bills in this period, by the department they were for; compared with the same number of days just before.');
   table(ws4, 'Costs by category', [
     { header: 'Category', key: 'label' }, { header: 'Entries', key: 'entries', fmt: INT, align: 'right' },
     { header: 'Amount (Rp)', key: 'amount', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
   ], costs.by_category, { label: 'Total costs', entries: costs.by_category.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: costs.total ? 100 : 0 },
-  'Finance → Expenses logged in this period.');
+  'Expenses and supplier bills in this period.');
   widths(ws4, [40, 16, 18, 18, 16, 18]);
 
   // ── Daily ──

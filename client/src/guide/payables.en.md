@@ -16,8 +16,9 @@ Never record the same bill in both places.
 3. **Their invoice number**, as printed on the bill.
 4. **Bill date** = the date on the bill. The **Due date** fills itself in from the supplier's payment terms (you can change it).
 5. **What it is for** (Food, Drinks, Laundry, Utilities, Maintenance…) — the same list as Expenses. It fills itself in when the supplier has a usual category.
-6. **Amount** = the total on the bill, tax included.
-7. **Save bill**.
+6. **Department** — who the cost was for (Front Office, Housekeeping, F&B, Engineering / Maintenance, Activities, Sales & Marketing, Admin & General). It fills itself in from the supplier or the category; change it when needed (e.g. a repair of the kitchen stove = F&B).
+7. **Amount** = the total on the bill, tax included.
+8. **Save bill**.
 
 A bill that mixes things (e.g. a market bill with food and soap): choose what most of it is, or record it as two bills.
 
@@ -50,6 +51,10 @@ On a received purchase order (**Operations → Purchasing & Stock → Purchase O
 - A bill with a payment on it: void the payment first.
 
 Nothing is deleted: voided bills and payments stay listed with who voided them and why.
+
+## Which department costs the most
+
+**Reports → Money → Costs by department**: every expense and supplier bill of the period by department, its share, what it spent on and the change against the same number of days before. Also in the Excel and PDF report.
 
 ## In the books
 

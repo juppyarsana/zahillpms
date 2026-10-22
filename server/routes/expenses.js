@@ -9,7 +9,7 @@ const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 // Owner or the accountant (the `accounting` permission) — Finance → Expenses.
 const ownerOnly = [auth, requireOwnerOrMenu('expenses')];
 
-const { CATEGORY_KEYS: CATEGORIES } = require('../services/costCategories');
+const { CATEGORY_KEYS: CATEGORIES, DEPARTMENT_KEYS, DEPARTMENT_LABEL, CATEGORY_LABEL, departmentFor } = require('../services/costCategories');
 
 // Builds the WHERE clause + params shared by GET / and GET /export —
 // month/year default to the current month, matching Reports.jsx's convention
@@ -23,6 +23,10 @@ function buildFilter(req) {
   if (req.query.category) {
     params.push(req.query.category);
     where += ` AND e.category = $${params.length}`;
+  }
+  if (req.query.department) {
+    params.push(req.query.department);
+    where += ` AND e.department = $${params.length}`;
   }
   return { where, params, month, year };
 }
@@ -48,8 +52,9 @@ router.get('/', ownerOnly, async (req, res) => {
 
 // POST /api/expenses
 router.post('/', ownerOnly, async (req, res) => {
-  const { category, amount, incurred_on, payment_method, supplier_id, description, reference } = req.body;
+  const { category, amount, incurred_on, payment_method, supplier_id, description, reference, department } = req.body;
   if (!CATEGORIES.includes(category)) return res.status(400).json({ error: `category must be one of ${CATEGORIES.join(', ')}` });
+  if (department && !DEPARTMENT_KEYS.includes(department)) return res.status(400).json({ error: 'Choose a department' });
   const amt = parseFloat(amount);
   if (!Number.isFinite(amt) || amt <= 0) return res.status(400).json({ error: 'amount must be a positive number' });
 
@@ -61,14 +66,17 @@ router.post('/', ownerOnly, async (req, res) => {
       );
       if (!method) return res.status(400).json({ error: 'Unknown payment method' });
     }
+    let supplierDept = null;
     if (supplier_id) {
-      const { rows: [supplier] } = await db.query('SELECT id FROM suppliers WHERE id = $1 AND property_id = $2', [supplier_id, req.propertyId]);
+      const { rows: [supplier] } = await db.query('SELECT id, default_department FROM suppliers WHERE id = $1 AND property_id = $2', [supplier_id, req.propertyId]);
       if (!supplier) return res.status(400).json({ error: 'Supplier not found' });
+      supplierDept = supplier.default_department;
     }
     const { rows: [expense] } = await db.query(
-      `INSERT INTO expenses (property_id, category, amount, incurred_on, payment_method, supplier_id, description, reference, created_by)
-       VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE),$5,$6,$7,$8,$9) RETURNING *`,
-      [req.propertyId, category, amt, incurred_on || null, payment_method || null, supplier_id || null, description || null, reference || null, req.user.id]
+      `INSERT INTO expenses (property_id, category, amount, incurred_on, payment_method, supplier_id, description, reference, created_by, department)
+       VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE),$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [req.propertyId, category, amt, incurred_on || null, payment_method || null, supplier_id || null, description || null, reference || null, req.user.id,
+        departmentFor(department, supplierDept, category)]
     );
     res.status(201).json(expense);
   } catch (err) {
@@ -99,18 +107,19 @@ function csvEscape(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-const EXPENSE_CSV_SELECT = `SELECT e.incurred_on, e.category, e.amount, e.payment_method, s.name AS supplier_name, e.reference, e.description, u.name AS created_by_name
+const EXPENSE_CSV_SELECT = `SELECT e.incurred_on, e.category, e.department, e.amount, e.payment_method, s.name AS supplier_name, e.reference, e.description, u.name AS created_by_name
        FROM expenses e
        LEFT JOIN suppliers s ON s.id = e.supplier_id
        LEFT JOIN users u ON u.id = e.created_by`;
 
 function expenseRowsCsv(rows) {
-  const header = ['Date', 'Category', 'Amount', 'Payment Method', 'Supplier', 'Reference', 'Description', 'Recorded By'];
+  const header = ['Date', 'Category', 'Department', 'Amount', 'Payment Method', 'Supplier', 'Reference', 'Description', 'Recorded By'];
   const lines = [header.join(',')];
   for (const r of rows) {
     lines.push([
       csvEscape(String(r.incurred_on).slice(0, 10)),
-      csvEscape(r.category),
+      csvEscape(CATEGORY_LABEL[r.category] || r.category),
+      csvEscape(DEPARTMENT_LABEL[r.department] || r.department),
       csvEscape(r.amount),
       csvEscape(r.payment_method),
       csvEscape(r.supplier_name),

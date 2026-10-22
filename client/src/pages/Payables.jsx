@@ -64,7 +64,7 @@ export default function Payables() {
       if (!(d.amount > 0)) { setError(`Everything received on ${d.purchase_order.po_number} is already on a bill.`); return; }
       setBillForm({ prefill: {
         supplier_id: d.supplier.id, purchase_order_id: d.purchase_order.id, po_number: d.purchase_order.po_number,
-        category: d.supplier.default_category || '', amount: String(d.amount), notes: `${d.purchase_order.po_number}: ${d.items}`,
+        category: d.supplier.default_category || '', department: d.supplier.default_department || '', amount: String(d.amount), notes: `${d.purchase_order.po_number}: ${d.items}`,
       } });
     }).catch(e => setError(errText(e)));
     params.delete('from_po'); setParams(params, { replace: true });
@@ -135,7 +135,7 @@ export default function Payables() {
                     <tr key={b.id} style={{ cursor: 'pointer', opacity: b.is_voided ? 0.6 : 1 }} onClick={() => setViewing(b.id)}>
                       <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{b.bill_no_text}</td>
                       <td>{b.supplier_name}{b.po_number && <div className="text-muted" style={{ fontSize: 12 }}>{b.po_number}</div>}</td>
-                      <td>{b.category_label}</td>
+                      <td>{b.category_label}<div className="text-muted" style={{ fontSize: 12 }}>{b.department_label}</div></td>
                       <td>{b.supplier_ref || <span className="text-muted">—</span>}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.bill_date)}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.due_date)}
@@ -242,7 +242,7 @@ function SuppliersTab({ summary, setup, onOpen, onPay, onEdit, onAdd }) {
                 <tr key={s.supplier_id}>
                   <td><a href="#" onClick={e => { e.preventDefault(); onOpen(s.supplier_id); }} style={{ fontWeight: 600 }}>{s.supplier_name}</a>
                     <div className="text-muted" style={{ fontSize: 12 }}>
-                      {sup.payment_terms_days != null ? `Pays in ${sup.payment_terms_days} days` : 'No payment terms'}{sup.default_category ? ` · ${catLabel(sup.default_category)}` : ''}</div></td>
+                      {sup.payment_terms_days != null ? `Pays in ${sup.payment_terms_days} days` : 'No payment terms'}{sup.default_category ? ` · ${catLabel(sup.default_category)}` : ''}{sup.default_department ? ` · ${setup.departments.find(d => d.key === sup.default_department)?.label}` : ''}</div></td>
                   <td style={{ textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{cell(s.owed)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{cell(s.not_due)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{cell(s.d1_30, true)}</td>
@@ -272,7 +272,7 @@ function SuppliersTab({ summary, setup, onOpen, onPay, onEdit, onAdd }) {
 
 function SupplierModal({ setup, supplier, onClose, onSaved }) {
   const isNew = !supplier.id;
-  const [f, setF] = useState({ name: supplier.name || '', payment_terms_days: supplier.payment_terms_days ?? '', default_category: supplier.default_category || '' });
+  const [f, setF] = useState({ name: supplier.name || '', payment_terms_days: supplier.payment_terms_days ?? '', default_category: supplier.default_category || '', default_department: supplier.default_department || '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   async function save() {
@@ -299,6 +299,11 @@ function SupplierModal({ setup, supplier, onClose, onSaved }) {
           <div className="form-group"><label className="form-label">Usually bills for</label>
             <CategorySelect categories={setup.categories} value={f.default_category} empty="—" onChange={v => setF({ ...f, default_category: v })} />
             <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>A new bill from this supplier starts on it (e.g. Food for a vegetable seller).</div></div>
+          <div className="form-group"><label className="form-label">Usually for department</label>
+            <select className="form-select" value={f.default_department} onChange={e => setF({ ...f, default_department: e.target.value })}>
+              <option value="">— (from the category)</option>
+              {setup.departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+            </select></div>
           {!isNew && <div className="text-muted" style={{ fontSize: 12 }}>Name, contact and address: Operations → Purchasing &amp; Stock → Suppliers.</div>}
         </div>
         <div className="modal-footer">
@@ -315,12 +320,14 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
   const [suppliers, setSuppliers] = useState(setup.suppliers);
   const [f, setF] = useState(() => bill ? {
     supplier_id: bill.supplier_id, supplier_ref: bill.supplier_ref || '', bill_date: bill.bill_date, due_date: bill.due_date,
-    notes: bill.notes || '', purchase_order_id: bill.purchase_order_id || null, category: bill.category, amount: String(bill.total),
+    notes: bill.notes || '', purchase_order_id: bill.purchase_order_id || null, category: bill.category, department: bill.department, amount: String(bill.total),
   } : {
     supplier_id: p.supplier_id || '', supplier_ref: '', bill_date: setup.today, due_date: '', notes: p.notes || '',
-    purchase_order_id: p.purchase_order_id || null, category: p.category || '', amount: p.amount || '',
+    purchase_order_id: p.purchase_order_id || null, category: p.category || '', department: p.department || setup.categories.find(c => c.key === p.category)?.department || '', amount: p.amount || '',
   });
   const [dueTouched, setDueTouched] = useState(!!bill);
+  const [deptTouched, setDeptTouched] = useState(!!bill);
+  const catDept = k => setup.categories.find(c => c.key === k)?.department || '';
   const [newSupplier, setNewSupplier] = useState(null);
   const [err, setErr] = useState('');
   const [dupWarn, setDupWarn] = useState('');
@@ -335,7 +342,10 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
 
   function pickSupplier(id) {
     const s = suppliers.find(x => x.id === id);
-    setF(x => ({ ...x, supplier_id: id, category: x.category || s?.default_category || '' }));
+    setF(x => {
+      const category = x.category || s?.default_category || '';
+      return { ...x, supplier_id: id, category, department: deptTouched ? x.department : (s?.default_department || catDept(category)) };
+    });
   }
   async function addSupplier() {
     try {
@@ -401,7 +411,15 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
 
           <div className="form-row">
             <div className="form-group"><label className="form-label">What it is for *</label>
-              <CategorySelect categories={setup.categories} value={f.category} onChange={v => setF({ ...f, category: v })} /></div>
+              <CategorySelect categories={setup.categories} value={f.category}
+                onChange={v => setF({ ...f, category: v, department: deptTouched ? f.department : (sup?.default_department || catDept(v)) })} /></div>
+            <div className="form-group"><label className="form-label">Department *</label>
+              <select className="form-select" value={f.department || ''} onChange={e => { setDeptTouched(true); setF({ ...f, department: e.target.value }); }}>
+                <option value="">Choose…</option>
+                {setup.departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+              </select></div>
+          </div>
+          <div className="form-row">
             <div className="form-group"><label className="form-label">Amount (IDR) *</label>
               <input className="form-input" type="number" style={{ textAlign: 'right' }} value={f.amount} placeholder="total on the bill, tax included"
                 onChange={e => setF({ ...f, amount: e.target.value })} /></div>
@@ -417,7 +435,7 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !f.category || !(total > 0)}>
+          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !f.category || !f.department || !(total > 0)}>
             {busy ? 'Saving…' : bill ? 'Save changes' : `Save bill · ${idr(total)}`}</button>
         </div>
       </div>
@@ -451,7 +469,7 @@ function BillDetailModal({ id, onClose, onEdit, onPay, onChanged }) {
                 <span>· Due <b>{fmtDate(b.due_date)}</b>{b.days_overdue > 0 && <span style={{ color: '#DC2626' }}> ({b.days_overdue} days overdue)</span>}</span>
                 {b.po_number && <span>· {b.po_number}</span>}
               </div>
-              <div style={{ fontSize: 14, marginBottom: 8 }}>For: <b>{b.category_label}</b></div>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>For: <b>{b.category_label}</b> · Department: <b>{b.department_label}</b></div>
               <div style={{ textAlign: 'right', fontSize: 14 }}>
                 <div>Total <b>{idr(b.total)}</b></div>
                 {!b.is_voided && <><div>Paid {idr(b.paid)}</div><div style={{ fontWeight: 700, fontSize: 16 }}>Still owed {idr(b.balance)}</div></>}

@@ -247,8 +247,17 @@ function buildReportPdf(report, property) {
       { label: 'Overdue', w: 0.16, align: 'right', get: r => fmtIDR(r.overdue) }, { label: 'Over 60 days', w: 0.16, align: 'right', get: r => (r.over_60 === undefined ? '' : fmtIDR(r.over_60)) },
     ], agRows, { total: { agent: 'Total', outstanding: ag.total + otas.amount, overdue: ag.overdue }, empty: 'No agent owes anything.' });
 
+    if ((costs.by_department || []).length) {
+      subheading('Costs by department', 'Expenses and supplier bills, by the department they were for. Change = vs the same number of days just before.', costs.by_department.length + 1);
+      table([
+        { label: 'Department', w: 0.34, key: 'label' }, { label: 'Entries', w: 0.12, align: 'right', get: r => num(r.entries) },
+        { label: 'Amount', w: 0.22, align: 'right', get: r => fmtIDR(r.amount) }, { label: 'Share', w: 0.14, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
+        { label: 'Change', w: 0.18, align: 'right', get: r => (r.change == null ? (r.label === 'Total costs' ? '' : (r.before > 0 ? '—' : 'new')) : `${r.change > 0 ? '+' : ''}${pct(r.change)}`) },
+      ], costs.by_department, { total: { label: 'Total costs', entries: costs.by_department.reduce((s, c) => s + c.entries, 0), amount: costs.total, share: '', change: null } });
+    }
+
     if (costs.by_category.length) {
-      subheading('Costs by category', 'Finance > Expenses logged in this period.', costs.by_category.length + 1);
+      subheading('Costs by category', 'Expenses and supplier bills in this period.', costs.by_category.length + 1);
       table([
         { label: 'Category', w: 0.4, key: 'label' }, { label: 'Entries', w: 0.15, align: 'right', get: r => num(r.entries) },
         { label: 'Amount', w: 0.25, align: 'right', get: r => fmtIDR(r.amount) }, { label: 'Share', w: 0.2, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
@@ -257,7 +266,7 @@ function buildReportPdf(report, property) {
 
     subheading('Net income', null, 3);
     table([{ label: 'Item', w: 0.6, key: 'k' }, { label: 'Amount', w: 0.4, align: 'right', get: r => fmtIDR(r.v) }], [
-      { k: 'Total revenue', v: total }, { k: 'Expenses', v: -(report.expenses_total || 0) },
+      { k: 'Total revenue', v: total }, { k: 'Costs (expenses + supplier bills)', v: -(report.expenses_total || 0) },
     ], { total: { k: 'Net income', v: report.net_income } });
 
     // ── Daily breakdown (multi-day periods) ──

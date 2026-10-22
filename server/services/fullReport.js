@@ -22,7 +22,7 @@ const EXTRA_CATEGORIES = {
   service: 'Services', merchandise: 'Merchandise', minibar: 'Minibar', other: 'Other',
 };
 
-const { CATEGORY_LABEL: EXPENSE_CATEGORIES, COSTS_SQL } = require('./costCategories');   // shared with Payables
+const { CATEGORY_LABEL: EXPENSE_CATEGORIES, COSTS_SQL, DEPARTMENT_LABEL } = require('./costCategories');   // shared with Payables
 
 const r2 = n => round2(parseFloat(n) || 0);
 
@@ -39,7 +39,7 @@ async function buildFullReport(propertyId, from, to) {
     base, { rows: extraLines }, { rows: addonCats }, { rows: activities }, { rows: settingsRows },
     { rows: typeUnits }, { rows: byType }, { rows: byPlan }, { rows: byNat }, { rows: [arrivals] }, { rows: bySource }, { rows: byAgent },
     { rows: [disc] }, received, { rows: owedGuests }, agents,
-    pickup, { rows: [noShow] }, { rows: expenseCats },
+    pickup, { rows: [noShow] }, { rows: expenseCats }, { rows: prevDeptCosts },
   ] = await Promise.all([
     getReport(propertyId, from, to),
     // Hotel extras by category, on the day sold: the item part of every
@@ -156,12 +156,18 @@ async function buildFullReport(propertyId, from, to) {
              COALESCE(SUM(COALESCE(b.room_revenue + b.fnb_revenue, b.total_amount - COALESCE(b.discount_amount, 0))), 0) AS value
       FROM bookings b WHERE b.property_id = $3 AND b.status = 'no_show'
         AND b.check_in_date BETWEEN $1::date AND $2::date`, P),
-    // Costs by category: Expenses + supplier bills (same rule as getReport's expenses_total).
+    // Costs by category and department: Expenses + supplier bills (same rule as getReport's expenses_total).
     db.query(`
-      SELECT category, COUNT(*) AS entries, SUM(amount) AS amount
+      SELECT category, department, COUNT(*) AS entries, SUM(amount) AS amount
       FROM ${COSTS_SQL} c WHERE property_id = $3
         AND day BETWEEN $1::date AND $2::date
-      GROUP BY category`, P),
+      GROUP BY category, department`, P),
+    // The same days just before, by department (the change column).
+    db.query(`
+      SELECT department, SUM(amount) AS amount
+      FROM ${COSTS_SQL} c WHERE property_id = $3
+        AND day BETWEEN ($1::date - ($2::date - $1::date + 1)) AND ($1::date - 1)
+      GROUP BY department`, P),
   ]);
 
   // ── Revenue ──
@@ -319,15 +325,32 @@ async function buildFullReport(propertyId, from, to) {
     no_shows: { bookings: parseInt(noShow.bookings), rooms: parseInt(noShow.rooms), nights: parseInt(noShow.nights), value: r2(noShow.value) },
   };
 
-  // ── Costs (Back Office expenses) ──
+  // ── Costs (Expenses + supplier bills), by category and by department ──
   const expTotal = r2(base.expenses_total);
+  const group = (key, labelOf) => {
+    const m = new Map();
+    for (const c of expenseCats) {
+      const k = c[key];
+      const cur = m.get(k) || { [key]: k, label: labelOf[k] || k, entries: 0, amount: 0 };
+      cur.entries += parseInt(c.entries); cur.amount += parseFloat(c.amount) || 0;
+      m.set(k, cur);
+    }
+    return [...m.values()].map(x => ({ ...x, amount: r2(x.amount), share: expTotal > 0 ? r2(x.amount / expTotal * 100) : 0 }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+  const prevByDept = new Map(prevDeptCosts.map(d => [d.department, r2(d.amount)]));
+  const byDepartment = group('department', DEPARTMENT_LABEL).map(d => {
+    const before = prevByDept.get(d.department) || 0;
+    // what this department spent on, biggest first
+    const cats = expenseCats.filter(c => c.department === d.department)
+      .map(c => ({ category: c.category, label: EXPENSE_CATEGORIES[c.category] || c.category, amount: r2(c.amount) }))
+      .sort((a, b) => b.amount - a.amount);
+    return { ...d, before, change: before > 0 ? r2((d.amount - before) / before * 100) : null, categories: cats };
+  });
   const costs = {
     total: expTotal,
-    by_category: expenseCats.map(c => ({
-      category: c.category, label: EXPENSE_CATEGORIES[c.category] || c.category,
-      entries: parseInt(c.entries), amount: r2(c.amount),
-      share: expTotal > 0 ? r2(parseFloat(c.amount) / expTotal * 100) : 0,
-    })).sort((a, b) => b.amount - a.amount),
+    by_category: group('category', EXPENSE_CATEGORIES),
+    by_department: byDepartment,
   };
 
   return {

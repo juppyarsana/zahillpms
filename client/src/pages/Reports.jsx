@@ -611,9 +611,24 @@ export default function Reports() {
                 )}
               </div>
 
+              {(costs.by_department || []).length > 0 && (
+                <TableCard title={`Costs by department — ${fmtIDR(costs.total)}`} rows={costs.by_department}
+                  note="Expenses and supplier bills in this period, by the department they were for. The change compares with the same number of days just before."
+                  columns={[
+                    { key: 'label', label: 'Department', render: r => (
+                      <div><b>{r.label}</b>
+                        <div style={{ fontSize: 12, color: '#6B7280' }}>{r.categories.slice(0, 3).map(c => `${c.label} ${fmtIDR(c.amount)}`).join(' · ')}{r.categories.length > 3 ? ' · …' : ''}</div></div>) },
+                    { key: 'amount', label: 'Amount', align: 'right', render: r => <b>{fmtIDR(r.amount)}</b> },
+                    { key: 'share', label: 'Share', render: r => <ShareBar pct={r.share} color="#DC2626" /> },
+                    { key: 'change', label: 'vs before', align: 'right', render: r => r.change == null
+                      ? <span style={{ color: '#9CA3AF' }}>{r.before > 0 ? '—' : 'new'}</span>
+                      : <span style={{ color: r.change > 0 ? '#DC2626' : '#16A34A' }}>{r.change > 0 ? '+' : ''}{r.change}%</span> },
+                  ]}
+                  footer={{ label: 'Total costs', amount: fmtIDR(costs.total) }} />
+              )}
               {costs.by_category.length > 0 && (
-                <TableCard title={`Costs — ${fmtIDR(costs.total)}`} rows={costs.by_category}
-                  note="Finance → Expenses logged in this period, by category."
+                <TableCard title={`Costs by category — ${fmtIDR(costs.total)}`} rows={costs.by_category}
+                  note="Expenses and supplier bills in this period, by category."
                   columns={[
                     { key: 'label', label: 'Category', render: r => <b>{r.label}</b> },
                     { key: 'entries', label: 'Entries', align: 'right' },
@@ -626,13 +641,13 @@ export default function Reports() {
                 <div className="card-title" style={{ marginBottom: 12 }}>Net income</div>
                 <div className="grid-3">
                   <div><div style={{ fontSize: 12, color: '#6B7280' }}>Total revenue</div><div style={{ fontSize: 20, fontWeight: 700 }}>{fmtIDR(total)}</div></div>
-                  <div><div style={{ fontSize: 12, color: '#6B7280' }}>Expenses</div>
+                  <div><div style={{ fontSize: 12, color: '#6B7280' }}>Costs</div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: data.expenses_total > 0 ? '#DC2626' : '#111' }}>{data.expenses_total > 0 ? `− ${fmtIDR(data.expenses_total)}` : fmtIDR(0)}</div></div>
                   <div><div style={{ fontSize: 12, color: '#6B7280' }}>Net income</div>
                     <div style={{ fontSize: 20, fontWeight: 800, color: data.net_income >= 0 ? '#16A34A' : '#DC2626' }}>{fmtIDR(data.net_income)}</div></div>
                 </div>
                 {data.expenses_total === 0 && (
-                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>No expenses logged in this period — record costs under Finance → Expenses to see a real profit figure.</div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 10 }}>No costs recorded in this period — record them under Finance → Expenses or Payables to see a real profit figure.</div>
                 )}
               </div>
             </Section>

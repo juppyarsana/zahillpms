@@ -16,8 +16,9 @@ Jangan pernah mencatat tagihan yang sama di dua tempat.
 3. **Their invoice number** = nomor invoice seperti tertulis di tagihan.
 4. **Bill date** = tanggal di tagihan. **Due date** terisi sendiri dari tempo supplier (boleh diubah).
 5. **What it is for** (Food, Drinks, Laundry, Utilities, Maintenance…) — daftar yang sama dengan Expenses. Terisi sendiri kalau supplier sudah punya kategori biasanya.
-6. **Amount** = total di tagihan, termasuk pajak.
-7. **Save bill**.
+6. **Department** — untuk departemen mana biaya ini (Front Office, Housekeeping, F&B, Engineering / Maintenance, Activities, Sales & Marketing, Admin & General). Terisi sendiri dari supplier atau kategori; ubah kalau perlu (mis. perbaikan kompor dapur = F&B).
+7. **Amount** = total di tagihan, termasuk pajak.
+8. **Save bill**.
 
 Tagihan campuran (mis. nota pasar berisi makanan dan sabun): pilih yang paling besar, atau catat sebagai dua tagihan.
 
@@ -50,6 +51,10 @@ Di purchase order yang sudah diterima (**Operations → Purchasing & Stock → P
 - Tagihan yang sudah ada pembayarannya: void pembayarannya dulu.
 
 Tidak ada yang dihapus: tagihan dan pembayaran yang di-void tetap tampil dengan siapa yang mem-void dan alasannya.
+
+## Departemen mana yang biayanya paling besar
+
+**Reports → Money → Costs by department**: semua expense dan tagihan supplier di periode itu per departemen, porsinya, untuk apa saja, dan perubahannya dibanding jumlah hari yang sama sebelumnya. Juga ada di laporan Excel dan PDF.
 
 ## Di pembukuan
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
+import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -44,7 +45,7 @@ const EXPENSE_CATEGORY_COLORS = {
   utilities: 'blue', laundry: 'purple', maintenance: 'orange', staff: 'pink',
   supplies: 'amber', marketing: 'green', admin_fees: 'gray', ota_commission: 'blue', other: 'gray',
 };
-const EMPTY_EXPENSE = { category: 'utilities', amount: '', incurred_on: new Date().toISOString().slice(0, 10), payment_method: '', supplier_id: '', description: '', reference: '' };
+const EMPTY_EXPENSE = { category: 'utilities', department: 'engineering', amount: '', incurred_on: new Date().toISOString().slice(0, 10), payment_method: '', supplier_id: '', description: '', reference: '' };
 
 function materialStockBadge(m) {
   if (m.stock_quantity <= 0) return <span className="badge badge-red">Out of stock</span>;
@@ -748,7 +749,9 @@ export function ExpensesTab() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [category, setCategory] = useState('');
+  const [department, setDepartment] = useState('');
   const [expenses, setExpenses] = useState([]);
+  const [deptTouched, setDeptTouched] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [modal, setModal] = useState(false);
@@ -761,16 +764,26 @@ export function ExpensesTab() {
   function load() {
     const params = { month, year };
     if (category) params.category = category;
+    if (department) params.department = department;
     api.get('/api/expenses', { params }).then(r => setExpenses(r.data)).catch(() => {});
   }
-  useEffect(() => { load(); }, [month, year, category]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [month, year, category, department]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});
     api.get('/api/settings/payment-methods').then(r => setPaymentMethods(r.data.filter(m => m.is_active))).catch(() => setPaymentMethods([]));
   }, []);
 
-  function openAdd() { setForm({ ...EMPTY_EXPENSE, incurred_on: new Date().toISOString().slice(0, 10) }); setError(''); setModal(true); }
+  function openAdd() { setForm({ ...EMPTY_EXPENSE, incurred_on: new Date().toISOString().slice(0, 10) }); setDeptTouched(false); setError(''); setModal(true); }
+  // The department follows the category (or the supplier's usual one) until it is chosen by hand.
+  function pickCategory(cat) {
+    setForm(f => ({ ...f, category: cat, department: deptTouched ? f.department
+      : (suppliers.find(s => s.id === f.supplier_id)?.default_department || categoryDepartment(cat)) }));
+  }
+  function pickSupplier(id) {
+    const sup = suppliers.find(s => s.id === id);
+    setForm(f => ({ ...f, supplier_id: id, department: deptTouched ? f.department : (sup?.default_department || categoryDepartment(f.category)) }));
+  }
 
   async function save() {
     const amt = parseFloat(form.amount);
@@ -803,6 +816,7 @@ export function ExpensesTab() {
   function exportUrl() {
     const params = new URLSearchParams({ month, year });
     if (category) params.set('category', category);
+    if (department) params.set('department', department);
     return `/api/expenses/export?${params.toString()}`;
   }
 
@@ -820,6 +834,10 @@ export function ExpensesTab() {
             <option value="">All categories</option>
             {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
+          <select className="form-select" style={{ width: 200 }} value={department} onChange={e => setDepartment(e.target.value)}>
+            <option value="">All departments</option>
+            {DEPARTMENTS.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+          </select>
         </div>
         <div className="flex gap-2">
           <button className="btn btn-secondary" onClick={() => downloadCsv(exportUrl(), `expenses-${year}-${String(month).padStart(2, '0')}.csv`)}>⬇ Export CSV</button>
@@ -828,19 +846,20 @@ export function ExpensesTab() {
       </div>
 
       <div className="card" style={{ marginBottom: 12, padding: 14 }}>
-        <div className="stat-label">Total — {MONTHS[month - 1]} {year}{category ? ` · ${EXPENSE_CATEGORY_LABELS[category]}` : ''}</div>
+        <div className="stat-label">Total — {MONTHS[month - 1]} {year}{category ? ` · ${EXPENSE_CATEGORY_LABELS[category]}` : ''}{department ? ` · ${DEPARTMENT_LABEL[department]}` : ''}</div>
         <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtIDR(total)}</div>
       </div>
 
       <div className="card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Date</th><th>Category</th><th>Amount</th><th>Paid Via</th><th>Supplier</th><th>Reference</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Category</th><th>Department</th><th>Amount</th><th>Paid Via</th><th>Supplier</th><th>Reference</th><th></th></tr></thead>
             <tbody>
               {expenses.map(e => (
                 <tr key={e.id}>
                   <td>{fmtDate(e.incurred_on)}</td>
                   <td><span className={`badge badge-${EXPENSE_CATEGORY_COLORS[e.category]}`}>{EXPENSE_CATEGORY_LABELS[e.category]}</span></td>
+                  <td>{DEPARTMENT_LABEL[e.department] || '—'}</td>
                   <td style={{ fontWeight: 600 }}>{fmtIDR(e.amount)}</td>
                   <td>{e.payment_method || <span className="text-muted">—</span>}</td>
                   <td>{e.supplier_name || <span className="text-muted">—</span>}</td>
@@ -848,7 +867,7 @@ export function ExpensesTab() {
                   <td><button className="btn btn-sm btn-secondary" onClick={() => voidExpense(e)}>Void</button></td>
                 </tr>
               ))}
-              {expenses.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No expenses recorded for this period</td></tr>}
+              {expenses.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No expenses recorded for this period</td></tr>}
             </tbody>
           </table>
         </div>
@@ -865,10 +884,17 @@ export function ExpensesTab() {
               {error && <div className="alert alert-error">{error}</div>}
               <div className="form-row">
                 <div className="form-group"><label className="form-label">Category *</label>
-                  <select className="form-select" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                  <select className="form-select" value={form.category} onChange={e => pickCategory(e.target.value)}>
                     {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                   </select>
                 </div>
+                <div className="form-group"><label className="form-label">Department *</label>
+                  <select className="form-select" value={form.department} onChange={e => { setDeptTouched(true); setForm(f => ({ ...f, department: e.target.value })); }}>
+                    {DEPARTMENTS.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
                 <div className="form-group"><label className="form-label">Amount (IDR) *</label><input className="form-input" type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} /></div>
               </div>
               <div className="form-row">
@@ -881,7 +907,7 @@ export function ExpensesTab() {
                 </div>
               </div>
               <div className="form-group"><label className="form-label">Supplier / vendor</label>
-                <select className="form-select" value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))}>
+                <select className="form-select" value={form.supplier_id} onChange={e => pickSupplier(e.target.value)}>
                   <option value="">None — one-off cost</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
