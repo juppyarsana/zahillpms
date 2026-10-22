@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -579,7 +580,9 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
 
 function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const { can } = useAuth();   // approving needs the approve_po permission (owners always)
+  const { can, hasModule } = useAuth();   // approving needs the approve_po permission (owners always)
+  // Received goods → the supplier's bill in Finance → Payables (needs the chart: accounting module).
+  const canBill = can('payables') && hasModule('accounting') && po.items.some(it => Number(it.received_quantity) > 0);
 
   const transitions = {
     draft: [['pending_approval', 'Submit for Approval'], ['cancelled', 'Cancel']],
@@ -642,6 +645,7 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
             <button key={status} className={`btn btn-sm ${status === 'cancelled' ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onStatus(status)}>{label}</button>
           ))}
           {po.status === 'approved' && <button className="btn btn-sm btn-primary" onClick={() => setReceiveOpen(true)}>Receive Items</button>}
+          {canBill && <Link className="btn btn-sm btn-secondary" to={`/payables?from_po=${po.id}`} title="Record the supplier's bill for what was received">Make bill</Link>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>

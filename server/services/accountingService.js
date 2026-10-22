@@ -93,6 +93,7 @@ const MAP_KEYS = [
   ['commission.payable', 'Agent commission still to pay', 'Guests & agents', '2140'],
   ['commission.ota', 'Commission kept back by OTAs / agents from their payouts', 'Guests & agents', '5120'],
   ['pos.takings', 'Restaurant bills paid at the restaurant (from the POS sessions)', 'Money received', '1160'],
+  ['payables.supplier', 'Supplier bills not paid yet (Payables)', 'Suppliers', '2150'],
   ['expense.utilities', 'Utilities', 'Expenses', '6210'],
   ['expense.laundry', 'Laundry', 'Expenses', '6220'],
   ['expense.maintenance', 'Maintenance', 'Expenses', '6230'],

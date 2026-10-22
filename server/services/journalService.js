@@ -16,6 +16,9 @@
 //                Cr Guest ledger;  agent_paid: Dr Cash · Cr Agent receivable
 //   commission   Dr Commission cost · Cr Commission payable
 //   expenses     Back Office expenses: Dr Expense · Cr Cash / Bank
+//   bills        supplier bills (Payables, migration 129) on the bill date:
+//                Dr each line's account · Cr Accounts payable — suppliers
+//   bill_paid    payments to suppliers: Dr Accounts payable · Cr Cash / Bank
 //
 // Service charge + tax on a stay are the folio's own figures: worked out on
 // the stay's running total (as loadFolio does) and each day takes the
@@ -47,6 +50,8 @@ const ENTRIES = [
   ['agent_kept', 'Commission kept back from agent / OTA payouts'],
   ['commission', 'Agent commission'],
   ['expenses', 'Expenses'],
+  ['bills', 'Supplier bills'],
+  ['bill_paid', 'Payments to suppliers'],
   ['opening', 'Opening balances'],
   ['manual', 'Journal entries'],
   ['adjust', 'Corrections to closed days'],
@@ -108,7 +113,7 @@ async function collectPosts(propertyId, from, to) {
     mapping, { rows: [settings] }, { rows: charges }, { rows: payments }, { rows: transfers },
     { rows: groupPayments }, { rows: groupTransfers }, { rows: directSales }, { rows: activityMoney },
     { rows: activityRevenue }, { rows: posSessions }, { rows: agentPayments }, { rows: billed },
-    { rows: commissions }, { rows: expenses },
+    { rows: commissions }, { rows: expenses }, { rows: billLines }, { rows: billPayments },
   ] = await Promise.all([
     loadMapping(propertyId),
     db.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]),
@@ -242,6 +247,15 @@ async function collectPosts(propertyId, from, to) {
       SELECT e.category, e.amount, e.payment_method, e.description, e.reference, ${ymd('e.incurred_on')} AS day
       FROM expenses e
       WHERE e.property_id = $3 AND e.is_voided = false AND e.incurred_on BETWEEN $1::date AND $2::date`, P),
+    db.query(`
+      SELECT ${ymd('b.bill_date')} AS day, b.bill_no, b.supplier_ref, s.name AS supplier, l.account_id, l.amount, l.description
+      FROM supplier_bills b JOIN supplier_bill_lines l ON l.bill_id = b.id JOIN suppliers s ON s.id = b.supplier_id
+      WHERE b.property_id = $3 AND b.is_voided = false AND b.bill_date BETWEEN $1::date AND $2::date
+      ORDER BY b.bill_no, l.line_no`, P),
+    db.query(`
+      SELECT ${ymd('p.paid_on')} AS day, p.amount, p.method, p.reference, s.name AS supplier
+      FROM supplier_payments p JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.property_id = $3 AND p.is_voided = false AND p.paid_on BETWEEN $1::date AND $2::date`, P),
   ]);
 
   const saleIds = [...new Set([...charges.filter(c => c.sale_id).map(c => c.sale_id), ...directSales.map(s => s.id)])];
@@ -441,6 +455,19 @@ async function collectPosts(propertyId, from, to) {
     const memo = [e.description, e.reference].filter(Boolean).join(' · ');
     post(e.day, 'expenses', `expense.${e.category}`, num(e.amount), '', memo);
     post(e.day, 'expenses', `pay.${e.payment_method || 'other'}`, -num(e.amount), '', memo);
+  }
+
+  // ── Payables (migration 129): bills on the bill date, payments on the day paid ──
+  for (const l of billLines) {
+    const ref = `BILL-${String(l.bill_no).padStart(4, '0')}`;
+    const memo = [l.supplier, l.supplier_ref, l.description].filter(Boolean).join(' · ');
+    post(l.day, 'bills', `acct.${l.account_id}`, num(l.amount), ref, memo);
+    post(l.day, 'bills', 'payables.supplier', -num(l.amount), ref, memo);
+  }
+  for (const p of billPayments) {
+    const memo = [p.supplier, p.reference].filter(Boolean).join(' · ');
+    post(p.day, 'bill_paid', 'payables.supplier', num(p.amount), p.supplier, memo);
+    post(p.day, 'bill_paid', `pay.${p.method || 'other'}`, -num(p.amount), p.supplier, memo);
   }
 
   // ── The accountant's own entries (migration 111): stored, each line on its account ──

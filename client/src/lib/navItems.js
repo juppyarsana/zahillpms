@@ -42,8 +42,9 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('reports') && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
     ] },
     { id: 'finance', label: 'Finance', items: [
-      // In the money's order: what is owed to the hotel, what it spends, the books.
+      // In the money's order: owed to the hotel, owed by the hotel, spent, the books.
       can('receivables') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Receivables' },   // agents, companies, OTAs (owner or the accountant)
+      can('payables') && hasModule('accounting') && { to: '/payables', icon: '📥', label: 'Payables' },   // supplier bills, what the hotel owes
       can('expenses') && hasModule('back_office') && { to: '/expenses', icon: '💸', label: 'Expenses' },
       can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
     ] },
