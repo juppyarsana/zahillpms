@@ -100,10 +100,11 @@ const MAP_KEYS = [
   ['expense.supplies', 'Supplies', 'Expenses', '6250'],
   ['expense.marketing', 'Marketing', 'Expenses', '6260'],
   ['expense.admin_fees', 'Admin & bank fees', 'Expenses', '6270'],
+  ['expense.ota_commission', 'OTA commission (bills for bookings paid at the hotel)', 'Expenses', '5120'],
   ['expense.other', 'Other', 'Expenses', '6290'],
 ];
 const EXTRA_CATEGORIES = ['room_addon', 'transport', 'laundry', 'service', 'merchandise', 'minibar', 'other'];
-const EXPENSE_CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'other'];
+const EXPENSE_CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
 
 // A payment method's starting account, guessed from its id / label — so a
 // method added later in Settings works without visiting the mapping screen.

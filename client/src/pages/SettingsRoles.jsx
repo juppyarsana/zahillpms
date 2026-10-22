@@ -15,6 +15,7 @@ export const MENU_DEFS = [
   { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
   { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Revenue' },
   { key: 'cashier_closing',  label: 'Cashier Closing (payments received, all users)', group: 'Front Desk' },
+  { key: 'ota_payouts',      label: 'OTA payouts (record the weekly OTA withdrawals — OTA accounts only)', group: 'Front Desk' },
   // An action permission, not a page: make a stay free without asking for a
   // manager's Telegram approval code (see ComplimentaryModal.jsx).
   { key: 'grant_complimentary', label: 'Grant complimentary stays (no approval code)', group: 'Front Desk' },

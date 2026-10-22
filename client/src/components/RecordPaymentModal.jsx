@@ -175,7 +175,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
               {roomLines.length > 0 && ota && !vcc && (
                 <div className="alert" style={{ marginBottom: 8 }}><div>
                   <b>The room is paid by {ota}, not by the guest.</b> Leave it unticked — at check-out it goes onto {ota}'s account in Agent Billing,
-                  where the accountant records {ota}'s payout. Tick it here only if {ota}'s money for this stay already arrived before check-out.
+                  closed when the weekly {ota} withdrawal is recorded under OTA payouts. Tick it here only if {ota}'s money for this stay already arrived before check-out.
                 </div></div>
               )}
               {roomLines.length > 0 && (

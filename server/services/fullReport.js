@@ -24,7 +24,7 @@ const EXTRA_CATEGORIES = {
 
 const EXPENSE_CATEGORIES = {
   utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
-  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', other: 'Other',
+  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', ota_commission: 'OTA Commission', other: 'Other',
 };
 
 const r2 = n => round2(parseFloat(n) || 0);

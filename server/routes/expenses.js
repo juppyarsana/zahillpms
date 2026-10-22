@@ -8,7 +8,7 @@ const requireRole = require('../middleware/role');
 // handler, same convention as routes/purchasing.js.
 const ownerOnly = [auth, requireRole('owner')];
 
-const CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'other'];
+const CATEGORIES = ['utilities', 'laundry', 'maintenance', 'staff', 'supplies', 'marketing', 'admin_fees', 'ota_commission', 'other'];
 
 // Builds the WHERE clause + params shared by GET / and GET /export —
 // month/year default to the current month, matching Reports.jsx's convention

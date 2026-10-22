@@ -196,7 +196,7 @@ function OtaNote({ ota, amount, collect, vccFrom }) {
   return (
     <div style={box}>
       🌐 {fmtIDR(amount)} is paid to the hotel by <b>{ota}</b> — the guest paid {ota}. <b>Don't collect it from the guest.</b>{' '}
-      Nothing to do at the desk: at check-out it goes onto {ota}'s account in Agent Billing, where the accountant records {ota}'s payout.
+      Nothing to do at the desk: at check-out it goes onto {ota}'s account, and is closed when the weekly {ota} withdrawal is recorded under OTA payouts.
     </div>
   );
 }

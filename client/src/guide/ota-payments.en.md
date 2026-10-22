@@ -4,9 +4,9 @@ The room money of an OTA booking comes one of three ways. The PMS keeps which on
 
 | Room paid by | What it means | Who handles it |
 |---|---|---|
-| **The OTA — paid to the hotel by its payout** | The guest paid the OTA (e.g. Agoda, Traveloka). The OTA transfers to the hotel, usually weekly, with its commission taken off. | The accountant, in **Agent Billing** |
+| **The OTA — paid to the hotel by its payout** | The guest paid the OTA (e.g. Agoda, Traveloka). Front desk withdraws the money from the OTA weekly — net of the OTA's commission. | Front desk, in **OTA payouts** |
 | **The OTA — with a virtual card the hotel charges** | The OTA gives a virtual card (VCC). The hotel charges it itself on the card machine (EDC). | Front desk |
-| **The guest, at the hotel** | The guest pays at the hotel, like a direct booking. | Front desk |
+| **The guest, at the hotel** | The guest pays at the hotel, like a direct booking. The OTA then sends a commission bill. | Front desk (the room), the accountant (the commission bill) |
 
 The channel manager fills this in from the OTA. When the OTA doesn't say, the PMS assumes **the guest pays at the hotel** and puts a point on **To check** — look on the OTA's extranet and change it in Edit Details if the OTA collects. OTA bookings typed in by hand follow their source (an OTA source = paid by the OTA) until changed.
 
@@ -27,12 +27,14 @@ The channel manager fills this in from the OTA. When the OTA doesn't say, the PM
 
 Virtual card money shows on **Cashier Closing** as *OTA virtual card*, like any card payment.
 
-## Accountant: the weekly payout
+## Front desk: the weekly withdrawal
 
-1. Open **Agent Billing** → the OTA (e.g. *Agoda*). **Open Items** = stays checked out and not paid by the OTA yet.
+After withdrawing the money on the OTA's extranet:
+
+1. Open **OTA payouts** in the Front Desk menu (owner / accountant: **Agent Billing**) → the OTA (e.g. *Agoda*). **Open Items** = stays checked out and not paid by the OTA yet.
 2. Press **Record payout**.
-3. **Tick the stays** on the OTA's payout statement (or **Tick all**).
-4. Enter **Amount received in the bank** = what actually arrived, the date it arrived, and the payout number under **Reference**.
+3. **Tick the bookings** listed on the OTA's withdrawal (or **Tick all**).
+4. Enter **Amount received in the bank** = the net amount withdrawn (after the OTA's commission), the date, and the withdrawal number under **Reference**.
 5. **Commission kept back** fills itself in = the stays ticked − the money received (with its percentage). Change it if needed.
 6. **Record payout**. The stays ticked become *Paid by agent*.
 
@@ -42,7 +44,11 @@ What follows:
 - The commission goes to the cost **5120 Rooms — OTA commission** in the journal and on the **Profit & Loss**.
 - What a virtual card didn't cover: **Record payout** with *Amount received* **0** and the commission = the rest.
 
-A payout recorded by mistake: **Void** it (with a reason) — its stays are open again — then record it again.
+A payout recorded by mistake: ask the owner / accountant to **Void** it (with a reason) — its stays are open again — then record it again.
+
+## Accountant: commission bills (guest paid at the hotel)
+
+For bookings the guest paid at the hotel, the OTA sends a commission bill (e.g. Booking.com monthly). Record it in **Back Office → Expenses** with the category **OTA Commission**. It goes to the same cost (**5120 Rooms — OTA commission**) on the Profit & Loss.
 
 ## Reports
 
@@ -50,4 +56,5 @@ A payout recorded by mistake: **Void** it (with a reason) — its stays are open
 
 ## Who can do it
 
-Agent Billing opens for the **owner** and anyone with the **Accounting** permission (Roles & Permissions → Finance) — give it to the accountant.
+- **OTA payouts** (Roles & Permissions → Front Desk): front desk sees the OTA accounts only and records the withdrawals. No voids, invoices or other agents.
+- **Accounting** (Roles & Permissions → Finance): all of **Agent Billing** — for the accountant.

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const PDFDocument = require('pdfkit');
 const auth = require('../middleware/auth');
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
+const db = require('../db');
 const svc = require('../services/agentStatementService');
 const { renderAgentInvoice } = require('../services/agentInvoicePdf');
 const { sendControlAlert } = require('../services/ownerAlerts');
@@ -11,19 +12,33 @@ const { sendControlAlert } = require('../services/ownerAlerts');
 // accountant (the `accounting` permission) who records the agents' and OTAs'
 // payouts (migration 126).
 const ownerOnly = [auth, requireOwnerOrMenu('accounting')];
+// Front desk with the `ota_payouts` permission (migration 126): the OTAs'
+// accounts only — see them and record the weekly withdrawal. Voids, invoices,
+// commissions and every other agent stay with the owner / accounting.
+const fullAccess = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('accounting');
+const otaAccess = [auth, (req, res, next) => (fullAccess(req) || (req.user?.allowed_menus || []).includes('ota_payouts')
+  ? next() : res.status(403).json({ error: 'Forbidden' }))];
+async function agentAllowed(req, agentId) {
+  if (fullAccess(req)) return true;
+  if (!/^[0-9a-f-]{36}$/i.test(String(agentId))) return false;
+  const { rows: [a] } = await db.query('SELECT agent_type FROM agents WHERE id = $1 AND property_id = $2', [agentId, req.propertyId]);
+  return a?.agent_type === 'ota';
+}
 
 // AR aging — one row per agent (migration 084: agents, not booking sources)
-router.get('/', ownerOnly, async (req, res) => {
+router.get('/', otaAccess, async (req, res) => {
   try {
-    res.json(await svc.aging(req.propertyId, {}));
+    const rows = await svc.aging(req.propertyId, {});
+    res.json(fullAccess(req) ? rows : rows.filter(r => r.agent_type === 'ota'));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Full statement for one agent
-router.get('/:agentId', ownerOnly, async (req, res) => {
+router.get('/:agentId', otaAccess, async (req, res) => {
   try {
+    if (!(await agentAllowed(req, req.params.agentId))) return res.status(403).json({ error: 'Only the OTA accounts can be opened with the OTA payouts permission' });
     const data = await svc.statement(req.propertyId, req.params.agentId);
     if (!data) return res.status(404).json({ error: 'Agent not found' });
     res.json(data);
@@ -32,8 +47,9 @@ router.get('/:agentId', ownerOnly, async (req, res) => {
   }
 });
 
-router.post('/:agentId/payments', ownerOnly, async (req, res) => {
+router.post('/:agentId/payments', otaAccess, async (req, res) => {
   try {
+    if (!(await agentAllowed(req, req.params.agentId))) return res.status(403).json({ error: 'Only the OTA accounts can be paid with the OTA payouts permission' });
     const result = await svc.recordPayment(req.propertyId, req.params.agentId, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.status(201).json(result);

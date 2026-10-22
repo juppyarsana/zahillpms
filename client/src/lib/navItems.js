@@ -21,6 +21,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('guest_lists') && res && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
       can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
+      // Front desk recording the OTAs' weekly withdrawals (migration 126) — only the OTA accounts.
+      !can('accounting') && can('ota_payouts') && hasModule('financial') && { to: '/agents', icon: '🏦', label: 'OTA payouts' },
       can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
     ] },
     { id: 'services', label: 'Services', items: [

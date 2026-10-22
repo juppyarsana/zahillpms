@@ -4,9 +4,9 @@ Uang kamar dari booking OTA datang lewat salah satu dari tiga cara. PMS mencatat
 
 | Room paid by | Artinya | Siapa yang mengurus |
 |---|---|---|
-| **The OTA — paid to the hotel by its payout** | Tamu sudah bayar ke OTA (mis. Agoda, Traveloka). OTA mentransfer ke hotel, biasanya mingguan, sudah dipotong komisi. | Akuntan, di **Agent Billing** |
+| **The OTA — paid to the hotel by its payout** | Tamu sudah bayar ke OTA (mis. Agoda, Traveloka). Front desk menarik (withdraw) uangnya dari OTA tiap minggu — sudah dipotong komisi. | Front desk, di **OTA payouts** |
 | **The OTA — with a virtual card the hotel charges** | OTA memberi kartu virtual (VCC). Hotel sendiri yang men-charge kartu itu di mesin EDC. | Front desk |
-| **The guest, at the hotel** | Tamu bayar di hotel, seperti booking langsung. | Front desk |
+| **The guest, at the hotel** | Tamu bayar di hotel, seperti booking langsung. OTA kemudian mengirim tagihan komisi. | Front desk (kamar), akuntan (tagihan komisi) |
 
 Channel manager mengisi ini sendiri dari OTA. Kalau OTA tidak menyebutkan, PMS menganggap **tamu bayar di hotel** dan menaruh poin di **To check** — cek di extranet OTA lalu ubah di Edit Details kalau OTA yang menagih. Booking OTA yang diketik manual mengikuti source-nya (source OTA = dibayar OTA) sampai diubah.
 
@@ -27,12 +27,14 @@ Channel manager mengisi ini sendiri dari OTA. Kalau OTA tidak menyebutkan, PMS m
 
 Uang dari kartu virtual muncul di **Cashier Closing** sebagai *OTA virtual card*, seperti pembayaran kartu lain.
 
-## Akuntan: payout mingguan
+## Front desk: withdraw mingguan
 
-1. Buka **Agent Billing** → OTA-nya (mis. *Agoda*). **Open Items** = stay yang sudah check-out dan belum dibayar OTA.
+Setelah menarik (withdraw) uang dari extranet OTA:
+
+1. Buka **OTA payouts** di menu Front Desk (owner / akuntan: **Agent Billing**) → OTA-nya (mis. *Agoda*). **Open Items** = stay yang sudah check-out dan belum dibayar OTA.
 2. Tekan **Record payout**.
-3. **Centang stay** yang ada di laporan payout OTA (atau **Tick all**).
-4. Isi **Amount received in the bank** = uang yang benar-benar masuk, tanggal masuk, dan nomor payout di **Reference**.
+3. **Centang booking** yang tercantum di withdrawal OTA (atau **Tick all**).
+4. Isi **Amount received in the bank** = jumlah bersih yang ditarik (sudah dipotong komisi), tanggal, dan nomor withdrawal di **Reference**.
 5. **Commission kept back** terisi sendiri = total stay yang dicentang − uang yang masuk (dengan persentasenya). Bisa diubah kalau perlu.
 6. **Record payout**. Stay yang dicentang jadi *Paid by agent*.
 
@@ -42,7 +44,11 @@ Hasilnya:
 - Komisi masuk ke biaya **5120 Rooms — OTA commission** di jurnal dan **Profit & Loss**.
 - Sisa kartu virtual yang tidak ter-charge: **Record payout** dengan *Amount received* **0** dan komisi = sisanya.
 
-Payout salah catat: **Void** (dengan alasan) — stay-nya kembali terbuka, lalu catat ulang.
+Payout salah catat: minta owner / akuntan untuk **Void** (dengan alasan) — stay-nya kembali terbuka, lalu catat ulang.
+
+## Akuntan: tagihan komisi (tamu bayar di hotel)
+
+Untuk booking yang tamunya bayar di hotel, OTA mengirim tagihan komisi (mis. Booking.com tiap bulan). Catat di **Back Office → Expenses** dengan kategori **OTA Commission**. Masuk ke biaya yang sama (**5120 Rooms — OTA commission**) di Profit & Loss.
 
 ## Laporan
 
@@ -50,4 +56,5 @@ Payout salah catat: **Void** (dengan alasan) — stay-nya kembali terbuka, lalu 
 
 ## Hak akses
 
-Agent Billing dibuka oleh **owner** dan siapa pun dengan hak **Accounting** (Roles & Permissions → Finance) — beri hak ini ke akuntan.
+- **OTA payouts** (Roles & Permissions → Front Desk): front desk melihat akun OTA saja dan mencatat withdrawal. Tidak bisa void, membuat invoice, atau membuka agen lain.
+- **Accounting** (Roles & Permissions → Finance): seluruh **Agent Billing** — untuk akuntan.

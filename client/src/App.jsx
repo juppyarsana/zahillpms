@@ -212,7 +212,8 @@ function RequireAuth({ children }) {
 
 function RequireMenu({ menuKey, children }) {
   const { can, user } = useAuth();
-  if (!can(menuKey)) return <Navigate to={firstAllowedPath(user)} replace />;
+  const keys = Array.isArray(menuKey) ? menuKey : [menuKey];   // any one of them
+  if (!keys.some(can)) return <Navigate to={firstAllowedPath(user)} replace />;
   return children;
 }
 
@@ -307,8 +308,8 @@ export default function App() {
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
                   <Route path="/cashier-closing"  element={<RequireMenu menuKey="cashier_closing"><RequireModule moduleName="financial"><CashierClosing /></RequireModule></RequireMenu>} />
                   <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
-                  <Route path="/agents"          element={<RequireMenu menuKey="accounting"><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
-                  <Route path="/agents/:agentId" element={<RequireMenu menuKey="accounting"><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
+                  <Route path="/agents"          element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
+                  <Route path="/agents/:agentId" element={<RequireMenu menuKey={['accounting', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/reports"         element={<RequireOwner><RequireModule moduleName="financial"><Reports /></RequireModule></RequireOwner>} />
                   <Route path="/back-office"     element={<RequireOwner><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireOwner>} />
                   <Route path="/accounting"      element={<RequireMenu menuKey="accounting"><RequireModule moduleName="accounting"><Accounting /></RequireModule></RequireMenu>} />

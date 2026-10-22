@@ -33,11 +33,11 @@ async function downloadCsv(url, filename) {
 
 const EXPENSE_CATEGORY_LABELS = {
   utilities: 'Utilities', laundry: 'Laundry', maintenance: 'Maintenance', staff: 'Staff',
-  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', other: 'Other',
+  supplies: 'Supplies', marketing: 'Marketing', admin_fees: 'Admin & Bank Fees', ota_commission: 'OTA Commission', other: 'Other',
 };
 const EXPENSE_CATEGORY_COLORS = {
   utilities: 'blue', laundry: 'purple', maintenance: 'orange', staff: 'pink',
-  supplies: 'amber', marketing: 'green', admin_fees: 'gray', other: 'gray',
+  supplies: 'amber', marketing: 'green', admin_fees: 'gray', ota_commission: 'blue', other: 'gray',
 };
 const EMPTY_EXPENSE = { category: 'utilities', amount: '', incurred_on: new Date().toISOString().slice(0, 10), payment_method: '', supplier_id: '', description: '', reference: '' };
 

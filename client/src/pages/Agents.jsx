@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
 import AgentFormModal from '../components/AgentFormModal';
 import ReasonModal from '../components/ReasonModal';
@@ -42,6 +43,9 @@ export default function Agents() {
 
 function AgentList() {
   const nav = useNavigate();
+  // Front desk with only "OTA payouts" (migration 126): the OTA accounts, nothing to edit.
+  const { can } = useAuth();
+  const full = can('accounting');
   const [agents, setAgents] = useState([]);
   const [aging, setAging] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +71,7 @@ function AgentList() {
   }), { owed: 0, overdue: 0, commission: 0 });
 
   const needle = q.trim().toLowerCase();
-  const rows = agents.filter(a =>
+  const rows = agents.filter(a => (full || a.agent_type === 'ota') &&
     (showInactive || a.is_active || Number(owed[a.id]?.total_outstanding) > 0 || Number(owed[a.id]?.unpaid_commission) > 0)
     && (!needle || [a.name, a.contact_name, a.contact_phone].some(v => v && v.toLowerCase().includes(needle))));
 
@@ -75,16 +79,18 @@ function AgentList() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Agent Billing</div>
-          <div className="page-subtitle">Travel agents, companies and wholesalers — billing terms and what they owe · Owner only</div>
+          <div className="page-title">{full ? 'Agent Billing' : 'OTA payouts'}</div>
+          <div className="page-subtitle">{full
+            ? 'Travel agents, companies, wholesalers and OTAs — billing terms and what they owe'
+            : 'What each OTA still owes for stays checked out — open one to record its weekly withdrawal'}</div>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')}><Icon name="plus" />New agent</button>
+        {full && <button className="btn btn-primary" onClick={() => setEditing('new')}><Icon name="plus" />New agent</button>}
       </div>
 
       <div className="stat-grid stat-grid-money" style={{ marginBottom: 16 }}>
-        <div className="stat-card"><div className="stat-label">Owed by agents</div><div className="stat-value">{fmtIDR(totals.owed)}</div></div>
+        <div className="stat-card"><div className="stat-label">{full ? 'Owed by agents' : 'Owed by the OTAs'}</div><div className="stat-value">{fmtIDR(totals.owed)}</div></div>
         <div className="stat-card"><div className="stat-label">Overdue</div><div className="stat-value" style={{ color: totals.overdue > 0 ? '#DC2626' : undefined }}>{fmtIDR(totals.overdue)}</div></div>
-        <div className="stat-card"><div className="stat-label">Commission to pay</div><div className="stat-value" style={{ color: totals.commission > 0 ? '#D97706' : undefined }}>{fmtIDR(totals.commission)}</div></div>
+        {full && <div className="stat-card"><div className="stat-label">Commission to pay</div><div className="stat-value" style={{ color: totals.commission > 0 ? '#D97706' : undefined }}>{fmtIDR(totals.commission)}</div></div>}
       </div>
 
       <div className="flex gap-2 items-center" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
@@ -138,12 +144,12 @@ function AgentList() {
                     <td style={{ ...TD, textAlign: 'right', color: overdue(r) > 0 ? '#DC2626' : '#9CA3AF' }}>{overdue(r) > 0 ? fmtIDR(overdue(r)) : '—'}</td>
                     <td style={{ ...TD, textAlign: 'right', color: Number(r?.unpaid_commission) > 0 ? '#D97706' : '#9CA3AF' }}>{Number(r?.unpaid_commission) > 0 ? fmtIDR(r.unpaid_commission) : '—'}</td>
                     <td style={{ ...TD, textAlign: 'right' }}>
-                      <button className="btn btn-sm btn-secondary" onClick={e => { e.stopPropagation(); setEditing(a); }}>Edit</button>
+                      {full && <button className="btn btn-sm btn-secondary" onClick={e => { e.stopPropagation(); setEditing(a); }}>Edit</button>}
                     </td>
                   </tr>
                 );
               })}
-              {noAgent && (
+              {noAgent && full && (
                 <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
                   <td style={TD} colSpan={3}><span style={{ fontWeight: 600 }}>No agent</span> <span style={{ fontSize: 11, color: '#9CA3AF' }}>· billed stays without an agent — set one on the booking</span></td>
                   <td style={{ ...TD, textAlign: 'right', fontWeight: 700 }}>{fmtIDR(noAgent.total_outstanding)}</td>
@@ -168,6 +174,8 @@ function AgentList() {
 
 function AgentDetail({ agentId }) {
   const nav = useNavigate();
+  const { can } = useAuth();
+  const full = can('accounting');   // else only "OTA payouts": record the withdrawal, nothing else
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
@@ -240,7 +248,7 @@ function AgentDetail({ agentId }) {
       <div className="page-header">
         <div>
           <div className="page-title">
-            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>Agent Billing</span>
+            <span style={{ cursor: 'pointer', color: '#6B7280' }} onClick={() => nav('/agents')}>{full ? 'Agent Billing' : 'OTA payouts'}</span>
             {' / '}{agent.label}
             {!agent.is_active && <span className="badge badge-gray" style={{ marginLeft: 8, fontSize: 11 }}>Inactive</span>}
           </div>
@@ -255,10 +263,12 @@ function AgentDetail({ agentId }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-secondary" onClick={() => setEditOpen(true)}>Edit</button>
-          <button className="btn btn-secondary" onClick={() => setInvOpen(true)} disabled={!open_items.some(i => i.folio_status === 'pending_agent_invoice')}>
-            Generate Invoice
-          </button>
+          {full && <button className="btn btn-secondary" onClick={() => setEditOpen(true)}>Edit</button>}
+          {full && (
+            <button className="btn btn-secondary" onClick={() => setInvOpen(true)} disabled={!open_items.some(i => i.folio_status === 'pending_agent_invoice')}>
+              Generate Invoice
+            </button>
+          )}
           <button className="btn btn-primary" onClick={() => setPayOpen(true)} disabled={aging.total_outstanding <= 0}>
             {agent.agent_type === 'ota' ? 'Record payout' : 'Record Payment'}
           </button>
@@ -329,7 +339,7 @@ function AgentDetail({ agentId }) {
                 <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(p.received_on)}{p.method ? ` · ${p.method.replace('_', ' ')}` : ''}{p.reference ? ` · ${p.reference}` : ''}</span>
                 {p.is_voided && <div style={{ fontSize: 12, color: '#B91C1C' }}>Voided {fmtDate(p.voided_at)}{p.voided_by_name ? ` by ${p.voided_by_name}` : ''} — {p.void_reason}</div>}
               </div>
-              {!p.is_voided && <button className="btn btn-sm btn-secondary" onClick={() => setVoidingPay(p)}>Void</button>}
+              {!p.is_voided && full && <button className="btn btn-sm btn-secondary" onClick={() => setVoidingPay(p)}>Void</button>}
             </div>
             {(p.allocations || []).length > 0 && (
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
@@ -350,7 +360,7 @@ function AgentDetail({ agentId }) {
               <span style={{ color: '#6B7280', fontSize: 13 }}> · {fmtDate(inv.issued_on)} · {inv.voided_at ? '' : `${inv.booking_count} booking(s) · `}{fmtIDR(inv.total)}</span>
               {inv.voided_at && <div style={{ fontSize: 12, color: '#B91C1C' }}>Voided {fmtDate(inv.voided_at)} — {inv.void_reason}</div>}
             </div>
-            {!inv.voided_at && (
+            {!inv.voided_at && full && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button className="btn btn-sm btn-secondary" onClick={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>⬇ PDF</button>
                 <button className="btn btn-sm btn-secondary" title="Issued by mistake — its stays can be invoiced again" onClick={() => setVoidingInv(inv)}>Void</button>
@@ -368,7 +378,7 @@ function AgentDetail({ agentId }) {
               <span style={{ color: '#6B7280', fontSize: 13 }}> · {c.guest_name} · {fmtDate(c.check_out_date)}</span>
             </div>
             <label style={{ fontSize: 13, cursor: 'pointer' }}>
-              <input type="checkbox" checked={c.status === 'paid'} onChange={e => setCommission(c.id, e.target.checked ? 'paid' : 'unpaid')} />
+              <input type="checkbox" checked={c.status === 'paid'} disabled={!full} onChange={e => setCommission(c.id, e.target.checked ? 'paid' : 'unpaid')} />
               {' '}paid
             </label>
           </div>
