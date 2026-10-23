@@ -8,6 +8,7 @@ const { drawDocumentHeader } = require('../services/pdfHeader');
 const { factor } = require('../services/priceBasis');
 const { recomputeBookingStatus } = require('../services/paymentStatusService');
 const groupBilling = require('../services/groupBilling');
+const { posBillLabel } = require('../services/posBillLabel');
 
 function fmtIDR(n) {
   // Fixed 2 decimals — the default toLocaleString('id-ID') caps at 3 fraction
@@ -913,6 +914,20 @@ function includesNote({ service_charge_rate, service_charge_amount, tax_rate, ta
 // balance due, starting at the doc's current y. Shared by the single-booking
 // invoice/pro-forma and, per room, by the group pro-forma. Returns the y the
 // caller should continue from.
+// How a non-stay line reads on a printed document. A POS restaurant bill:
+// "SISI GEGE · SG-00001/10/26 · 21 Oct" instead of its items (migration 133 —
+// the guest has the restaurant's itemised receipt; the Folio tab keeps them).
+const witaDay = d => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Makassar' });
+function printedLine(c) {
+  let d = c.description;
+  if (c.pos_bill) {
+    d = posBillLabel({ outlet: c.pos_bill.outlet, billNo: c.pos_bill.bill_no, ref: c.pos_bill.ref })
+      + (c.posted_at ? ` · ${shortDay(witaDay(c.posted_at))}` : '');
+  }
+  if (c.transferred_from) d = `${d} (from ${c.transferred_from})`;
+  return d === c.description ? c : { ...c, description: d };
+}
+
 function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal, untaxed_subtotal, tax_rate, service_charge_rate, service_charge_amount, tax_amount, total, balance_due, prices_include_tax, show_tax_breakdown, hideStayFor = null, showBalance = true }) {
   // Prices entered incl. service & tax (migration 079): every line the folio
   // adds service + tax to is shown all-in, and the totals say what's inside.
@@ -925,8 +940,7 @@ function drawChargeTable(doc, { booking, charges: netCharges, payments, subtotal
   const charges = [
     ...mergeStayLines(rawCharges, booking),
     ...mergeAddonLines(rawCharges),
-    ...rawCharges.filter(c => !isStayLine(c))
-      .map(c => (c.transferred_from ? { ...c, description: `${c.description} (from ${c.transferred_from})` } : c)),
+    ...rawCharges.filter(c => !isStayLine(c)).map(printedLine),
   ];
   const tableTop = doc.y;
   const colX = { desc: 50, qty: 300, price: 360, amount: 460 };
@@ -1251,7 +1265,7 @@ function drawPaidByRoom(doc, f) {
   const paid = allInCharges(f.charges.filter(c => !c.to_group && c.paid_at_desk && !c.complimentary), f.tax_rate, f.service_charge_rate);
   if (!paid.length) return;
   const isNight = c => c.type === 'addon' && c.service_date;
-  const lines = [...mergeAddonLines(paid), ...paid.filter(c => !isNight(c))];
+  const lines = [...mergeAddonLines(paid), ...paid.filter(c => !isNight(c)).map(printedLine)];
   const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
   let y = doc.y + 4;
   if (y > 720) { doc.addPage(); y = 50; }

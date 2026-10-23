@@ -7,6 +7,7 @@
 //   renderFunctionSheet — for operations (kitchen, housekeeping, FO): who,
 //                         when, how many, set-up notes, every meal. No prices.
 const { MEAL_KINDS, whenText } = require('./eventService');
+const { posBillLabel } = require('./posBillLabel');
 
 const fmtDay = d => new Date(String(d).slice(0, 10) + 'T00:00:00Z')
   .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -73,7 +74,10 @@ function renderEventBill(doc, { bill, group, showBreakdown = false, proforma = f
     y += 18;
   }
   for (const c of bill.charges) {
-    const label = `${c.description}${c.type === 'pos' ? ' (restaurant)' : ''} · ${fmtShort(c.service_date)}`;
+    // A restaurant bill: the restaurant's name + its bill number, not the
+    // items (migration 133 — the client has the restaurant's receipt).
+    const what = c.type === 'pos' ? posBillLabel({ outlet: c.pos_outlet, billNo: c.pos_bill_no, ref: c.external_ref }) : c.description;
+    const label = `${what} · ${fmtShort(c.service_date)}`;
     const h = Math.max(14, doc.heightOfString(label, { width: 260 }));
     if (y + h > doc.page.height - doc.page.margins.bottom - 20) { doc.addPage(); y = doc.y; }
     const amount = allIn ? c.total : c.amount;

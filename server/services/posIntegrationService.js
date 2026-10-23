@@ -71,7 +71,7 @@ async function netFromGross(propertyId, gross) {
   return fitToGross(round2(g / b.F), 0, g, b.tax_rate, b.service_charge_rate);
 }
 
-async function postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef }) {
+async function postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef, billNo = null, outlet = null }) {
   const gross = grossAmount != null && grossAmount !== '' ? Number(grossAmount) : null;
   if (gross != null && (!Number.isFinite(gross) || gross <= 0)) return { error: 'gross_amount must be a positive number', status: 400 };
   const amt = gross != null ? await netFromGross(propertyId, gross) : Number(amount);
@@ -122,10 +122,10 @@ async function postTransaction(propertyId, { bookingId, room, amount, grossAmoun
     }
 
     const { rows: [sale] } = await client.query(
-      `INSERT INTO sales (property_id, booking_id, payment_method, total_amount, order_source, external_ref, description, shown_total)
-       VALUES ($1, $2, 'room_charge', $3, 'external_pos', $4, $5, $6)
+      `INSERT INTO sales (property_id, booking_id, payment_method, total_amount, order_source, external_ref, description, shown_total, pos_bill_no, pos_outlet)
+       VALUES ($1, $2, 'room_charge', $3, 'external_pos', $4, $5, $6, $7, $8)
        RETURNING *`,
-      [propertyId, booking.id, amt, ref, desc, gross != null ? Math.round(gross * 100) / 100 : null]
+      [propertyId, booking.id, amt, ref, desc, gross != null ? Math.round(gross * 100) / 100 : null, billNo, outlet]
     );
     const { rows: [charge] } = await client.query(
       `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, sale_id)
@@ -141,7 +141,7 @@ async function postTransaction(propertyId, { bookingId, room, amount, grossAmoun
     // Two concurrent retries with the same ref: the loser hits the unique
     // index — return the winner's sale instead of an error.
     if (err.code === '23505' && ref) {
-      return postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef: ref });
+      return postTransaction(propertyId, { bookingId, room, amount, grossAmount, description, externalRef: ref, billNo, outlet });
     }
     throw err;
   } finally {

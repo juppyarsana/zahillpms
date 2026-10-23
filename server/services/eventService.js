@@ -794,7 +794,7 @@ async function posMealStatus(propertyId, mealId, status, by) {
 // A restaurant bill charged to an event: one 'pos' line on its bill. `amount`
 // is NET; or `grossAmount` = what the client pays, turned to NET at the
 // event's own rates. Safe to retry with the same externalRef (replayed: true).
-async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, description, externalRef }) {
+async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, description, externalRef, billNo = null, outlet = null }) {
   const gross = grossAmount != null && grossAmount !== '' ? Number(grossAmount) : null;
   if (gross != null && (!Number.isFinite(gross) || gross <= 0)) throw new EventError(400, 'gross_amount must be a positive number');
   if (gross == null && !(Number(amount) > 0)) throw new EventError(400, 'amount must be a positive number');
@@ -834,9 +834,9 @@ async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, des
       const today = todayWITA();
       const day = meal ? ymd(meal.service_date) : today < e.event_date ? e.event_date : today > e.end_date ? e.end_date : today;
       const { rows: [c] } = await client.query(
-        `INSERT INTO event_charges (property_id, event_id, type, description, service_date, quantity, unit_price, amount, shown_total, external_ref, meal_id)
-         VALUES ($1, $2, 'pos', $3, $4, 1, $5, $5, $6, $7, $8) RETURNING *`,
-        [propertyId, e.id, desc, day, net, shownTotal, ref, meal ? meal.id : null]);
+        `INSERT INTO event_charges (property_id, event_id, type, description, service_date, quantity, unit_price, amount, shown_total, external_ref, meal_id, pos_bill_no, pos_outlet)
+         VALUES ($1, $2, 'pos', $3, $4, 1, $5, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [propertyId, e.id, desc, day, net, shownTotal, ref, meal ? meal.id : null, billNo, outlet]);
       if (meal && meal.status === 'open') {
         await client.query("UPDATE event_meals SET status = 'done', done_by = 'POS', done_at = NOW(), updated_at = NOW() WHERE id = $1", [meal.id]);
       }

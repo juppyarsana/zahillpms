@@ -3,6 +3,7 @@ const authPos = require('../middleware/authPos');
 const moduleGuard = require('../middleware/moduleGuard');
 const pos = require('../services/posIntegrationService');
 const db = require('../db');
+const { cleanPosBill } = require('../services/posBillLabel');
 const fs = require('fs');
 const path = require('path');
 
@@ -65,7 +66,8 @@ router.post('/alerts', gate, async (req, res) => {
 // Body: { room | booking_id, amount (NET: after discount, before service/tax)
 //         OR gross_amount (all-in: what the guest pays — the PMS takes its own
 //         service + tax out), description, external_ref (the POS transaction
-//         id — makes retries safe) }
+//         id — makes retries safe), bill_no? (the number on the guest's POS
+//         receipt, e.g. SG-00001/10/26), outlet? (the restaurant's name) }
 router.post('/transactions', gate, async (req, res, next) => {
   // A bill charged to an event (meeting room) instead of a room: { event_id,
   // meal_id?, amount | gross_amount, description, external_ref } → a line on
@@ -75,6 +77,7 @@ router.post('/transactions', gate, async (req, res, next) => {
   try {
     const result = await pos.postTransaction(req.propertyId, {
       bookingId: booking_id, room, amount, grossAmount: gross_amount, description, externalRef: external_ref,
+      ...cleanPosBill(req.body),   // bill_no + outlet: printed on the invoice (migration 133)
     });
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(result.replayed ? 200 : 201).json(result);
@@ -105,7 +108,8 @@ const evErr = (res, err) => {
 router.post('/transactions', eventsGate, async (req, res) => {
   const { event_id, meal_id, amount, gross_amount, description, external_ref } = req.body || {};
   try {
-    const r = await ev.posCharge(req.propertyId, { eventId: event_id, mealId: meal_id, amount, grossAmount: gross_amount, description, externalRef: external_ref });
+    const r = await ev.posCharge(req.propertyId, { eventId: event_id, mealId: meal_id, amount, grossAmount: gross_amount, description, externalRef: external_ref,
+      ...cleanPosBill(req.body) });
     res.status(r.replayed ? 200 : 201).json(r);
   } catch (err) { evErr(res, err); }
 });

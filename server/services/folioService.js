@@ -187,6 +187,10 @@ function onAccountTotal(payments) {
 }
 
 // Where an extras line was moved from (Transfer bill, migration 113): "Room 102 · Ayu".
+// A POS restaurant bill's number + restaurant name (migration 133) — the
+// printed invoice shows those instead of the items (routes/folio.js).
+const POS_BILL_SQL = `(SELECT json_build_object('bill_no', s.pos_bill_no, 'outlet', s.pos_outlet, 'ref', s.external_ref)
+   FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos')`;
 const TRANSFERRED_FROM_SQL = `(SELECT 'room ' || tu.name || ' · ' || tg.name FROM bookings tb
     JOIN units tu ON tu.id = tb.unit_id JOIN guests tg ON tg.id = tb.guest_id
     WHERE tb.id = fc.transferred_from_booking_id)`;
@@ -260,6 +264,7 @@ async function loadFolio(bookingId, propertyId) {
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
             -- a restaurant bill from the POS: voiding it tells the POS (migration 095)
             EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_pos,
+            ${POS_BILL_SQL} AS pos_bill,
             ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false
@@ -344,6 +349,7 @@ async function computeProforma(bookingId, propertyId) {
             OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_fnb,
             -- a restaurant bill from the POS: voiding it tells the POS (migration 095)
             EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.order_source = 'external_pos') AS is_pos,
+            ${POS_BILL_SQL} AS pos_bill,
             ${PAID_AT_DESK_SQL} AS paid_at_desk, ${PAID_METHOD_SQL} AS paid_method
      FROM folio_charges fc LEFT JOIN users u ON fc.posted_by = u.id
      WHERE fc.booking_id = $1 AND fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon')
