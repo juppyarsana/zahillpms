@@ -177,10 +177,46 @@ export default function NightAuditDetailModal({ date, onClose }) {
                 {s.rooms_sold !== d.posted.rooms && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
                     {s.rooms_sold} room(s) sold, {d.posted.rooms} posted. Revenue above counts every room sold (the Reports rule), including
-                    stays never checked in or free; posted = charged to the guest's folio. Extras in revenue count on the day they were sold.
+                    stays never checked in or free; posted = charged to the guest's folio.
                   </div>
                 )}
               </Section>
+
+              {d.extras_sold && (
+                <Section title="Extras sold that day" right={`${idr(d.extras_sold.total)} · net`}>
+                  {!d.extras_sold.rows.length ? <Empty>No extras sold that day.</Empty> : (
+                    <div className="table-wrap">
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead><tr>
+                          <th style={TH}>Time</th><th style={TH}>Room</th><th style={TH}>Guest · item</th>
+                          <th style={TH}>Paid</th><th style={{ ...TH, ...R }}>Amount</th>
+                        </tr></thead>
+                        <tbody>
+                          {d.extras_sold.rows.map(r => (
+                            <tr key={r.sale_id}>
+                              <td style={TD}>{new Date(r.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' })}</td>
+                              <td style={{ ...TD, fontWeight: 700 }}>{r.unit_name || '—'}</td>
+                              <td style={TD}>
+                                {r.guest_name || 'Walk-in'}
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.items}</div>
+                              </td>
+                              <td style={TD}>{r.paid}</td>
+                              <td style={{ ...TD, ...R }}>{n0(r.amount)}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ fontWeight: 700 }}>
+                            <td style={TD} /><td style={TD} /><td style={TD}>Total</td><td style={TD} />
+                            <td style={{ ...TD, ...R }}>{n0(d.extras_sold.total)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                    Extras in The day = these sales + the per-night extras (extra bed) posted for the night above, without their breakfast part (counted in F&amp;B). Amounts before service &amp; tax.
+                  </div>
+                </Section>
+              )}
 
               <Section title="Found by the audit">
                 {!found.length ? <Empty>Nothing to follow up.</Empty> : found.map((f, i) => (

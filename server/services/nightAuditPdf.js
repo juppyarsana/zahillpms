@@ -131,7 +131,29 @@ function renderNightAudit(doc, d, { run } = {}) {
   }
   if (s.rooms_sold !== p.rooms) {
     doc.font('Helvetica').fontSize(8).fillColor('#666').text(
-      `${s.rooms_sold} room(s) sold, ${p.rooms} posted — Revenue above counts every room sold (the Reports rule), including stays never checked in or free; posted = charged to the guest's folio. Extras in revenue are counted on the day they were sold.`,
+      `${s.rooms_sold} room(s) sold, ${p.rooms} posted — Revenue above counts every room sold (the Reports rule), including stays never checked in or free; posted = charged to the guest's folio.`,
+      LEFT, y - 6, { width: RIGHT - LEFT });
+    y = doc.y + 10;
+  }
+
+  // 2b. Extras sold that day (one-off Sales items) — with the per-night extras
+  // above, the "Extras" figure of The day.
+  const xs = d.extras_sold;
+  if (xs) {
+    y = heading(doc, y, 'Extras sold that day', `${fmtIDR(xs.total)} · net`);
+    if (!xs.rows.length) y = empty(doc, y, 'No extras sold that day.');
+    else y = table(doc, y, [
+      { label: 'Time', w: 40 }, { label: 'Room', w: 45 }, { label: 'Guest · item', w: 235 },
+      { label: 'Paid', w: 100 }, { label: 'Amount', w: 75, align: 'right' },
+    ], xs.rows.map(r => [
+      new Date(r.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' }),
+      r.unit_name || '—',
+      `${r.guest_name || 'Walk-in'}
+${r.items}`,
+      r.paid, num(r.amount),
+    ]), { total: ['', '', 'Total', '', num(xs.total)] });
+    doc.font('Helvetica').fontSize(8).fillColor('#666').text(
+      'Extras in The day = these sales + the per-night extras (extra bed) posted for the night above, without their breakfast part (counted in F&B). Amounts before service & tax.',
       LEFT, y - 6, { width: RIGHT - LEFT });
     y = doc.y + 10;
   }

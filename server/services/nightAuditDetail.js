@@ -3,7 +3,9 @@ const db = require('../db');
 // Night audit detail — the report of one business date's audit, like the
 // "night audit pack" other PMSes print when the day is closed:
 //   1. room + meal charges posted for that night, room by room
-//   2. per-night extras posted for that night (extra bed…)
+//   2. per-night extras posted for that night (extra bed…), and the other
+//      extras sold that day (Sales items: laundry, transport…) — together the
+//      day's "Extras" figure
 //   3. what the audit did / found: no-shows, guests past check-out,
 //      rooms counted as sold but never checked in, housekeeping tasks
 //   4. the day's figures (occupancy, ADR, RevPAR, revenue) and
@@ -57,6 +59,36 @@ async function postedCharges(propertyId, date) {
   return { rows: list, totals, rooms: list.filter(b => b.room > 0 || b.meals > 0).length };
 }
 
+// Extras sold that day (Sales items, by the WITA day sold — charged to a room
+// or paid directly, walk-ins too): the same sales and the same "extra" part
+// as the Reports / Daily Close Extras figure (routes/reports.js SALES_SQL:
+// total − per-night lines − breakfast part − food & drinks). Per-night lines
+// (extra bed) are left out here — they count night by night, in the posted
+// table. Sales given away on a stay complimentary for everything are left out.
+async function extrasSold(propertyId, date) {
+  const { SALES_SQL } = require('../routes/reports');
+  const { rows } = await db.query(`
+    WITH x AS (${SALES_SQL})
+    SELECT x.id, x.created_at, x.payment_method, x.total_amount - x.pn - x.meal - x.outlet AS amount,
+           pm.label AS method_label, u.name AS unit_name, g.name AS guest_name,
+           (SELECT string_agg(si.quantity::int || '× ' || COALESCE(NULLIF(si.description, ''), p.name), ', ' ORDER BY p.name)
+              FROM sale_items si JOIN products p ON p.id = si.product_id
+             WHERE si.sale_id = x.id AND NOT si.per_night AND p.category NOT IN ('food', 'drinks')) AS items
+      FROM x
+      LEFT JOIN payment_methods pm ON pm.id = x.payment_method AND pm.property_id = x.property_id
+      LEFT JOIN bookings b ON b.id = x.booking_id
+      LEFT JOIN units u ON u.id = b.unit_id
+      LEFT JOIN guests g ON g.id = b.guest_id
+     WHERE NOT x.comp AND x.total_amount - x.pn - x.meal - x.outlet > 0.004
+     ORDER BY x.created_at`, [date, date, propertyId]);
+  const list = rows.map(r => ({
+    sale_id: r.id, at: r.created_at, unit_name: r.unit_name || null, guest_name: r.guest_name || null,
+    items: r.items || 'Sale', amount: num(r.amount),
+    paid: r.payment_method === 'room_charge' ? 'Charged to the room' : r.payment_method === 'unpaid' ? 'Not paid yet' : (r.method_label || r.payment_method),
+  }));
+  return { rows: list, total: Math.round(list.reduce((t, r) => t + r.amount, 0) * 100) / 100 };
+}
+
 // Stays that covered the night but have no room charge for it.
 // - in house / checked out with a price: should have been posted (a failed
 //   posting, or a price of 0 that isn't a complimentary stay)
@@ -92,10 +124,11 @@ async function notPosted(propertyId, date) {
 // folio_failed }. Rebuilding an older run passes only what the run saved.
 async function buildAuditDetail(propertyId, date, actions = {}, { snapshot = true } = {}) {
   const { buildDailyClose } = require('./dailyClose');
-  const [posted, gaps, dc] = await Promise.all([
+  const [posted, gaps, dc, sold] = await Promise.all([
     postedCharges(propertyId, date),
     notPosted(propertyId, date),
     buildDailyClose(propertyId, { date }),
+    extrasSold(propertyId, date),
   ]);
   const t = dc.today;
   return {
@@ -108,6 +141,7 @@ async function buildAuditDetail(propertyId, date, actions = {}, { snapshot = tru
       comp_nights: t.comp_nights || 0, comp_value: t.comp_value || 0,
     },
     posted,
+    extras_sold: sold,
     not_posted: gaps.missing,
     never_arrived: gaps.never_arrived,
     actions: {
@@ -133,10 +167,12 @@ async function buildAuditDetail(propertyId, date, actions = {}, { snapshot = tru
 
 // The saved detail, or — for a run before migration 089 — rebuilt now.
 async function detailForRun(run) {
+  // Saved before "Extras sold that day" existed: add it from the sales now.
+  if (run.detail && !run.detail.extras_sold) return { ...run.detail, extras_sold: await extrasSold(run.property_id, ymd(run.business_date)) };
   if (run.detail) return run.detail;
   return buildAuditDetail(run.property_id, ymd(run.business_date), {
     no_shows: run.no_shows || [], tasks_created: run.tasks_created,
   }, { snapshot: false });
 }
 
-module.exports = { buildAuditDetail, detailForRun };
+module.exports = { buildAuditDetail, detailForRun, extrasSold };
