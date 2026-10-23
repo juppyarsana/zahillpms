@@ -36,6 +36,11 @@ function validate(body, { partial = false } = {}) {
     out.reports = [...new Set(body.reports)];
   }
   if (body.is_active !== undefined) out.is_active = !!body.is_active;
+  if (body.language !== undefined || !partial) {
+    const language = body.language || 'en';
+    if (!['en', 'id'].includes(language)) return { error: 'Language must be English or Indonesian' };
+    out.language = language;
+  }
   return { value: out };
 }
 
@@ -103,10 +108,10 @@ router.post('/recipients', async (req, res) => {
   try {
     const { rows: [row] } = await db.query(
       `INSERT INTO notification_recipients
-         (property_id, name, channel, address, role, reports, created_by, link_token, link_expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+         (property_id, name, channel, address, role, reports, created_by, link_token, link_expires_at, language)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [req.propertyId, value.name, value.channel, value.address, value.role, reports, req.user.id,
-       useLink ? telegramLink.newToken() : null, useLink ? telegramLink.linkExpiry() : null]
+       useLink ? telegramLink.newToken() : null, useLink ? telegramLink.linkExpiry() : null, value.language]
     );
     if (useLink) telegramLink.ensurePolling();
     res.status(201).json(await decorate(row));
@@ -144,9 +149,9 @@ router.put('/recipients/:id', async (req, res) => {
     if (addrErr) return res.status(400).json({ error: addrErr });
     const { rows: [row] } = await db.query(
       `UPDATE notification_recipients
-       SET name = $1, channel = $2, address = $3, role = $4, reports = $5, is_active = $6, updated_at = NOW()
+       SET name = $1, channel = $2, address = $3, role = $4, reports = $5, is_active = $6, language = $9, updated_at = NOW()
        WHERE id = $7 AND property_id = $8 RETURNING *`,
-      [next.name, next.channel, next.address, next.role, next.reports, next.is_active, req.params.id, req.propertyId]
+      [next.name, next.channel, next.address, next.role, next.reports, next.is_active, req.params.id, req.propertyId, next.language || 'en']
     );
     res.json(await decorate(row));
   } catch (err) {

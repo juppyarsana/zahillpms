@@ -15,7 +15,7 @@ const ORDERED_PATHS = [
   { key: 'cashier_closing', path: '/cashier-closing' },
   { key: 'ota_payouts',     path: '/agents' },
   { key: 'guests',        path: '/guests' },
-  { key: 'operations',    path: '/operations' },
+  { key: 'operations',    path: '/housekeeping' },
   { key: 'restaurant',    path: '/restaurant' },
   { key: 'night_audit',   path: '/night-audit' },
   { key: 'receivables',   path: '/agents' },

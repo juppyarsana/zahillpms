@@ -32,7 +32,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
     ] },
     { id: 'operations', label: 'Operations', items: [
-      can('operations') && hasModule('operations') && { to: '/operations', icon: '🧰', label: 'Operations' },
+      can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },
       can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
       can('purchasing') && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing & Stock' },
     ] },

@@ -413,33 +413,21 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
     if (!unitRows[0]) return res.status(404).json({ error: 'Room not found' });
     const unit = unitRows[0];
 
+    // Housekeeper's Mark Room Clean, and the guest's Clean Room — the room's
+    // cleaning state + Telegram (services/housekeeping.js, migration 132).
+    const hk = require('../services/housekeeping');
     if (type === 'mark_clean' || type === 'mark_dirty') {
-      const next = type === 'mark_clean' ? 'clean' : 'dirty';
-      await db.query(
-        'UPDATE units SET housekeeping_status = $1, housekeeping_updated_at = NOW() WHERE id = $2 AND property_id = $3',
-        [next, unit.id, req.propertyId]
-      );
-      if (next === 'clean') {
-        await db.query(
-          `UPDATE tasks SET status = 'done', updated_at = NOW()
-           WHERE unit_id = $1 AND property_id = $2 AND type = 'housekeeping' AND status <> 'done'`,
-          [unit.id, req.propertyId]
-        );
-      }
-      sse.notify(roomId, { type: 'housekeeping' });
-      return res.json({ ok: true, housekeeping_status: next });
+      const r = type === 'mark_clean'
+        ? await hk.markClean(req.propertyId, unit.id, { source: 'tablet' })
+        : await hk.markToClean(req.propertyId, unit.id);
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      return res.json({ ok: true, housekeeping_status: type === 'mark_clean' ? 'clean' : 'dirty' });
     }
 
     if (type === 'clean') {
-      const { rows } = await db.query(
-        `INSERT INTO tasks (title, type, priority, unit_id, property_id)
-         VALUES ($1, 'guest_request', 'medium', $2, $3) RETURNING id`,
-        [`Please clean room — ${unit.name}`, unit.id, req.propertyId]
-      );
-      telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🧹 <b>Clean Room requested</b>
-
-🛏 ${telegramService.escapeHtml(unit.name)}`, { html: true }).catch(() => {});
-      return res.status(201).json({ ok: true, task_id: rows[0].id });
+      const r = await hk.requestClean(req.propertyId, unit.id, { via: 'guest' });
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      return res.status(201).json({ ok: true, task_id: null });
     }
 
     if (action === 'cancel') {
@@ -458,9 +446,7 @@ router.post('/room/:roomId/housekeeping', authDisplay, opsGate, async (req, res)
        VALUES ($1, 'guest_request', 'high', $2, $3) RETURNING id`,
       [`Do Not Disturb — ${unit.name}`, unit.id, req.propertyId]
     );
-    telegramService.sendAlert(req.propertyId, 'alert_guest_requests', `🔕 <b>Do Not Disturb</b>
-
-🛏 ${telegramService.escapeHtml(unit.name)}`, { html: true }).catch(() => {});
+    hk.notifyDnd(req.propertyId, unit.name).catch(() => {});
     res.status(201).json({ ok: true, task_id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });

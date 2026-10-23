@@ -36,7 +36,7 @@ export const MENU_DEFS = [
   { key: 'sales',            label: 'Sales (extras)',                group: 'Services' },
   { key: 'activities',       label: 'Activities',           group: 'Services' },
   { key: 'guest_board',      label: 'Guest Board',          group: 'Operations' },
-  { key: 'operations',       label: 'Operations (Tasks)',   group: 'Operations' },
+  { key: 'operations',       label: 'Housekeeping',   group: 'Operations' },
   { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Services' },
   // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
   { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Front Desk' },

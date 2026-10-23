@@ -116,4 +116,31 @@ async function sendAlert(propertyId, alertKey, message, { html = false, replyMar
   }
 }
 
-module.exports = { botTokenFor, callBot, sendToChat, getBotUsername, checkBotToken, escapeHtml, sendAlert };
+// Like sendAlert, but in each recipient's own language (migration 132:
+// notification_recipients.language 'en' / 'id') and to everyone who has ANY
+// of `alertKeys` ticked, once each. build(lang) returns the message text.
+async function sendAlertLocalized(propertyId, alertKeys, build, { html = false } = {}) {
+  try {
+    const token = await botTokenFor(propertyId);
+    if (!token) return 0;
+    const { rows: chats } = await db.query(
+      `SELECT DISTINCT ON (address) address, language FROM notification_recipients
+       WHERE property_id = $1 AND channel = 'telegram' AND is_active
+         AND address IS NOT NULL AND reports && $2::text[]
+       ORDER BY address, created_at`,
+      [propertyId, alertKeys]
+    );
+    const texts = {};
+    const results = await Promise.all(chats.map(({ address, language }) => {
+      const lang = language === 'id' ? 'id' : 'en';
+      if (!(lang in texts)) texts[lang] = build(lang);
+      return sendToChat(token, address, texts[lang], { html });
+    }));
+    return results.filter(r => r.ok).length;
+  } catch (err) {
+    console.error('Telegram alert failed:', err.message);
+    return 0;
+  }
+}
+
+module.exports = { botTokenFor, callBot, sendToChat, getBotUsername, checkBotToken, escapeHtml, sendAlert, sendAlertLocalized };

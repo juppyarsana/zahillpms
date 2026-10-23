@@ -222,6 +222,21 @@ function UnitCard({ unit, flags, health, onChanged }) {
     setTabletBusy(false);
   }
 
+  // Clean on request — front desk asks housekeeping to clean a room with a
+  // guest in it; housekeeping gets a Telegram message (migration 132).
+  async function askClean() {
+    setHkBusy(true);
+    try { await api.post(`/api/housekeeping/rooms/${unit.id}/request`); onChanged?.(); }
+    catch (err) { alert(err.response?.data?.error || 'Could not ask for a clean'); }
+    setHkBusy(false);
+  }
+  async function cancelCleanRequest() {
+    setHkBusy(true);
+    try { await api.delete(`/api/housekeeping/rooms/${unit.id}/request`); onChanged?.(); }
+    catch (err) { alert(err.response?.data?.error || 'Could not cancel the request'); }
+    setHkBusy(false);
+  }
+
   async function setHousekeeping(status) {
     setHkBusy(true);
     try {
@@ -318,8 +333,14 @@ function UnitCard({ unit, flags, health, onChanged }) {
             </span>
           )}
           {flags.clean && (
-            <span style={{ background: '#FEF3C7', color: '#92400E', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+            <span style={{ background: '#FEF3C7', color: '#92400E', padding: '3px 4px 3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              title={cleanAskedText(unit)}>
               🧹 Clean requested
+              <button type="button" disabled={hkBusy} title="Cancel the clean request"
+                onClick={cancelCleanRequest}
+                style={{ border: 'none', background: '#fff', color: '#92400E', borderRadius: 12, padding: '1px 8px', fontSize: 11, fontWeight: 700, cursor: hkBusy ? 'default' : 'pointer' }}>
+                {hkBusy ? '…' : 'Cancel'}
+              </button>
             </span>
           )}
         </div>
@@ -384,6 +405,16 @@ function UnitCard({ unit, flags, health, onChanged }) {
               : `● Occupied${unit.nights_left > 0 ? ` · ${unit.nights_left} night${unit.nights_left !== 1 ? 's' : ''} left` : ' · last night'}`}
           </div>
           <RoomStay bookingId={unit.booking_id} kind="in_house" />
+          {hasModule('operations') && !unit.clean_request_at && (
+            <button className="btn btn-secondary btn-sm" style={{ marginTop: 8, fontSize: 12, width: '100%', justifyContent: 'center' }}
+              disabled={hkBusy} onClick={(e) => { e.stopPropagation(); askClean(); }}
+              title="The guest asked for their room to be cleaned — housekeeping gets a Telegram message">
+              {hkBusy ? '…' : '🧹 Clean on request'}
+            </button>
+          )}
+          {unit.clean_request_at && (
+            <div style={{ fontSize: 11, color: '#92400E', marginTop: 8 }}>🧹 Clean {cleanAskedText(unit)}</div>
+          )}
           {isArriving && (
             <div style={{ fontSize: 11, color: '#1D4ED8', marginTop: 8 }}>
               🔄 Then arriving today: <strong>{unit.arriving_guest_name}</strong>
@@ -677,16 +708,31 @@ function isDndTask(t) {
   return t.title.startsWith('Do Not Disturb');
 }
 
-function unitRequestFlags(guestRequests) {
+// Do Not Disturb is still a task; a clean asked for while the guest is in the
+// room is on the room itself (units.clean_request_*, migration 132).
+function unitRequestFlags(guestRequests, units = []) {
   const map = new Map();
+  const get = id => map.get(id) || { dnd: false, clean: false, dndIds: [] };
   for (const t of guestRequests) {
-    if (!t.unit_id) continue;
-    const flags = map.get(t.unit_id) || { dnd: false, clean: false, dndIds: [] };
-    if (isDndTask(t)) { flags.dnd = true; flags.dndIds.push(t.id); }
-    else if (t.title.startsWith('Please clean room')) flags.clean = true;
+    if (!t.unit_id || !isDndTask(t)) continue;
+    const flags = get(t.unit_id);
+    flags.dnd = true; flags.dndIds.push(t.id);
     map.set(t.unit_id, flags);
   }
+  for (const u of units) {
+    if (!u.clean_request_at) continue;
+    const flags = get(u.id);
+    flags.clean = true;
+    map.set(u.id, flags);
+  }
   return map;
+}
+
+// "asked by the guest · 10:15" / "asked by front desk (Ayu) · 10:15"
+function cleanAskedText(u) {
+  const by = u.clean_request_via === 'guest' ? 'the guest' : `front desk${u.clean_request_by_name ? ` (${u.clean_request_by_name})` : ''}`;
+  const at = u.clean_request_at ? new Date(u.clean_request_at).toLocaleTimeString('en-GB', { timeZone: PROPERTY_TZ, hour: '2-digit', minute: '2-digit' }) : '';
+  return `asked by ${by}${at ? ` · ${at}` : ''}`;
 }
 
 /* ─── Room Display tablet telemetry ────────────────────────
@@ -905,7 +951,7 @@ function UnitStatusBoard({ units, guestRequests = [], onChanged }) {
   }, [units, selected]);
 
   const groups = groupUnitsByType(units);
-  const requestFlags = unitRequestFlags(guestRequests);
+  const requestFlags = unitRequestFlags(guestRequests, units);
   const overall = countByState(units);
   const total = units.length;
 
@@ -1376,10 +1422,10 @@ export default function Dashboard() {
     };
   }, []);
 
-  async function handleResolveRequest(taskId) {
+  async function handleResolveRequest(unitId) {
     try {
-      await api.put(`/api/tasks/${taskId}`, { status: 'done' });
-      setGuestRequests(prev => prev.filter(t => t.id !== taskId));
+      await api.post(`/api/housekeeping/rooms/${unitId}/clean`);
+      load();
     } catch {}
   }
 
@@ -1432,22 +1478,22 @@ export default function Dashboard() {
            DND is excluded — it's a room state shown passively on the Live
            Unit Status tile/popover, not a task for staff to mark done. */}
       {(() => {
-        const actionable = guestRequests.filter(t => !isDndTask(t));
+        const actionable = (occupancy?.units || []).filter(u => u.clean_request_at);
         if (actionable.length === 0) return null;
         return (
           <div className="alert alert-warn" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
               🔔 {actionable.length} guest request{actionable.length !== 1 ? 's' : ''} need{actionable.length === 1 ? 's' : ''} attention
             </div>
-            {actionable.map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <span style={{ fontSize: 13 }}>🧹 {t.title}</span>
+            {actionable.map(u => (
+              <div key={u.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 13 }}>🧹 Room {u.name} — clean {cleanAskedText(u)}</span>
                 <button
                   className="btn btn-secondary btn-sm"
                   style={{ fontSize: 11, padding: '4px 10px' }}
-                  onClick={() => handleResolveRequest(t.id)}
+                  onClick={() => handleResolveRequest(u.id)}
                 >
-                  Mark Done
+                  Mark clean
                 </button>
               </div>
             ))}

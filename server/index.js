@@ -134,6 +134,7 @@ app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'))
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));
 app.use('/api/agent-directory', auth, moduleGuard('reservations'), require('./routes/agentDirectory'));
 app.use('/api/tasks', auth, moduleGuard('operations'), require('./routes/tasks'));
+app.use('/api/housekeeping', auth, moduleGuard('operations'), require('./routes/housekeeping'));
 app.use('/api/products', auth, moduleGuard('sales'), require('./routes/products'));
 app.use('/api/sales', auth, moduleGuard('sales'), require('./routes/sales'));
 // Room check / minibar (migration 091): front desk side. Tablet: /api/display, phone link: /api/public.

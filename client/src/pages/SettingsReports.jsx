@@ -9,7 +9,7 @@ import { useSettings } from '../context/SettingsContext';
 // each getting the reports ticked for them by Telegram or email.
 
 const ROLE_LABEL = { owner: 'Owner', manager: 'Manager', front_desk: 'Front desk', kitchen: 'Kitchen', housekeeping: 'Housekeeping', other: 'Other' };
-const EMPTY = { name: '', channel: 'telegram', address: '', role: 'manager' };
+const EMPTY = { name: '', channel: 'telegram', address: '', role: 'manager', language: 'en' };
 
 const linkBtn = { background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12 };
 
@@ -383,6 +383,16 @@ export default function SettingsReports() {
                   <option value="email">Email</option>
                 </select>
               </div>
+              {form.channel === 'telegram' && (
+                <div className="form-group" style={{ maxWidth: 180 }}>
+                  <label className="form-label">Language</label>
+                  <select className="form-input" value={form.language} onChange={e => setForm(f => ({ ...f, language: e.target.value }))}
+                    title="Housekeeping and Room clean messages are sent in this language">
+                    <option value="en">English</option>
+                    <option value="id">Bahasa Indonesia</option>
+                  </select>
+                </div>
+              )}
               {(form.channel === 'email' || manualId) && (
                 <div className="form-group">
                   <label className="form-label">{form.channel === 'telegram' ? 'Telegram Chat ID' : 'Email address'}</label>
@@ -429,6 +439,14 @@ export default function SettingsReports() {
                   {r.channel === 'telegram' ? '✈️' : '✉️'} {r.name}
                   <span className="badge badge-gray" style={{ marginLeft: 8 }}>{ROLE_LABEL[r.role] || r.role}</span>
                   {!r.is_active && <span className="badge badge-amber" style={{ marginLeft: 6 }}>Paused</span>}
+                  {r.channel === 'telegram' && (
+                    <select className="form-input" value={r.language || 'en'} onChange={e => update(r, { language: e.target.value })}
+                      title="Housekeeping and Room clean messages are sent in this language"
+                      style={{ display: 'inline-block', width: 'auto', marginLeft: 8, padding: '2px 8px', fontSize: 12, height: 'auto' }}>
+                      <option value="en">English</option>
+                      <option value="id">Bahasa Indonesia</option>
+                    </select>
+                  )}
                 </div>
                 <div style={{ ...muted, fontSize: 12 }}>
                   {r.channel === 'email' ? r.address

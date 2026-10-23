@@ -26,6 +26,7 @@ export const GROUPS = [
     { id: 'ota-payments', icon: '🏦', title: { id: 'Pembayaran dari OTA', en: 'Payments from the OTAs' } },
   ] },
   { label: { id: 'Operasional', en: 'Operations' }, chapters: [
+    { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
   ] },
   { label: { id: 'Keuangan', en: 'Finance' }, chapters: [

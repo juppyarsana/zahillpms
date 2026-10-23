@@ -575,11 +575,10 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       [condition_notes, req.params.bookingId, req.user.id]
     );
 
-    // Auto-generate housekeeping task
+    // A clean asked for during the stay is covered by the check-out clean.
     await client.query(
-      `INSERT INTO tasks (title, type, priority, unit_id, booking_id, due_time, property_id)
-       VALUES ($1, 'housekeeping', 'high', $2, $3, NOW(), $4)`,
-      [`Clean & prepare unit after checkout`, booking.unit_id, booking.id, req.propertyId]
+      'UPDATE units SET clean_request_at = NULL, clean_request_via = NULL, clean_request_by = NULL WHERE id = $1 AND property_id = $2',
+      [booking.unit_id, req.propertyId]
     );
 
     // Recalculate guest loyalty tier
@@ -597,6 +596,8 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
         headline: `⚠️ Checked out with ${fmtRp(unpaidAtCheckout)} unpaid`,
       });
     }
+    // Telegram to housekeeping: room to clean (migration 132).
+    require('../services/housekeeping').afterCheckout(req.propertyId, booking.unit_id);
     res.json({
       message: 'Check-out complete',
       booking_id: req.params.bookingId,

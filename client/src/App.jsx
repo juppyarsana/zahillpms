@@ -30,6 +30,7 @@ import QuickCheckIn from './pages/QuickCheckIn';
 import Guests from './pages/Guests';
 import GuestProfile from './pages/GuestProfile';
 import Operations from './pages/Operations';
+import Housekeeping from './pages/Housekeeping';
 import Allotment from './pages/Allotment';
 import Loyalty from './pages/Loyalty';
 import Sales from './pages/Sales';
@@ -289,6 +290,7 @@ export default function App() {
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />
                   <Route path="/operations"       element={<RequireMenu menuKey="operations"><RequireModule moduleName="operations"><Operations /></RequireModule></RequireMenu>} />
+                  <Route path="/housekeeping"     element={<RequireMenu menuKey="operations"><RequireModule moduleName="operations"><Housekeeping /></RequireModule></RequireMenu>} />
                   <Route path="/restaurant"       element={<RequireMenu menuKey="restaurant"><RequireModule moduleName="pos_integration"><Restaurant /></RequireModule></RequireMenu>} />
                   <Route path="/allotment"        element={<RequireMenu menuKey="allotments"><RequireModule moduleName="reservations"><Allotment /></RequireModule></RequireMenu>} />
                   <Route path="/loyalty"          element={<RequireMenu menuKey="loyalty"><RequireModule moduleName="guest_crm"><Loyalty /></RequireModule></RequireMenu>} />

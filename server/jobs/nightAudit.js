@@ -391,33 +391,9 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
     [businessDate, propertyId]
   );
 
-  // 8. Housekeeping task auto-generation for tomorrow's checkouts
-  const { rows: checkouts } = await db.query(
-    `SELECT b.id AS booking_id, u.id AS unit_id, u.name AS unit_name
-     FROM bookings b
-     JOIN units u ON u.id = b.unit_id
-     WHERE b.check_out_date = $1 AND b.status IN ('confirmed','checked_in') AND b.property_id = $2`,
-    [tomorrow, propertyId]
-  );
-
-  let tasksCreated = 0;
-  for (const co of checkouts) {
-    const { rows: existingTask } = await db.query(
-      `SELECT id FROM tasks
-       WHERE booking_id = $1 AND type = 'housekeeping'
-         AND due_time::date = $2`,
-      [co.booking_id, tomorrow]
-    );
-    if (!existingTask[0]) {
-      await db.query(
-        `INSERT INTO tasks (id, title, type, priority, status, unit_id, booking_id, due_time, created_at, updated_at, property_id)
-         VALUES (uuid_generate_v4(), $1, 'housekeeping', 'high', 'todo', $2, $3,
-                 ($4::date + INTERVAL '11 hours'), NOW(), NOW(), $5)`,
-        [`Prep ${co.unit_name} for checkout`, co.unit_id, co.booking_id, tomorrow, propertyId]
-      );
-      tasksCreated++;
-    }
-  }
+  // No "Prep room for checkout" cards any more (migration 132): the
+  // Housekeeping page shows rooms due out today by itself.
+  const tasksCreated = 0;
 
   // 9. Record last audit time
   await db.query(
