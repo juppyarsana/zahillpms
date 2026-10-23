@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
+import ReasonModal from '../components/ReasonModal';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(str) {
@@ -744,12 +745,55 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// One expense, everything recorded about it (Finance → Expenses, row click).
+function ExpenseDetail({ e, onClose, onVoid }) {
+  const row = (label, value) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+      <div className="text-muted" style={{ fontSize: 13 }}>{label}</div>
+      <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{value || <span className="text-muted">—</span>}</div>
+    </div>
+  );
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 520, width: '100%' }}>
+        <div className="modal-header">
+          <div className="modal-title">Expense · {fmtIDR(e.amount)}</div>
+          <button className="btn btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {e.is_voided && (
+            <div className="alert alert-error" style={{ marginBottom: 12 }}>
+              <div>Voided {fmtDateTime(e.voided_at)}{e.voided_by_name ? ` by ${e.voided_by_name}` : ''}{e.void_reason ? ` — ${e.void_reason}` : ''}. Not counted in the totals.</div>
+            </div>
+          )}
+          {row('Date', fmtDate(e.incurred_on))}
+          {row('Category', EXPENSE_CATEGORY_LABELS[e.category] || e.category)}
+          {row('Department', DEPARTMENT_LABEL[e.department])}
+          {row('Amount', <b style={{ textDecoration: e.is_voided ? 'line-through' : 'none' }}>{fmtIDR(e.amount)}</b>)}
+          {row('Paid via', e.payment_method_label || e.payment_method)}
+          {row('Supplier', e.supplier_name)}
+          {row('Reference', e.reference)}
+          {row('Description', e.description)}
+          {row('Recorded', `${e.created_by_name || 'Unknown'} · ${fmtDateTime(e.created_at)}`)}
+        </div>
+        <div className="modal-footer">
+          {!e.is_voided && <button className="btn btn-danger" onClick={onVoid}>Void…</button>}
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ExpensesTab() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [category, setCategory] = useState('');
   const [department, setDepartment] = useState('');
+  const [showVoided, setShowVoided] = useState(false);
+  const [open, setOpen] = useState(null);        // the expense whose details are shown
+  const [voiding, setVoiding] = useState(null);  // the expense being voided (asks why)
   const [expenses, setExpenses] = useState([]);
   const [deptTouched, setDeptTouched] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
@@ -765,9 +809,10 @@ export function ExpensesTab() {
     const params = { month, year };
     if (category) params.category = category;
     if (department) params.department = department;
+    if (showVoided) params.voided = 1;
     api.get('/api/expenses', { params }).then(r => setExpenses(r.data)).catch(() => {});
   }
-  useEffect(() => { load(); }, [month, year, category, department]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [month, year, category, department, showVoided]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});
@@ -805,13 +850,13 @@ export function ExpensesTab() {
     }
   }
 
-  async function voidExpense(e) {
-    if (!confirm('Void this expense? It stays on record but is removed from totals.')) return;
-    await api.delete(`/api/expenses/${e.id}`);
+  async function voidExpense(e, reason) {
+    await api.delete(`/api/expenses/${e.id}`, { data: { reason } });
+    setVoiding(null); setOpen(null);
     load();
   }
 
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const total = expenses.filter(e => !e.is_voided).reduce((s, e) => s + Number(e.amount), 0);
 
   function exportUrl() {
     const params = new URLSearchParams({ month, year });
@@ -838,6 +883,9 @@ export function ExpensesTab() {
             <option value="">All departments</option>
             {DEPARTMENTS.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
           </select>
+          <label className="flex gap-1" style={{ alignItems: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={showVoided} onChange={e => setShowVoided(e.target.checked)} /> Show voided
+          </label>
         </div>
         <div className="flex gap-2">
           <button className="btn btn-secondary" onClick={() => downloadCsv(exportUrl(), `expenses-${year}-${String(month).padStart(2, '0')}.csv`)}>⬇ Export CSV</button>
@@ -853,18 +901,20 @@ export function ExpensesTab() {
       <div className="card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Date</th><th>Category</th><th>Department</th><th>Amount</th><th>Paid Via</th><th>Supplier</th><th>Reference</th><th></th></tr></thead>
+            <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Department</th><th>Amount</th><th>Paid Via</th><th>Supplier</th><th>Reference</th></tr></thead>
             <tbody>
               {expenses.map(e => (
-                <tr key={e.id}>
+                <tr key={e.id} onClick={() => setOpen(e)} title="Open the details"
+                  style={{ cursor: 'pointer', ...(e.is_voided ? { color: 'var(--text-muted)' } : {}) }}>
                   <td>{fmtDate(e.incurred_on)}</td>
-                  <td><span className={`badge badge-${EXPENSE_CATEGORY_COLORS[e.category]}`}>{EXPENSE_CATEGORY_LABELS[e.category]}</span></td>
+                  <td><span className={`badge badge-${EXPENSE_CATEGORY_COLORS[e.category]}`}>{EXPENSE_CATEGORY_LABELS[e.category]}</span>
+                    {e.is_voided && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Voided</span>}</td>
+                  <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || <span className="text-muted">—</span>}</td>
                   <td>{DEPARTMENT_LABEL[e.department] || '—'}</td>
-                  <td style={{ fontWeight: 600 }}>{fmtIDR(e.amount)}</td>
-                  <td>{e.payment_method || <span className="text-muted">—</span>}</td>
+                  <td style={{ fontWeight: 600, textDecoration: e.is_voided ? 'line-through' : 'none' }}>{fmtIDR(e.amount)}</td>
+                  <td>{e.payment_method_label || e.payment_method || <span className="text-muted">—</span>}</td>
                   <td>{e.supplier_name || <span className="text-muted">—</span>}</td>
                   <td>{e.reference || <span className="text-muted">—</span>}</td>
-                  <td><button className="btn btn-sm btn-secondary" onClick={() => voidExpense(e)}>Void</button></td>
                 </tr>
               ))}
               {expenses.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No expenses recorded for this period</td></tr>}
@@ -872,6 +922,15 @@ export function ExpensesTab() {
           </table>
         </div>
       </div>
+
+      {open && !voiding && <ExpenseDetail e={open} onClose={() => setOpen(null)} onVoid={() => setVoiding(open)} />}
+      {voiding && (
+        <ReasonModal title="Void this expense?" confirmLabel="Void expense" danger placeholder="e.g. entered twice, wrong amount"
+          onConfirm={reason => voidExpense(voiding, reason)} onClose={() => setVoiding(null)}>
+          <p style={{ marginTop: 0 }}>{EXPENSE_CATEGORY_LABELS[voiding.category]} · {fmtIDR(voiding.amount)} · {fmtDate(voiding.incurred_on)}</p>
+          <p className="text-muted" style={{ fontSize: 13 }}>It stays on record (Show voided) but leaves the totals, the reports and the journal. A wrong expense is put right by voiding it and adding it again.</p>
+        </ReasonModal>
+      )}
 
       {modal && (
         <div className="modal-backdrop">

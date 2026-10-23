@@ -14,11 +14,12 @@ const { CATEGORY_KEYS: CATEGORIES, DEPARTMENT_KEYS, DEPARTMENT_LABEL, CATEGORY_L
 // Builds the WHERE clause + params shared by GET / and GET /export —
 // month/year default to the current month, matching Reports.jsx's convention
 // so "expenses this month" always means the same thing across the app.
-function buildFilter(req) {
+// withVoided: the list's "Show voided" (?voided=1) — never the CSV export.
+function buildFilter(req, { withVoided = false } = {}) {
   const month = parseInt(req.query.month) || new Date().getMonth() + 1;
   const year = parseInt(req.query.year) || new Date().getFullYear();
   const params = [req.propertyId, month, year];
-  let where = `e.property_id = $1 AND e.is_voided = false
+  let where = `e.property_id = $1 ${withVoided ? '' : 'AND e.is_voided = false'}
     AND EXTRACT(MONTH FROM e.incurred_on) = $2 AND EXTRACT(YEAR FROM e.incurred_on) = $3`;
   if (req.query.category) {
     params.push(req.query.category);
@@ -34,12 +35,15 @@ function buildFilter(req) {
 // GET /api/expenses?month=&year=&category=
 router.get('/', ownerOnly, async (req, res) => {
   try {
-    const { where, params } = buildFilter(req);
+    const { where, params } = buildFilter(req, { withVoided: req.query.voided === '1' });
     const { rows } = await db.query(
-      `SELECT e.*, s.name AS supplier_name, u.name AS created_by_name
+      `SELECT e.*, s.name AS supplier_name, u.name AS created_by_name, vu.name AS voided_by_name,
+              COALESCE(pm.label, e.payment_method) AS payment_method_label
        FROM expenses e
        LEFT JOIN suppliers s ON s.id = e.supplier_id
        LEFT JOIN users u ON u.id = e.created_by
+       LEFT JOIN users vu ON vu.id = e.voided_by
+       LEFT JOIN payment_methods pm ON pm.id = e.payment_method AND pm.property_id = e.property_id
        WHERE ${where}
        ORDER BY e.incurred_on DESC, e.created_at DESC`,
       params
@@ -84,15 +88,18 @@ router.post('/', ownerOnly, async (req, res) => {
   }
 });
 
-// DELETE /api/expenses/:id — void, not hard delete (mirrors folio.js's
-// DELETE /charge/:id — an accountant needs an unbroken audit trail)
+// DELETE /api/expenses/:id { reason } — void, not hard delete (mirrors
+// folio.js's DELETE /charge/:id — an accountant needs an unbroken audit
+// trail); the reason is kept (migration 134).
 router.delete('/:id', ownerOnly, async (req, res) => {
   try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: 'Say why this expense is being voided', code: 'REASON_REQUIRED' });
     const { rows: [expense] } = await db.query(
-      `UPDATE expenses SET is_voided = true, voided_by = $1, voided_at = NOW()
+      `UPDATE expenses SET is_voided = true, voided_by = $1, voided_at = NOW(), void_reason = $4
        WHERE id = $2 AND property_id = $3 AND is_voided = false
        RETURNING *`,
-      [req.user.id, req.params.id, req.propertyId]
+      [req.user.id, req.params.id, req.propertyId, reason.slice(0, 500)]
     );
     if (!expense) return res.status(404).json({ error: 'Expense not found (or already voided)' });
     res.json(expense);
