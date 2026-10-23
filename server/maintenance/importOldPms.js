@@ -27,6 +27,8 @@
 //   ... --map-source old=new   (repeatable; default traveloka=agoda)
 //   node maintenance/importOldPms.js --undo maintenance/backups/old-pms-import-<…>.json [--apply]
 //       removes what the import made, except bookings changed since (dry run first)
+//   ... --undo <file> --force   also the bookings changed since (e.g. after resplitMeals.js, which
+//       writes a note on every booking) — every imported booking goes, whatever was added to it
 // Each booking's internal notes start "IMPORT:old-pms · <old id>"; a second run
 // skips bookings already imported.
 require('dotenv').config();
@@ -316,10 +318,13 @@ async function undo(runFile) {
         FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
         WHERE b.id = $1 AND b.property_id = $3`, [id, at, r.property_id]);
       if (!b) continue;
-      if (b.changed || b.paid || b.charged || b.noted) { kept.push(`${b.room} ${b.guest}`); continue; }
-      for (const t of ['booking_events', 'payments', 'folio_charges', 'checkin_records', 'booking_night_rates']) {
+      if (!flag('--force') && (b.changed || b.paid || b.charged || b.noted)) { kept.push(`${b.room} ${b.guest}`); continue; }
+      await client.query('DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE booking_id = $1)', [id]);
+      await client.query('UPDATE folio_charges SET paid_payment_id = NULL WHERE booking_id = $1', [id]);
+      for (const t of ['booking_events', 'folio_charges', 'payments', 'checkin_records', 'booking_night_rates', 'booking_addons', 'restaurant_requests', 'booking_guests']) {
         await client.query(`DELETE FROM ${t} WHERE booking_id = $1`, [id]);
       }
+      await client.query('DELETE FROM sales WHERE booking_id = $1', [id]);
       await client.query('DELETE FROM bookings WHERE id = $1', [id]);
       removed++;
     }
