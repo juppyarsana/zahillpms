@@ -127,6 +127,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_direct_purchase: {
+    type: 'alert',
+    label: 'Purchases without a PO',
+    when: 'Only when worth a look',
+    description: 'Stock bought with Buy without a PO, only when it needs a look: a big purchase, a price well above the item’s usual cost, a purchase dated well in the past or on a day already closed in Accounting — and when one is voided. Every purchase is counted in the Daily Close.',
+    defaultRoles: ['owner'],
+    channels: ['telegram'],
+    paid: false,
+  },
   approve_complimentary: {
     type: 'alert',
     label: 'Approve complimentary stays',

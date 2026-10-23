@@ -25,7 +25,7 @@ const PAID_SQL = `COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocatio
 
 const BILL_COLS = `b.id, b.bill_no, b.supplier_id, s.name AS supplier_name, b.supplier_ref,
   to_char(b.bill_date, 'YYYY-MM-DD') AS bill_date, to_char(b.due_date, 'YYYY-MM-DD') AS due_date,
-  b.category, b.department, b.purchase_order_id, po.po_number, b.notes, b.total, ${PAID_SQL} AS paid,
+  b.category, b.department, b.purchase_order_id, po.po_number, COALESCE(po.is_direct, false) AS from_direct, b.notes, b.total, ${PAID_SQL} AS paid,
   b.is_voided, b.voided_at, b.void_reason, vu.name AS voided_by_name, cu.name AS created_by_name, b.created_at`;
 const BILL_FROM = `FROM supplier_bills b
   JOIN suppliers s ON s.id = b.supplier_id
@@ -129,42 +129,51 @@ async function cleanPaid(client, propertyId, paid) {
   return { value: { paid_on: paidOn, method: m.id, reference: String(paid.reference || '').trim().slice(0, 120) || null } };
 }
 
+// Inside the caller's transaction (also used by Buy without a PO —
+// directPurchaseService). Returns { bill_id, bill_no_text } or a fail().
+async function createBillTx(client, propertyId, body, userId) {
+  const c = await cleanBill(client, propertyId, body);
+  if (c.error) return c;
+  const v = c.value;
+  const pd = await cleanPaid(client, propertyId, body.paid);
+  if (pd.error) return pd;
+  const dupOf = await sameRefWarning(client, propertyId, v, null);
+  if (dupOf && !body.confirm_duplicate) {
+    return fail(409, `This supplier's invoice ${v.supplier_ref} is already recorded as ${dupOf}`, 'DUPLICATE_REF');
+  }
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`supplier_bill:${propertyId}`]);
+  const { rows: [n] } = await client.query('SELECT COALESCE(MAX(bill_no), 0) + 1 AS no FROM supplier_bills WHERE property_id = $1', [propertyId]);
+  const { rows: [b] } = await client.query(
+    `INSERT INTO supplier_bills (property_id, bill_no, supplier_id, supplier_ref, bill_date, due_date, purchase_order_id, notes, category, total, created_by, department)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+    [propertyId, n.no, v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, userId || null, v.department]);
+  if (pd.value) {
+    const { rows: [p] } = await client.query(
+      `INSERT INTO supplier_payments (property_id, supplier_id, paid_on, amount, method, reference, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [propertyId, v.supplier_id, pd.value.paid_on, v.total, pd.value.method, pd.value.reference,
+        `Paid already — entered with ${billNo(n.no)}`, userId || null]);
+    await client.query('INSERT INTO supplier_payment_allocations (payment_id, bill_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, v.total]);
+  }
+  return { bill_id: b.id, bill_no_text: billNo(n.no), due_date: v.due_date };
+}
+
 async function createBill(propertyId, body, userId) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const c = await cleanBill(client, propertyId, body);
-    if (c.error) { await client.query('ROLLBACK'); return c; }
-    const v = c.value;
-    const pd = await cleanPaid(client, propertyId, body.paid);
-    if (pd.error) { await client.query('ROLLBACK'); return pd; }
-    const dupOf = await sameRefWarning(client, propertyId, v, null);
-    if (dupOf && !body.confirm_duplicate) {
-      await client.query('ROLLBACK');
-      return fail(409, `This supplier's invoice ${v.supplier_ref} is already recorded as ${dupOf}`, 'DUPLICATE_REF');
-    }
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`supplier_bill:${propertyId}`]);
-    const { rows: [n] } = await client.query('SELECT COALESCE(MAX(bill_no), 0) + 1 AS no FROM supplier_bills WHERE property_id = $1', [propertyId]);
-    const { rows: [b] } = await client.query(
-      `INSERT INTO supplier_bills (property_id, bill_no, supplier_id, supplier_ref, bill_date, due_date, purchase_order_id, notes, category, total, created_by, department)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [propertyId, n.no, v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, userId || null, v.department]);
-    if (pd.value) {
-      const { rows: [p] } = await client.query(
-        `INSERT INTO supplier_payments (property_id, supplier_id, paid_on, amount, method, reference, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [propertyId, v.supplier_id, pd.value.paid_on, v.total, pd.value.method, pd.value.reference,
-          `Paid already — entered with ${billNo(n.no)}`, userId || null]);
-      await client.query('INSERT INTO supplier_payment_allocations (payment_id, bill_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, v.total]);
-    }
+    const r = await createBillTx(client, propertyId, body, userId);
+    if (r.error) { await client.query('ROLLBACK'); return r; }
     await client.query('COMMIT');
-    return { bill: await getBill(propertyId, b.id) };
+    return { bill: await getBill(propertyId, r.bill_id) };
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
 }
 
 async function lockBill(client, propertyId, billId) {
   const { rows: [b] } = await client.query(
-    `SELECT b.id, b.is_voided, ${PAID_SQL} AS paid FROM supplier_bills b WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE`, [billId, propertyId]);
+    `SELECT b.id, b.is_voided, ${PAID_SQL} AS paid,
+            EXISTS (SELECT 1 FROM purchase_orders po WHERE po.id = b.purchase_order_id AND po.is_direct) AS from_direct
+     FROM supplier_bills b WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE`, [billId, propertyId]);
   return b;
 }
 
@@ -175,6 +184,7 @@ async function updateBill(propertyId, billId, body) {
     const b = await lockBill(client, propertyId, billId);
     if (!b) { await client.query('ROLLBACK'); return fail(404, 'Bill not found'); }
     if (b.is_voided) { await client.query('ROLLBACK'); return fail(409, 'This bill is voided', 'VOIDED'); }
+    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing & Stock, so the stock follows', 'USE_PURCHASE'); }
     if (num(b.paid) > 0) { await client.query('ROLLBACK'); return fail(409, 'Something is already paid on this bill — void the payment first', 'HAS_PAYMENTS'); }
     const c = await cleanBill(client, propertyId, body);
     if (c.error) { await client.query('ROLLBACK'); return c; }
@@ -202,6 +212,7 @@ async function voidBill(propertyId, billId, reason, userId) {
     const b = await lockBill(client, propertyId, billId);
     if (!b) { await client.query('ROLLBACK'); return fail(404, 'Bill not found'); }
     if (b.is_voided) { await client.query('ROLLBACK'); return fail(409, 'This bill is already voided', 'VOIDED'); }
+    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing & Stock, so the stock follows', 'USE_PURCHASE'); }
     if (num(b.paid) > 0) { await client.query('ROLLBACK'); return fail(409, 'Something is paid on this bill — void the payment first', 'HAS_PAYMENTS'); }
     await client.query(
       `UPDATE supplier_bills SET is_voided = true, voided_at = NOW(), voided_by = $1, void_reason = $2, updated_at = NOW() WHERE id = $3`,
@@ -357,9 +368,10 @@ async function listPayments(propertyId, { supplier_id, from, to } = {}) {
 // ── A bill from a purchase order: what was received and not billed yet ──
 async function fromPurchaseOrder(propertyId, poId) {
   const { rows: [po] } = await db.query(
-    `SELECT po.id, po.po_number, po.status, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category, s.default_department
+    `SELECT po.id, po.po_number, po.status, po.is_direct, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category, s.default_department
      FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1 AND po.property_id = $2`, [poId, propertyId]);
   if (!po) return fail(404, 'Purchase order not found');
+  if (po.is_direct) return fail(409, 'This was bought without a PO — its money is already recorded with it', 'DIRECT_PURCHASE');
   const [{ rows: items }, { rows: [billed] }] = await Promise.all([
     db.query(`SELECT i.description, i.unit_cost, i.received_quantity, rm.unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
@@ -378,6 +390,6 @@ async function fromPurchaseOrder(propertyId, poId) {
 }
 
 module.exports = {
-  billNo, setup, saveSupplier, createBill, updateBill, voidBill, getBill, listBills, summary,
+  billNo, setup, saveSupplier, createBill, createBillTx, updateBill, voidBill, getBill, listBills, summary,
   recordPayment, voidPayment, listPayments, fromPurchaseOrder,
 };

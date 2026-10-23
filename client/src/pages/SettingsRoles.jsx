@@ -53,6 +53,8 @@ export const MENU_DEFS = [
   { key: 'purchasing',       label: 'Purchasing & Stock (suppliers, purchase orders, stock)', group: 'Operations' },
   // An action permission: approve a purchase order (needs Purchasing & Stock too).
   { key: 'approve_po',       label: 'Approve purchase orders', group: 'Operations' },
+  // Only the Buy without a PO window of Purchasing & Stock (e.g. the accountant).
+  { key: 'direct_purchase',  label: 'Buy without a PO (stock bought at the market / a shop)', group: 'Operations' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
   // Users and Sources & Payments are owner-only (no tick box, migration 128).

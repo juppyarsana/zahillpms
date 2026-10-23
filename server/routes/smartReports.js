@@ -80,6 +80,20 @@ router.get('/catalog', async (req, res) => {
   });
 });
 
+// Buy without a PO — when its alert is sent (Notifications → Purchases without a PO).
+const directPurchase = require('../services/directPurchaseService');
+router.get('/direct-purchase-alert', async (req, res) => {
+  try { res.json({ settings: await directPurchase.alertSettings(req.propertyId), defaults: directPurchase.ALERT_DEFAULTS }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.put('/direct-purchase-alert', async (req, res) => {
+  try {
+    const r = await directPurchase.saveAlertSettings(req.propertyId, req.body || {});
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/recipients', async (req, res) => {
   try {
     const { rows } = await db.query(

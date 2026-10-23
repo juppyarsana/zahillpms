@@ -30,6 +30,7 @@ export const GROUPS = [
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
   ] },
   { label: { id: 'Keuangan', en: 'Finance' }, chapters: [
+    { id: 'purchasing', icon: '🛒', title: { id: 'Belanja: pakai halaman yang mana', en: 'Buying: which page to use' } },
     { id: 'payables', icon: '📥', title: { id: 'Hutang ke supplier (Payables)', en: 'Payables — supplier bills' } },
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
     { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },

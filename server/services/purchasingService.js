@@ -213,6 +213,39 @@ async function setPurchaseOrderStatus(propertyId, poId, newStatus, userId) {
   }
 }
 
+// Adds `delta` of a PO line's item to stock and blends `unitCost` into its
+// weighted-average cost — by value, not just the last price paid, so
+// cost_per_unit reflects what the stock on hand actually cost (standard
+// inventory valuation; Stock value reads it). Locks the item's row so two
+// receipts can't blend from a stale quantity. Used by PO receiving and by
+// Buy without a PO (directPurchaseService). Returns the average before.
+async function addStock(client, propertyId, item, delta, unitCost, poId, userId) {
+  if (item.product_id) {
+    const { rows: [product] } = await client.query(
+      'SELECT stock_quantity, cost_per_unit FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
+    const oldQty = product.stock_quantity; // INT column, unlike raw_materials' NUMERIC
+    const oldAvg = product.cost_per_unit != null ? parseFloat(product.cost_per_unit) : null;
+    const newQty = oldQty + delta;
+    const newAvg = newQty > 0 ? round2(((oldQty > 0 ? oldQty : 0) * (oldAvg || 0) + delta * unitCost) / (Math.max(oldQty, 0) + delta)) : oldAvg;
+    await client.query('UPDATE products SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3', [newQty, newAvg, item.product_id]);
+    await client.query(
+      `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, created_by)
+       VALUES ($1,$2,$3,'restock',$4,$5)`, [propertyId, item.product_id, delta, poId, userId || null]);
+    return { oldAvg, oldQty };
+  }
+  const { rows: [material] } = await client.query(
+    'SELECT stock_quantity, cost_per_unit FROM raw_materials WHERE id = $1 FOR UPDATE', [item.raw_material_id]);
+  const oldQty = parseFloat(material.stock_quantity);
+  const oldAvg = material.cost_per_unit != null ? parseFloat(material.cost_per_unit) : null;
+  const newQty = oldQty + delta;
+  const newAvg = newQty > 0 ? round2(((oldQty > 0 ? oldQty : 0) * (oldAvg || 0) + delta * unitCost) / (Math.max(oldQty, 0) + delta)) : oldAvg;
+  await client.query('UPDATE raw_materials SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3', [newQty, newAvg, item.raw_material_id]);
+  await client.query(
+    `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, created_by)
+     VALUES ($1,$2,$3,'purchase',$4,$5)`, [propertyId, item.raw_material_id, delta, poId, userId || null]);
+  return { oldAvg, oldQty };
+}
+
 // items: [{ item_id, receive_quantity }] — receive_quantity is the amount
 // being received THIS call (a delta), not a cumulative total. Clamped so an
 // item can never be over-received across multiple partial receipts.
@@ -253,57 +286,7 @@ async function receivePurchaseOrder(propertyId, poId, items, userId) {
         [delta, item.id]
       );
 
-      if (item.product_id) {
-        // Weighted-average cost — same treatment as the raw-material branch
-        // below (see its comment for the reasoning): blends this receipt
-        // into the existing stock's average by value, not just the last
-        // price paid, so cost_per_unit reflects what the stock on hand
-        // actually cost. Locks the products row itself (not just the PO
-        // item) so two concurrent receipts can't blend from a stale
-        // quantity.
-        const { rows: [product] } = await client.query(
-          'SELECT stock_quantity, cost_per_unit FROM products WHERE id = $1 FOR UPDATE',
-          [item.product_id]
-        );
-        const oldQty = product.stock_quantity; // INT column, unlike raw_materials' NUMERIC
-        const oldAvg = product.cost_per_unit != null ? parseFloat(product.cost_per_unit) : 0;
-        const newQty = oldQty + delta;
-        const newAvg = newQty > 0 ? round2((oldQty * oldAvg + delta * item.unit_cost) / newQty) : oldAvg;
-        await client.query(
-          'UPDATE products SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3',
-          [newQty, newAvg, item.product_id]
-        );
-        await client.query(
-          `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, created_by)
-           VALUES ($1,$2,$3,'restock',$4,$5)`,
-          [propertyId, item.product_id, delta, poId, userId || null]
-        );
-      } else {
-        // Weighted-average cost — blends this receipt into the existing
-        // stock's average by value, not just the last price paid, so
-        // cost_per_unit reflects what the stock on hand actually cost
-        // (standard inventory-valuation method; matters once Recipe
-        // Costing/COGS reporting reads this field). Locks the raw_materials
-        // row itself (not just the PO item) so two concurrent receipts
-        // against the same ingredient can't blend from a stale quantity.
-        const { rows: [material] } = await client.query(
-          'SELECT stock_quantity, cost_per_unit FROM raw_materials WHERE id = $1 FOR UPDATE',
-          [item.raw_material_id]
-        );
-        const oldQty = parseFloat(material.stock_quantity);
-        const oldAvg = material.cost_per_unit != null ? parseFloat(material.cost_per_unit) : 0;
-        const newQty = oldQty + delta;
-        const newAvg = newQty > 0 ? round2((oldQty * oldAvg + delta * item.unit_cost) / newQty) : oldAvg;
-        await client.query(
-          'UPDATE raw_materials SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3',
-          [newQty, newAvg, item.raw_material_id]
-        );
-        await client.query(
-          `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, created_by)
-           VALUES ($1,$2,$3,'purchase',$4,$5)`,
-          [propertyId, item.raw_material_id, delta, poId, userId || null]
-        );
-      }
+      await addStock(client, propertyId, item, delta, parseFloat(item.unit_cost), poId, userId);
     }
 
     const { rows: freshItems } = await client.query(
@@ -334,8 +317,9 @@ async function receivePurchaseOrder(propertyId, poId, items, userId) {
 
 async function getPurchaseOrder(propertyId, poId) {
   const { rows: [po] } = await db.query(
-    `SELECT po.*, s.name AS supplier_name
-     FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
+    `SELECT po.*, COALESCE(s.name, po.bought_from, 'No supplier') AS supplier_name, vu.name AS voided_by_name
+     FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id
+     LEFT JOIN users vu ON vu.id = po.voided_by
      WHERE po.id = $1 AND po.property_id = $2`,
     [poId, propertyId]
   );
@@ -360,8 +344,8 @@ async function getPurchaseOrder(propertyId, poId) {
 
 async function listPurchaseOrders(propertyId, { status } = {}) {
   const params = [propertyId];
-  let query = `SELECT po.*, s.name AS supplier_name FROM purchase_orders po
-               JOIN suppliers s ON s.id = po.supplier_id WHERE po.property_id = $1`;
+  let query = `SELECT po.*, COALESCE(s.name, po.bought_from, 'No supplier') AS supplier_name FROM purchase_orders po
+               LEFT JOIN suppliers s ON s.id = po.supplier_id WHERE po.property_id = $1`;
   if (status) { params.push(status); query += ` AND po.status = $${params.length}`; }
   query += ' ORDER BY po.created_at DESC';
   const { rows } = await db.query(query, params);
@@ -369,6 +353,9 @@ async function listPurchaseOrders(propertyId, { status } = {}) {
 }
 
 module.exports = {
+  addStock,
+  logEvent,
+  nextPoNumber,
   createPurchaseOrder,
   updatePurchaseOrderItems,
   setPurchaseOrderStatus,

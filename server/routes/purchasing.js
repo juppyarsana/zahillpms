@@ -10,6 +10,10 @@ const svc = require('../services/purchasingService');
 // Purchasing & Stock: owner or the `purchasing` permission; approving a
 // purchase order needs `approve_po` as well (see the status route).
 const ownerOnly = [auth, requireOwnerOrMenu('purchasing')];
+// Buy without a PO (migration 135): Purchasing & Stock, or only this window
+// (the `direct_purchase` permission — e.g. the accountant).
+const directGate = [auth, requireOwnerOrMenu(['purchasing', 'direct_purchase'])];
+const direct = require('../services/directPurchaseService');
 const canApprove = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('approve_po');
 
 // ───────────────────────────── Suppliers ─────────────────────────────
@@ -314,6 +318,8 @@ router.put('/purchase-orders/:id', ownerOnly, async (req, res) => {
 
 router.patch('/purchase-orders/:id/status', ownerOnly, async (req, res) => {
   const { status } = req.body;
+  const { rows: [d] } = await db.query('SELECT is_direct FROM purchase_orders WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+  if (d?.is_direct) return res.status(409).json({ error: 'Bought without a PO — void it instead', code: 'DIRECT_PURCHASE' });
   if (!status) return res.status(400).json({ error: 'status required' });
   if (status === 'approved' && !canApprove(req)) return res.status(403).json({ error: 'You may not approve purchase orders', code: 'NO_APPROVE' });
   try {
@@ -334,6 +340,44 @@ router.post('/purchase-orders/:id/receive', ownerOnly, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─────────────────────────── Buy without a PO ───────────────────────────
+
+router.get('/direct/setup', directGate, async (req, res) => {
+  try { res.json(await direct.setup(req.propertyId)); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/direct', directGate, async (req, res) => {
+  try {
+    res.json(await direct.list(req.propertyId, { from: req.query.from, to: req.query.to, q: req.query.q, voided: req.query.voided === '1' }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/direct/:id', directGate, async (req, res) => {
+  try {
+    const p = await direct.get(req.propertyId, req.params.id);
+    if (!p) return res.status(404).json({ error: 'Purchase not found' });
+    res.json(p);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /direct { supplier_id? | bought_from?, purchased_on, reference, category, department?, notes?,
+//   items: [{ raw_material_id | product_id, quantity, amount }], pay: 'paid' | 'later', method?, due_date?, confirm_duplicate? }
+router.post('/direct', directGate, async (req, res) => {
+  try {
+    const r = await direct.create(req.propertyId, req.body || {}, req.user);
+    if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
+    res.status(201).json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/direct/:id/void', directGate, async (req, res) => {
+  try {
+    const r = await direct.voidPurchase(req.propertyId, req.params.id, req.body?.reason, req.user);
+    if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

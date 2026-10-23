@@ -169,6 +169,41 @@ function fmtWhen(ts) {
   return new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+// When "Purchases without a PO" is sent — 0 switches a check off.
+function DirectPurchaseAlertSettings() {
+  const [v, setV] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { api.get('/api/smart-reports/direct-purchase-alert').then(r => setV(r.data.settings)).catch(() => {}); }, []);
+  if (!v) return null;
+  const set = (k, x) => { setV({ ...v, [k]: x }); setSaved(false); };
+  async function save() {
+    setError('');
+    try {
+      const r = await api.put('/api/smart-reports/direct-purchase-alert', { amount: Number(v.amount), price_pct: Number(v.price_pct), days: Number(v.days) });
+      setV(r.data.settings); setSaved(true);
+    } catch (err) { setError(err.response?.data?.error || 'Could not save'); }
+  }
+  const field = (k, label, suffix) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+      {label}
+      <input className="form-input" type="number" min="0" style={{ width: k === 'amount' ? 130 : 70, height: 32 }} value={v[k]} onChange={e => set(k, e.target.value)} />
+      {suffix}
+    </label>
+  );
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', marginTop: 8 }}>
+      {field('amount', 'A purchase of Rp', 'or more')}
+      {field('price_pct', 'A price', '% above usual')}
+      {field('days', 'Dated more than', 'days back')}
+      <button className="btn btn-sm btn-secondary" onClick={save}>Save</button>
+      {saved && <span style={{ fontSize: 12, color: 'var(--success-text)' }}>Saved</span>}
+      {error && <span style={{ fontSize: 12, color: 'var(--danger-text)' }}>{error}</span>}
+      <span style={{ fontSize: 12, color: 'var(--text-muted)', flexBasis: '100%' }}>0 switches that check off. A day already closed in Accounting and a void are always sent.</span>
+    </div>
+  );
+}
+
 export default function SettingsReports() {
   const { branding } = useSettings();
   const [catalog, setCatalog] = useState(null);
@@ -312,6 +347,7 @@ export default function SettingsReports() {
               {r.paid && !catalog?.module_enabled && <span className="badge badge-amber" style={{ marginLeft: 8 }}>🔒 Smart Reports add-on</span>}
             </div>
             <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
+            {r.key === 'alert_direct_purchase' && <DirectPurchaseAlertSettings />}
           </div>
         ))}
       </div>

@@ -2,12 +2,12 @@
 
 **[Finance → Payables](/payables)** menyimpan tagihan dari supplier dan berapa yang masih harus dibayar hotel. Perlu izin **Payables** (owner selalu punya).
 
-**Payables atau Expenses?**
+**Payables atau Expenses?** Tanyakan: *apakah uangnya sudah keluar dari kas atau rekening bank?*
 
-- **Payables**: tagihan datang sekarang, dibayar nanti (supplier memberi tempo 14 / 30 hari, atau kirim satu tagihan per bulan). Catat tagihan pada hari **tagihan datang**, pembayaran pada hari **dibayar**.
-- **[Expenses](/expenses)**: dibayar langsung (tunai, atau transfer di hari yang sama). Satu baris, tidak ada hutang.
-
-Jangan pernah mencatat tagihan yang sama di dua tempat.
+- **Belum, hotel masih berhutang** → **Payables**. Catat tagihan pada hari **tagihan datang**, lalu tekan **Pay** pada tagihan yang sama di hari uangnya keluar — jangan dibuat expense.
+- **Sudah dibayar** → **[Expenses](/expenses)**. Satu baris, tidak ada hutang.
+- Invoice resmi dari supplier tetap yang sudah dibayar boleh juga dicatat di sini dengan centang **Paid already** — supaya riwayat supplier itu lengkap di satu tempat. Hasil di pembukuan sama saja; yang penting jangan dua-duanya.
+- **Stok** (beras, telur, air mineral…) lewat **Purchasing & Stock**, supaya stoknya bertambah — lihat [Belanja: pakai halaman yang mana](/guide/purchasing). Belanja stok yang dibayar nanti membuat tagihannya di sini dengan sendirinya (ditandai nomor PO-nya); ubah atau void dari Purchasing & Stock.
 
 ## Mencatat tagihan
 

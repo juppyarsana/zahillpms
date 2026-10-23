@@ -496,7 +496,7 @@ function BillDetailModal({ id, onClose, onEdit, onPay, onChanged }) {
                 <span className={`badge badge-${STATUS[b.status][1]}`}>{STATUS[b.status][0]}</span>
                 <span>Bill date <b>{fmtDate(b.bill_date)}</b></span>
                 <span>· Due <b>{fmtDate(b.due_date)}</b>{b.days_overdue > 0 && <span style={{ color: '#DC2626' }}> ({b.days_overdue} days overdue)</span>}</span>
-                {b.po_number && <span>· {b.po_number}</span>}
+                {b.po_number && <span>· {b.po_number}{b.from_direct ? ' (bought without a PO)' : ''}</span>}
               </div>
               <div style={{ fontSize: 14, marginBottom: 8 }}>For: <b>{b.category_label}</b> · Department: <b>{b.department_label}</b></div>
               <div style={{ textAlign: 'right', fontSize: 14 }}>
@@ -520,8 +520,9 @@ function BillDetailModal({ id, onClose, onEdit, onPay, onChanged }) {
           )}
         </div>
         <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
-          {b && !b.is_voided && !livePaid && <button className="btn btn-sm btn-secondary" onClick={() => setVoiding(true)}>Void</button>}
-          {b && !b.is_voided && !livePaid && <button className="btn btn-sm btn-secondary" onClick={() => onEdit(b)}>Edit</button>}
+          {b && !b.is_voided && b.from_direct && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Change or void it in Purchasing &amp; Stock → Bought without a PO, so the stock follows.</span>}
+          {b && !b.is_voided && !livePaid && !b.from_direct && <button className="btn btn-sm btn-secondary" onClick={() => setVoiding(true)}>Void</button>}
+          {b && !b.is_voided && !livePaid && !b.from_direct && <button className="btn btn-sm btn-secondary" onClick={() => onEdit(b)}>Edit</button>}
           {b && b.balance > 0 && <button className="btn btn-sm btn-primary" onClick={() => onPay(b)}>Pay this bill</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>

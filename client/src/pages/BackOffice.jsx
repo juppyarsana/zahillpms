@@ -4,6 +4,7 @@ import api from '../services/api';
 import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
 import ReasonModal from '../components/ReasonModal';
+import { DirectPurchasesTab, DirectPurchaseDetail } from '../components/DirectPurchases';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(str) {
@@ -61,24 +62,29 @@ function materialStockBadge(m) {
 const TABS = [
   { key: 'suppliers', label: 'Suppliers' },
   { key: 'purchase_orders', label: 'Purchase Orders' },
+  { key: 'direct', label: 'Bought without a PO' },
   { key: 'raw_materials', label: 'Stock items' },
   { key: 'inventory_value', label: 'Stock value' },
 ];
 
 export default function BackOffice() {
-  const [tab, setTab] = useState('suppliers');
+  const { can } = useAuth();
+  // `direct_purchase` alone (e.g. the accountant) = only Buy without a PO.
+  const full = can('purchasing');
+  const tabs = full ? TABS : TABS.filter(t => t.key === 'direct');
+  const [tab, setTab] = useState(full ? 'suppliers' : 'direct');
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Purchasing &amp; Stock</div>
-          <div className="page-subtitle">Suppliers, purchase orders and the stock they fill — what it is worth</div>
+          <div className="page-subtitle">{full ? 'Suppliers, purchase orders and the stock they fill — what it is worth' : 'Stock bought without a purchase order'}</div>
         </div>
       </div>
 
       <div className="tab-bar">
-        {TABS.map(t => (
+        {tabs.map(t => (
           <button
             key={t.key}
             className={`tab-bar-item${tab === t.key ? ' active' : ''}`}
@@ -93,6 +99,7 @@ export default function BackOffice() {
       {tab === 'raw_materials' && <RawMaterialsTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
       {tab === 'inventory_value' && <InventoryValueTab />}
+      {tab === 'direct' && <DirectPurchasesTab />}
     </div>
   );
 }
@@ -377,6 +384,7 @@ function PurchaseOrdersTab() {
   const [materials, setMaterials] = useState([]);
   const [newModal, setNewModal] = useState(false);
   const [detail, setDetail] = useState(null); // full PO with items
+  const [directDetail, setDirectDetail] = useState(null); // a purchase bought without a PO
   const [toast, setToast] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -397,6 +405,10 @@ function PurchaseOrdersTab() {
   }, []);
 
   function openDetail(po) {
+    if (po.is_direct) {
+      api.get(`/api/purchasing/direct/${po.id}`).then(r => setDirectDetail(r.data)).catch(() => showToast('Failed to load the purchase', 'error'));
+      return;
+    }
     api.get(`/api/purchasing/purchase-orders/${po.id}`).then(r => setDetail(r.data)).catch(() => showToast('Failed to load purchase order', 'error'));
   }
   function refreshDetail(id) {
@@ -446,10 +458,10 @@ function PurchaseOrdersTab() {
               {filtered.map(po => (
                 <tr key={po.id}>
                   <td style={{ fontWeight: 600, borderLeft: `4px solid ${PO_STATUS_COLOR[po.status]}` }}>{po.po_number}</td>
-                  <td>{po.supplier_name}</td>
-                  <td>{fmtIDR(po.total_amount)}</td>
+                  <td>{po.supplier_name}{po.is_direct && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Bought without a PO">Direct</span>}</td>
+                  <td style={{ textDecoration: po.voided_at ? 'line-through' : 'none' }}>{fmtIDR(po.total_amount)}</td>
                   <td>{fmtDate(po.created_at)}</td>
-                  <td><span className={`badge badge-${PO_STATUS_BADGE[po.status]}`} style={{ fontSize: 13, padding: '5px 14px' }}>{PO_STATUS_LABELS[po.status]}</span></td>
+                  <td><span className={`badge badge-${po.voided_at ? 'red' : PO_STATUS_BADGE[po.status]}`} style={{ fontSize: 13, padding: '5px 14px' }}>{po.voided_at ? 'Voided' : PO_STATUS_LABELS[po.status]}</span></td>
                   <td><button className="btn btn-sm btn-secondary" onClick={() => openDetail(po)}>View</button></td>
                 </tr>
               ))}
@@ -466,6 +478,11 @@ function PurchaseOrdersTab() {
           onCreated={() => { setNewModal(false); showToast('Purchase order created'); loadPos(); }}
           onError={m => showToast(m, 'error')}
         />
+      )}
+
+      {directDetail && (
+        <DirectPurchaseDetail p={directDetail} onClose={() => setDirectDetail(null)}
+          onVoided={p => { setDirectDetail(p); loadPos(); showToast(`${p.po_number} voided — stock taken back out`); }} />
       )}
 
       {detail && (
@@ -773,11 +790,13 @@ function ExpenseDetail({ e, onClose, onVoid }) {
           {row('Paid via', e.payment_method_label || e.payment_method)}
           {row('Supplier', e.supplier_name)}
           {row('Reference', e.reference)}
+          {e.po_number && row('From', <>Bought without a PO — <b>{e.po_number}</b> (Purchasing &amp; Stock)</>)}
           {row('Description', e.description)}
           {row('Recorded', `${e.created_by_name || 'Unknown'} · ${fmtDateTime(e.created_at)}`)}
         </div>
         <div className="modal-footer">
-          {!e.is_voided && <button className="btn btn-danger" onClick={onVoid}>Void…</button>}
+          {!e.is_voided && e.po_number && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Void it in Purchasing &amp; Stock → Bought without a PO, so the stock is taken back out too.</span>}
+          {!e.is_voided && !e.po_number && <button className="btn btn-danger" onClick={onVoid}>Void…</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -909,7 +928,7 @@ export function ExpensesTab() {
                   <td>{fmtDate(e.incurred_on)}</td>
                   <td><span className={`badge badge-${EXPENSE_CATEGORY_COLORS[e.category]}`}>{EXPENSE_CATEGORY_LABELS[e.category]}</span>
                     {e.is_voided && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Voided</span>}</td>
-                  <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || <span className="text-muted">—</span>}</td>
+                  <td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.po_number && <span className="badge badge-gray" style={{ marginRight: 6 }} title="Made by Buy without a PO">{e.po_number}</span>}{e.description || <span className="text-muted">—</span>}</td>
                   <td>{DEPARTMENT_LABEL[e.department] || '—'}</td>
                   <td style={{ fontWeight: 600, textDecoration: e.is_voided ? 'line-through' : 'none' }}>{fmtIDR(e.amount)}</td>
                   <td>{e.payment_method_label || e.payment_method || <span className="text-muted">—</span>}</td>

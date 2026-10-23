@@ -38,8 +38,9 @@ router.get('/', ownerOnly, async (req, res) => {
     const { where, params } = buildFilter(req, { withVoided: req.query.voided === '1' });
     const { rows } = await db.query(
       `SELECT e.*, s.name AS supplier_name, u.name AS created_by_name, vu.name AS voided_by_name,
-              COALESCE(pm.label, e.payment_method) AS payment_method_label
+              COALESCE(pm.label, e.payment_method) AS payment_method_label, po.po_number
        FROM expenses e
+       LEFT JOIN purchase_orders po ON po.id = e.purchase_order_id
        LEFT JOIN suppliers s ON s.id = e.supplier_id
        LEFT JOIN users u ON u.id = e.created_by
        LEFT JOIN users vu ON vu.id = e.voided_by
@@ -95,6 +96,10 @@ router.delete('/:id', ownerOnly, async (req, res) => {
   try {
     const reason = String(req.body?.reason || '').trim();
     if (!reason) return res.status(400).json({ error: 'Say why this expense is being voided', code: 'REASON_REQUIRED' });
+    const { rows: [fromPo] } = await db.query(
+      `SELECT po.po_number FROM expenses e JOIN purchase_orders po ON po.id = e.purchase_order_id
+       WHERE e.id = $1 AND e.property_id = $2`, [req.params.id, req.propertyId]);
+    if (fromPo) return res.status(409).json({ error: `This expense came from ${fromPo.po_number} (bought without a PO) — void it in Purchasing & Stock, so the stock is taken back out too`, code: 'USE_PURCHASE' });
     const { rows: [expense] } = await db.query(
       `UPDATE expenses SET is_voided = true, voided_by = $1, voided_at = NOW(), void_reason = $4
        WHERE id = $2 AND property_id = $3 AND is_voided = false

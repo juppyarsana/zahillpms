@@ -177,7 +177,7 @@ async function buildDailyClose(propertyId, { date } = {}) {
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
   ]);
   const sellable = parseInt(u.sellable, 10) || 0;
-  const [today, lastWeek, money, activity, next, due, fnbComp] = await Promise.all([
+  const [today, lastWeek, money, activity, next, due, fnbComp, bought] = await Promise.all([
     dayFigures(propertyId, day, sellable),
     dayFigures(propertyId, addDays(day, -7), sellable),
     collected(propertyId, day),
@@ -185,6 +185,7 @@ async function buildDailyClose(propertyId, { date } = {}) {
     loadGuestLists(propertyId, addDays(day, 1)),
     loadBalanceDue(propertyId, addDays(day, 1)),
     restaurantComplimentary(propertyId, day),
+    require('./directPurchaseService').dayTotals(propertyId, day),
   ]);
   // Same whole-stay figure as the Balance Due page; agent-billed stays aren't collected at the desk.
   const collectRows = [...due.departing, ...due.overdue].filter(r => !r.agent_billed);
@@ -201,6 +202,7 @@ async function buildDailyClose(propertyId, { date } = {}) {
     },
     collected: money,
     fnb_complimentary: fnbComp,
+    bought_without_po: bought,
     ...activity,
     next_day: {
       date: addDays(day, 1),
@@ -252,6 +254,12 @@ function dailyCloseTelegram(b) {
     add(`🍽 <b>Restaurant complimentary</b>: ${plural(fc.bills, 'bill')} · ${e(fmtIDR(fc.value))}`,
         ...fc.by_department.map(d => `• ${e(d.department)}: ${e(fmtIDR(d.value))}`),
         `<i>Cost ${e(fmtIDR(fc.cost))}</i>`);
+  }
+
+  const bp = b.bought_without_po;
+  if (bp && bp.count) {
+    add(`🧾 <b>Bought without a PO</b>: ${plural(bp.count, 'purchase')} · ${e(fmtIDR(bp.total))}`,
+        `• ${[bp.paid ? `${bp.paid} paid` : '', bp.later ? `${bp.later} to pay later` : ''].filter(Boolean).join(', ')}`);
   }
 
   add(`💳 <b>Collected ${e(fmtIDR(b.collected.total))}</b>`,
@@ -321,6 +329,7 @@ function dailyCloseEmail(b) {
       [...b.fnb_complimentary.by_department.map(d => [esc(d.department), d.bills, esc(fmtIDR(d.value)), esc(fmtIDR(d.cost))]),
        ['<b>Total</b>', `<b>${b.fnb_complimentary.bills}</b>`, `<b>${esc(fmtIDR(b.fnb_complimentary.value))}</b>`, `<b>${esc(fmtIDR(b.fnb_complimentary.cost))}</b>`]], '')
       + '<div style="font-size:12px;color:#6b7280;margin-top:6px;">Given away in the restaurant and charged to these departments — not in revenue. Menu value at menu price; cost = ingredients.</div>') : ''}
+    ${b.bought_without_po && b.bought_without_po.count ? `<div style="font-size:13px;color:#374151;margin:14px 0 0;">🧾 Bought without a PO: <b>${b.bought_without_po.count} purchase${b.bought_without_po.count === 1 ? '' : 's'} · ${esc(fmtIDR(b.bought_without_po.total))}</b> (${[b.bought_without_po.paid ? `${b.bought_without_po.paid} paid` : '', b.bought_without_po.later ? `${b.bought_without_po.later} to pay later` : ''].filter(Boolean).join(', ')}) — in Purchasing &amp; Stock.</div>` : ''}
     ${section('Money received', table([{ label: 'Method' }, { label: 'Amount', right: true }],
       b.collected.by_method.map(m => [esc(m.method), esc(fmtIDR(m.amount))]), 'No payments received.'))}
     ${section('New bookings made', table([{ label: 'Guest' }, { label: 'Room' }, { label: 'Arrives' }, { label: 'Value', right: true }],

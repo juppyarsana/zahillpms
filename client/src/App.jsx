@@ -315,7 +315,7 @@ export default function App() {
                   <Route path="/agents"          element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/agents/:agentId" element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/reports"         element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
-                  <Route path="/purchasing"      element={<RequireMenu menuKey="purchasing"><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
+                  <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
                   <Route path="/payables"        element={<RequireMenu menuKey="payables"><RequireModule moduleName="accounting"><Payables /></RequireModule></RequireMenu>} />
                   <Route path="/expenses"        element={<RequireMenu menuKey="expenses"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />

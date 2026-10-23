@@ -2,12 +2,12 @@
 
 **[Finance → Payables](/payables)** keeps the bills suppliers send and what the hotel still owes them. You need the **Payables** permission (owners always have it).
 
-**Payables or Expenses?**
+**Payables or Expenses?** Ask: *has the money already left the cash box or the bank?*
 
-- **Payables**: the bill comes now and is paid later (the supplier gives 14 / 30 days, or sends one bill a month). Record the bill on the day it **arrives**, the payment on the day it is **paid**.
-- **[Expenses](/expenses)**: paid on the spot (cash, or a transfer the same day). One line, nothing owed.
-
-Never record the same bill in both places.
+- **No, the hotel still owes it** → **Payables**. Record the bill on the day it **arrives**, then press **Pay** on that same bill on the day the money goes out — never an expense for it.
+- **Yes, it is already paid** → **[Expenses](/expenses)**. One line, nothing owed.
+- A proper invoice from a regular supplier that is already paid may also go here with **Paid already** ticked — it keeps that supplier's history in one place. The books come out the same either way; just never both.
+- **Stock** (rice, eggs, bottled water…) goes through **Purchasing & Stock** instead, so the stock goes up — see [Buying: which page to use](/guide/purchasing). A stock purchase paid later makes its bill here by itself (marked with its PO number); change or void it in Purchasing & Stock.
 
 ## Record a bill
 
