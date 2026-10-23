@@ -10,8 +10,11 @@
 //     + pricing periods incl. the yield engine's, pricingService — from the
 //     type's first room) + the meal plan for the type's max guests, service &
 //     tax included, whole rupiah. The same figure New Booking suggests —
-//     unless an OTA price was typed for that meal plan and night (migration
-//     125, channelRatePrices.js): then that, exactly as typed.
+//     unless the meal plan has an OTA price ladder (migration 137,
+//     channelPriceLadders.js): then the price of the tier the next room
+//     falls in, by rooms sold that night in the whole hotel — or an OTA price
+//     was typed for that meal plan and night (migration 125,
+//     channelRatePrices.js): then that, exactly as typed (it wins).
 //
 // When: the database triggers of migration 120 mark a linked property
 // "dirty" on any change of bookings, rooms, pricing periods, room types,
@@ -29,6 +32,7 @@ const { computeFolioTotals } = require('./folioService');
 const { mealNetPerNight } = require('./ratePlanService');
 const { basisFrom } = require('./priceBasis');
 const health = require('./channelHealth');
+const { tierFor } = require('./channelPriceLadders');
 
 const PROVIDER = 'channex';
 const SYNC_DAYS = 500;          // Channex certification: a full sync covers 500 days
@@ -67,7 +71,8 @@ async function desiredValues(propertyId) {
     db.query('SELECT tax_rate, service_charge_rate, prices_include_tax FROM property_settings WHERE property_id = $1', [propertyId]),
   ]);
   const values = new Map();
-  if (!rtLinks.length) return { values, from, to };
+  const tiers = new Map();      // `r|external|night` → the ladder tier sent ("sold up to")
+  if (!rtLinks.length) return { values, tiers, from, to };
   const typeIds = rtLinks.map(l => l.room_type_id);
 
   const [{ rows: units }, { rows: stays }] = await Promise.all([
@@ -118,6 +123,43 @@ async function desiredValues(propertyId) {
     }
   }
 
+  // OTA price ladders (migration 137): by rooms sold that night in the whole
+  // hotel (every room, linked or not — the same booking rule as above).
+  const { rows: ladderRows } = await db.query(
+    `SELECT c.external_rate_plan_id, l.sold_up_to, l.price
+       FROM channel_price_ladders l
+       JOIN channel_rate_plans c ON c.property_id = l.property_id AND c.provider = $2
+                                AND c.room_type_id = l.room_type_id AND c.rate_plan_id = l.rate_plan_id
+       JOIN rate_plans rp ON rp.id = l.rate_plan_id AND rp.is_active = true
+      WHERE l.property_id = $1 ORDER BY l.sold_up_to`, [propertyId, PROVIDER]);
+  if (ladderRows.length) {
+    const { rows: hotelStays } = await db.query(
+      `SELECT b.unit_id, to_char(b.check_in_date, 'YYYY-MM-DD') AS ci, to_char(${occupiedUntilSql('b')}, 'YYYY-MM-DD') AS until
+         FROM bookings b
+        WHERE b.property_id = $1 AND b.unit_id IS NOT NULL AND b.status NOT IN ('cancelled', 'no_show')
+          AND b.check_in_date < $3 AND ${occupiedUntilSql('b')} > $2`, [propertyId, from, to]);
+    const soldRooms = new Map();   // night → Set of rooms sold
+    for (const s of hotelStays) {
+      for (let d = s.ci < from ? from : s.ci; d < s.until && d < to; d = addDays(d, 1)) {
+        if (!soldRooms.has(d)) soldRooms.set(d, new Set());
+        soldRooms.get(d).add(s.unit_id);
+      }
+    }
+    const ladders = new Map();
+    for (const r of ladderRows) {
+      if (!ladders.has(r.external_rate_plan_id)) ladders.set(r.external_rate_plan_id, []);
+      ladders.get(r.external_rate_plan_id).push({ up_to: r.sold_up_to, price: Number(r.price) });
+    }
+    for (const night of nights) {
+      const sold = soldRooms.get(night)?.size || 0;
+      for (const [ext, list] of ladders) {
+        const t = tierFor(list, sold);
+        values.set(`r|${ext}|${night}`, t.price);
+        tiers.set(`r|${ext}|${night}`, t.up_to);
+      }
+    }
+  }
+
   // OTA prices typed for one meal plan (migration 125) replace the worked-out
   // price on their nights, sent exactly as typed; the last one saved wins.
   const { rows: overrides } = await db.query(
@@ -130,9 +172,12 @@ async function desiredValues(propertyId) {
       WHERE o.property_id = $1 AND o.date_to >= $2::date AND o.date_from < $3::date
       ORDER BY o.created_at, o.id`, [propertyId, from, to, PROVIDER]);
   for (const o of overrides) {
-    for (let d = o.d1; d <= o.d2; d = addDays(d, 1)) values.set(`r|${o.external_rate_plan_id}|${d}`, Number(o.price));
+    for (let d = o.d1; d <= o.d2; d = addDays(d, 1)) {
+      values.set(`r|${o.external_rate_plan_id}|${d}`, Number(o.price));
+      tiers.delete(`r|${o.external_rate_plan_id}|${d}`);
+    }
   }
-  return { values, from, to };
+  return { values, tiers, from, to };
 }
 
 // Consecutive nights with the same value → one range.
@@ -160,7 +205,7 @@ async function syncProperty(propertyId, { full = false } = {}) {
   const cxProperty = p?.channex_property_id;
   if (!cxProperty) return { skipped: 'not linked' };
 
-  const { values, from } = await desiredValues(propertyId);
+  const { values, tiers, from } = await desiredValues(propertyId);
   const { rows: stored } = await db.query(
     `SELECT kind, external_id, to_char(night, 'YYYY-MM-DD') AS night, value FROM channel_sync_values WHERE property_id = $1`, [propertyId]);
   const sent = new Map(stored.map(s => [`${s.kind}|${s.external_id}|${s.night}`, Number(s.value)]));
@@ -208,7 +253,10 @@ async function syncProperty(propertyId, { full = false } = {}) {
   const rng = r => (r.date_from === r.date_to ? day(r.date_from) : `${day(r.date_from)} – ${day(r.date_to)}`);
   const items = [
     ...avail.map(r => `${label.get(r.room_type_id) || 'room type'}: ${r.availability} free · ${rng(r)}`),
-    ...rates.map(r => `${label.get(r.rate_plan_id) || 'rate'}: Rp ${Number(r.rate).toLocaleString('id-ID', { maximumFractionDigits: 2 })} · ${rng(r)}`),
+    ...rates.map(r => {
+      const tier = tiers.get(`r|${r.rate_plan_id}|${r.date_from}`);
+      return `${label.get(r.rate_plan_id) || 'rate'}: Rp ${Number(r.rate).toLocaleString('id-ID', { maximumFractionDigits: 2 })}${tier ? ` (sold up to ${tier})` : ''} · ${rng(r)}`;
+    }),
   ];
 
   return {

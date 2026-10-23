@@ -11,6 +11,7 @@ const channelBookings = require('../services/channelBookings');
 const channelHealth = require('../services/channelHealth');
 const channelWebhook = require('../services/channelWebhook');
 const ratePrices = require('../services/channelRatePrices');
+const ladders = require('../services/channelPriceLadders');
 
 router.use(requireRole('owner'));
 
@@ -40,6 +41,25 @@ router.post('/prices', async (req, res) => {
 // DELETE /api/channel-manager/prices { ids }
 router.delete('/prices', async (req, res) => {
   try { res.json(await ratePrices.remove(req.propertyId, req.body?.ids)); }
+  catch (err) { send(res, err); }
+});
+
+// OTA price ladders (migration 137): a price per room type per tier of rooms
+// sold in the whole hotel, per meal plan.
+// GET /api/channel-manager/ladders → { plans: [{ rate_plan_id, rate_plan_name, room_types, ladder }], hotel_rooms }
+router.get('/ladders', async (req, res) => {
+  try { res.json(await ladders.get(req.propertyId)); } catch (err) { send(res, err); }
+});
+
+// PUT /api/channel-manager/ladders/:ratePlanId { tiers: [16, 20, …], prices: { <room_type_id>: [price per tier] } }
+router.put('/ladders/:ratePlanId', async (req, res) => {
+  try { res.json(await ladders.save(req.propertyId, req.user.id, req.params.ratePlanId, req.body)); }
+  catch (err) { send(res, err); }
+});
+
+// DELETE /api/channel-manager/ladders/:ratePlanId
+router.delete('/ladders/:ratePlanId', async (req, res) => {
+  try { res.json(await ladders.remove(req.propertyId, req.params.ratePlanId)); }
   catch (err) { send(res, err); }
 });
 

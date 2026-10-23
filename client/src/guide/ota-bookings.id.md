@@ -60,3 +60,21 @@ Biasanya OTA mendapat harga PMS: harga kamar ditambah meal plan, sudah termasuk 
 > Harga ini hanya untuk OTA. New Booking dan tagihan tamu tetap memakai harga PMS.
 
 Harga bisa diisi sampai 5 tahun ke depan: OTA melihat sekitar 16 bulan, dan malam berikutnya dikirim saat masuk jangkauan itu. Kalau dua harga OTA mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke harga normal.
+
+## Tangga harga OTA — harga mengikuti kamar terjual (owner)
+
+Harga di OTA bisa naik saat hotel makin penuh. Per meal plan, isi harga tiap tipe kamar untuk tiap tingkat **jumlah kamar terjual di seluruh hotel** pada malam itu:
+
+1. **Pricing** → **My rules** → **📈 OTA price ladder**.
+2. Pilih **meal plan** (misalnya Breakfast Non Refund).
+3. Tiap baris: **Sold up to** (16, 20, 23, …) dan harga tiap tipe kamar, per kamar per malam, sudah termasuk service & pajak. Paling mudah: copy blok dari Excel (kolom "sold up to" + harganya, dengan urutan tipe kamar **sama** seperti kolom di sini) lalu paste ke kotak **Sold up to** pertama.
+4. **Save ladder for …**. Ulangi untuk tiap meal plan.
+
+Setiap malam OTA mendapat harga dari tingkat tempat kamar **berikutnya** berada: kalau sudah terjual 16 kamar, berikutnya kamar ke-17, jadi baris "up to 20". Setiap booking atau pembatalan dihitung ulang dan harganya sampai ke OTA dalam sekitar 20 detik — pembatalan bisa menurunkannya lagi.
+
+> Dihitung terjual: semua booking kecuali cancelled dan no-show, termasuk yang belum bayar, di semua tipe kamar.
+
+- Tipe kamar yang kolomnya dikosongkan tetap memakai harga normal.
+- **🌐 OTA price** yang tetap (fixed) mengalahkan tangga harga pada malam-malamnya (untuk tanggal khusus). Hapus harga tetap lama untuk meal plan itu, kalau tidak tangga harga tidak berlaku pada malam itu.
+- **Remove ladder** mengembalikan meal plan ke harga normal.
+- Setiap pengiriman tercatat di **Settings → Channel Manager → Last sends**, dengan tingkatnya ("sold up to 20").

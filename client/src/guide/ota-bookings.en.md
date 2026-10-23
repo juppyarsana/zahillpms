@@ -60,3 +60,21 @@ Normally the OTAs get the PMS price: the room rate plus the meal plan, service &
 > This price is for the OTAs only. New Booking and the guest's bill keep the PMS price.
 
 A price can run up to 5 years ahead: the OTAs see about 16 months, and each later night is sent as it comes into view. Where two OTA prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the normal price.
+
+## OTA price ladder — the price follows rooms sold (owner)
+
+The OTA price can go up as the hotel fills. Per meal plan, type a price for each room type at each tier of **rooms sold in the whole hotel** that night:
+
+1. **Pricing** → **My rules** → **📈 OTA price ladder**.
+2. Pick the **meal plan** (e.g. Breakfast Non Refund).
+3. Each row: **Sold up to** (16, 20, 23, …) and the price per room type, per room per night, service & tax included. Easiest: copy the block from Excel (the "sold up to" column + the prices, with the room types in the **same order** as the columns here) and paste it into the first **Sold up to** box.
+4. **Save ladder for …**. Do the same for each meal plan.
+
+Each night the OTAs get the price of the tier the **next** room falls in: with 16 rooms sold, the next is the 17th, so the "up to 20" row. Every booking or cancellation is counted again and the price reaches the OTAs within about 20 seconds — a cancellation can bring it back down.
+
+> Counted as sold: every booking except cancelled and no-show, unpaid ones too, in every room type.
+
+- A room type whose column is left empty keeps the normal price.
+- A fixed **🌐 OTA price** wins over the ladder on its nights (for a special date). Remove old fixed prices for that meal plan, or the ladder won't show on those nights.
+- **Remove ladder** puts the meal plan back on the normal price.
+- Each send is in **Settings → Channel Manager → Last sends**, with its tier ("sold up to 20").
