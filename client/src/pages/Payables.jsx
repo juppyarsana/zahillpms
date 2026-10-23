@@ -356,10 +356,16 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
     } catch (e) { setErr(errText(e)); }
   }
   const total = parseFloat(f.amount) || 0;
+  // "Paid already" (new bills only): the payment is recorded with the bill.
+  const [paid, setPaid] = useState(null);   // null = not paid yet; else { method, paid_on, reference }
+  const togglePaid = on => setPaid(on ? {
+    method: (setup.payment_methods.find(m => /bank|transfer/i.test(`${m.id} ${m.label}`)) || setup.payment_methods[0] || {}).id || '',
+    paid_on: f.bill_date && f.bill_date <= setup.today ? f.bill_date : setup.today, reference: '',
+  } : null);
 
   async function save(confirmDuplicate = false) {
     setBusy(true); setErr('');
-    const body = { ...f, amount: total, confirm_duplicate: confirmDuplicate };
+    const body = { ...f, amount: total, confirm_duplicate: confirmDuplicate, ...(paid && !bill ? { paid } : {}) };
     try {
       const { data } = bill ? await api.put(`/api/payables/bills/${bill.id}`, body) : await api.post('/api/payables/bills', body);
       onSaved(data.bill);
@@ -426,6 +432,29 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
           </div>
           <div className="form-group"><label className="form-label">Notes</label>
             <textarea className="form-textarea" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="optional" /></div>
+          {!bill && (
+            <div className="form-group" style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontWeight: 600 }}>
+                <input type="checkbox" checked={!!paid} onChange={e => togglePaid(e.target.checked)} />
+                Paid already
+              </label>
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Tick when this bill was paid before you entered it — the payment is recorded with the bill, so it isn't owed.</div>
+              {paid && (
+                <div className="form-row" style={{ marginTop: 10 }}>
+                  <div className="form-group"><label className="form-label">Paid with *</label>
+                    <select className="form-select" value={paid.method} onChange={e => setPaid({ ...paid, method: e.target.value })}>
+                      <option value="">Choose…</option>
+                      {setup.payment_methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                    </select></div>
+                  <div className="form-group"><label className="form-label">Date paid *</label>
+                    <input className="form-input" type="date" max={setup.today} value={paid.paid_on} onChange={e => setPaid({ ...paid, paid_on: e.target.value })} /></div>
+                  <div className="form-group"><label className="form-label">Reference</label>
+                    <input className="form-input" value={paid.reference} placeholder="transfer ref, optional" onChange={e => setPaid({ ...paid, reference: e.target.value })} /></div>
+                </div>
+              )}
+            </div>
+          )}
           {dupWarn && (
             <div className="alert alert-warn"><div>{dupWarn}. Record it again anyway?
               <div className="flex gap-2" style={{ marginTop: 8 }}>
@@ -435,8 +464,8 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !f.category || !f.department || !(total > 0)}>
-            {busy ? 'Saving…' : bill ? 'Save changes' : `Save bill · ${idr(total)}`}</button>
+          <button className="btn btn-primary" onClick={() => save(false)} disabled={busy || !f.supplier_id || !f.category || !f.department || !(total > 0) || (paid && (!paid.method || !paid.paid_on))}>
+            {busy ? 'Saving…' : bill ? 'Save changes' : paid ? `Save paid bill · ${idr(total)}` : `Save bill · ${idr(total)}`}</button>
         </div>
       </div>
     </div>

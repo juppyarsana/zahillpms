@@ -117,6 +117,18 @@ async function sameRefWarning(client, propertyId, v, exceptId) {
   return d ? billNo(d.bill_no) : null;
 }
 
+// "Paid already": a bill entered after it was paid gets its payment in the
+// same step — { method, paid_on, reference } — paying the whole bill.
+async function cleanPaid(client, propertyId, paid) {
+  if (!paid) return { value: null };
+  const paidOn = paid.paid_on;
+  if (!validDay(paidOn)) return fail(400, 'Enter the date it was paid');
+  if (paidOn > todayWITA()) return fail(400, 'The date paid can\'t be in the future');
+  const { rows: [m] } = await client.query('SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active', [String(paid.method || ''), propertyId]);
+  if (!m) return fail(400, 'Choose how it was paid');
+  return { value: { paid_on: paidOn, method: m.id, reference: String(paid.reference || '').trim().slice(0, 120) || null } };
+}
+
 async function createBill(propertyId, body, userId) {
   const client = await db.pool.connect();
   try {
@@ -124,6 +136,8 @@ async function createBill(propertyId, body, userId) {
     const c = await cleanBill(client, propertyId, body);
     if (c.error) { await client.query('ROLLBACK'); return c; }
     const v = c.value;
+    const pd = await cleanPaid(client, propertyId, body.paid);
+    if (pd.error) { await client.query('ROLLBACK'); return pd; }
     const dupOf = await sameRefWarning(client, propertyId, v, null);
     if (dupOf && !body.confirm_duplicate) {
       await client.query('ROLLBACK');
@@ -135,6 +149,14 @@ async function createBill(propertyId, body, userId) {
       `INSERT INTO supplier_bills (property_id, bill_no, supplier_id, supplier_ref, bill_date, due_date, purchase_order_id, notes, category, total, created_by, department)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [propertyId, n.no, v.supplier_id, v.supplier_ref, v.bill_date, v.due_date, v.purchase_order_id, v.notes, v.category, v.total, userId || null, v.department]);
+    if (pd.value) {
+      const { rows: [p] } = await client.query(
+        `INSERT INTO supplier_payments (property_id, supplier_id, paid_on, amount, method, reference, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [propertyId, v.supplier_id, pd.value.paid_on, v.total, pd.value.method, pd.value.reference,
+          `Paid already — entered with ${billNo(n.no)}`, userId || null]);
+      await client.query('INSERT INTO supplier_payment_allocations (payment_id, bill_id, amount) VALUES ($1, $2, $3)', [p.id, b.id, v.total]);
+    }
     await client.query('COMMIT');
     return { bill: await getBill(propertyId, b.id) };
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }

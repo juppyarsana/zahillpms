@@ -20,6 +20,8 @@ Never record the same bill in both places.
 7. **Amount** = the total on the bill, tax included.
 8. **Save bill**.
 
+**Paid before you entered it?** (e.g. the supplier was paid at delivery and the invoice reached the office later) Tick **Paid already** before saving, choose **Paid with**, the **Date paid** (the day it was really paid) and a transfer reference if there is one. The payment is recorded with the bill, so it is paid at once and never shows as owed.
+
 A bill that mixes things (e.g. a market bill with food and soap): choose what most of it is, or record it as two bills.
 
 The PMS warns you when the same invoice number of that supplier is already recorded.

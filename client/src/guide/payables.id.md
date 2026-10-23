@@ -20,6 +20,8 @@ Jangan pernah mencatat tagihan yang sama di dua tempat.
 7. **Amount** = total di tagihan, termasuk pajak.
 8. **Save bill**.
 
+**Sudah dibayar sebelum dicatat?** (mis. supplier dibayar saat barang datang, invoice baru sampai di kantor kemudian) Centang **Paid already** sebelum menyimpan, pilih **Paid with**, **Date paid** (tanggal sebenarnya dibayar) dan nomor transfer kalau ada. Pembayarannya ikut tercatat, jadi tagihan langsung lunas dan tidak muncul sebagai hutang.
+
 Tagihan campuran (mis. nota pasar berisi makanan dan sabun): pilih yang paling besar, atau catat sebagai dua tagihan.
 
 PMS memberi peringatan kalau nomor invoice yang sama dari supplier itu sudah pernah dicatat.
