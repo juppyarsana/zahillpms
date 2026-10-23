@@ -89,11 +89,12 @@ async function listForBooking(propertyId, bookingId) {
   return { requests: rows.map(shape), mornings: await breakfastMornings(propertyId, b), today: todayWITA() };
 }
 
-// For the POS: every request for the dates (not cancelled).
-async function listForDates(propertyId, from, to) {
+// For the POS: every request for the dates (not cancelled — unless
+// withCancelled: the POS prints a CANCELLED slip for the kitchen).
+async function listForDates(propertyId, from, to, { withCancelled = false } = {}) {
   const { rows } = await db.query(
-    `${SELECT} WHERE r.property_id = $1 AND r.service_date BETWEEN $2::date AND $3::date AND r.status <> 'cancelled'
-     ORDER BY r.service_date, r.ready_time NULLS LAST, u.name, r.created_at`, [propertyId, from, to]);
+    `${SELECT} WHERE r.property_id = $1 AND r.service_date BETWEEN $2::date AND $3::date AND ($4 OR r.status <> 'cancelled')
+     ORDER BY r.service_date, r.ready_time NULLS LAST, u.name, r.created_at`, [propertyId, from, to, withCancelled]);
   return rows.map(shape);
 }
 

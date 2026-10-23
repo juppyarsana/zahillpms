@@ -208,7 +208,8 @@ router.get('/breakfast', gate, async (req, res) => {
 
 // GET /api/pos/requests?from=&to= (default today WITA, max 31 days) — the
 // restaurant requests front desk took on reservations (migration 088):
-// breakfast boxes and other requests, not cancelled.
+// breakfast boxes and other requests, not cancelled (?include_cancelled=1:
+// those too, status 'cancelled' — the POS prints the kitchen a CANCELLED slip).
 router.get('/requests', gate, async (req, res) => {
   try {
     const { todayWITA } = require('../services/roomChargeService');
@@ -216,7 +217,8 @@ router.get('/requests', gate, async (req, res) => {
     const from = ok(req.query.from) ? req.query.from : todayWITA();
     const to = ok(req.query.to) ? req.query.to : from;
     if (to < from || (Date.parse(to) - Date.parse(from)) / 864e5 > 31) return res.status(400).json({ error: 'from/to: up to 31 days' });
-    res.json(await require('../services/restaurantRequests').listForDates(req.propertyId, from, to));
+    res.json(await require('../services/restaurantRequests').listForDates(req.propertyId, from, to,
+      { withCancelled: req.query.include_cancelled === '1' }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
