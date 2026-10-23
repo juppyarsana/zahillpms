@@ -59,12 +59,13 @@ function materialStockBadge(m) {
 
 // Purchasing & Stock (Operations menu). Expenses has its own page under
 // Finance (pages/Expenses.jsx, which uses ExpensesTab below).
+// In the order of the work: buying, what is in stock, then the supplier list.
 const TABS = [
-  { key: 'suppliers', label: 'Suppliers' },
   { key: 'purchase_orders', label: 'Purchase Orders' },
   { key: 'direct', label: 'Bought without a PO' },
   { key: 'raw_materials', label: 'Stock items' },
   { key: 'inventory_value', label: 'Stock value' },
+  { key: 'suppliers', label: 'Suppliers' },
 ];
 
 export default function BackOffice() {
@@ -72,7 +73,7 @@ export default function BackOffice() {
   // `direct_purchase` alone (e.g. the accountant) = only Buy without a PO.
   const full = can('purchasing');
   const tabs = full ? TABS : TABS.filter(t => t.key === 'direct');
-  const [tab, setTab] = useState(full ? 'suppliers' : 'direct');
+  const [tab, setTab] = useState(full ? 'purchase_orders' : 'direct');
 
   return (
     <div>
