@@ -7,7 +7,7 @@
 - **No, the hotel still owes it** → **Payables**. Record the bill on the day it **arrives**, then press **Pay** on that same bill on the day the money goes out — never an expense for it.
 - **Yes, it is already paid** → **[Expenses](/expenses)**. One line, nothing owed.
 - A proper invoice from a regular supplier that is already paid may also go here with **Paid already** ticked — it keeps that supplier's history in one place. The books come out the same either way; just never both.
-- **Stock** (rice, eggs, bottled water…) goes through **Purchasing & Stock** instead, so the stock goes up — see [Buying: which page to use](/guide/purchasing). A stock purchase paid later makes its bill here by itself (marked with its PO number); change or void it in Purchasing & Stock.
+- **Stock** (rice, eggs, bottled water…) goes through **Purchasing** instead, so the stock goes up — see [Buying: which page to use](/guide/purchasing). A stock purchase paid later makes its bill here by itself (marked with its PO number); change or void it in Purchasing.
 
 ## Record a bill
 
@@ -30,7 +30,7 @@ The PMS warns you when the same invoice number of that supplier is already recor
 
 ## From a purchase order
 
-On a received purchase order (**Operations → Purchasing & Stock → Purchase Orders**) press **Make bill**. The supplier and the amount are filled from what was received and not billed yet (the items go in the notes). Add the invoice number, correct the amount if the bill differs, then save.
+On a received purchase order (**Operations → Purchasing → Purchase Orders**) press **Make bill**. The supplier and the amount are filled from what was received and not billed yet (the items go in the notes). Add the invoice number, correct the amount if the bill differs, then save.
 
 ## Pay a supplier
 

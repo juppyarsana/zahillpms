@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import ReasonModal from './ReasonModal';
 
-// Buy without a PO (migration 135) — Purchasing & Stock. Stock bought at the
+// Buy without a PO (migration 135) — Purchasing. Stock bought at the
 // market or a shop: one save adds the stock (average cost updated) and
 // records the money — paid already → Finance → Expenses, pay later → a
 // supplier bill in Finance → Payables. Voided here, never in Expenses /
@@ -256,7 +256,7 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
                             </select>
                           ) : (
                             <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
-                              <option value="">{setup.materials.length ? 'Choose the stock item…' : 'No stock items yet — add them in Stock items'}</option>
+                              <option value="">{setup.materials.length ? 'Choose the stock item…' : 'No stock items yet — add them on Stock → Stock items'}</option>
                               {setup.materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit_of_measure})</option>)}
                             </select>
                           )}

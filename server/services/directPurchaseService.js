@@ -298,7 +298,7 @@ async function voidPurchase(propertyId, poId, reason, user) {
       const onHand = num(row.stock_quantity);
       if (onHand + 1e-9 < qty) {
         await client.query('ROLLBACK');
-        return fail(409, `Only ${+onHand.toFixed(3)} of ${it.description} left in stock — ${+qty} were bought. Correct the stock in Stock items first if it was really used.`, 'STOCK_USED');
+        return fail(409, `Only ${+onHand.toFixed(3)} of ${it.description} left in stock — ${+qty} were bought. If it was really used, correct it first on Stock (Adjust or a stock opname).`, 'STOCK_USED');
       }
       const left = onHand - qty;
       const avg = row.cost_per_unit != null ? num(row.cost_per_unit) : null;

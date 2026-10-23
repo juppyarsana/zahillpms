@@ -7,7 +7,7 @@
 - **Belum, hotel masih berhutang** → **Payables**. Catat tagihan pada hari **tagihan datang**, lalu tekan **Pay** pada tagihan yang sama di hari uangnya keluar — jangan dibuat expense.
 - **Sudah dibayar** → **[Expenses](/expenses)**. Satu baris, tidak ada hutang.
 - Invoice resmi dari supplier tetap yang sudah dibayar boleh juga dicatat di sini dengan centang **Paid already** — supaya riwayat supplier itu lengkap di satu tempat. Hasil di pembukuan sama saja; yang penting jangan dua-duanya.
-- **Stok** (beras, telur, air mineral…) lewat **Purchasing & Stock**, supaya stoknya bertambah — lihat [Belanja: pakai halaman yang mana](/guide/purchasing). Belanja stok yang dibayar nanti membuat tagihannya di sini dengan sendirinya (ditandai nomor PO-nya); ubah atau void dari Purchasing & Stock.
+- **Stok** (beras, telur, air mineral…) lewat **Purchasing**, supaya stoknya bertambah — lihat [Belanja: pakai halaman yang mana](/guide/purchasing). Belanja stok yang dibayar nanti membuat tagihannya di sini dengan sendirinya (ditandai nomor PO-nya); ubah atau void dari Purchasing.
 
 ## Mencatat tagihan
 
@@ -30,7 +30,7 @@ PMS memberi peringatan kalau nomor invoice yang sama dari supplier itu sudah per
 
 ## Dari purchase order
 
-Di purchase order yang sudah diterima (**Operations → Purchasing & Stock → Purchase Orders**) tekan **Make bill**. Supplier dan jumlah terisi dari barang yang sudah diterima dan belum ditagihkan (daftar barang masuk ke catatan). Isi nomor invoice, perbaiki jumlah kalau tagihan berbeda, lalu simpan.
+Di purchase order yang sudah diterima (**Operations → Purchasing → Purchase Orders**) tekan **Make bill**. Supplier dan jumlah terisi dari barang yang sudah diterima dan belum ditagihkan (daftar barang masuk ke catatan). Isi nomor invoice, perbaiki jumlah kalau tagihan berbeda, lalu simpan.
 
 ## Membayar supplier
 

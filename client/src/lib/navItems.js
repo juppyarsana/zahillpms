@@ -34,7 +34,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
     { id: 'operations', label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },
       can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
-      (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing & Stock' },
+      (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
+      can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
     ] },
     { id: 'revenue', label: 'Revenue', items: [
       can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },

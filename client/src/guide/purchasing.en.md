@@ -2,27 +2,27 @@
 
 Every cost goes in **one** place only. Two questions decide which:
 
-1. **Does it add stock?** (rice, eggs, vegetables, bottled water, soap… — the things in **Stock items**)
+1. **Does it add stock?** (rice, eggs, vegetables, bottled water, soap… — the things on **[Operations → Stock](/stock)**)
 2. **Has the money already left the cash box or the bank?**
 
 | | Paid now | Paid later |
 |---|---|---|
-| **Adds stock** | **Purchasing & Stock → Bought without a PO**, *Paid already* (or a purchase order) | **Purchasing & Stock → Bought without a PO**, *Pay later* (or a purchase order → **Make bill**) — then pay it in **Payables** |
+| **Adds stock** | **Purchasing → Bought without a PO**, *Paid already* (or a purchase order) | **Purchasing → Bought without a PO**, *Pay later* (or a purchase order → **Make bill**) — then pay it in **Payables** |
 | **No stock** (internet, water, repairs, laundry…) | **[Finance → Expenses](/expenses)** | **[Finance → Payables](/payables)** → New bill |
 
 Three rules:
 
 - **Payables is where every bill paid later is paid**, wherever the bill came from.
 - **Expenses holds every cost paid on the spot.** A stock purchase paid already shows up there by itself (marked with its PO number) — don't type it again.
-- **Never record the same receipt twice.** If it went through Purchasing & Stock, it doesn't also go into Expenses or Payables.
+- **Never record the same receipt twice.** If it went through Purchasing, it doesn't also go into Expenses or Payables.
 
 A receipt with stock and other things on it (e.g. eggs and gas): the eggs in *Bought without a PO*, the gas in Expenses, with the same receipt number on both.
 
 ## Buy without a PO
 
-For stock bought at the market or a shop, with no purchase order. You need **Purchasing & Stock** or the **Buy without a PO** permission.
+For stock bought at the market or a shop, with no purchase order. You need **Purchasing** or the **Buy without a PO** permission.
 
-1. **[Operations → Purchasing & Stock](/purchasing)** → **Bought without a PO** → **+ Buy without a PO**.
+1. **[Operations → Purchasing](/purchasing)** → **Bought without a PO** → **+ Buy without a PO**.
 2. **Bought from**: a regular supplier from the list, or leave *Not a regular supplier* and type where (e.g. Pasar Kintamani).
 3. **Date bought** = the date on the receipt. **Receipt / nota number** if it has one.
 4. **What it is for** (Food, Drinks, Guest supplies…) and the **Department** (fills itself in).
@@ -32,7 +32,7 @@ For stock bought at the market or a shop, with no purchase order. You need **Pur
    - **Pay later** → needs the supplier. A bill is made in Payables, due by the supplier's terms (or type a due date). Pay it there when the money goes out.
 7. **Save**.
 
-Saving adds the stock and updates each item's average cost (the **Stock value** tab), exactly like receiving a purchase order.
+Saving adds the stock and updates each item's average cost (**Stock → Stock value**), exactly like receiving a purchase order.
 
 The PMS asks when the same receipt number is already recorded.
 
@@ -40,7 +40,7 @@ The PMS asks when the same receipt number is already recorded.
 
 Open the purchase → **Void…** with a reason. The stock is taken back out and its expense or bill is voided. Then enter it again correctly.
 
-- Refused when the stock has already been used (less is left than was bought) — correct the stock in **Stock items** first if it really was used.
+- Refused when the stock has already been used (less is left than was bought) — correct it first with **Stock → Adjust** or the stock opname if it really was used.
 - Refused when something is already paid on its bill — void that payment in Payables first.
 
 Its expense and bill can't be changed or voided in Expenses / Payables — always here, so the stock follows.

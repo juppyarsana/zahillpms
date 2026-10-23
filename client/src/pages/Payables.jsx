@@ -7,7 +7,7 @@ import ReasonModal from '../components/ReasonModal';
 // Finance → Payables (migration 129): supplier bills recorded when they
 // arrive, payments to suppliers, what the hotel owes. Owner or the
 // `payables` permission. ?from_po=<id> opens a new bill filled from a
-// received purchase order (Purchasing & Stock → Make bill).
+// received purchase order (Purchasing → Make bill).
 
 const idr = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -304,7 +304,7 @@ function SupplierModal({ setup, supplier, onClose, onSaved }) {
               <option value="">— (from the category)</option>
               {setup.departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
             </select></div>
-          {!isNew && <div className="text-muted" style={{ fontSize: 12 }}>Name, contact and address: Operations → Purchasing &amp; Stock → Suppliers.</div>}
+          {!isNew && <div className="text-muted" style={{ fontSize: 12 }}>Name, contact and address: Operations → Purchasing → Suppliers.</div>}
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
@@ -520,7 +520,7 @@ function BillDetailModal({ id, onClose, onEdit, onPay, onChanged }) {
           )}
         </div>
         <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
-          {b && !b.is_voided && b.from_direct && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Change or void it in Purchasing &amp; Stock → Bought without a PO, so the stock follows.</span>}
+          {b && !b.is_voided && b.from_direct && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Change or void it in Purchasing → Bought without a PO, so the stock follows.</span>}
           {b && !b.is_voided && !livePaid && !b.from_direct && <button className="btn btn-sm btn-secondary" onClick={() => setVoiding(true)}>Void</button>}
           {b && !b.is_voided && !livePaid && !b.from_direct && <button className="btn btn-sm btn-secondary" onClick={() => onEdit(b)}>Edit</button>}
           {b && b.balance > 0 && <button className="btn btn-sm btn-primary" onClick={() => onPay(b)}>Pay this bill</button>}

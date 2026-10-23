@@ -184,7 +184,7 @@ async function updateBill(propertyId, billId, body) {
     const b = await lockBill(client, propertyId, billId);
     if (!b) { await client.query('ROLLBACK'); return fail(404, 'Bill not found'); }
     if (b.is_voided) { await client.query('ROLLBACK'); return fail(409, 'This bill is voided', 'VOIDED'); }
-    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing & Stock, so the stock follows', 'USE_PURCHASE'); }
+    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing, so the stock follows', 'USE_PURCHASE'); }
     if (num(b.paid) > 0) { await client.query('ROLLBACK'); return fail(409, 'Something is already paid on this bill — void the payment first', 'HAS_PAYMENTS'); }
     const c = await cleanBill(client, propertyId, body);
     if (c.error) { await client.query('ROLLBACK'); return c; }
@@ -212,7 +212,7 @@ async function voidBill(propertyId, billId, reason, userId) {
     const b = await lockBill(client, propertyId, billId);
     if (!b) { await client.query('ROLLBACK'); return fail(404, 'Bill not found'); }
     if (b.is_voided) { await client.query('ROLLBACK'); return fail(409, 'This bill is already voided', 'VOIDED'); }
-    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing & Stock, so the stock follows', 'USE_PURCHASE'); }
+    if (b.from_direct) { await client.query('ROLLBACK'); return fail(409, 'This bill came from Buy without a PO — change or void it in Purchasing, so the stock follows', 'USE_PURCHASE'); }
     if (num(b.paid) > 0) { await client.query('ROLLBACK'); return fail(409, 'Something is paid on this bill — void the payment first', 'HAS_PAYMENTS'); }
     await client.query(
       `UPDATE supplier_bills SET is_voided = true, voided_at = NOW(), voided_by = $1, void_reason = $2, updated_at = NOW() WHERE id = $3`,

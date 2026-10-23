@@ -7,10 +7,10 @@ const svc = require('../services/purchasingService');
 // Back Office Slice A. Mounted at /api/purchasing behind
 // auth + moduleGuard('back_office') in server/index.js; owner-only per
 // handler, same convention as routes/agents.js.
-// Purchasing & Stock: owner or the `purchasing` permission; approving a
+// Purchasing: owner or the `purchasing` permission; approving a
 // purchase order needs `approve_po` as well (see the status route).
 const ownerOnly = [auth, requireOwnerOrMenu('purchasing')];
-// Buy without a PO (migration 135): Purchasing & Stock, or only this window
+// Buy without a PO (migration 135): Purchasing, or only this window
 // (the `direct_purchase` permission — e.g. the accountant).
 const directGate = [auth, requireOwnerOrMenu(['purchasing', 'direct_purchase'])];
 const direct = require('../services/directPurchaseService');

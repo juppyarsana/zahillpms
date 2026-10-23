@@ -28,6 +28,7 @@ export const GROUPS = [
   { label: { id: 'Operasional', en: 'Operations' }, chapters: [
     { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
+    { id: 'stock', icon: '🗃', title: { id: 'Stok: adjust, stock opname & pemakaian', en: 'Stock: adjust, stock opname & usage' } },
   ] },
   { label: { id: 'Keuangan', en: 'Finance' }, chapters: [
     { id: 'purchasing', icon: '🛒', title: { id: 'Belanja: pakai halaman yang mana', en: 'Buying: which page to use' } },

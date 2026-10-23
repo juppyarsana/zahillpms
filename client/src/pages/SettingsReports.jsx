@@ -204,6 +204,28 @@ function DirectPurchaseAlertSettings() {
   );
 }
 
+// When "Stock written off" is sent — 0 = every write-off.
+function WriteoffAlertSettings() {
+  const [amount, setAmount] = useState(null);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { api.get('/api/stock/writeoff-alert').then(r => setAmount(r.data.settings.amount)).catch(() => {}); }, []);
+  if (amount == null) return null;
+  async function save() {
+    setMsg('');
+    try { const r = await api.put('/api/stock/writeoff-alert', { amount: Number(amount) }); setAmount(r.data.settings.amount); setMsg('Saved'); }
+    catch (err) { setMsg(err.response?.data?.error || 'Could not save'); }
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 8, fontSize: 13 }}>
+      Worth Rp
+      <input className="form-input" type="number" min="0" style={{ width: 130, height: 32 }} value={amount} onChange={e => { setAmount(e.target.value); setMsg(''); }} />
+      or more
+      <button className="btn btn-sm btn-secondary" onClick={save}>Save</button>
+      {msg && <span style={{ fontSize: 12, color: msg === 'Saved' ? 'var(--success-text)' : 'var(--danger-text)' }}>{msg}</span>}
+    </div>
+  );
+}
+
 export default function SettingsReports() {
   const { branding } = useSettings();
   const [catalog, setCatalog] = useState(null);
@@ -348,6 +370,7 @@ export default function SettingsReports() {
             </div>
             <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
             {r.key === 'alert_direct_purchase' && <DirectPurchaseAlertSettings />}
+            {r.key === 'alert_stock_writeoff' && <WriteoffAlertSettings />}
           </div>
         ))}
       </div>

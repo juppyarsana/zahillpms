@@ -2,7 +2,7 @@ import { ExpensesTab } from './BackOffice';
 
 // Finance → Expenses: money spent (electricity, laundry, repairs, OTA
 // commission bills…) — owner or the accountant. Moved out of Back Office,
-// which is now Purchasing & Stock under Operations.
+// which is now Purchasing under Operations.
 export default function Expenses() {
   return (
     <div>

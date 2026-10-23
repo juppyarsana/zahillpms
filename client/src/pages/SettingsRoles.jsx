@@ -50,10 +50,11 @@ export const MENU_DEFS = [
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
   { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
   { key: 'reports',          label: 'Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },
-  { key: 'purchasing',       label: 'Purchasing & Stock (suppliers, purchase orders, stock)', group: 'Operations' },
-  // An action permission: approve a purchase order (needs Purchasing & Stock too).
+  { key: 'purchasing',       label: 'Purchasing (suppliers, purchase orders, bought without a PO)', group: 'Operations' },
+  { key: 'stock',            label: 'Stock (stock items, adjust, stock opname, usage)', group: 'Operations' },
+  // An action permission: approve a purchase order (needs Purchasing too).
   { key: 'approve_po',       label: 'Approve purchase orders', group: 'Operations' },
-  // Only the Buy without a PO window of Purchasing & Stock (e.g. the accountant).
+  // Only the Buy without a PO window of Purchasing (e.g. the accountant).
   { key: 'direct_purchase',  label: 'Buy without a PO (stock bought at the market / a shop)', group: 'Operations' },
   { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },

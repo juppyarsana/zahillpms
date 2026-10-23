@@ -53,6 +53,8 @@ import CashierClosing from './pages/CashierClosing';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
+
+import Stock from './pages/Stock';
 import Expenses from './pages/Expenses';
 import Payables from './pages/Payables';
 import Accounting from './pages/Accounting';
@@ -317,6 +319,7 @@ export default function App() {
                   <Route path="/reports"         element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
                   <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
+                  <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />
                   <Route path="/payables"        element={<RequireMenu menuKey="payables"><RequireModule moduleName="accounting"><Payables /></RequireModule></RequireMenu>} />
                   <Route path="/expenses"        element={<RequireMenu menuKey="expenses"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />
                   <Route path="/accounting"      element={<RequireMenu menuKey="accounting"><RequireModule moduleName="accounting"><Accounting /></RequireModule></RequireMenu>} />

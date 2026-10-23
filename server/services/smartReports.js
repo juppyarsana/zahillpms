@@ -136,6 +136,24 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_stock_opname: {
+    type: 'alert',
+    label: 'Stock opname finished',
+    when: 'When a stock opname is finished',
+    description: 'A stock opname finished in Stock: how many items were counted, the value on hand and the difference against what the PMS expected (short / over). Telegram gets the summary and the biggest differences, email gets every item.',
+    defaultRoles: ['owner'],
+    channels: ['telegram', 'email'],
+    paid: false,
+  },
+  alert_stock_writeoff: {
+    type: 'alert',
+    label: 'Stock written off',
+    when: 'Only above an amount',
+    description: 'Stock written off in Stock → Adjust (waste / spoiled, or a correction down) worth more than the amount below: the item, how much, why and who.',
+    defaultRoles: ['owner'],
+    channels: ['telegram'],
+    paid: false,
+  },
   approve_complimentary: {
     type: 'alert',
     label: 'Approve complimentary stays',
@@ -498,6 +516,23 @@ async function sendReport(propertyId, reportKey, { recipientIds = null, buildOpt
   return results;
 }
 
+// An event (e.g. a stock opname finished) sent to everyone who ticked `key`:
+// rendered = { telegram: html text, email: { subject, html } }.
+async function sendEvent(propertyId, key, rendered) {
+  const { rows: recipients } = await db.query(
+    'SELECT * FROM notification_recipients WHERE property_id = $1 AND is_active AND address IS NOT NULL AND $2 = ANY(reports)',
+    [propertyId, key]);
+  if (!recipients.length) return [];
+  const ps = await propertySettings(propertyId);
+  const results = [];
+  for (const r of recipients) {
+    const result = await deliver(r, rendered, ps);
+    await recordResult(r.id, result);
+    results.push({ recipient_id: r.id, name: r.name, channel: r.channel, ...result });
+  }
+  return results;
+}
+
 // "Send test" for an instant alert: a sample message, so they can see it arrives.
 async function sendTestAlert(propertyId, key, recipientIds) {
   const { rows: recipients } = await db.query(
@@ -509,7 +544,9 @@ async function sendTestAlert(propertyId, key, recipientIds) {
   const results = [];
   for (const r of recipients) {
     const result = r.channel !== 'telegram'
-      ? { ok: false, error: 'Alerts are sent by Telegram only' }
+      ? (REPORTS[key].channels.includes(r.channel)
+        ? await deliver(r, { email: { subject: `🔔 Test: ${REPORTS[key].label}`, html: `<p>${telegram.escapeHtml(text)}</p>`.replace('in this chat', 'at this address') } }, ps)
+        : { ok: false, error: 'Alerts are sent by Telegram only' })
       : !r.address
         ? { ok: false, error: 'Not connected yet — they need to open the Connect link and press Start' }
         : await telegram.sendToChat(botToken(ps), r.address, text);
@@ -549,4 +586,4 @@ async function runReportAllProperties(reportKey) {
   }
 }
 
-module.exports = { REPORTS, ROLES, reportAllowed, defaultReportsFor, isModuleEnabled, sendReport, renderPreview, runReportAllProperties };
+module.exports = { REPORTS, ROLES, reportAllowed, defaultReportsFor, isModuleEnabled, sendReport, sendEvent, renderPreview, runReportAllProperties };

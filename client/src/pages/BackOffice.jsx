@@ -17,8 +17,6 @@ function fmtDateTime(str) {
 }
 
 const EMPTY_SUPPLIER = { name: '', contact_name: '', contact_phone: '', contact_email: '', address: '', payment_terms_days: '' };
-const EMPTY_MATERIAL = { name: '', unit_of_measure: 'kg', low_stock_threshold: '', cost_per_unit: '' };
-const UNITS = ['kg', 'g', 'l', 'ml', 'pcs'];
 
 const PO_STATUS_LABELS = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved', received: 'Received', cancelled: 'Cancelled' };
 const PO_STATUS_BADGE = { draft: 'gray', pending_approval: 'amber', approved: 'blue', received: 'green', cancelled: 'red' };
@@ -49,22 +47,13 @@ const EXPENSE_CATEGORY_COLORS = {
 };
 const EMPTY_EXPENSE = { category: 'utilities', department: 'engineering', amount: '', incurred_on: new Date().toISOString().slice(0, 10), payment_method: '', supplier_id: '', description: '', reference: '' };
 
-function materialStockBadge(m) {
-  if (m.stock_quantity <= 0) return <span className="badge badge-red">Out of stock</span>;
-  if (m.low_stock_threshold != null && Number(m.stock_quantity) <= Number(m.low_stock_threshold)) {
-    return <span className="badge badge-amber">Low: {m.stock_quantity} {m.unit_of_measure}</span>;
-  }
-  return <span className="badge badge-gray">{m.stock_quantity} {m.unit_of_measure}</span>;
-}
-
-// Purchasing & Stock (Operations menu). Expenses has its own page under
+// Purchasing (Operations menu). Expenses has its own page under
 // Finance (pages/Expenses.jsx, which uses ExpensesTab below).
-// In the order of the work: buying, what is in stock, then the supplier list.
+// In the order of the work: buying, then the supplier list. The stock itself
+// (items, adjust, stock opname, usage, value) is its own page, pages/Stock.jsx.
 const TABS = [
   { key: 'purchase_orders', label: 'Purchase Orders' },
   { key: 'direct', label: 'Bought without a PO' },
-  { key: 'raw_materials', label: 'Stock items' },
-  { key: 'inventory_value', label: 'Stock value' },
   { key: 'suppliers', label: 'Suppliers' },
 ];
 
@@ -79,8 +68,8 @@ export default function BackOffice() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Purchasing &amp; Stock</div>
-          <div className="page-subtitle">{full ? 'Suppliers, purchase orders and the stock they fill — what it is worth' : 'Stock bought without a purchase order'}</div>
+          <div className="page-title">Purchasing</div>
+          <div className="page-subtitle">{full ? 'Purchase orders, stock bought without a PO, and suppliers — the stock itself is on Stock' : 'Stock bought without a purchase order'}</div>
         </div>
       </div>
 
@@ -97,9 +86,7 @@ export default function BackOffice() {
       </div>
 
       {tab === 'suppliers' && <SuppliersTab />}
-      {tab === 'raw_materials' && <RawMaterialsTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
-      {tab === 'inventory_value' && <InventoryValueTab />}
       {tab === 'direct' && <DirectPurchasesTab />}
     </div>
   );
@@ -207,166 +194,6 @@ function SuppliersTab() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save}>{modal.mode === 'add' ? 'Add Supplier' : 'Save Changes'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────── Raw Materials ───────────────────────────
-
-function RawMaterialsTab() {
-  const [materials, setMaterials] = useState([]);
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState(EMPTY_MATERIAL);
-  const [error, setError] = useState('');
-  const [stockModal, setStockModal] = useState(null); // material row
-  const [stockForm, setStockForm] = useState({ change_qty: '', reason: 'purchase', note: '' });
-  const [search, setSearch] = useState('');
-
-  function load() { api.get('/api/purchasing/raw-materials').then(r => setMaterials(r.data)).catch(() => {}); }
-  useEffect(() => { load(); }, []);
-
-  function openAdd() { setForm(EMPTY_MATERIAL); setError(''); setModal({ mode: 'add' }); }
-  function openEdit(m) {
-    setForm({ name: m.name, unit_of_measure: m.unit_of_measure, low_stock_threshold: m.low_stock_threshold ?? '', cost_per_unit: m.cost_per_unit ?? '' });
-    setError('');
-    setModal({ mode: 'edit', id: m.id });
-  }
-
-  async function save() {
-    if (!form.name.trim()) { setError('Name is required'); return; }
-    const payload = {
-      ...form,
-      low_stock_threshold: form.low_stock_threshold === '' ? null : parseFloat(form.low_stock_threshold),
-      cost_per_unit: form.cost_per_unit === '' ? null : parseFloat(form.cost_per_unit),
-    };
-    try {
-      if (modal.mode === 'add') await api.post('/api/purchasing/raw-materials', payload);
-      else await api.put(`/api/purchasing/raw-materials/${modal.id}`, payload);
-      setModal(null);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Save failed');
-    }
-  }
-
-  async function deactivate(m) {
-    if (!confirm(`Deactivate ${m.name}? It stays on past purchase orders but won't be selectable for new ones.`)) return;
-    await api.delete(`/api/purchasing/raw-materials/${m.id}`);
-    load();
-  }
-
-  function openStockModal(m) { setStockForm({ change_qty: '', reason: 'purchase', note: '' }); setStockModal(m); }
-  async function submitStockAdjust() {
-    const qty = parseFloat(stockForm.change_qty);
-    if (!qty) return;
-    const signedQty = stockForm.reason === 'purchase' ? Math.abs(qty) : -Math.abs(qty);
-    try {
-      await api.patch(`/api/purchasing/raw-materials/${stockModal.id}/stock`, { change_qty: signedQty, reason: stockForm.reason, note: stockForm.note || null });
-      setStockModal(null);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Could not adjust stock');
-    }
-  }
-
-  const filtered = materials.filter(m => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return m.name.toLowerCase().includes(q) || m.unit_of_measure?.toLowerCase().includes(q);
-  });
-
-  return (
-    <div>
-      <div className="flex-between" style={{ marginBottom: 12 }}>
-        <input className="form-input" style={{ maxWidth: 320 }} placeholder="Search stock items…" value={search} onChange={e => setSearch(e.target.value)} />
-        <button className="btn btn-primary" onClick={openAdd}>+ Add stock item</button>
-      </div>
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Unit</th><th>Stock</th><th>Cost / unit</th><th>Status</th><th></th></tr></thead>
-            <tbody>
-              {filtered.map(m => (
-                <tr key={m.id}>
-                  <td style={{ fontWeight: 600 }}>{m.name}</td>
-                  <td>{m.unit_of_measure}</td>
-                  <td>{materialStockBadge(m)}</td>
-                  <td>{m.cost_per_unit != null ? fmtIDR(m.cost_per_unit) : <span className="text-muted">—</span>}</td>
-                  <td><span className={`badge badge-${m.is_active ? 'green' : 'gray'}`}>{m.is_active ? 'Active' : 'Inactive'}</span></td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button className="btn btn-sm btn-secondary" onClick={() => openEdit(m)}>Edit</button>
-                      <button className="btn btn-sm btn-secondary" onClick={() => openStockModal(m)}>Adjust Stock</button>
-                      {m.is_active && <button className="btn btn-sm btn-secondary" onClick={() => deactivate(m)}>Deactivate</button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>{materials.length === 0 ? 'No stock items yet' : 'No stock items match your search'}</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {modal && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-title">{modal.mode === 'add' ? 'Add stock item' : 'Edit stock item'}</div>
-              <button className="btn btn-icon" onClick={() => setModal(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              {error && <div className="alert alert-error">{error}</div>}
-              <div className="form-group"><label className="form-label">Name *</label><input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Rice" /></div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Unit of measure</label>
-                  <select className="form-select" value={form.unit_of_measure} onChange={e => setForm(f => ({ ...f, unit_of_measure: e.target.value }))}>
-                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">Low stock alert below</label><input className="form-input" type="number" step="0.001" value={form.low_stock_threshold} onChange={e => setForm(f => ({ ...f, low_stock_threshold: e.target.value }))} placeholder="e.g. 5" /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Reference cost per unit (IDR)</label><input className="form-input" type="number" value={form.cost_per_unit} onChange={e => setForm(f => ({ ...f, cost_per_unit: e.target.value }))} placeholder="optional — updates automatically on receipt" /></div>
-              {modal.mode === 'edit' && (
-                <div className="text-muted" style={{ fontSize: 12 }}>Use "Adjust Stock" from the list to change quantity.</div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>{modal.mode === 'add' ? 'Add stock item' : 'Save Changes'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {stockModal && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <div className="modal-header">
-              <div className="modal-title">Adjust Stock — {stockModal.name}</div>
-              <button className="btn btn-icon" onClick={() => setStockModal(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="text-muted" style={{ fontSize: 13, marginBottom: 8 }}>Current stock: {stockModal.stock_quantity} {stockModal.unit_of_measure}</div>
-              <div className="form-row">
-                <div className="form-group"><label className="form-label">Reason</label>
-                  <select className="form-select" value={stockForm.reason} onChange={e => setStockForm(f => ({ ...f, reason: e.target.value }))}>
-                    <option value="purchase">Purchase (+)</option>
-                    <option value="waste">Waste (−)</option>
-                    <option value="adjustment">Adjustment (−)</option>
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">Quantity ({stockModal.unit_of_measure})</label><input className="form-input" type="number" step="0.001" min="0" value={stockForm.change_qty} onChange={e => setStockForm(f => ({ ...f, change_qty: e.target.value }))} /></div>
-              </div>
-              <div className="form-group"><label className="form-label">Note</label><input className="form-input" value={stockForm.note} onChange={e => setStockForm(f => ({ ...f, note: e.target.value }))} placeholder="optional" /></div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setStockModal(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitStockAdjust}>Save</button>
             </div>
           </div>
         </div>
@@ -791,12 +618,12 @@ function ExpenseDetail({ e, onClose, onVoid }) {
           {row('Paid via', e.payment_method_label || e.payment_method)}
           {row('Supplier', e.supplier_name)}
           {row('Reference', e.reference)}
-          {e.po_number && row('From', <>Bought without a PO — <b>{e.po_number}</b> (Purchasing &amp; Stock)</>)}
+          {e.po_number && row('From', <>Bought without a PO — <b>{e.po_number}</b> (Purchasing)</>)}
           {row('Description', e.description)}
           {row('Recorded', `${e.created_by_name || 'Unknown'} · ${fmtDateTime(e.created_at)}`)}
         </div>
         <div className="modal-footer">
-          {!e.is_voided && e.po_number && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Void it in Purchasing &amp; Stock → Bought without a PO, so the stock is taken back out too.</span>}
+          {!e.is_voided && e.po_number && <span className="text-muted" style={{ fontSize: 12, marginRight: 'auto' }}>Void it in Purchasing → Bought without a PO, so the stock is taken back out too.</span>}
           {!e.is_voided && !e.po_number && <button className="btn btn-danger" onClick={onVoid}>Void…</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
@@ -1003,75 +830,6 @@ export function ExpensesTab() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ───────────────────────────── Inventory Value ─────────────────────────────
-
-function InventoryValueTab() {
-  const [data, setData] = useState(null);
-
-  useEffect(() => {
-    api.get('/api/purchasing/inventory-value').then(r => setData(r.data)).catch(() => {});
-  }, []);
-
-  if (!data) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>;
-
-  return (
-    <div>
-      <div className="card" style={{ marginBottom: 16, padding: 14 }}>
-        <div className="stat-label">Total stock value (at cost)</div>
-        <div style={{ fontSize: 26, fontWeight: 700 }}>{fmtIDR(data.grand_total)}</div>
-        <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-          Stock items {fmtIDR(data.raw_materials_total)} · Sales items {fmtIDR(data.products_total)}
-        </div>
-        {data.uncosted_count > 0 && (
-          <div style={{ fontSize: 12, color: '#D97706', marginTop: 8 }}>
-            ⚠ {data.uncosted_count} item{data.uncosted_count !== 1 ? 's have' : ' has'} stock but no recorded cost yet (never received through a Purchase Order) — excluded from the total above, so this figure is a floor, not the complete picture.
-          </div>
-        )}
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title" style={{ marginBottom: 8 }}>Stock items</div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
-            <tbody>
-              {data.raw_materials.map(m => (
-                <tr key={m.id}>
-                  <td style={{ fontWeight: 600 }}>{m.name}</td>
-                  <td>{m.stock_quantity} {m.unit_of_measure}</td>
-                  <td>{m.cost_per_unit != null ? fmtIDR(m.cost_per_unit) : <span className="text-muted">No cost recorded yet</span>}</td>
-                  <td style={{ fontWeight: 600 }}>{m.value != null ? fmtIDR(m.value) : <span className="text-muted">—</span>}</td>
-                </tr>
-              ))}
-              {data.raw_materials.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No stock items yet</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-title" style={{ marginBottom: 8 }}>Sales items</div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Stock</th><th>Cost / unit</th><th>Value</th></tr></thead>
-            <tbody>
-              {data.products.map(p => (
-                <tr key={p.id}>
-                  <td style={{ fontWeight: 600 }}>{p.name}</td>
-                  <td>{p.stock_quantity}</td>
-                  <td>{p.cost_per_unit != null ? fmtIDR(p.cost_per_unit) : <span className="text-muted">No cost recorded yet</span>}</td>
-                  <td style={{ fontWeight: 600 }}>{p.value != null ? fmtIDR(p.value) : <span className="text-muted">—</span>}</td>
-                </tr>
-              ))}
-              {data.products.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No stock-tracked products yet</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
