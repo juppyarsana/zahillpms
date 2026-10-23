@@ -22,7 +22,7 @@ export function SettingsProvider({ children }) {
       setBranding(b.data);
       // Remembered on this device: the login screen and the installed app
       // then show this property's name and logo without anyone typing the slug.
-      applyPropertyBrand(b.data.slug, b.data.name);
+      applyPropertyBrand(b.data.slug, b.data.name, { color: b.data.app_color });
     } catch {}
     // rate-plans is behind the reservations module — keep it off the critical path
     try {

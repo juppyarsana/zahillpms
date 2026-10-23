@@ -252,7 +252,7 @@ router.get('/branding', auth, async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT COALESCE(property_name, (SELECT name FROM properties WHERE id = $1)) AS name,
-              logo_url, brand_color,
+              logo_url, brand_color, app_color,
               (SELECT slug FROM properties WHERE id = $1) AS slug, -- remembered on the device: login screen + installed app's name / icon
               market_area AS area, -- e.g. "Kintamani, Bali" (Dashboard subtitle, guest WhatsApp messages)
               birthday_offer, -- optional line in the birthday WhatsApp (Guests page)

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { buildNav } from '../lib/navItems';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
+import { propertyLogo } from '../lib/pwaBrand';
 import { useOtaInbox } from './OtaInbox';
 
 function SidebarLink({ to, end, icon, label, badge }) {
@@ -60,7 +61,7 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <img src={branding?.logo_url || '/logo.png'} alt={branding?.name || 'ZHP PMS'} />
+        <img src={propertyLogo(branding)} alt={branding?.name || 'ZHP PMS'} />
         <span className="sidebar-logo-name">{branding?.name || 'ZHP PMS'}</span>
       </div>
 

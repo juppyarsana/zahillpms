@@ -77,7 +77,7 @@ export default function RoomCheckPublic() {
         {picked.length ? <><b>{picked.reduce((s, i) => s + qty[i.id], 0)}</b> item(s) · <b>{fmtIDR(total)}</b></> : 'Nothing taken'}
       </div>
       {!confirming ? (
-        <button style={{ ...btn, background: '#5C1A2E', color: '#fff' }} onClick={() => setConfirming(true)}>
+        <button style={{ ...btn, background: 'var(--green-dark)', color: '#fff' }} onClick={() => setConfirming(true)}>
           {picked.length ? 'Send to front desk' : 'Nothing taken — send'}
         </button>
       ) : (

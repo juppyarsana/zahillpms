@@ -1341,7 +1341,7 @@ function AiSummaryCard({ summary }) {
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <span style={{
                   fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em',
-                  color: '#5C1A2E', background: '#F3E3E6', borderRadius: 4, padding: '3px 8px',
+                  color: 'var(--green-dark)', background: 'var(--green-light)', borderRadius: 4, padding: '3px 8px',
                   flexShrink: 0, marginTop: 1, whiteSpace: 'nowrap',
                 }}>{h.label}</span>
                 <span style={{ fontSize: 13, lineHeight: 1.5 }}>{h.text}</span>
@@ -1589,7 +1589,7 @@ export default function Dashboard() {
             )}
 
             <div style={{ marginTop: 12 }}>
-              <Link to="/operations" style={{ fontSize: 12, color: '#5C1A2E', fontWeight: 600 }}>
+              <Link to="/operations" style={{ fontSize: 12, color: 'var(--green-dark)', fontWeight: 600 }}>
                 View all tasks →
               </Link>
             </div>

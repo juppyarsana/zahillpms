@@ -154,13 +154,13 @@ function MonthChart({ daily, todayYmd }) {
             <div key={d.date}
               title={`${fmtYmd(d.date, { weekday: 'short', day: 'numeric', month: 'short' })} — ${fmtIDR(d.revenue)} · ${plural(d.rooms, 'room')}${future ? ' (booked)' : ''}`}
               style={{ flex: 1, height: `${Math.max(3, Math.round((d.revenue / max) * 100))}%`, borderRadius: '3px 3px 0 0',
-                background: isToday ? '#5C1A2E' : future ? '#F3E3E6' : '#C9A0AB' }} />
+                background: isToday ? 'var(--green-dark)' : future ? 'var(--green-light)' : '#C9A0AB' }} />
           );
         })}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
         <span>{fmtYmd(daily[0]?.date)}</span>
-        <span><span style={{ color: '#C9A0AB' }}>■</span> stayed · <span style={{ color: '#5C1A2E' }}>■</span> today · <span style={{ color: '#E9CDD4' }}>■</span> booked ahead</span>
+        <span><span style={{ color: '#C9A0AB' }}>■</span> stayed · <span style={{ color: 'var(--green-dark)' }}>■</span> today · <span style={{ color: '#E9CDD4' }}>■</span> booked ahead</span>
         <span>{fmtYmd(daily[daily.length - 1]?.date)}</span>
       </div>
     </div>

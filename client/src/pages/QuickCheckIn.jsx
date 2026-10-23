@@ -248,7 +248,7 @@ export default function QuickCheckIn() {
               flex: 1, padding: '10px 0', borderRadius: 9, border: 'none',
               fontWeight: 700, fontSize: 14, cursor: 'pointer',
               background: tab === t.key ? 'white' : 'transparent',
-              color: tab === t.key ? '#5C1A2E' : '#6B7280',
+              color: tab === t.key ? 'var(--green-dark)' : '#6B7280',
               boxShadow: tab === t.key ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
               transition: 'all 0.15s',
             }}
@@ -444,7 +444,7 @@ export default function QuickCheckIn() {
                         <div style={{ fontSize: 44, marginBottom: 8 }}>✅</div>
                         <div style={{ fontWeight: 700, fontSize: 16, color: '#16A34A' }}>Foto ID berhasil diambil</div>
                         <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>{idFile.name}</div>
-                        <div style={{ fontSize: 12, color: '#5C1A2E', marginTop: 8 }}>Ketuk untuk foto ulang</div>
+                        <div style={{ fontSize: 12, color: 'var(--green-dark)', marginTop: 8 }}>Ketuk untuk foto ulang</div>
                       </>
                     ) : (
                       <>

@@ -67,7 +67,7 @@ export default function UpdatePrompt() {
       bottom: 'calc(60px + env(safe-area-inset-bottom, 0px) + 12px)',
       left: 16,
       zIndex: 1000,
-      background: '#5C1A2E',
+      background: 'var(--green-dark)',
       color: 'white',
       borderRadius: 10,
       padding: '8px 10px 8px 14px',
@@ -84,7 +84,7 @@ export default function UpdatePrompt() {
         disabled={refreshing}
         style={{
           background: 'white',
-          color: '#5C1A2E',
+          color: 'var(--green-dark)',
           border: 'none',
           borderRadius: 8,
           padding: '5px 12px',

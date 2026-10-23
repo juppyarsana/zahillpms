@@ -789,7 +789,7 @@ tr:hover td { background: #FAFAF8; }
   background: var(--white); border: 1px dashed var(--border); border-radius: var(--radius-lg); font-size: 13px; color: var(--text-muted); }
 .tomorrow-line b { color: var(--text); }
 .tomorrow-label { font-weight: 700; color: var(--text); }
-.tomorrow-link { font-size: 12px; font-weight: 700; color: #5C1A2E; text-decoration: none; margin-left: auto; }
+.tomorrow-link { font-size: 12px; font-weight: 700; color: var(--green-dark); text-decoration: none; margin-left: auto; }
 @media (max-width: 1200px) {
   .today-strip, .month-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

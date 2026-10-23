@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth, firstAllowedPath } from './context/AuthContext';
 import { SettingsProvider, useSettings } from './context/SettingsContext';
+import { propertyLogo } from './lib/pwaBrand';
 import { CallProvider } from './context/CallContext';
 import Sidebar from './components/Sidebar';
 import UpdatePrompt from './components/UpdatePrompt';
@@ -135,7 +136,7 @@ function BottomNav() {
             <div className="drawer-header">
               {/* the property's logo and name — the sidebar that shows them is hidden on phones */}
               <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                <img src={branding?.logo_url || '/logo.png'} alt="" style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0 }} />
+                <img src={propertyLogo(branding)} alt="" style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0 }} />
                 <span style={{ fontWeight: 700, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{branding?.name || 'Menu'}</span>
               </span>
               <button className="btn btn-icon" onClick={() => setDrawerOpen(false)}>✕</button>

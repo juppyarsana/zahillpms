@@ -13,7 +13,7 @@ if (!fs.existsSync(LOGO_DIR)) fs.mkdirSync(LOGO_DIR, { recursive: true });
 
 const uploadLogo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-const BRANDING_FIELDS = `logo_url, brand_color, property_name, property_address, property_phone, property_email`;
+const BRANDING_FIELDS = `logo_url, brand_color, app_color, property_name, property_address, property_phone, property_email`;
 
 // GET /api/admin/properties
 router.get('/properties', async (req, res) => {
@@ -124,6 +124,11 @@ router.patch('/properties/:id/modules', async (req, res) => {
 // PATCH /api/admin/properties/:id/branding
 router.patch('/properties/:id/branding', async (req, res) => {
   const { brand_color, property_name, property_address, property_phone, property_email } = req.body;
+  // app_color: '' = back to the app's own colour (NULL); absent = unchanged.
+  const appColor = req.body.app_color;
+  if (appColor !== undefined && appColor !== '' && appColor !== null && !/^#[0-9a-fA-F]{6}$/.test(appColor)) {
+    return res.status(400).json({ error: 'app_color must be a colour like #5C1A2E' });
+  }
   try {
     const { rows } = await db.query(
       `UPDATE property_settings SET
@@ -131,9 +136,11 @@ router.patch('/properties/:id/branding', async (req, res) => {
         property_name    = COALESCE($2, property_name),
         property_address = COALESCE($3, property_address),
         property_phone   = COALESCE($4, property_phone),
-        property_email   = COALESCE($5, property_email)
+        property_email   = COALESCE($5, property_email),
+        app_color        = CASE WHEN $7 THEN NULLIF($8, '') ELSE app_color END
        WHERE property_id = $6 RETURNING ${BRANDING_FIELDS}`,
-      [brand_color, property_name, property_address, property_phone, property_email, req.params.id]
+      [brand_color, property_name, property_address, property_phone, property_email, req.params.id,
+       appColor !== undefined, appColor == null ? '' : String(appColor).toUpperCase()]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Property settings not found' });
     res.json(rows[0]);

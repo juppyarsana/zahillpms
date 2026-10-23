@@ -40,7 +40,7 @@ export default function InstallPrompt({ name }) {
     <div style={{
       position: 'fixed', left: 12, right: 12, zIndex: 999,   // under "New version available"
       bottom: 'calc(60px + env(safe-area-inset-bottom, 0px) + 12px)',
-      background: '#5C1A2E', color: 'white', borderRadius: 12, padding: '12px 14px',
+      background: 'var(--green-dark)', color: 'white', borderRadius: 12, padding: '12px 14px',
       boxShadow: '0 4px 20px rgba(0,0,0,0.25)', fontSize: 13, maxWidth: 460, margin: '0 auto',
     }}>
       <div style={{ fontWeight: 700, marginBottom: 2 }}>Install {name || 'this app'} on this device</div>
@@ -54,7 +54,7 @@ export default function InstallPrompt({ name }) {
           {ios ? 'Got it' : 'Not now'}
         </button>
         {!ios && (
-          <button onClick={install} style={{ background: 'white', color: '#5C1A2E', border: 'none', borderRadius: 8, padding: '6px 14px', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}>
+          <button onClick={install} style={{ background: 'white', color: 'var(--green-dark)', border: 'none', borderRadius: 8, padding: '6px 14px', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}>
             Install
           </button>
         )}

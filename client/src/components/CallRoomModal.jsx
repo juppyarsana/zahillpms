@@ -112,7 +112,7 @@ export default function CallRoomModal({ onClose }) {
                         title={`Call ${unit.name}`}
                         style={{
                           height: 48, borderRadius: 8, border: 'none', cursor: callingId === unit.id ? 'default' : 'pointer',
-                          background: callingId === unit.id ? 'var(--text-muted)' : '#5C1A2E',
+                          background: callingId === unit.id ? 'var(--text-muted)' : 'var(--green-dark)',
                           color: '#fff', fontWeight: 700, fontSize: 12,
                         }}
                       >

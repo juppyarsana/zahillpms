@@ -57,6 +57,7 @@ export default function PropertyDetail() {
       setForm({ name: prop.name, slug: prop.slug, plan: prop.plan, is_active: prop.is_active });
       setBrandingForm({
         brand_color: prop.brand_color || '#5C1A2E',
+        app_color: prop.app_color || '',
         property_name: prop.property_name || '',
         property_address: prop.property_address || '',
         property_phone: prop.property_phone || '',
@@ -233,13 +234,28 @@ export default function PropertyDetail() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Brand Color</label>
+          <label className="form-label">Brand Color — room tablets &amp; TV accent</label>
           <input
             type="color"
             value={brandingForm.brand_color}
             onChange={e => setBranding('brand_color', e.target.value)}
             style={{ width: 60, height: 36, padding: 2, cursor: 'pointer' }}
           />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Staff app colour — menu, buttons, active tabs</label>
+          <div className="flex gap-2" style={{ alignItems: 'center' }}>
+            <input
+              type="color"
+              value={brandingForm.app_color || '#5C1A2E'}
+              onChange={e => setBranding('app_color', e.target.value)}
+              style={{ width: 60, height: 36, padding: 2, cursor: 'pointer' }}
+            />
+            {brandingForm.app_color
+              ? <button type="button" className="btn btn-sm btn-secondary" onClick={() => setBranding('app_color', '')}>Use the app's own (maroon)</button>
+              : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>The app's own maroon</span>}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Pick a dark colour — white text sits on it. Staff see it after they reload the app.</div>
         </div>
         <div className="form-group">
           <label className="form-label">Property Name (shown to guests/staff)</label>

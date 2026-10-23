@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth, firstAllowedPath } from '../context/AuthContext';
 import api from '../services/api';
 import InstallPrompt from '../components/InstallPrompt';
-import { applyPropertyBrand, rememberedSlug } from '../lib/pwaBrand';
+import { applyPropertyBrand, rememberedSlug, propertyLogo } from '../lib/pwaBrand';
 
 export default function Login() {
   const { login } = useAuth();
@@ -21,7 +21,7 @@ export default function Login() {
     try {
       const { data } = await api.get(`/api/public/properties/${value.trim()}/branding`);
       setBranding(data);
-      applyPropertyBrand(value.trim(), data.name);   // remembers the slug; installed app's name / icon
+      applyPropertyBrand(value.trim(), data.name, { color: data.app_color });   // remembers the slug; installed app's name / icon
     } catch {
       setBranding(null);
     }
@@ -50,7 +50,7 @@ export default function Login() {
       <div className="login-card">
         <div className="login-logo">
           <img
-            src={branding?.logo_url || '/logo.png'}
+            src={propertyLogo(branding, slug.trim())}
             alt={branding?.name || 'ZHP PMS'}
             style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 12 }}
           />

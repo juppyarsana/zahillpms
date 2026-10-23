@@ -22,7 +22,7 @@ router.post('/channex/webhook/:token', async (req, res) => {
 router.get('/properties/:slug/branding', async (req, res) => {
   try {
     const { rows: [property] } = await db.query(
-      `SELECT COALESCE(ps.property_name, p.name) AS name, ps.logo_url, ps.brand_color
+      `SELECT COALESCE(ps.property_name, p.name) AS name, ps.logo_url, ps.brand_color, ps.app_color
        FROM properties p
        LEFT JOIN property_settings ps ON ps.property_id = p.id
        WHERE p.slug = $1 AND p.is_active = true`,
@@ -62,12 +62,24 @@ const iconCache = new Map();   // "<logo file>:<kind>" → PNG (a handful per pr
 
 async function brandBySlug(slug) {
   const { rows: [p] } = await db.query(
-    `SELECT COALESCE(NULLIF(ps.property_name, ''), p.name) AS name, ps.logo_url
+    `SELECT COALESCE(NULLIF(ps.property_name, ''), p.name) AS name, ps.logo_url, ps.app_color
        FROM properties p LEFT JOIN property_settings ps ON ps.property_id = p.id
       WHERE p.slug = $1 AND p.is_active = true`, [slug]);
   if (!p) return null;
   const file = p.logo_url ? path.join(LOGO_DIR, path.basename(p.logo_url)) : null;
-  return { name: p.name, logoFile: file && fs.existsSync(file) ? file : null };
+  return { name: p.name, color: p.app_color || '#5C1A2E', logoFile: file && fs.existsSync(file) ? file : null };
+}
+
+// A property with no logo yet: its first letter, white on its app colour —
+// never another property's logo.
+function letterSvg(name, color, size, fill, round) {
+  const letter = (String(name || '?').trim().match(/[\p{L}\p{N}]/u)?.[0] || '?').toUpperCase()
+    .replace(/[<>&"']/g, '');
+  const box = Math.round(size * fill), off = Math.round((size - box) / 2);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+    ${round ? `<rect x="${off}" y="${off}" width="${box}" height="${box}" rx="${Math.round(box * 0.22)}" fill="${color}"/>` : `<rect width="${size}" height="${size}" fill="${color}"/>`}
+    <text x="50%" y="50%" dy="0.36em" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="${Math.round(box * 0.6)}" font-weight="700" fill="#ffffff">${letter}</text>
+  </svg>`);
 }
 
 // GET /api/public/properties/:slug/manifest.webmanifest — always a usable
@@ -78,8 +90,9 @@ router.get('/properties/:slug/manifest.webmanifest', async (req, res) => {
     const brand = await brandBySlug(req.params.slug);
     const name = brand?.name || 'Zahill PMS';
     const base = `/api/public/properties/${encodeURIComponent(req.params.slug)}/icon`;
-    const v = brand?.logoFile ? `?v=${encodeURIComponent(path.basename(brand.logoFile, '.png'))}` : '';
-    const icons = brand?.logoFile
+    const v = brand?.logoFile ? `?v=${encodeURIComponent(path.basename(brand.logoFile, '.png'))}`
+      : brand ? `?v=${encodeURIComponent(brand.color.slice(1) + '-' + brand.name.slice(0, 1))}` : '';
+    const icons = brand
       ? [
           { src: `${base}/192.png${v}`, sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: `${base}/512.png${v}`, sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -97,8 +110,8 @@ router.get('/properties/:slug/manifest.webmanifest', async (req, res) => {
       // under the icon on the home screen — phones cut it at about 12 letters
       short_name: name.length <= 12 ? name : name.split(/\s+/)[0].slice(0, 12),
       description: 'Property Management System',
-      theme_color: '#5C1A2E',
-      background_color: brand?.logoFile ? '#FFFFFF' : '#5C1A2E',
+      theme_color: brand?.color || '#5C1A2E',
+      background_color: brand?.logoFile ? '#FFFFFF' : (brand?.color || '#5C1A2E'),
       display: 'standalone',
       orientation: 'any',
       scope: '/',
@@ -118,8 +131,21 @@ router.get('/properties/:slug/icon/:kind.png', async (req, res) => {
   if (!spec) return res.status(404).json({ error: 'Unknown icon' });
   try {
     const brand = await brandBySlug(req.params.slug);
-    // No logo (or a slug this server doesn't know): the app's built-in icon.
-    if (!brand?.logoFile) return res.redirect(req.params.kind === 'maskable' ? '/pwa-maskable-512x512.png' : req.params.kind === '512' ? '/pwa-512x512.png' : '/pwa-192x192.png');
+    // A slug this server doesn't know: the app's built-in icon.
+    if (!brand) return res.redirect(req.params.kind === 'maskable' ? '/pwa-maskable-512x512.png' : req.params.kind === '512' ? '/pwa-512x512.png' : '/pwa-192x192.png');
+    if (!brand.logoFile) {
+      const key = `letter:${brand.name}:${brand.color}:${req.params.kind}`;
+      let png = iconCache.get(key);
+      if (!png) {
+        // the phone crops maskable / iOS icons itself — fill the whole square there
+        const full = req.params.kind === 'maskable' || req.params.kind === 'apple';
+        png = await sharp(letterSvg(brand.name, brand.color, spec.size, full ? 1 : 0.92, !full)).png().toBuffer();
+        iconCache.set(key, png);
+      }
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'public, max-age=3600');
+      return res.send(png);
+    }
     const key = `${path.basename(brand.logoFile)}:${req.params.kind}`;
     let png = iconCache.get(key);
     if (!png) {
