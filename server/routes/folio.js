@@ -1109,6 +1109,52 @@ function groupRoomView(folio) {
   };
 }
 
+// The Guest / Stay block at the top of the invoice and pro forma: two
+// columns of label · value, then the doc continues under the taller one.
+// Plain ASCII separators only — pdfkit's built-in fonts are WinAnsi.
+function drawStayDetails(doc, b) {
+  const d = v => {
+    const s = String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    return new Date(`${s}T00:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
+  };
+  const ymd = v => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+  const nights = Math.round((Date.parse(`${ymd(b.check_out_date)}T00:00:00Z`) - Date.parse(`${ymd(b.check_in_date)}T00:00:00Z`)) / 86400000);
+  const adults = parseInt(b.num_guests, 10) || 0, kids = parseInt(b.children, 10) || 0;
+  const guests = [adults && `${adults} adult${adults === 1 ? '' : 's'}`, kids && `${kids} child${kids === 1 ? '' : 'ren'}`].filter(Boolean).join(', ');
+  // "Travel Agent - Bali Dirt Bikes": the booking source, then the agent /
+  // company the stay was booked through (when it isn't just the source again).
+  const agent = b.stay_agent_name && b.stay_agent_name !== b.source_label ? b.stay_agent_name : null;
+  const bookedThrough = [b.source_label, agent].filter(Boolean).join(' - ') || null;
+
+  const left = [
+    ['Guest', b.guest_name],
+    ['Nationality', b.guest_nationality],
+    ['Guests', guests],
+  ];
+  const right = [
+    ['Room', [b.unit_name, b.room_type].filter(Boolean).join(' - ')],
+    ['Arrival', d(b.check_in_date)],
+    ['Departure', `${d(b.check_out_date)}  (${nights} night${nights === 1 ? '' : 's'})`],
+    ['Meal plan', b.rate_plan_name],
+    ['Booked via', bookedThrough],
+  ];
+  const top = doc.y;
+  const col = (rows, x) => {
+    let y = top;
+    for (const row of rows) {
+      if (!row || !row[1]) continue;
+      doc.fontSize(9).font('Helvetica').fillColor('#666').text(row[0], x, y, { width: 72 });
+      doc.fontSize(10).font(row[0] === 'Guest' ? 'Helvetica-Bold' : 'Helvetica').fillColor('#000')
+        .text(String(row[1]), x + 76, y - 0.5, { width: 170 });
+      y = Math.max(doc.y, y + 14) + 3;
+    }
+    return y;
+  };
+  const end = Math.max(col(left, 50), col(right, 305));
+  doc.x = 50; doc.y = end;
+  doc.fillColor('#000');
+}
+
 // Renders the single-booking invoice/pro-forma PDF straight to the response.
 function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, guestCopy = false, footer = null }) {
   const groupView = groupRoomView(folioIn);
@@ -1125,16 +1171,7 @@ function renderBookingInvoicePdf(res, folioIn, { title, filenamePrefix, note, gu
 
   drawDocumentHeader(doc, property, { title, refLine: `Booking #${booking.id.slice(0, 8).toUpperCase()}` });
 
-  doc.fontSize(10).font('Helvetica-Bold').text('Guest');
-  doc.font('Helvetica').text(booking.guest_name);
-  doc.moveDown(0.5);
-  doc.font('Helvetica-Bold').text('Stay');
-  // En dash (WinAnsi-safe under pdfkit's standard Helvetica font) instead of
-  // "→" (U+2192) — pdfkit's built-in fonts only support WinAnsiEncoding, so
-  // an arrow outside that range rendered as garbage ("!'").
-  doc.font('Helvetica').text(
-    `${booking.unit_name}  ·  ${String(booking.check_in_date).slice(0, 10)}  –  ${String(booking.check_out_date).slice(0, 10)}`
-  );
+  drawStayDetails(doc, booking);
 
   if (note) {
     doc.moveDown(0.5);

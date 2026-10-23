@@ -220,11 +220,17 @@ function settleCents(balance) {
   return Math.abs(balance) <= 0.05 ? 0 : balance;
 }
 
+// What the printed invoice / pro forma shows about the stay (both queries
+// join guests g, units u, agents ag, booking_sources bs).
+const STAY_DETAILS_SQL = `g.nationality AS guest_nationality, u.type AS room_type, b.num_guests, b.children,
+            ag.name AS stay_agent_name`;
+
 async function loadFolio(bookingId, propertyId) {
   const bookingQ = db.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
+            ${STAY_DETAILS_SQL},
             b.agent_id, ag.name AS agent_name,
             COALESCE(ag.payment_status, 'normal') AS agent_payment_status,
             COALESCE(ag.payment_status, 'normal') AS source_payment_status, bs.label as source_label,
@@ -316,6 +322,7 @@ async function computeProforma(bookingId, propertyId) {
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
+            ${STAY_DETAILS_SQL},
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
             bs.label AS source_label, ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by,
             ${GROUP_BILLING_SQL}
