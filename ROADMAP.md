@@ -4,6 +4,21 @@ Last updated: 2026-10-16
 
 ---
 
+## 🔵 Vendor share — tours / transport paid to a third party (DISCUSSED 2026-10-26, not built — continue when the owner is back)
+
+Jeep tracking, transport (e.g. a FO note "transport to Amed 29 Oct Rp 650.000, pick-up Hot Spring 28 Oct Rp 300.000") etc. are delivered by a vendor the hotel pays from the guest's money. Today the guest side works (Activities / Sales items) but nothing records what is owed to the vendor.
+
+**Owner's answers (2026-10-26):** (1) support both treatments; **accounting wants the vendor's part rebated from revenue** (contra-revenue: revenue Rp 950.000 − vendor share Rp 700.000 = net Rp 250.000 — NOT an expense like the OTA commission at-hotel case); (2) vendors are paid **in cash by accounting**, whenever accounting prepares the money (not from the FO drawer); (3) vendor price usually **fixed per trip**, but must allow a different amount each time; (4) guests always pay the hotel, never the driver.
+
+**Proposed design (agreed in principle, details below still open):**
+1. Activities → Catalog → Edit: **Vendor** (from Suppliers), **Vendor price** (fixed per trip / per person / typed each time), **Vendor's part: deducted from revenue (rebate, default) / as a cost**. Transport becomes Activities (date, time, pickup place) instead of a note / Sales item.
+2. Booking: vendor price filled in, FO may change it per trip (logged).
+3. On the trip's day (same day the activity revenue counts) the PMS records "owed to <vendor>"; cancel / no-show removes it (a vendor no-show fee typed by accounting).
+4. Finance → **Vendor payouts**: per vendor trips not paid + amount; Pay → tick trips, Cash, date; part payments allowed; printable payout slip for the vendor to sign. Does not touch FO drawer / Cashier Closing.
+5. Reports per activity / vendor: guest price − vendor share = net. P&L: revenue less vendor share (rebate) or a cost line. Journal: Dr Vendor share (contra-revenue) · Cr Owed to vendors; payout Dr Owed to vendors · Cr Cash.
+
+**Still to confirm before building:** (a) service charge + tax stay on the full guest price, vendor price carries none of ours — accounting to confirm; (b) vendor price visible / editable only for owner + Accounting / Activities permission, FO sees the guest price only?; (c) one vendor per activity, or can a trip have two (jeep + guide)?
+
 ## 🟡 Accounting step 2 — the accountant moves off VHP (started 2026-10-16, PAUSED — continue when the owner says, after the accountant answers the questions below)
 
 The accountant asked for a P&L and bank reconciliation, and will move the whole back office (payroll totals,
