@@ -32,6 +32,7 @@ import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
 import { otaName, roomPending, COLLECT_OPTIONS } from '../lib/otaDue';
 import { propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
+import StaffNotes from '../components/StaffNotes';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -236,7 +237,6 @@ export default function BookingDetail() {
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [note, setNote] = useState('');
   const [paying, setPaying] = useState(null);
   const [payForm, setPayForm] = useState({ method: 'bank_transfer', received_at: new Date().toISOString().slice(0,10), notes: '' });
   const [editingAmount, setEditingAmount] = useState(null);
@@ -572,13 +572,6 @@ export default function BookingDetail() {
     } catch (err) {
       setCancelling(c => ({ ...c, busy: false, error: err.response?.data?.error || 'Could not cancel the booking' }));
     }
-  }
-
-  async function addNote() {
-    if (!note.trim()) return;
-    await api.post(`/api/bookings/${id}/note`, { content: note }).catch(() => {});
-    setNote('');
-    load();
   }
 
   async function loadChangeUnits(from) {
@@ -1493,17 +1486,7 @@ export default function BookingDetail() {
         )}
         <div className="card mt-3">
           <div className="card-title">Staff Notes</div>
-          {booking.notes?.map(n => (
-            <div key={n.id} style={{ borderBottom: '1px solid var(--border)', padding: '8px 0' }}>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{n.author_name} · {n.created_at?.slice(0,10)}</div>
-              <div>{n.content}</div>
-            </div>
-          ))}
-          <div className="flex gap-2 mt-2">
-            <input className="form-input" placeholder="Add a note…" value={note} onChange={e => setNote(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addNote()} />
-            <button className="btn btn-secondary" onClick={addNote}>Add</button>
-          </div>
+          <StaffNotes bookingId={booking.id} notes={booking.notes} onChanged={load} />
         </div>
         <div className="card mt-3">
           <div className="card-title">Edit History</div>

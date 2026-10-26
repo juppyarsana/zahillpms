@@ -18,6 +18,7 @@ export const GROUPS = [
     { id: 'late-arrival', icon: '🌙', title: { id: 'Tamu datang lewat tengah malam', en: 'Guests arriving after midnight' } },
     { id: 'room-move', icon: '🔀', title: { id: 'Pindah kamar', en: 'Moving to another room' } },
     { id: 'kids-breakfast', icon: '🧒', title: { id: 'Anak & sarapan gratis', en: 'Children & free breakfast' } },
+    { id: 'staff-notes', icon: '📌', title: { id: 'Catatan staff & pengingat', en: 'Staff notes & reminders' } },
     { id: 'other-guests', icon: '👥', title: { id: 'Tamu lain di kamar', en: 'Other guests in the room' } },
     { id: 'to-check', icon: '⚠', title: { id: 'Daftar To check', en: 'The To check list' } },
     { id: 'ota-bookings', icon: '🌐', title: { id: 'Booking dari OTA', en: 'Bookings from the OTAs' } },

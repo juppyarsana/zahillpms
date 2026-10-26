@@ -54,6 +54,12 @@ const BALANCE_AMOUNT_SQL = `COALESCE(
 // The booking's agent for the Check-in / Quick Check-in lists (migration
 // 084): agent_billed = the agent pays the hotel later, so the guest pays
 // nothing for the room at the desk (like an OTA).
+// Staff notes of a booking (migration 139), newest first — for the
+// Check-in / out lists and the checkout window.
+const STAFF_NOTES_SQL = `(SELECT COALESCE(json_agg(json_build_object(
+    'id', bn.id, 'content', bn.content, 'author_name', nu.name, 'created_at', bn.created_at,
+    'remind_on', to_char(bn.remind_on, 'YYYY-MM-DD')) ORDER BY bn.created_at DESC), '[]'::json)
+  FROM booking_notes bn LEFT JOIN users nu ON nu.id = bn.author_id WHERE bn.booking_id = b.id) AS staff_notes`;
 const AGENT_ON_BOOKING_SQL = `(SELECT ag.name FROM agents ag WHERE ag.id = b.agent_id) AS agent_name,
              EXISTS (SELECT 1 FROM agents ag WHERE ag.id = b.agent_id
                        AND ag.payment_status IN ('city_ledger', 'city_ledger_payment', 'commission_and_city_ledger')
@@ -290,7 +296,8 @@ router.get('/today/arrivals', auth, async (req, res) => {
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size,
-             ${AGENT_ON_BOOKING_SQL}
+             ${AGENT_ON_BOOKING_SQL},
+             ${STAFF_NOTES_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -317,7 +324,8 @@ router.get('/today/departures', auth, async (req, res) => {
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size,
-             ${AGENT_ON_BOOKING_SQL}
+             ${AGENT_ON_BOOKING_SQL},
+             ${STAFF_NOTES_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -344,7 +352,8 @@ router.get('/in-house', auth, async (req, res) => {
              CASE WHEN b.reservation_group_id IS NULL THEN 1
                   ELSE (SELECT COUNT(*) FROM bookings b2 WHERE b2.reservation_group_id = b.reservation_group_id)
              END AS group_size,
-             ${AGENT_ON_BOOKING_SQL}
+             ${AGENT_ON_BOOKING_SQL},
+             ${STAFF_NOTES_SQL}
       FROM bookings b
       JOIN guests g ON b.guest_id = g.id
       JOIN units u ON b.unit_id = u.id
@@ -553,6 +562,33 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
     };
   }
 }
+
+// GET /api/bookings/note-reminders?date= — staff notes with a reminder day
+// (migration 139) on that date (default today, WITA): the Dashboard's and
+// Guest Lists' "Reminders" card. Cancelled / no-show bookings left out.
+router.get('/note-reminders', auth, async (req, res) => {
+  try {
+    const date = String(req.query.date || roomCharge.todayWITA());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date))) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const { rows } = await db.query(`
+      SELECT bn.id, bn.content, bn.created_at, to_char(bn.remind_on, 'YYYY-MM-DD') AS remind_on,
+             nu.name AS author_name, b.id AS booking_id, b.status,
+             to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in_date,
+             to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out_date,
+             g.name AS guest_name, u.name AS unit_name
+      FROM booking_notes bn
+      JOIN bookings b ON b.id = bn.booking_id
+      JOIN guests g ON g.id = b.guest_id
+      JOIN units u ON u.id = b.unit_id
+      LEFT JOIN users nu ON nu.id = bn.author_id
+      WHERE b.property_id = $1 AND bn.remind_on = $2::date
+        AND b.status NOT IN ('cancelled', 'no_show')
+      ORDER BY u.name, bn.created_at`, [req.propertyId, date]);
+    res.json({ date, reminders: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.get('/guest-lists', auth, async (req, res) => {
   try {
@@ -1327,9 +1363,13 @@ router.get('/:id', auth, async (req, res) => {
       WHERE b.id = $1 AND b.property_id = $2`, [req.params.id, req.propertyId]);
     const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [req.params.id]);   // + receipt_kind (Download → Receipts)
     const notesQ = db.query(`
-      SELECT bn.*, u.name as author_name FROM booking_notes bn
+      SELECT bn.id, bn.booking_id, bn.author_id, bn.content, bn.created_at, bn.edited_at,
+             to_char(bn.remind_on, 'YYYY-MM-DD') AS remind_on,
+             u.name as author_name, eu.name AS edited_by_name
+      FROM booking_notes bn
       LEFT JOIN users u ON bn.author_id = u.id
-      WHERE bn.booking_id = $1 ORDER BY bn.created_at`, [req.params.id]);
+      LEFT JOIN users eu ON bn.edited_by = eu.id
+      WHERE bn.booking_id = $1 ORDER BY bn.created_at DESC`, [req.params.id]);
     const checkinQ = db.query(
       `SELECT checkin_time, checkout_time, condition_notes, id_captured
        FROM checkin_records WHERE booking_id = $1`,
@@ -3389,18 +3429,101 @@ router.delete('/:id', auth, async (req, res) => {
   }
 });
 
-// POST /api/bookings/:id/note
+// Staff notes (booking_notes). Any staff adds one; the author or the owner
+// edits / deletes it (migration 139). The old text of an edited or deleted
+// note goes to the booking's Edit History, so nothing disappears unseen.
+// remind_on = optional day the note matters (listed that day on the
+// Dashboard and Guest Lists).
+function parseRemindOn(v) {
+  if (v === undefined) return { ok: true, value: undefined };
+  if (v === null || v === '') return { ok: true, value: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v)) || isNaN(Date.parse(v))) return { ok: false };
+  return { ok: true, value: String(v) };
+}
+const shortNote = t => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > 300 ? `${x.slice(0, 300)}…` : x; };
+
+// POST /api/bookings/:id/note  { content, remind_on? }
 router.post('/:id/note', auth, async (req, res) => {
-  const { content } = req.body;
-  if (!content?.trim()) return res.status(400).json({ error: 'content required' });
+  const content = String(req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: 'content required' });
+  if (content.length > 4000) return res.status(400).json({ error: 'A note can be at most 4000 characters' });
+  const remind = parseRemindOn(req.body.remind_on);
+  if (!remind.ok) return res.status(400).json({ error: 'remind_on must be YYYY-MM-DD' });
   try {
     const { rows: [booking] } = await db.query('SELECT id FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!booking) return res.status(404).json({ error: 'Booking not found' });
     const { rows } = await db.query(
-      'INSERT INTO booking_notes (booking_id, author_id, content) VALUES ($1,$2,$3) RETURNING *',
-      [req.params.id, req.user.id, content]
+      'INSERT INTO booking_notes (booking_id, author_id, content, remind_on) VALUES ($1,$2,$3,$4) RETURNING *',
+      [req.params.id, req.user.id, content, remind.value || null]
     );
     res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The note of this booking (this property), if the user may change it.
+async function loadOwnNote(req, res) {
+  const { rows: [n] } = await db.query(
+    `SELECT bn.*, to_char(bn.remind_on, 'YYYY-MM-DD') AS remind_text FROM booking_notes bn
+     JOIN bookings b ON b.id = bn.booking_id
+     WHERE bn.id = $1 AND bn.booking_id = $2 AND b.property_id = $3`,
+    [req.params.noteId, req.params.id, req.propertyId]);
+  if (!n) { res.status(404).json({ error: 'Note not found' }); return null; }
+  if (req.user.role !== 'owner' && n.author_id !== req.user.id) {
+    res.status(403).json({ error: 'Only the person who wrote this note or the owner can change it', code: 'NOT_AUTHOR' });
+    return null;
+  }
+  return n;
+}
+
+// PUT /api/bookings/:id/notes/:noteId  { content?, remind_on? }
+router.put('/:id/notes/:noteId', auth, async (req, res) => {
+  const remind = parseRemindOn(req.body.remind_on);
+  if (!remind.ok) return res.status(400).json({ error: 'remind_on must be YYYY-MM-DD' });
+  const content = req.body.content === undefined ? undefined : String(req.body.content).trim();
+  if (content !== undefined && !content) return res.status(400).json({ error: 'A note cannot be empty — delete it instead' });
+  if (content && content.length > 4000) return res.status(400).json({ error: 'A note can be at most 4000 characters' });
+  try {
+    const n = await loadOwnNote(req, res);
+    if (!n) return;
+    const newContent = content === undefined ? n.content : content;
+    const newRemind = (remind.value === undefined ? n.remind_text : remind.value) || null;
+    const oldRemind = n.remind_text || null;
+    if (newContent === n.content && newRemind === oldRemind) return res.json({ id: n.id, unchanged: true });
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: [saved] } = await client.query(
+        `UPDATE booking_notes SET content = $1, remind_on = $2, edited_at = NOW(), edited_by = $3
+         WHERE id = $4 RETURNING *`, [newContent, newRemind, req.user.id, n.id]);
+      const parts = [];
+      if (newContent !== n.content) parts.push(`was "${shortNote(n.content)}"`);
+      if (newRemind !== oldRemind) parts.push(`reminder ${oldRemind || 'none'} → ${newRemind || 'none'}`);
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [n.booking_id, `Staff note edited (${parts.join('; ')})`.slice(0, 1000), req.user.id]);
+      await client.query('COMMIT');
+      res.json(saved);
+    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/bookings/:id/notes/:noteId
+router.delete('/:id/notes/:noteId', auth, async (req, res) => {
+  try {
+    const n = await loadOwnNote(req, res);
+    if (!n) return;
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM booking_notes WHERE id = $1', [n.id]);
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [n.booking_id, `Staff note deleted: "${shortNote(n.content)}"`.slice(0, 1000), req.user.id]);
+      await client.query('COMMIT');
+      res.json({ ok: true });
+    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

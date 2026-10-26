@@ -8,6 +8,7 @@ import RegistrationCardModal from '../components/RegistrationCardModal';
 import api from '../services/api';
 import { TodaySection, MonthSection, SectionHeading } from '../components/DashboardSections';
 import { OtaTodayBox } from '../components/OtaInbox';
+import { NotesPreview, NoteReminders } from '../components/StaffNotes';
 import { propertyClock, propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -119,6 +120,7 @@ function RoomStay({ bookingId, kind }) {
           🔒 {b.internal_notes}
         </div>
       )}
+      <NotesPreview notes={b.notes} max={3} />
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
         {canOpen && (
           <Link to={`/reservations/${b.id}`} className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: 12, justifyContent: 'center' }}>
@@ -1517,6 +1519,7 @@ export default function Dashboard() {
       <TodaySection today={data.today} occupancy={occupancy}
         canLists={can('guest_lists')} canReservations={can('reservations') && hasModule('reservations')} />
       <OtaTodayBox />
+      {can('reservations') && hasModule('reservations') && <NoteReminders title="Reminders for today" />}
 
       {/* ── Live Unit Status — full width ── */}
       <div className="card" style={{ marginBottom: 16 }}>

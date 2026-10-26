@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BalanceLine, CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
+import { NotesPreview } from '../components/StaffNotes';
 import RoomCheckPanel from '../components/RoomCheck';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
@@ -318,6 +319,7 @@ export default function CheckIn() {
                         🧹 Room not yet cleaned
                       </div>
                     )}
+                    <NotesPreview notes={b.staff_notes} max={2} />
                     {b.guest_whatsapp && (
                       <button
                         className="btn btn-ghost btn-sm"
@@ -404,6 +406,7 @@ export default function CheckIn() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}><GuestName b={b} /></div>
                   <div className="text-muted" style={{ fontSize: 11 }}>{b.unit_name}</div>
+                  <NotesPreview notes={b.staff_notes} max={2} />
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <span
@@ -442,6 +445,7 @@ export default function CheckIn() {
                     Check-out: {b.check_out_date?.slice(0, 10)}
                     {b.overdue && <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: 6 }}>OVERDUE</span>}
                   </div>
+                  <NotesPreview notes={b.staff_notes} max={2} />
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <span
@@ -553,6 +557,12 @@ export default function CheckIn() {
                               </div>
                             </div>
                           </>
+                        )}
+                        {selected.staff_notes?.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>Staff notes</div>
+                            <NotesPreview notes={selected.staff_notes} max={5} />
+                          </div>
                         )}
                       </div>
                     </>
@@ -673,6 +683,12 @@ export default function CheckIn() {
 
                   {/* What the guest still owes (whole stay) — checkout is refused
                       until it's paid, unless a reason is given. */}
+                  {selected.staff_notes?.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>Staff notes — anything to settle before the guest leaves?</div>
+                      <NotesPreview notes={selected.staff_notes} max={5} />
+                    </div>
+                  )}
                   {/* Minibar check by housekeeping — only a warning, never blocks */}
                   <RoomCheckPanel bookingId={selected.id} onCharged={() => {
                     api.get(`/api/checkin/checkout/${selected.id}/balance`).then(r => setSelected(s => (s ? { ...s, guest_balance_due: r.data.owed } : s))).catch(() => {});

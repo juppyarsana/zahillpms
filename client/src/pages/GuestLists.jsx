@@ -6,6 +6,7 @@ import Icon from '../components/Icon';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import RegistrationCardModal from '../components/RegistrationCardModal';
+import { NoteReminders } from '../components/StaffNotes';
 
 // Morning briefing: who arrives, who stays over and who leaves on a date —
 // read-only, with a branded PDF download (same as the other documents) for
@@ -428,6 +429,10 @@ export default function GuestLists() {
               </div>
             ))}
           </div>
+
+          {can('reservations') && hasModule('reservations') && (
+            <NoteReminders date={data.date} title={data.is_today ? 'Reminders for today' : 'Reminders for this day'} />
+          )}
 
           {data.never_arrived?.length > 0 && (
             <div className="alert alert-warn" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>

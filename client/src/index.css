@@ -1189,3 +1189,32 @@ tr:hover td { background: #FAFAF8; }
     border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,0.18); margin: 0; display: none; }
   .hk-panel.open { display: flex; }
 }
+
+/* ── Staff notes on a booking (migration 139) ── */
+.staff-note-form { display: flex; flex-direction: column; gap: 6px; }
+.staff-note-form textarea { resize: vertical; min-height: 64px; font-size: 14px; line-height: 1.45; }
+.staff-note-form-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.staff-note-remind-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.staff-note-remind-field input { width: auto; padding: 4px 8px; }
+.staff-note { border-top: 1px solid var(--border); padding: 10px 0 8px; }
+.staff-notes .staff-note:first-of-type { margin-top: 10px; }
+.staff-note-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.staff-note-author { font-weight: 700; font-size: 13px; }
+.staff-note-meta { font-size: 12px; color: var(--text-muted); }
+.staff-note-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+.staff-note-actions .btn { padding: 2px 8px; border-color: transparent; }
+.staff-note-body { white-space: pre-wrap; font-size: 15px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.staff-note-remind { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  background: #EFF6FF; color: #1D4ED8; white-space: nowrap; }
+.staff-note-remind.today { background: #FEF3C7; color: #92400E; }
+.staff-note-remind.past { background: var(--bg-subtle); color: var(--text-muted); }
+.staff-note-error { color: var(--danger-text); font-size: 13px; }
+.staff-notes-preview { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.staff-note-preview { font-size: 13px; line-height: 1.4; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 5px 8px; color: #78350F; }
+.staff-note-preview-label { margin-right: 4px; }
+.staff-note-preview-meta { color: #A16207; font-size: 12px; }
+.staff-reminder-row { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid #FDE68A; color: #78350F; text-decoration: none; }
+.staff-reminder-row:first-of-type { border-top: none; }
+.staff-reminder-row:hover { background: #FEF3C7; }
+.staff-reminder-room { font-weight: 800; font-size: 15px; min-width: 44px; }
+.staff-reminder-guest { font-weight: 700; font-size: 13px; }
