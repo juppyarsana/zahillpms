@@ -59,8 +59,7 @@ import SettingsRoomControllers from './pages/SettingsRoomControllers';
 import SettingsRoles from './pages/SettingsRoles';
 import SettingsRatePlans from './pages/SettingsRatePlans';
 import SettingsBoardCards from './pages/SettingsBoardCards';
-import NightAudit from './pages/NightAudit';
-import CashierClosing from './pages/CashierClosing';
+import EndOfDay from './pages/EndOfDay';
 import Agents from './pages/Agents';
 import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
@@ -359,8 +358,10 @@ export default function App() {
                   <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />
                   <Route path="/settings/roles"   element={<RequireOwner><SettingsRoles /></RequireOwner>} />
                   <Route path="/settings/rate-plans" element={<RequireOwner><RequireModule moduleName="reservations"><SettingsRatePlans /></RequireModule></RequireOwner>} />
-                  <Route path="/cashier-closing"  element={<RequireMenu menuKey="cashier_closing"><RequireModule moduleName="financial"><CashierClosing /></RequireModule></RequireMenu>} />
-                  <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
+                  <Route path="/end-of-day"       element={<RequireMenu menuKey={['cashier_closing', 'night_audit']}><RequireModule moduleName="financial"><EndOfDay /></RequireModule></RequireMenu>} />
+                  {/* the old addresses open their tab of End of day */}
+                  <Route path="/cashier-closing"  element={<RequireMenu menuKey="cashier_closing"><RequireModule moduleName="financial"><EndOfDay initialTab="cashier" /></RequireModule></RequireMenu>} />
+                  <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><EndOfDay initialTab="audit" /></RequireModule></RequireMenu>} />
                   <Route path="/agents"          element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/agents/:agentId" element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/reports"          element={<RequireReports><ReportsLibrary /></RequireReports>} />

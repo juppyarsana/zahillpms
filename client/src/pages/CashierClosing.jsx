@@ -26,7 +26,8 @@ const TH = { textAlign: 'left', padding: '6px 8px', fontSize: 11, textTransform:
 const TD = { padding: '6px 8px', fontSize: 13, borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
 const R = { textAlign: 'right', whiteSpace: 'nowrap' };
 
-export default function CashierClosing() {
+// embedded: shown as a tab of End of day — no page title, the line + PDF button only.
+export default function CashierClosing({ embedded = false }) {
   const { user, can } = useAuth();
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -75,9 +76,9 @@ export default function CashierClosing() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className={embedded ? 'tab-intro' : 'page-header'}>
         <div>
-          <div className="page-title">Cashier Closing</div>
+          {!embedded && <div className="page-title">Cashier Closing</div>}
           <div className="page-subtitle">Payments received — tick them off against slips, transfers and cash</div>
         </div>
         <div>

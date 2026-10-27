@@ -24,7 +24,8 @@ function fmtDateTime(str) {
   });
 }
 
-export default function NightAudit() {
+// embedded: shown as a tab of End of day — no page title, the line + Run button only.
+export default function NightAudit({ embedded = false }) {
   const { user } = useAuth();
   const isOwner = user?.role === 'owner';
   const [history, setHistory]   = useState([]);
@@ -83,9 +84,9 @@ export default function NightAudit() {
         </div>
       )}
 
-      <div className="page-header">
+      <div className={embedded ? 'tab-intro' : 'page-header'}>
         <div>
-          <div className="page-title">Night Audit</div>
+          {!embedded && <div className="page-title">Night Audit</div>}
           <div className="page-subtitle">End-of-day audit history · click a day for its full report</div>
         </div>
         {isOwner && (

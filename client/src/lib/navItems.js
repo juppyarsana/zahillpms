@@ -37,10 +37,10 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('checkin_full') && res && hasModule('front_desk') && { to: '/checkin', icon: '✅', label: 'Check-in / out' },
       can('guest_lists') && res && { to: '/guest-lists', icon: '🗂', label: 'Guest Lists' },
       can('guests') && hasModule('guest_crm') && { to: '/guests', icon: '👤', label: 'Guests' },
-      can('cashier_closing') && hasModule('financial') && { to: '/cashier-closing', icon: '🧾', label: 'Cashier Closing' },
       // Front desk recording the OTAs' weekly withdrawals (migration 126) — only the OTA accounts.
       !can('receivables') && can('ota_payouts') && hasModule('financial') && { to: '/agents', icon: '🏦', label: 'OTA payouts' },
-      can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
+      // End of day: Cashier closing + Night audit as tabs.
+      (can('cashier_closing') || can('night_audit')) && hasModule('financial') && { to: '/end-of-day', icon: '🌙', label: 'End of day' },
     ] },
     // Guest services: what front desk sells or books for a guest during the stay.
     { id: 'services', label: 'Guest services', items: [

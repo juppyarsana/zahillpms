@@ -1349,3 +1349,14 @@ tr:hover td { background: #FAFAF8; }
   .today-row-money { flex-basis: auto; text-align: left; }
   .today-row-actions { margin-left: 0; width: 100%; }
 }
+
+/* ── End of day (pages/EndOfDay.jsx) ── */
+.eod-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.eod-step { display: flex; gap: 12px; align-items: flex-start; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; }
+.eod-step:first-child .eod-step-n { background: var(--green-dark); color: #fff; }
+.eod-step-n { flex: 0 0 28px; height: 28px; border-radius: 999px; background: var(--bg-subtle); color: var(--text); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.eod-step-title { font-size: 14px; font-weight: 700; }
+.eod-step-text { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+/* a tab's own line + buttons, under the tabs (replaces its page header) */
+.tab-intro { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.tab-intro .page-subtitle { margin: 0; }

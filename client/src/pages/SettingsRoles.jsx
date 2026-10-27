@@ -14,7 +14,7 @@ export const MENU_DEFS = [
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
   { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
   { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Insights' },
-  { key: 'cashier_closing',  label: 'Cashier Closing (payments received, all users)', group: 'Front Desk' },
+  { key: 'cashier_closing',  label: 'End of day — Cashier closing (payments received, all users)', group: 'Front Desk' },
   { key: 'ota_payouts',      label: 'OTA payouts (record the weekly OTA withdrawals — OTA accounts only)', group: 'Front Desk' },
   // An action permission, not a page: make a stay free without asking for a
   // manager's Telegram approval code (see ComplimentaryModal.jsx).
@@ -39,7 +39,7 @@ export const MENU_DEFS = [
   { key: 'operations',       label: 'Housekeeping',   group: 'Operations' },
   { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Guest services' },
   // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
-  { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Front Desk' },
+  { key: 'night_audit',      label: 'End of day — Night audit (view reports)', group: 'Front Desk' },
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
   { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Insights' },
