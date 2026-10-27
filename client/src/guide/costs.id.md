@@ -23,8 +23,7 @@ Setiap halaman membandingkan periodenya dengan periode sebelumnya. Bulan yang ma
 **[Overview](/overview)** adalah halaman utama owner dan manajer — menggantikan angka-angka Dashboard lama (front desk bekerja dari **Today**). Owner dan yang punya izin Overview langsung masuk ke sini saat membuka PMS.
 
 - **Needs you** — complimentary dan purchase order yang menunggu persetujuan, booking OTA yang perlu ditangani, tamu lewat jam check-out, tamu yang tidak pernah check-in, agen dan tagihan supplier yang terlambat, departemen yang biayanya naik tajam, **hari libur dalam 14 hari** (dengan tingkat hunian malam itu) dan **night audit yang tidak berjalan**. Ketuk untuk membuka halaman tempat menyelesaikannya.
-- **Today so far** — kamar terisi malam ini, kedatangan, keberangkatan dan reservasi yang dibuat hari ini (**Open Today** untuk daftarnya).
-- **Yesterday** — hari yang baru ditutup dibanding hari yang sama minggu lalu: pendapatan, hunian, ADR / RevPAR, uang masuk, reservasi yang dibuat.
+- **Today so far** — kamar terisi malam ini, kedatangan dan keberangkatan, reservasi yang dibuat dan uang masuk hari ini, masing-masing dengan angka kemarin di bawahnya (**Open Today** untuk daftarnya). Satu baris di bawah kartu memuat pendapatan, hunian dan ADR **kemarin** dibanding hari yang sama minggu lalu.
 - **This month** — sejauh ini dibanding tanggal yang sama bulan lalu, yang sudah dipesan, pendapatan per malam, asal tamu, deposit yang belum dibayar.
 - **Still owed to the hotel**, **biaya terbesar** bulan ini dan **14 malam ke depan** yang sudah terisi.
 - **Market** — rating pesaing, pencarian Google dan ringkasan AI mingguan (jika Market Insights aktif).

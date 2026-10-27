@@ -23,8 +23,7 @@ Each page compares the period with the one before. While a month is still runnin
 **[Overview](/overview)** is the owner's and managers' home — it took over the old Dashboard's figures (front desk work from **Today**). Owners and anyone with the Overview permission land here when they open the PMS.
 
 - **Needs you** — complimentary stays and purchase orders waiting for approval, OTA bookings that need someone, guests past check-out, stays that never checked in, agents and supplier bills overdue, a department whose costs jumped, a **holiday in the next 14 days** (with how full that night is) and a **night audit that did not run**. Tap one to open where it is sorted.
-- **Today so far** — tonight's rooms, arrivals, departures and reservations made today (**Open Today** for the lists).
-- **Yesterday** — the day just closed against the same weekday a week before: revenue, occupancy, ADR / RevPAR, money in, reservations made.
+- **Today so far** — rooms tonight, arrivals and departures, reservations made and money received today, each with yesterday's figure under it (**Open Today** for the lists). One line under the cards gives **yesterday**'s revenue, occupancy and ADR against the same weekday a week before.
 - **This month** — so far against the same days of last month, what is on the books, revenue night by night, where stays came from, deposits not paid yet.
 - **Still owed to the hotel**, **biggest costs** this month and the **next 14 nights** booked.
 - **Market** — competitor ratings, Google searches and the weekly AI briefing (when Market Insights is on).

@@ -1361,9 +1361,6 @@ tr:hover td { background: #FAFAF8; }
 .tab-intro { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .tab-intro .page-subtitle { margin: 0; }
 
-/* Overview — Yesterday's five figures in one row on a computer, two per row on a phone */
-.stat-grid-money.ov-five { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-@media (max-width: 768px) { .stat-grid-money.ov-five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Today — a group's arrivals under one header with Check in whole group */
 .today-group { border-top: 1px solid var(--border); background: var(--bg-subtle, #FAFAF9); }
@@ -1373,3 +1370,6 @@ tr:hover td { background: #FAFAF8; }
 .today-group-result { font-size: 12px; color: var(--success-text, #15803D); margin-top: 2px; }
 .today-group .today-row { padding-left: 28px; }
 .today-group-result.warn { color: var(--danger-text); }
+/* Overview — yesterday as one line under Today's cards */
+.ov-yday { margin: 12px 0 0; }
+.ov-vs { margin-top: 4px; }

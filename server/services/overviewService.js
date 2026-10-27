@@ -5,6 +5,7 @@
 //   needs_you  — approvals waiting, overdue agents / supplier bills, OTA items,
 //                guests past check-out, never-arrived stays, a cost jump
 //   tonight    — today so far (dashboard.todayAtAGlance, the Today page's figures)
+//                + money received today so far
 //   yesterday  — the day just closed vs the same weekday a week before:
 //                revenue, occupancy, ADR, RevPAR, money in, reservations made
 //                (getReport / dailyClose.collected / bookingPickup — the
@@ -54,7 +55,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
   const [
     { rows: [u] }, glance, money, unpaid, agents, costs, forecast,
     compReqs, pos, otaItems, overdueStays, bills,
-    yRep, wRep, wMoney, yMade, wMade, holidays, audit,
+    yRep, wRep, wMoney, yMade, wMade, holidays, audit, tMoney,
   ] = await Promise.all([
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
     res ? db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS n FROM units WHERE property_id = $1`, [propertyId])
@@ -95,6 +96,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
        WHERE holiday_date BETWEEN $1::date AND $1::date + 14 ORDER BY holiday_date LIMIT 3`, [today]),
     fin ? q(`SELECT EXISTS (SELECT 1 FROM night_audit_runs WHERE property_id = $1 AND business_date = $2::date) AS done`,
       [propertyId, yesterday]) : none,
+    fin ? collected(propertyId, today) : none,
   ]);
 
   // ── Needs you ── (most urgent first; each links to where it is sorted)
@@ -193,6 +195,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       arrived: glance.arriving.arrived, to_come: glance.arriving.to_come,
       checked_out: glance.departing.out, to_go: glance.departing.to_go,
       made_today: glance.made,
+      money_in_today: tMoney ? r2(tMoney.total) : null,
     },
     yesterday: yDay && { date: yesterday, compare_date: weekBefore, ...yDay, before: wDay },
     owed,

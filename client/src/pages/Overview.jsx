@@ -38,52 +38,27 @@ function Delta({ now, before, pts }) {
 
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-function YesterdaySection({ y }) {
+// Yesterday, the day just closed, in one line under Today: revenue,
+// occupancy and ADR against the same weekday a week before.
+function YesterdayLine({ y }) {
   const b = y.before || {};
-  const vs = `${weekday(y.compare_date)} ${dayShort(y.compare_date)}`;
   return (
-    <div style={{ marginTop: 24 }}>
-      <SectionHeading title="Yesterday" sub={`${weekday(y.date)} ${dayShort(y.date)} · the day just closed, compared with ${vs}`} />
-      <div className="stat-grid stat-grid-money ov-five">
-        <div className="stat-card">
-          <div className="stat-label">Revenue</div>
-          <div className="stat-value">{idr(y.revenue)}</div>
-          <div className="stat-sub">room {jt(y.rooms)}{y.fnb > 0 && ` · F&B ${jt(y.fnb)}`}{y.other > 0 && ` · other ${jt(y.other)}`}</div>
-          <div className="stat-sub"><Delta now={y.revenue} before={b.revenue} /> vs {idr(b.revenue)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Occupancy</div>
-          <div className="stat-value">{y.occupancy}%</div>
-          <div className="stat-sub">{plural(y.room_nights, 'room')} sold</div>
-          <div className="stat-sub"><Delta now={y.occupancy} before={b.occupancy} pts /> vs {b.occupancy}%</div>
-        </div>
-        <div className="stat-card" title="Average room rate per paid night; RevPAR = room revenue ÷ rooms for sale">
-          <div className="stat-label">ADR · RevPAR</div>
-          <div className="stat-value">{idr(y.adr)}</div>
-          <div className="stat-sub">RevPAR {idr(y.revpar)}</div>
-          <div className="stat-sub"><Delta now={y.adr} before={b.adr} /> vs {idr(b.adr)}</div>
-        </div>
-        {y.money_in != null && (
-          <div className="stat-card" title="Money received that day, every method (= the Daily Close and Cashier Closing)">
-            <div className="stat-label">Money in</div>
-            <div className="stat-value">{idr(y.money_in)}</div>
-            <div className="stat-sub"><Delta now={y.money_in} before={b.money_in} /> vs {idr(b.money_in)}</div>
-          </div>
-        )}
-        {y.made && (
-          <div className="stat-card" title="Reservations entered that day (any stay date); a group counts once; value is net">
-            <div className="stat-label">Reservations made</div>
-            <div className="stat-value">{y.made.bookings}</div>
-            <div className="stat-sub">
-              {plural(y.made.rooms, 'room')} · {jt(y.made.value)}
-              {y.made.cancelled > 0 && <span style={{ color: '#B91C1C' }}> · {y.made.cancelled} cancelled</span>}
-            </div>
-            <div className="stat-sub"><Delta now={y.made.value} before={b.made?.value} /> vs {b.made?.bookings ?? 0} made</div>
-          </div>
-        )}
-      </div>
+    <div className="tomorrow-line ov-yday">
+      <span className="tomorrow-label">Yesterday · {weekday(y.date)} {dayShort(y.date)}</span>
+      <span>revenue <b>{idr(y.revenue)}</b> <Delta now={y.revenue} before={b.revenue} /></span>
+      <span>occupancy <b>{y.occupancy}%</b> <Delta now={y.occupancy} before={b.occupancy} pts /></span>
+      <span>ADR <b>{idr(y.adr)}</b> <Delta now={y.adr} before={b.adr} /></span>
+      <span className="text-muted">compared with {weekday(y.compare_date)} {dayShort(y.compare_date)}</span>
     </div>
   );
+}
+
+// "yesterday 28 rooms" under a Today card. Only rooms tonight get a ▲/▼ —
+// money and reservations so far today are still growing, so an arrow against
+// the whole of yesterday would mislead until the evening.
+function VsYesterday({ now, before, pts, children }) {
+  if (before == null) return null;
+  return <div className="stat-sub ov-vs">{pts && <><Delta now={now} before={before} pts /> </>}<span className="text-muted">yesterday {children}</span></div>;
 }
 
 function greeting(hour) {
@@ -141,39 +116,44 @@ export default function Overview() {
           <div className="alert alert-success">Nothing needs you right now.</div>
         )}
 
-        {data.tonight && (
-          <div style={{ marginTop: 24 }}>
-            <SectionHeading title="Today so far"
-              right={(can('checkin_full') || can('guest_lists') || can('dashboard')) && <Link to="/today" className="tomorrow-link">Open Today →</Link>} />
-            <div className="stat-grid stat-grid-money">
-              <div className="stat-card">
-                <div className="stat-label">Tonight</div>
-                <div className="stat-value">{data.tonight.rooms} of {data.tonight.sellable} rooms</div>
-                <div className="stat-sub">
-                  {data.tonight.pct}% · {data.tonight.staying} staying + {data.tonight.arriving} arriving
-                  {data.tonight.overdue > 0 ? ` + ${data.tonight.overdue} overdue` : ''}
+        {data.tonight && (() => {
+          const t = data.tonight;
+          const y = data.yesterday;
+          return (
+            <div style={{ marginTop: 24 }}>
+              <SectionHeading title="Today so far" sub="compared with yesterday"
+                right={(can('checkin_full') || can('guest_lists') || can('dashboard')) && <Link to="/today" className="tomorrow-link">Open Today →</Link>} />
+              <div className="stat-grid stat-grid-money" style={{ marginBottom: 0 }}>
+                <div className="stat-card">
+                  <div className="stat-label">Rooms tonight</div>
+                  <div className="stat-value">{t.rooms} of {t.sellable} · {t.pct}%</div>
+                  <div className="stat-sub">{t.staying} staying + {t.arriving} arriving{t.overdue > 0 ? ` + ${t.overdue} overdue` : ''}</div>
+                  {y && <VsYesterday now={t.pct} before={y.occupancy} pts>{plural(y.room_nights, 'room')} ({y.occupancy}%)</VsYesterday>}
                 </div>
+                <div className="stat-card">
+                  <div className="stat-label">Arriving · departing</div>
+                  <div className="stat-value">{t.arriving_today} in · {t.departing_today} out</div>
+                  <div className="stat-sub">{t.arrived} arrived, {t.to_come} to come · {t.checked_out} left, {t.to_go} to go</div>
+                </div>
+                <div className="stat-card" title="Reservations entered today (any stay date); a group counts once; value is net">
+                  <div className="stat-label">Reservations made</div>
+                  <div className="stat-value">{t.made_today.bookings} · {jt(t.made_today.value)}</div>
+                  <div className="stat-sub">{plural(t.made_today.rooms, 'room')}</div>
+                  {y?.made && <VsYesterday now={t.made_today.value} before={y.made.value}>{y.made.bookings} · {jt(y.made.value)}</VsYesterday>}
+                </div>
+                {t.money_in_today != null && (
+                  <div className="stat-card" title="Money received so far today, every method (= Cashier Closing)">
+                    <div className="stat-label">Money in</div>
+                    <div className="stat-value">{idr(t.money_in_today)}</div>
+                    <div className="stat-sub">so far today</div>
+                    {y && y.money_in != null && <VsYesterday now={t.money_in_today} before={y.money_in}>{idr(y.money_in)}</VsYesterday>}
+                  </div>
+                )}
               </div>
-              <div className="stat-card">
-                <div className="stat-label">Arriving today</div>
-                <div className="stat-value">{data.tonight.arriving_today}</div>
-                <div className="stat-sub">{data.tonight.arrived} arrived · {data.tonight.to_come} to come</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Departing today</div>
-                <div className="stat-value">{data.tonight.departing_today}</div>
-                <div className="stat-sub">{data.tonight.checked_out} checked out · {data.tonight.to_go} to go</div>
-              </div>
-              <div className="stat-card">
-                <div className="stat-label">Reservations made today</div>
-                <div className="stat-value">{data.tonight.made_today.bookings}</div>
-                <div className="stat-sub">{plural(data.tonight.made_today.rooms, 'room')} · {jt(data.tonight.made_today.value)}</div>
-              </div>
+              {y && <YesterdayLine y={y} />}
             </div>
-          </div>
-        )}
-
-        {data.yesterday && <YesterdaySection y={data.yesterday} />}
+          );
+        })()}
 
         {hasModule('financial') && <MonthSection showReportLink={can('reports')} />}
 
