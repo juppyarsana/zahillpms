@@ -151,6 +151,16 @@ export default function Overview() {
                 )}
               </div>
               {y && <YesterdayLine y={y} />}
+              {t.tomorrow && (
+                <div className="tomorrow-line ov-yday">
+                  <span className="tomorrow-label">Tomorrow · {weekday(t.tomorrow.date)} {dayShort(t.tomorrow.date)}</span>
+                  <span><b>{t.tomorrow.arriving.rooms}</b> arriving ({plural(t.tomorrow.arriving.guests, 'guest')})</span>
+                  <span><b>{t.tomorrow.staying.rooms}</b> staying over</span>
+                  <span><b>{t.tomorrow.departing.rooms}</b> departing</span>
+                  <span><b>{t.tomorrow.tonight.rooms} of {t.sellable}</b> rooms that night ({t.tomorrow.tonight.pct}%)</span>
+                  {(can('guest_lists') || can('checkin_full')) && <Link to={`/today?date=${t.tomorrow.date}`} className="tomorrow-link">See the guests →</Link>}
+                </div>
+              )}
             </div>
           );
         })()}

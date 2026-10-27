@@ -196,6 +196,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       checked_out: glance.departing.out, to_go: glance.departing.to_go,
       made_today: glance.made,
       money_in_today: tMoney ? r2(tMoney.total) : null,
+      tomorrow: glance.tomorrow,
     },
     yesterday: yDay && { date: yesterday, compare_date: weekBefore, ...yDay, before: wDay },
     owed,
