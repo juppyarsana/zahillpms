@@ -289,7 +289,7 @@ function UnitCard({ unit, flags, health, onChanged }) {
   else if (isOutOfOrder) cls = 'out_of_order';
 
   const unitBg    = { occupied: '#FEF2F2', departing: '#FAF5FF', arriving: '#EFF6FF', available: '#F0FDF4', dirty: '#FEFCE8', out_of_order: '#F9FAFB' };
-  const unitBorder= { occupied: '#DC2626', departing: '#9333EA', arriving: '#3B82F6', available: '#22C55E', dirty: '#EAB308', out_of_order: '#9CA3AF' };
+  const unitBorder= { ...TILE_BG, dirty: '#EAB308' };
 
   const bg     = unitBg[cls]     || '#F9FAFB';
   const border = unitBorder[cls] || '#D1D5DB';
@@ -670,13 +670,14 @@ function UnitCard({ unit, flags, health, onChanged }) {
 // Housekeeping-board convention: green = vacant ready, red = occupied,
 // yellow = vacant dirty. Departing gets its own purple; out_of_order drops
 // to grey (occupied took the red).
+// Deep colours so white text reads well (4.5:1 or better); yellow takes dark text.
 const TILE_BG = {
-  available:    '#22C55E',
-  occupied:     '#DC2626',
+  available:    '#15803D',
+  occupied:     '#B91C1C',
   dirty:        '#FACC15',
-  arriving:     '#3B82F6',
-  departing:    '#9333EA',
-  out_of_order: '#9CA3AF',
+  arriving:     '#1D4ED8',
+  departing:    '#6D28D9',
+  out_of_order: '#6B7280',
 };
 
 // Tiles are white-on-color by default; yellow needs dark text to stay legible.
@@ -684,14 +685,14 @@ const TILE_FG = {
   dirty: '#1F2937',
 };
 
-// Icons so status doesn't rely on color alone — small but legible at tile size.
-const TILE_ICON = {
-  available:    '✓',
-  occupied:     '🛏',
-  dirty:        '🧹',
-  arriving:     '🔑',
-  departing:    '🧳',
-  out_of_order: '🔧',
+// A word under the room number, so the state doesn't rely on colour alone.
+const TILE_WORD = {
+  available:    'ready',
+  occupied:     'in house',
+  dirty:        'to clean',
+  arriving:     'arriving',
+  departing:    'due out',
+  out_of_order: 'out',
 };
 
 // DND / Clean Room requests come from Room Display as `guest_request` tasks
@@ -816,12 +817,12 @@ function tileState(u) {
 
 // Order = how segments/chips read left-to-right.
 const STATUS_META = [
-  { key: 'available',    color: '#22C55E', label: 'Available' },
-  { key: 'occupied',     color: '#DC2626', label: 'Occupied' },
-  { key: 'departing',    color: '#9333EA', label: 'Departing' },
-  { key: 'arriving',     color: '#3B82F6', label: 'Arriving' },
-  { key: 'dirty',        color: '#FACC15', label: 'To clean' },
-  { key: 'out_of_order', color: '#9CA3AF', label: 'Out of Order' },
+  { key: 'available',    color: TILE_BG.available,    label: 'Available' },
+  { key: 'occupied',     color: TILE_BG.occupied,     label: 'Occupied' },
+  { key: 'departing',    color: TILE_BG.departing,    label: 'Departing' },
+  { key: 'arriving',     color: TILE_BG.arriving,     label: 'Arriving' },
+  { key: 'dirty',        color: TILE_BG.dirty,        label: 'To clean' },
+  { key: 'out_of_order', color: TILE_BG.out_of_order, label: 'Out of Order' },
 ];
 
 function bucketOf(u) {
@@ -905,8 +906,8 @@ function UnitTile({ unit, flags, health, selected, onClick }) {
       title={title}
       onClick={onClick}
     >
-      <span className="unit-tile-icon">{TILE_ICON[state]}</span>
       <span className="unit-tile-num">{shortRoomName(unit.name, unit.type)}</span>
+      <span className="unit-tile-word">{TILE_WORD[state]}</span>
       {(flags || tabletBadge || overdue) && (
         <span className="unit-tile-badges">
           {overdue && <span className="unit-tile-badge warn" title="Overdue — still checked in past check-out">⏰</span>}
