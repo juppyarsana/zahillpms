@@ -55,7 +55,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
   const [
     { rows: [u] }, glance, money, unpaid, agents, costs, forecast,
     compReqs, pos, otaItems, overdueStays, bills,
-    yRep, wRep, wMoney, yMade, wMade, holidays, audit, tMoney,
+    yRep, wRep, wMoney, yMade, wMade, holidays, audit, tMoney, tRep,
   ] = await Promise.all([
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
     res ? db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS n FROM units WHERE property_id = $1`, [propertyId])
@@ -97,6 +97,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
     fin ? q(`SELECT EXISTS (SELECT 1 FROM night_audit_runs WHERE property_id = $1 AND business_date = $2::date) AS done`,
       [propertyId, yesterday]) : none,
     fin ? collected(propertyId, today) : none,
+    fin ? getReport(propertyId, today, today) : none,   // tonight's night, as booked
   ]);
 
   // ── Needs you ── (most urgent first; each links to where it is sorted)
@@ -197,6 +198,9 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       made_today: glance.made,
       money_in_today: tMoney ? r2(tMoney.total) : null,
       tomorrow: glance.tomorrow,
+      // Tonight's average room rate and RevPAR from what is booked for tonight (getReport's night rule).
+      adr: tRep ? (tRep.paid_nights > 0 ? r2(tRep.room_revenue / tRep.paid_nights) : 0) : null,
+      revpar: tRep ? (sell > 0 ? r2(tRep.room_revenue / sell) : 0) : null,
     },
     yesterday: yDay && { date: yesterday, compare_date: weekBefore, ...yDay, before: wDay },
     owed,

@@ -1373,3 +1373,9 @@ tr:hover td { background: #FAFAF8; }
 /* Overview — yesterday as one line under Today's cards */
 .ov-yday { margin: 12px 0 0; }
 .ov-vs { margin-top: 4px; }
+/* Overview — Today so far: five cards in one row on a computer; on a phone two per row, the last one full width */
+.stat-grid-money.ov-today { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+@media (max-width: 768px) {
+  .stat-grid-money.ov-today { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-grid-money.ov-today > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}

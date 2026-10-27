@@ -53,12 +53,12 @@ function YesterdayLine({ y }) {
   );
 }
 
-// "yesterday 28 rooms" under a Today card. Only rooms tonight get a ▲/▼ —
-// money and reservations so far today are still growing, so an arrow against
-// the whole of yesterday would mislead until the evening.
-function VsYesterday({ now, before, pts, children }) {
+// "yesterday 28 rooms" under a Today card. Only rooms and ADR tonight get a
+// ▲/▼ (`arrow`) — money and reservations so far today are still growing, so an
+// arrow against the whole of yesterday would mislead until the evening.
+function VsYesterday({ now, before, pts, arrow, children }) {
   if (before == null) return null;
-  return <div className="stat-sub ov-vs">{pts && <><Delta now={now} before={before} pts /> </>}<span className="text-muted">yesterday {children}</span></div>;
+  return <div className="stat-sub ov-vs">{arrow && <><Delta now={now} before={before} pts={pts} /> </>}<span className="text-muted">yesterday {children}</span></div>;
 }
 
 function greeting(hour) {
@@ -123,13 +123,21 @@ export default function Overview() {
             <div style={{ marginTop: 24 }}>
               <SectionHeading title="Today so far" sub="compared with yesterday"
                 right={(can('checkin_full') || can('guest_lists') || can('dashboard')) && <Link to="/today" className="tomorrow-link">Open Today →</Link>} />
-              <div className="stat-grid stat-grid-money" style={{ marginBottom: 0 }}>
+              <div className="stat-grid stat-grid-money ov-today" style={{ marginBottom: 0 }}>
                 <div className="stat-card">
                   <div className="stat-label">Rooms tonight</div>
                   <div className="stat-value">{t.rooms} of {t.sellable} · {t.pct}%</div>
                   <div className="stat-sub">{t.staying} staying + {t.arriving} arriving{t.overdue > 0 ? ` + ${t.overdue} overdue` : ''}</div>
-                  {y && <VsYesterday now={t.pct} before={y.occupancy} pts>{plural(y.room_nights, 'room')} ({y.occupancy}%)</VsYesterday>}
+                  {y && <VsYesterday now={t.pct} before={y.occupancy} pts arrow>{plural(y.room_nights, 'room')} ({y.occupancy}%)</VsYesterday>}
                 </div>
+                {t.adr != null && (
+                  <div className="stat-card" title="Average room rate of tonight's paid rooms (room revenue ÷ paid rooms; free nights left out). RevPAR = room revenue ÷ rooms for sale.">
+                    <div className="stat-label">ADR tonight</div>
+                    <div className="stat-value">{idr(t.adr)}</div>
+                    <div className="stat-sub">RevPAR {idr(t.revpar)}</div>
+                    {y && <VsYesterday now={t.adr} before={y.adr} arrow>{idr(y.adr)}</VsYesterday>}
+                  </div>
+                )}
                 <div className="stat-card">
                   <div className="stat-label">Arriving · departing</div>
                   <div className="stat-value">{t.arriving_today} in · {t.departing_today} out</div>
