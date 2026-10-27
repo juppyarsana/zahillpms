@@ -1,6 +1,6 @@
 # Lobby TV & Guest Board
 
-The **Guest Board** (Operations → Guest Board) is one list of cards — pictures, short texts, notices and videos — shown on three kinds of screen:
+The **Guest Board** (Settings → Guest Board) is one list of cards — pictures, short texts, notices and videos — shown on three kinds of screen:
 
 | Screen | Shows |
 | --- | --- |

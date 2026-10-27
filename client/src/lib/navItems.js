@@ -40,16 +40,19 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       !can('receivables') && can('ota_payouts') && hasModule('financial') && { to: '/agents', icon: '🏦', label: 'OTA payouts' },
       can('night_audit') && hasModule('financial') && { to: '/night-audit', icon: '🌙', label: 'Night Audit' },
     ] },
-    { id: 'services', label: 'Services', items: [
-      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Sales (extras)' },
+    // Guest services: what front desk sells or books for a guest during the stay.
+    { id: 'services', label: 'Guest services', items: [
+      can('sales') && hasModule('sales') && { to: '/sales', icon: '🛍', label: 'Extras' },
       can('activities') && hasModule('activities') && { to: '/activities', icon: '🥾', label: 'Activities' },
-      can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
       can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
-      can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },   // moves to a Sales group with Events in the menu regroup
+    ] },
+    // Sales: prices and the meeting room — selling rooms and events ahead.
+    { id: 'sales', label: 'Sales', items: [
+      can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
+      can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
     ] },
     { id: 'operations', label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },
-      can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board' },
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
     ] },
@@ -99,7 +102,9 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       // A note of which room each OTA gets — only for a property without the channel manager.
       can('allotments') && res && !hasModule('channel_manager') && { to: '/allotment', icon: '📡', label: 'Allotments', hint: 'Which rooms each OTA gets, month by month' },
     ] },
-    { id: 'devices', label: 'Devices', items: [
+    { id: 'devices', label: 'Devices & guest screens', items: [
+      // What guests see on the room tablets, room TVs and the lobby TV (moved from Operations).
+      can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board', hint: 'Cards, videos and music on the room tablets, room TVs and the lobby TV' },
       can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets', hint: 'WiFi, battery and connection history per room' },
       can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers', hint: 'Lights, AC and relays per room' },
     ] },

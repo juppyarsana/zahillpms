@@ -13,7 +13,7 @@ export const MENU_DEFS = [
   { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
   { key: 'guest_lists',      label: 'Guest Lists',          group: 'Front Desk' },
-  { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Revenue' },
+  { key: 'forecast',         label: 'Forecast (the days ahead: rooms, guests, breakfast)', group: 'Insights' },
   { key: 'cashier_closing',  label: 'Cashier Closing (payments received, all users)', group: 'Front Desk' },
   { key: 'ota_payouts',      label: 'OTA payouts (record the weekly OTA withdrawals — OTA accounts only)', group: 'Front Desk' },
   // An action permission, not a page: make a stay free without asking for a
@@ -27,22 +27,22 @@ export const MENU_DEFS = [
   // (reason required, logged, owner alerted). Owners always can.
   { key: 'corrections',      label: 'Corrections (undo check-out / check-in, reinstate, edit after check-out, refund / undo / move a payment, void a sale)', group: 'Front Desk' },
   // Events: the meeting room's calendar, an event's bill, payments and meals.
-  { key: 'events',           label: 'Events (meeting room)', group: 'Services' },
+  { key: 'events',           label: 'Events (meeting room)', group: 'Sales' },
   // The Ask page: ask by voice or typing. It only answers from the pages this
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },
   { key: 'guests',           label: 'Guests',               group: 'Front Desk' },
   { key: 'loyalty',          label: 'Loyalty (view — changes are owner-only)', group: 'Settings' },
-  { key: 'sales',            label: 'Sales (extras)',                group: 'Services' },
-  { key: 'activities',       label: 'Activities',           group: 'Services' },
-  { key: 'guest_board',      label: 'Guest Board',          group: 'Operations' },
+  { key: 'sales',            label: 'Extras (Sales items, the till)', group: 'Guest services' },
+  { key: 'activities',       label: 'Activities',           group: 'Guest services' },
+  { key: 'guest_board',      label: 'Guest Board (room tablets, TVs, lobby TV)', group: 'Settings' },
   { key: 'operations',       label: 'Housekeeping',   group: 'Operations' },
-  { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Services' },
+  { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Guest services' },
   // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
   { key: 'night_audit',      label: 'Night Audit (view reports)', group: 'Front Desk' },
   // Not a page: shows the Dashboard's "This Month" section (revenue,
   // occupancy, ADR, on the books). Owners always see it.
-  { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Revenue' },
+  { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Insights' },
   // Finance, one key per page (migration 128 split the old "accounting" key).
   { key: 'receivables',      label: 'Receivables (agents, companies and OTAs — statements, invoices, payments)', group: 'Finance' },
   { key: 'payables',         label: 'Payables (supplier bills, payments to suppliers, what the hotel owes)', group: 'Finance' },
@@ -51,18 +51,18 @@ export const MENU_DEFS = [
   { key: 'vendors',          label: 'Vendor prices & payouts (tours / transport vendors)', group: 'Finance' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
   { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
-  { key: 'reports',          label: 'Insights — Summary, Revenue, Rooms, Guests, Bookings (Excel / PDF)', group: 'Revenue' },
+  { key: 'reports',          label: 'Insights — Summary, Revenue, Rooms, Guests, Bookings (Excel / PDF)', group: 'Insights' },
   // The owner's home: needs-you list, tonight, revenue, money in, owed, biggest costs (a manager's login).
-  { key: 'overview',         label: 'Overview (owner / manager home — revenue, money, costs, what needs attention)', group: 'Revenue' },
-  { key: 'costs',            label: 'Costs by department (Expenses + supplier bills, department profit)', group: 'Revenue' },
-  { key: 'profit',           label: 'Profit (the books in four steps: department profit, GOP, net profit)', group: 'Revenue' },
+  { key: 'overview',         label: 'Overview (owner / manager home — revenue, money, costs, what needs attention)', group: 'Insights' },
+  { key: 'costs',            label: 'Costs by department (Expenses + supplier bills, department profit)', group: 'Insights' },
+  { key: 'profit',           label: 'Profit (the books in four steps: department profit, GOP, net profit)', group: 'Insights' },
   { key: 'purchasing',       label: 'Purchasing (suppliers, purchase orders, bought without a PO)', group: 'Operations' },
   { key: 'stock',            label: 'Stock (stock items, adjust, stock opname, usage)', group: 'Operations' },
   // An action permission: approve a purchase order (needs Purchasing too).
   { key: 'approve_po',       label: 'Approve purchase orders', group: 'Operations' },
   // Only the Buy without a PO window of Purchasing (e.g. the accountant).
   { key: 'direct_purchase',  label: 'Buy without a PO (stock bought at the market / a shop)', group: 'Operations' },
-  { key: 'pricing',          label: 'Pricing',              group: 'Revenue'   },
+  { key: 'pricing',          label: 'Pricing',              group: 'Sales'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
   // Users and Sources & Payments are owner-only (no tick box, migration 128).
   { key: 'units',            label: 'Units (view — changes are owner-only)', group: 'Settings'  },
@@ -81,7 +81,7 @@ export default function SettingsRoles() {
   const { user, hasModule } = useAuth();
   // 'Resto' only shown to properties with the resto_ordering add-on enabled —
   // there's nothing to grant otherwise.
-  const BASE_GROUPS = ['Front Desk', 'Services', 'Operations', 'Revenue', 'Finance', 'Settings'];
+  const BASE_GROUPS = ['Front Desk', 'Guest services', 'Sales', 'Operations', 'Insights', 'Finance', 'Settings'];
   const GROUPS = hasModule('resto_ordering') ? [...BASE_GROUPS, 'Resto'] : BASE_GROUPS;
 
   const [roles, setRoles] = useState([]);

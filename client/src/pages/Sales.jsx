@@ -309,7 +309,7 @@ export default function Sales() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Ancillary Sales</div>
+          <div className="page-title">Extras</div>
           <div className="page-subtitle">Hotel extras: extra bed, transfers, laundry and more. Tours and classes are booked in Activities.</div>
         </div>
       </div>

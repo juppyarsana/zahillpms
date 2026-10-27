@@ -1,6 +1,6 @@
 # TV lobi & Guest Board
 
-**Guest Board** (Operations → Guest Board) adalah satu daftar kartu — gambar, teks singkat, pengumuman dan video — yang tampil di tiga jenis layar:
+**Guest Board** (Settings → Guest Board) adalah satu daftar kartu — gambar, teks singkat, pengumuman dan video — yang tampil di tiga jenis layar:
 
 | Layar | Menampilkan |
 | --- | --- |
