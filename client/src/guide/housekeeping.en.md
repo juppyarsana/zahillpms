@@ -31,7 +31,7 @@ Front desk gets a Telegram message "Room clean" straight away, with the guest ar
 ## A guest asks for their room to be cleaned
 
 - The guest presses **Clean Room** on the room tablet, **or**
-- The guest phones the front desk: front desk opens the room on the Dashboard (or on this page) → **Clean on request**.
+- The guest phones the front desk: front desk opens the room on Today (or on this page) → **Clean on request**.
 
 Housekeeping gets a Telegram message saying **who asked** (the guest on the tablet, or front desk with their name). Once cleaned, mark it clean as usual. Pressed by mistake: **Cancel the request**.
 

@@ -6,7 +6,7 @@
 
 - **The day's figures** — arriving, staying over, departing, tonight's rooms, reservations made today, and tomorrow in one line.
 - **Needs you now** — guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), and rooms still to clean with a guest arriving today.
-- **Live unit status** — every room in colour by room type, the same as on the Dashboard. Tap a room for its window (guest, balance, check in / out, payment, Mark clean, Call room).
+- **Live unit status** — every room in colour by room type. Tap a room for its window (guest, balance, check in / out, payment, Mark clean, Call room).
 - **Arrivals · In house · Departures · Kitchen** — the guests of the day.
 
 ## Checking in and out

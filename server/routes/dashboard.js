@@ -217,8 +217,8 @@ router.get('/summary', auth, async (req, res) => {
   }
 });
 
-// GET /api/dashboard/month — the Dashboard's "This Month" section. Owners,
-// or staff with the month_summary permission (Roles & Permissions).
+// GET /api/dashboard/month — the "This Month" section (Overview). Owners,
+// or staff with the month_summary or overview permission.
 // Every figure comes from the Reports page's getReport() / bookingPickup, so
 // it matches /reports, the Daily Close and the Monthly Report.
 //   so far       = 1st → today (tonight's night included — it's sold)
@@ -226,7 +226,7 @@ router.get('/summary', auth, async (req, res) => {
 //                   not a whole month against a partial one
 //   on the books = the whole month: nights stayed so far + nights still
 //                  booked (= the Reports page's "This month")
-router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_summary'), async (req, res) => {
+router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu(['month_summary', 'overview']), async (req, res) => {
   try {
     const { getReport } = require('./reports');
     const pid = req.propertyId;

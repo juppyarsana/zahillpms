@@ -14,7 +14,7 @@ Catatan terbaru ada di paling atas, dengan nama penulis dan jamnya.
 
 Catatan dengan hari pengingat muncul **pada hari itu**:
 
-- **Dashboard** → kartu **Reminders for today**
+- **Today** → kartu **Reminders for today**
 - **Guest Lists** untuk tanggal itu → kartu **Reminders for this day**
 
 Klik pengingat untuk membuka reservasinya.
@@ -34,6 +34,6 @@ Teks lama dari catatan yang diubah atau dihapus tetap tersimpan di **Edit Histor
 | --- | --- |
 | **Check-in / out** — baris arriving, departing, in-house | 2 catatan terbaru |
 | **Check-in / out** — jendela check-in dan check-out | Sampai 5 catatan ("ada yang harus diselesaikan sebelum tamu pergi?") |
-| **Dashboard** — jendela kamar | 3 catatan terbaru |
+| **Today** — jendela kamar | 3 catatan terbaru |
 
 > **Catatan berisi harga tidak masuk ke tagihan.** Transport, tur atau apa pun yang dibayar tamu harus ditambahkan di tab **Folio** → **+ Add item** (atau Activities), kalau tidak akan terlupa saat check-out. Catatannya cukup menulis siapa yang mengatur.

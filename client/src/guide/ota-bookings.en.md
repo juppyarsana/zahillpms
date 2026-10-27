@@ -6,7 +6,7 @@ When the hotel is connected to the channel manager, bookings made on Agoda, Book
 
 - A **pop-up** at the top right of every page: *New Agoda booking*, *booking changed*, *booking cancelled* or *needs you*, with the guest, room and dates, and a short sound. **Open** goes to the booking, **OK** clears it — for everyone at the desk, so one person presses it. **All seen** clears them all.
 - **Reservations → OTA bookings** tab (the red number shows on Reservations in the menu and on the tab while something is new or needs you): everything that needs you first, then today's, then earlier ones. **↻ Check now** reads the channel manager at once.
-- The **Dashboard** box *From the OTAs — today*: how many new / changed / cancelled today and what needs you.
+- The **Today** page box *From the OTAs — today*: how many new / changed / cancelled today and what needs you.
 
 ## A new OTA booking
 
@@ -45,7 +45,7 @@ Some things the PMS doesn't do by itself:
 - a room type that isn't linked,
 - a change to a booking that was entered by hand.
 
-These appear as a *needs you* pop-up, at the top of **Reservations → OTA bookings**, on the Dashboard and on Telegram. Deal with them (move a guest, call the OTA, enter or change the booking by hand), then press **Done — handled**.
+These appear as a *needs you* pop-up, at the top of **Reservations → OTA bookings**, on Today and on Telegram. Deal with them (move a guest, call the OTA, enter or change the booking by hand), then press **Done — handled**.
 
 > Don't type an OTA booking in by hand when the hotel is connected — it would be in twice. Enter it by hand only when the PMS says so.
 

@@ -31,7 +31,7 @@ Front desk langsung dapat pesan Telegram "Kamar sudah bersih", dengan nama tamu 
 ## Tamu minta kamarnya dibersihkan
 
 - Tamu menekan **Clean Room** di tablet kamar, **atau**
-- Tamu menelepon front desk: front desk membuka kamar di Dashboard (atau di halaman ini) → **Clean on request**.
+- Tamu menelepon front desk: front desk membuka kamar di Today (atau di halaman ini) → **Clean on request**.
 
 Housekeeping dapat pesan Telegram yang menyebut **siapa yang minta** (tamu lewat tablet, atau front desk dengan namanya). Setelah dibersihkan, tandai bersih seperti biasa. Kalau salah tekan: **Cancel the request**.
 

@@ -1,13 +1,17 @@
-// Overview: the owner's / manager's home — what needs them first, then
-// tonight, revenue, money in, what is still owed, the biggest costs and the
-// next 14 nights. Each figure is the one its own page shows (server/services/
-// overviewService.js); a part whose module is off is left out. Owner, or the
-// `overview` permission. Front desk keep landing on their own pages.
+// Overview: the owner's / manager's home (it took over the old Dashboard's
+// numbers; front desk work from Today). Top to bottom: what needs them, today
+// so far, yesterday vs the same weekday a week before, this month vs the same
+// days of last month, what is still owed, the biggest costs, the next 14
+// nights and the market. Each figure is the one its own page shows (server/
+// services/overviewService.js, /api/dashboard/month); a part whose module is
+// off is left out. Owner, or the `overview` permission.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyClock } from '../lib/propertyTime';
+import { MonthSection, SectionHeading } from '../components/DashboardSections';
+import MarketSection from '../components/MarketSection';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const jt = n => (Math.round((Number(n) || 0) / 100000) / 10).toLocaleString('id-ID') + ' jt';
@@ -18,7 +22,69 @@ const weekday = ymd => { const [y, m, d] = ymd.split('-').map(Number); return ne
 const NEED_KEY = {
   complimentary: 'reservations', po: ['purchasing', 'approve_po'], ota: 'reservations', overdue_stay: 'reservations',
   never_arrived: 'guest_lists', agent_overdue: 'receivables', bills_overdue: 'payables', cost_jump: 'costs',
+  night_audit: 'night_audit', holiday: 'pricing',
 };
+
+// ▲ 12% / ▼ 3 pts against the comparison day.
+function Delta({ now, before, pts }) {
+  if (before == null || now == null) return null;
+  let v;
+  if (pts) v = now - before;
+  else if (before > 0) v = Math.round(((now - before) / before) * 100);
+  else return <span className="text-muted">{now > 0 ? 'new' : '—'}</span>;
+  if (v === 0) return <span className="text-muted">same</span>;
+  return <span className={v > 0 ? 'ins-down' : 'ins-up'}>{v > 0 ? '▲' : '▼'} {Math.abs(v)}{pts ? ' pts' : '%'}</span>;
+}
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+function YesterdaySection({ y }) {
+  const b = y.before || {};
+  const vs = `${weekday(y.compare_date)} ${dayShort(y.compare_date)}`;
+  return (
+    <div style={{ marginTop: 24 }}>
+      <SectionHeading title="Yesterday" sub={`${weekday(y.date)} ${dayShort(y.date)} · the day just closed, compared with ${vs}`} />
+      <div className="stat-grid stat-grid-money ov-five">
+        <div className="stat-card">
+          <div className="stat-label">Revenue</div>
+          <div className="stat-value">{idr(y.revenue)}</div>
+          <div className="stat-sub">room {jt(y.rooms)}{y.fnb > 0 && ` · F&B ${jt(y.fnb)}`}{y.other > 0 && ` · other ${jt(y.other)}`}</div>
+          <div className="stat-sub"><Delta now={y.revenue} before={b.revenue} /> vs {idr(b.revenue)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Occupancy</div>
+          <div className="stat-value">{y.occupancy}%</div>
+          <div className="stat-sub">{plural(y.room_nights, 'room')} sold</div>
+          <div className="stat-sub"><Delta now={y.occupancy} before={b.occupancy} pts /> vs {b.occupancy}%</div>
+        </div>
+        <div className="stat-card" title="Average room rate per paid night; RevPAR = room revenue ÷ rooms for sale">
+          <div className="stat-label">ADR · RevPAR</div>
+          <div className="stat-value">{idr(y.adr)}</div>
+          <div className="stat-sub">RevPAR {idr(y.revpar)}</div>
+          <div className="stat-sub"><Delta now={y.adr} before={b.adr} /> vs {idr(b.adr)}</div>
+        </div>
+        {y.money_in != null && (
+          <div className="stat-card" title="Money received that day, every method (= the Daily Close and Cashier Closing)">
+            <div className="stat-label">Money in</div>
+            <div className="stat-value">{idr(y.money_in)}</div>
+            <div className="stat-sub"><Delta now={y.money_in} before={b.money_in} /> vs {idr(b.money_in)}</div>
+          </div>
+        )}
+        {y.made && (
+          <div className="stat-card" title="Reservations entered that day (any stay date); a group counts once; value is net">
+            <div className="stat-label">Reservations made</div>
+            <div className="stat-value">{y.made.bookings}</div>
+            <div className="stat-sub">
+              {plural(y.made.rooms, 'room')} · {jt(y.made.value)}
+              {y.made.cancelled > 0 && <span style={{ color: '#B91C1C' }}> · {y.made.cancelled} cancelled</span>}
+            </div>
+            <div className="stat-sub"><Delta now={y.made.value} before={b.made?.value} /> vs {b.made?.bookings ?? 0} made</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function greeting(hour) {
   if (hour < 11) return 'Good morning';
@@ -29,7 +95,7 @@ function greeting(hour) {
 const More = ({ to, children, show }) => (show ? <Link to={to} style={{ fontSize: 13, fontWeight: 600 }}>{children} →</Link> : null);
 
 export default function Overview() {
-  const { user, can } = useAuth();
+  const { user, can, hasModule } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
 
@@ -75,36 +141,45 @@ export default function Overview() {
           <div className="alert alert-success">Nothing needs you right now.</div>
         )}
 
-        <div className="stat-grid stat-grid-money" style={{ marginTop: 18 }}>
-          {data.tonight && (
-            <div className="stat-card">
-              <div className="stat-label">Tonight</div>
-              <div className="stat-value">{data.tonight.rooms} of {data.tonight.sellable} rooms</div>
-              <div className="stat-sub">{data.tonight.pct}% · {data.tonight.arriving_today} arriving · {data.tonight.departing_today} leaving today</div>
-            </div>
-          )}
-          {data.revenue && (
-            <div className="stat-card">
-              <div className="stat-label">Revenue this month</div>
-              <div className="stat-value">{idr(data.revenue.total)}</div>
-              <div className="stat-sub">
-                {data.revenue.change != null
-                  ? <span className={data.revenue.change >= 0 ? 'ins-down' : 'ins-up'}>{data.revenue.change >= 0 ? '▲' : '▼'} {Math.abs(Math.round(data.revenue.change))}%</span>
-                  : '—'} vs {dayShort(data.revenue.prev_from)} – {dayShort(data.revenue.prev_to)}
+        {data.tonight && (
+          <div style={{ marginTop: 24 }}>
+            <SectionHeading title="Today so far"
+              right={(can('checkin_full') || can('guest_lists') || can('dashboard')) && <Link to="/today" className="tomorrow-link">Open Today →</Link>} />
+            <div className="stat-grid stat-grid-money">
+              <div className="stat-card">
+                <div className="stat-label">Tonight</div>
+                <div className="stat-value">{data.tonight.rooms} of {data.tonight.sellable} rooms</div>
+                <div className="stat-sub">
+                  {data.tonight.pct}% · {data.tonight.staying} staying + {data.tonight.arriving} arriving
+                  {data.tonight.overdue > 0 ? ` + ${data.tonight.overdue} overdue` : ''}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Arriving today</div>
+                <div className="stat-value">{data.tonight.arriving_today}</div>
+                <div className="stat-sub">{data.tonight.arrived} arrived · {data.tonight.to_come} to come</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Departing today</div>
+                <div className="stat-value">{data.tonight.departing_today}</div>
+                <div className="stat-sub">{data.tonight.checked_out} checked out · {data.tonight.to_go} to go</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Reservations made today</div>
+                <div className="stat-value">{data.tonight.made_today.bookings}</div>
+                <div className="stat-sub">{plural(data.tonight.made_today.rooms, 'room')} · {jt(data.tonight.made_today.value)}</div>
               </div>
             </div>
-          )}
-          {data.money_in && (
-            <div className="stat-card">
-              <div className="stat-label">Money in yesterday</div>
-              <div className="stat-value">{idr(data.money_in.total)}</div>
-              <div className="stat-sub">
-                {data.money_in.by_method.length
-                  ? data.money_in.by_method.slice(0, 3).map(m => `${m.method} ${jt(m.amount)}`).join(' · ')
-                  : 'Nothing received'}
-              </div>
-            </div>
-          )}
+          </div>
+        )}
+
+        {data.yesterday && <YesterdaySection y={data.yesterday} />}
+
+        {hasModule('financial') && <MonthSection showReportLink={can('reports')} />}
+
+        <div style={{ marginTop: 24 }}><SectionHeading title="Money and what is coming" /></div>
+        <div className="ins-cols">
+          <div className="ins-side">
           {data.owed && (
             <div className="stat-card">
               <div className="stat-label">Still owed to the hotel</div>
@@ -112,9 +187,6 @@ export default function Overview() {
               <div className="stat-sub">Guests {jt(data.owed.guests)} · Agents & OTAs {jt(data.owed.agents)}</div>
             </div>
           )}
-        </div>
-
-        <div className="ins-cols">
           {data.costs && (
             <div className="card">
               <div className="ins-row-head" style={{ marginBottom: 2 }}>
@@ -143,6 +215,8 @@ export default function Overview() {
             </div>
           )}
 
+          </div>
+
           {data.next_nights && (
             <div className="card">
               <div className="ins-row-head" style={{ marginBottom: 2 }}>
@@ -164,6 +238,8 @@ export default function Overview() {
             </div>
           )}
         </div>
+
+        {hasModule('insights') && <MarketSection isOwner={user?.role === 'owner'} />}
       </>)}
     </div>
   );

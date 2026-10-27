@@ -483,7 +483,7 @@ function MarketInsightsCard() {
     <div className="card mt-3">
       <div className="card-title">Market Insights</div>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
-        Sets up the Dashboard's Competitor Ratings, Search Interest and AI Weekly Briefing for this property.
+        Sets up the Overview's Competitor Ratings, Search Interest and AI Weekly Briefing for this property.
       </p>
 
       <div className="form-group">

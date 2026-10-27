@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 // Pages not listed here (Rate Plans, Users, Sources & Payments, Property
 // Details…) are owner-only (RequireOwner), not delegatable menu keys.
 export const MENU_DEFS = [
-  { key: 'dashboard',        label: 'Dashboard',            group: 'Front Desk' },
+  { key: 'dashboard',        label: 'Today (front desk page)', group: 'Front Desk' },
   { key: 'reservations',     label: 'Reservations',         group: 'Front Desk' },
   { key: 'quick_checkin',    label: 'Quick Check-in/out',   group: 'Front Desk' },
   { key: 'checkin_full',     label: 'Check-in/out (Full)',  group: 'Front Desk' },
@@ -40,9 +40,9 @@ export const MENU_DEFS = [
   { key: 'restaurant',       label: 'Restaurant (POS sessions, kitchen, room charges)', group: 'Guest services' },
   // View the Night Audit page, its details and PDFs. Running it by hand stays owner-only.
   { key: 'night_audit',      label: 'End of day — Night audit (view reports)', group: 'Front Desk' },
-  // Not a page: shows the Dashboard's "This Month" section (revenue,
-  // occupancy, ADR, on the books). Owners always see it.
-  { key: 'month_summary',    label: 'Dashboard — Month summary (revenue)', group: 'Insights' },
+  // Not a page: revenue figures on Forecast and in Ask (the month section is
+  // on Overview, its own permission). Owners always see them.
+  { key: 'month_summary',    label: 'Revenue figures on Forecast and in Ask', group: 'Insights' },
   // Finance, one key per page (migration 128 split the old "accounting" key).
   { key: 'receivables',      label: 'Receivables (agents, companies and OTAs — statements, invoices, payments)', group: 'Finance' },
   { key: 'payables',         label: 'Payables (supplier bills, payments to suppliers, what the hotel owes)', group: 'Finance' },

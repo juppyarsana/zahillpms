@@ -13,7 +13,6 @@ import AskFab from './components/AskFab';
 import { AskProvider } from './context/AskContext';
 import Login from './pages/Login';
 import RoomCheckPublic from './pages/RoomCheckPublic';
-import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import Ask from './pages/Ask';
@@ -96,7 +95,10 @@ function BottomNav() {
 
 
   const mainItems = [
-    can('dashboard')     && { to: '/',               icon: '📊', label: 'Dashboard', end: true },
+    // Today for front desk; Overview for an owner / manager who has no Today.
+    (can('checkin_full') || can('guest_lists') || can('dashboard')) && hasModule('reservations')
+      ? { to: '/today', icon: '☀', label: 'Today' }
+      : can('overview') && { to: '/overview', icon: '🧭', label: 'Overview' },
     can('reservations') && hasModule('reservations') && { to: '/reservations',  icon: '📅', label: 'Reservations' },
     // Check-in tab; Quick Check-in (⚡ Quick Mode inside it) only for staff
     // who can't open Check-in / out.
@@ -252,6 +254,18 @@ function RequireModule({ moduleName, children }) {
   return children;
 }
 
+// The home address (the old Dashboard, removed 2026-10-28): Overview for
+// whoever may open it (owners, managers), Today for front desk, otherwise the
+// first page the role allows.
+function Home() {
+  const { can, hasModule, user } = useAuth();
+  if (can('overview')) return <Navigate to="/overview" replace />;
+  if ((can('checkin_full') || can('guest_lists') || can('dashboard')) && hasModule('reservations')) return <Navigate to="/today" replace />;
+  const first = firstAllowedPath(user);
+  if (first === '/') return <div className="text-muted" style={{ padding: 40 }}>Nothing to show here yet — ask the owner which pages your role can open.</div>;
+  return <Navigate to={first} replace />;
+}
+
 // An old address that moved: same query string, new path.
 function KeepQuery({ to }) {
   const { search } = useLocation();
@@ -309,7 +323,8 @@ export default function App() {
             <CallProvider>
               <Layout>
                 <Routes>
-                  <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
+                  {/* The old Dashboard: owners / managers land on Overview, front desk on Today */}
+                  <Route path="/"                 element={<Home />} />
                   {/* Availability and OTA bookings are tabs of Reservations; their old addresses open the tab */}
                   <Route path="/ota-bookings"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName={['reservations', 'channel_manager']}><Reservations key="ota" initialView="ota" /></RequireModule></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />

@@ -116,9 +116,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length);
 
   return {
-    // The owner's / manager's home (pages/Overview.jsx), above the front desk's Dashboard.
+    // The owner's / manager's home (pages/Overview.jsx); front desk start on Today.
     overview: can('overview') ? { to: '/overview', icon: '🧭', label: 'Overview' } : null,
-    dashboard: can('dashboard') ? { to: '/', end: true, icon: '📊', label: 'Dashboard' } : null,
     groups,
     settingsGroups,
     settingsPaths: settingsGroups.flatMap(g => g.items.map(i => i.to)),

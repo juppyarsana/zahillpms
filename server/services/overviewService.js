@@ -4,20 +4,22 @@
 // page it links to:
 //   needs_you  — approvals waiting, overdue agents / supplier bills, OTA items,
 //                guests past check-out, never-arrived stays, a cost jump
-//   tonight    — Dashboard's Today (dashboard.todayAtAGlance)
-//   revenue    — this month so far vs the same days of last month (getReport,
-//                the Dashboard month card's rule)
-//   money_in   — yesterday's money received by method (dailyClose.collected)
+//   tonight    — today so far (dashboard.todayAtAGlance, the Today page's figures)
+//   yesterday  — the day just closed vs the same weekday a week before:
+//                revenue, occupancy, ADR, RevPAR, money in, reservations made
+//                (getReport / dailyClose.collected / bookingPickup — the
+//                Daily Close's rule)
 //   owed       — room money not paid yet + agents / OTAs (aging)
 //   costs      — biggest departments this month (costsService)
 //   next_nights — the next 14 nights on the books (forecast)
+// Needs you also carries a holiday in the next 14 days and a night audit that
+// did not run for yesterday. The month (vs the same days of last month) is
+// the Dashboard's month section, /api/dashboard/month.
 // A part whose module is off is null. Nothing is stored.
 const db = require('../db');
 const { todayWITA } = require('./roomChargeService');
 
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
-const pad = n => String(n).padStart(2, '0');
-const monthLen = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 function addDays(ymd, n) {
   const d = new Date(ymd + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + n);
@@ -39,13 +41,10 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
   const { aging } = require('./agentStatementService');
   const { buildCosts } = require('./costsService');
   const { buildForecast } = require('./forecast');
+  const { bookingsMade } = require('./bookingPickup');
 
-  const [y, m, d] = today.split('-').map(Number);
-  const first = `${y}-${pad(m)}-01`;
-  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
-  const prevFirst = `${py}-${pad(pm)}-01`;
-  const prevTo = `${py}-${pad(pm)}-${pad(Math.min(d, monthLen(py, pm)))}`;
   const yesterday = addDays(today, -1);
+  const weekBefore = addDays(yesterday, -7);
   const res = on.has('reservations');
   const fin = on.has('financial');
   const hasCosts = on.has('back_office') || on.has('accounting');
@@ -53,14 +52,13 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
   const none = Promise.resolve(null);
   const q = (sql, params) => db.query(sql, params).then(r => r.rows);
   const [
-    { rows: [u] }, glance, soFar, prev, money, unpaid, agents, costs, forecast,
+    { rows: [u] }, glance, money, unpaid, agents, costs, forecast,
     compReqs, pos, otaItems, overdueStays, bills,
+    yRep, wRep, wMoney, yMade, wMade, holidays, audit,
   ] = await Promise.all([
     db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [propertyId]),
     res ? db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS n FROM units WHERE property_id = $1`, [propertyId])
       .then(r => todayAtAGlance(propertyId, parseInt(r.rows[0].n, 10) || 0)) : none,
-    fin ? getReport(propertyId, first, today) : none,
-    fin ? getReport(propertyId, prevFirst, prevTo) : none,
     fin ? collected(propertyId, yesterday) : none,
     fin ? unpaidRoomMoney(propertyId) : none,
     fin ? aging(propertyId) : none,
@@ -88,10 +86,25 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       WHERE b.property_id = $1 AND b.status = 'checked_in' AND b.check_out_date < $2::date
       ORDER BY b.check_out_date, u.name`, [propertyId, today]) : none,
     on.has('accounting') ? require('./payablesService').summary(propertyId) : none,
+    fin ? getReport(propertyId, yesterday, yesterday) : none,
+    fin ? getReport(propertyId, weekBefore, weekBefore) : none,
+    fin ? collected(propertyId, weekBefore) : none,
+    res ? bookingsMade(propertyId, yesterday) : none,
+    res ? bookingsMade(propertyId, weekBefore) : none,
+    q(`SELECT holiday_date::text AS date, name FROM holidays
+       WHERE holiday_date BETWEEN $1::date AND $1::date + 14 ORDER BY holiday_date LIMIT 3`, [today]),
+    fin ? q(`SELECT EXISTS (SELECT 1 FROM night_audit_runs WHERE property_id = $1 AND business_date = $2::date) AS done`,
+      [propertyId, yesterday]) : none,
   ]);
 
   // ── Needs you ── (most urgent first; each links to where it is sorted)
   const needs = [];
+  // The audit runs at 03:00 WITA; after 04:00 a missing run for yesterday is a problem.
+  const witaHour = Number(new Date().toLocaleString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Makassar' }));
+  if (audit && !audit[0].done && witaHour >= 4 && today === todayWITA()) {
+    needs.push({ kind: 'night_audit', title: `Night audit has not run for ${fmtDay(yesterday)}`,
+      text: 'Rooms and meals for that night are not on the bills yet — run it from End of day', to: '/end-of-day?tab=audit' });
+  }
   for (const c of compReqs || []) {
     needs.push({ kind: 'complimentary', title: 'Complimentary stay to approve',
       text: `Room ${c.unit_name || '—'} · ${c.guest_name || ''}${c.requested_by ? ` · asked by ${c.requested_by}` : ''}`,
@@ -138,14 +151,30 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
     }
   }
 
-  // ── Revenue this month so far ──
-  const revenue = soFar && {
-    from: first, to: today, prev_from: prevFirst, prev_to: prevTo,
-    total: r2(soFar.total_revenue), before: r2(prev.total_revenue),
-    change: prev.total_revenue > 0 ? r2(((soFar.total_revenue - prev.total_revenue) / prev.total_revenue) * 100) : null,
-    rooms: r2(soFar.room_revenue), fnb: r2(soFar.fnb_revenue),
-    other: r2(soFar.ancillary_revenue + soFar.activity_revenue + (soFar.event_revenue || 0)),
+  // A holiday in the next 14 days, with what is booked for that night.
+  for (const h of holidays || []) {
+    const night = forecast?.rows.find(r => r.date === h.date);
+    const days = Math.round((new Date(h.date + 'T00:00:00Z') - new Date(today + 'T00:00:00Z')) / 86400000);
+    needs.push({ kind: 'holiday', title: `${h.name} ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`}`,
+      text: `${fmtDay(h.date)}${night ? ` · ${night.sold} of ${night.sellable} rooms booked (${night.occupancy}%)` : ''} — check the prices`,
+      to: '/pricing' });
+  }
+
+  // ── Yesterday vs the same weekday a week before ──
+  const sell = parseInt(u.sellable, 10) || 0;
+  const dayFigures = (r, money, made) => r && {
+    revenue: r2(r.total_revenue),
+    rooms: r2(r.room_revenue), fnb: r2(r.fnb_revenue),
+    other: r2(r.ancillary_revenue + r.activity_revenue + (r.event_revenue || 0)),
+    room_nights: r.total_nights,
+    occupancy: sell > 0 ? Math.round((r.total_nights / sell) * 100) : 0,
+    adr: r.paid_nights > 0 ? r2(r.room_revenue / r.paid_nights) : 0,
+    revpar: sell > 0 ? r2(r.room_revenue / sell) : 0,
+    money_in: money ? r2(money.total) : null,
+    made: made ? { bookings: made.made.bookings, rooms: made.made.rooms, value: r2(made.made.value), cancelled: made.cancelled.bookings } : null,
   };
+  const yDay = dayFigures(yRep, money, yMade);
+  const wDay = dayFigures(wRep, wMoney, wMade);
 
   // ── Still owed to the hotel ──
   const agentsOwed = r2(agentRows.reduce((s, a) => s + a.total_outstanding, 0));
@@ -161,10 +190,11 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
     tonight: glance && {
       ...glance.tonight,
       arriving_today: glance.arriving.rooms, departing_today: glance.departing.rooms,
+      arrived: glance.arriving.arrived, to_come: glance.arriving.to_come,
+      checked_out: glance.departing.out, to_go: glance.departing.to_go,
       made_today: glance.made,
     },
-    revenue,
-    money_in: money && { date: yesterday, total: r2(money.total), by_method: money.by_method.map(x => ({ method: x.method, amount: r2(x.amount) })) },
+    yesterday: yDay && { date: yesterday, compare_date: weekBefore, ...yDay, before: wDay },
     owed,
     costs: costs && !costs.error && {
       month: costs.month, month_label: costs.month_label, partial: costs.partial,

@@ -248,7 +248,7 @@ export default function Housekeeping() {
                 <div className="hk-note-dnd">The guest asked not to be disturbed. Don't knock — it clears when the guest switches it off on the tablet.</div>
               )}
               {sel.state === 'out_of_order' && (
-                <div className="text-muted" style={{ fontSize: 13, marginTop: 12 }}>Put the room back in service from the Dashboard's room window.</div>
+                <div className="text-muted" style={{ fontSize: 13, marginTop: 12 }}>Put the room back in service from its room window on Today.</div>
               )}
             </>
           )}
