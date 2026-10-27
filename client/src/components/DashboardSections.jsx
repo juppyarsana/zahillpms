@@ -223,7 +223,7 @@ export function MonthSection({ showReportLink }) {
                 <Change value={m.change.made_value} />
               </div>
             </Box>
-            <Box label="Whole month on the books" value={`${m.on_the_books.occupancy}%`}
+            <Box label="Whole month on the books" value={<>{m.on_the_books.occupancy}% <span className="today-box-of">occ</span></>}
               title="Where the whole month lands if nothing else is booked: nights stayed so far + nights still booked to the end of the month, compared with how last month ended. Same as the Reports page for this month.">
               <div title={fmtIDR(m.on_the_books.revenue)}>{fmtShortIDR(m.on_the_books.revenue)} · {plural(m.on_the_books.room_nights, 'room-night')}</div>
               {m.last_month_full && m.last_month_full.room_nights > 0 && (
