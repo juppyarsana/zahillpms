@@ -47,6 +47,8 @@ export const MENU_DEFS = [
   { key: 'receivables',      label: 'Receivables (agents, companies and OTAs — statements, invoices, payments)', group: 'Finance' },
   { key: 'payables',         label: 'Payables (supplier bills, payments to suppliers, what the hotel owes)', group: 'Finance' },
   { key: 'expenses',         label: 'Expenses', group: 'Finance' },
+  // Tour / transport vendors (migration 140): see and change vendor prices, pay vendors.
+  { key: 'vendors',          label: 'Vendor prices & payouts (tours / transport vendors)', group: 'Finance' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
   { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
   { key: 'reports',          label: 'Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },

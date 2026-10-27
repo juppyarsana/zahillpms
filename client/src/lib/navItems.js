@@ -46,6 +46,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       // In the money's order: owed to the hotel, owed by the hotel, spent, the books.
       can('receivables') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Receivables' },   // agents, companies, OTAs (owner or the accountant)
       can('payables') && hasModule('accounting') && { to: '/payables', icon: '📥', label: 'Payables' },   // supplier bills, what the hotel owes
+      can('vendors') && hasModule('activities') && { to: '/vendor-payouts', icon: '🚐', label: 'Vendor payouts' },   // tour / transport vendors (migration 140)
       can('expenses') && hasModule('back_office') && { to: '/expenses', icon: '💸', label: 'Expenses' },
       can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
     ] },

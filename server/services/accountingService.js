@@ -28,6 +28,7 @@ const DEFAULT_CHART = [
   ['2130', 'Hotel & restaurant tax payable (PB1)', 'liability'],
   ['2140', 'Agent commission payable', 'liability'],
   ['2150', 'Accounts payable — suppliers', 'liability'],
+  ['2155', 'Owed to tour & transport vendors', 'liability'],
   ['2160', 'Salaries & wages payable', 'liability'],
   ['2170', 'Taxes payable — PPh', 'liability'],
   ['2190', 'Other payables', 'liability'],
@@ -46,6 +47,7 @@ const DEFAULT_CHART = [
   ['4390', 'Other revenue', 'revenue', 'rev.other'],
   ['4410', 'Activities', 'revenue', 'rev.other'],
   ['4420', 'Meeting room & events', 'revenue', 'rev.other'],
+  ['4490', 'Activities — vendor share', 'revenue', 'rev.other'],   // lowers revenue (migration 140)
   ['4910', 'Other income', 'revenue', 'rev.misc'],
   ['5110', 'Rooms — payroll', 'expense', 'dept.rooms'],
   ['5120', 'Rooms — OTA commission', 'expense', 'dept.rooms'],
@@ -95,6 +97,10 @@ const MAP_KEYS = [
   ['commission.ota', 'Commission kept back by OTAs / agents from their payouts', 'Guests & agents', '5120'],
   ['pos.takings', 'Restaurant bills paid at the restaurant (from the POS sessions)', 'Money received', '1160'],
   ['payables.supplier', 'Supplier bills not paid yet (Payables)', 'Suppliers', '2150'],
+  // Vendor share of tours / transport (migration 140)
+  ['vendor.share', "Vendor's part of activities — taken off revenue", 'Tour & transport vendors', '4490'],
+  ['vendor.cost', "Vendor's part of activities — booked as a cost", 'Tour & transport vendors', '5310'],
+  ['vendor.owed', 'Owed to tour & transport vendors, not paid yet', 'Tour & transport vendors', '2155'],
   // one key per cost category, used by Expenses and Payables (costCategories.js)
   ...COST_CATEGORIES.map(([k, label, code]) => [`expense.${k}`, label, 'Expenses & supplier bills', code]),
 ];

@@ -20,6 +20,7 @@ const ORDERED_PATHS = [
   { key: 'night_audit',   path: '/night-audit' },
   { key: 'receivables',   path: '/agents' },
   { key: 'payables',      path: '/payables' },
+  { key: 'vendors',       path: '/vendor-payouts' },
   { key: 'expenses',      path: '/expenses' },
   { key: 'accounting',    path: '/accounting' },
   { key: 'reports',       path: '/reports' },

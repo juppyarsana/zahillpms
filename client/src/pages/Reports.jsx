@@ -390,8 +390,8 @@ export default function Reports() {
           { item: 'Restaurant & POS', detail: 'charged to rooms + paid at the restaurant (POS sessions)', amount: rev.fnb.outlets, ...sub },
           { item: 'Extras', detail: 'Sales items', amount: rev.extras.total, ...group },
           ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, ...sub })),
-          { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, ...group },
-          ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${num(a.pax)} pax`, amount: a.amount, ...sub })),
+          { item: 'Activities', detail: plural(rev.activities.bookings, 'booking') + (rev.activities.vendor_share > 0 ? ` · vendors ${fmtIDR(rev.activities.vendor_share)} · hotel keeps ${fmtIDR(rev.activities.hotel_share)}` : ''), amount: rev.activities.total, ...group },
+          ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${num(a.pax)} pax` + (a.vendor_share > 0 ? ` · vendor ${fmtIDR(a.vendor_share)} · hotel keeps ${fmtIDR(a.hotel_share)}` : ''), amount: a.amount, ...sub })),
           ...(rev.events?.total ? [
             { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, ...group },
             ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${num(ev.pax)} pax`].filter(Boolean).join(' · '), amount: ev.amount, ...sub })),

@@ -10,17 +10,43 @@ const paidDirectly = m => !!m && m !== 'room_charge';
 //               room / not paid yet, left NULL (the folio adds them)
 //   included  — all-in: the parts inside the price (for the reports)
 //   none      — nothing
-function activityTaxes(mode, total, ps, paid) {
+// opts (migration 140, only used with 'included'): chargeService false = no
+// service charge; base 'margin' = tax only on the hotel's part, i.e. the price
+// less what the vendors get (vendorTotal).
+function activityTaxes(mode, total, ps, paid, opts = {}) {
   if (mode === 'none') return { sc: 0, tax: 0 };
   if (mode === 'included') {
-    const f = computeFolioTotals(1000000, ps?.tax_rate, ps?.service_charge_rate).total / 1000000;
-    const net = Math.round(total / f);   // whole rupiah, so the parts print cleanly
-    const sc = computeFolioTotals(net, ps?.tax_rate, ps?.service_charge_rate).service_charge_amount;
-    return { sc, tax: round2(total - net - sc) };
+    const scRate = opts.chargeService === false ? 0 : ps?.service_charge_rate;
+    const base = opts.base === 'margin' ? Math.max(0, total - (parseFloat(opts.vendorTotal) || 0)) : total;
+    const f = computeFolioTotals(1000000, ps?.tax_rate, scRate).total / 1000000;
+    const net = Math.round(base / f);   // whole rupiah, so the parts print cleanly
+    const sc = computeFolioTotals(net, ps?.tax_rate, scRate).service_charge_amount;
+    return { sc, tax: round2(base - net - sc) };
   }
   if (!paid) return { sc: null, tax: null };
   const t = computeFolioTotals(total, ps?.tax_rate, ps?.service_charge_rate);
   return { sc: t.service_charge_amount, tax: t.tax_amount };
+}
+// The tax options stamped on an activity booking, with what its vendors get.
+async function taxOptsFor(client, ab) {
+  const { rows: [v] } = await client.query(
+    'SELECT COALESCE(SUM(amount), 0) AS total FROM activity_booking_vendors WHERE activity_booking_id = $1', [ab.id]);
+  return { chargeService: ab.charge_service !== false, base: ab.tax_base || 'full', vendorTotal: parseFloat(v.total) || 0 };
+}
+// After a vendor amount changed: an activity taxed on the hotel's part gets
+// its service + tax parts worked out again (the price itself never changes).
+async function recomputeTaxes(client, abId) {
+  const { rows: [ab] } = await client.query('SELECT * FROM activity_bookings WHERE id = $1', [abId]);
+  if (!ab || ab.tax_mode !== 'included' || ab.tax_base !== 'margin') return;
+  const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [ab.property_id]);
+  const t = activityTaxes('included', parseFloat(ab.total_amount), ps, true, await taxOptsFor(client, ab));
+  await client.query('UPDATE activity_bookings SET service_charge_amount = $1, tax_amount = $2, updated_at = NOW() WHERE id = $3', [t.sc, t.tax, abId]);
+}
+// A vendor's amount for one trip from the activity's price: per trip, per
+// person × participants, or NULL when it is typed each time.
+function vendorAmount(v, participants) {
+  if (v.price_mode === 'typed' || v.price == null) return null;
+  return round2(parseFloat(v.price) * (v.price_mode === 'per_person' ? participants : 1));
 }
 // What the guest pays: the price, plus service + tax only when they're added on top.
 function amountPaid(ab) {
@@ -46,7 +72,8 @@ async function createBooking(propertyId, {
   try {
     await client.query('BEGIN');
     const { rows: [activity] } = await client.query(
-      'SELECT id, price, capacity_per_slot, is_available, tax_mode FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE',
+      `SELECT id, price, capacity_per_slot, is_available, tax_mode, tax_base, charge_service, vendor_treatment
+       FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE`,
       [activityId, propertyId]
     );
     if (!activity || !activity.is_available) {
@@ -97,19 +124,33 @@ async function createBooking(propertyId, {
     // activityTaxes). total_amount is always price × participants.
     const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]);
     const taxMode = activity.tax_mode || 'added';
-    const taxes = activityTaxes(taxMode, totalAmount, ps, paidDirectly(paymentMethod));
+    // The vendors of the activity and what this trip owes each (migration 140).
+    const { rows: vendors } = await client.query(
+      'SELECT supplier_id, price_mode, price FROM activity_vendors WHERE activity_id = $1 ORDER BY sort_order, created_at', [activityId]);
+    const vendorLines = vendors.map(v => ({ supplier_id: v.supplier_id, amount: vendorAmount(v, participants) }));
+    const taxOpts = {
+      chargeService: activity.charge_service !== false, base: activity.tax_base || 'full',
+      vendorTotal: vendorLines.reduce((s, v) => s + (v.amount || 0), 0),
+    };
+    const taxes = activityTaxes(taxMode, totalAmount, ps, paidDirectly(paymentMethod), taxOpts);
 
     const { rows: [booking] } = await client.query(
       `INSERT INTO activity_bookings
         (property_id, activity_id, booking_id, guest_name, guest_phone, scheduled_date, scheduled_time,
          num_participants, unit_price, total_amount, payment_method, status, pickup_location, notes, booked_via, created_by,
-         service_charge_amount, tax_amount, tax_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+         service_charge_amount, tax_amount, tax_mode, tax_base, charge_service, vendor_treatment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        RETURNING *`,
       [propertyId, activityId, bookingId || null, guestName || null, guestPhone || null, scheduledDate, scheduledTime || null,
         participants, unitPrice, totalAmount, paymentMethod || null, status, pickupLocation || null, notes || null,
-        bookedVia || 'staff', createdBy || null, taxes.sc, taxes.tax, taxMode]
+        bookedVia || 'staff', createdBy || null, taxes.sc, taxes.tax, taxMode,
+        taxOpts.base, taxOpts.chargeService, activity.vendor_treatment || 'rebate']
     );
+    for (const v of vendorLines) {
+      await client.query(
+        'INSERT INTO activity_booking_vendors (property_id, activity_booking_id, supplier_id, amount) VALUES ($1, $2, $3, $4)',
+        [propertyId, booking.id, v.supplier_id, v.amount]);
+    }
 
     let result = booking;
     if (status === 'confirmed' && booking.payment_method && booking.booking_id) {
@@ -145,7 +186,7 @@ async function postFolioCharge(client, activityBooking, actorUserId) {
   if (paidDirectly(activityBooking.payment_method)) {
     if (activityBooking.service_charge_amount == null || activityBooking.tax_amount == null) {   // booked before migration 078
       const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [activityBooking.property_id]);
-      const t = activityTaxes(activityBooking.tax_mode || 'added', parseFloat(activityBooking.total_amount), ps, true);
+      const t = activityTaxes(activityBooking.tax_mode || 'added', parseFloat(activityBooking.total_amount), ps, true, await taxOptsFor(client, activityBooking));
       activityBooking = { ...activityBooking, service_charge_amount: t.sc, tax_amount: t.tax };
       await client.query('UPDATE activity_bookings SET service_charge_amount = $1, tax_amount = $2 WHERE id = $3', [t.sc, t.tax, activityBooking.id]);
     }
@@ -238,7 +279,7 @@ async function setPayment(propertyId, id, paymentMethod, actorUserId) {
       if (!pm) { await client.query('ROLLBACK'); return { error: 'Invalid payment method', code: 'INVALID_PAYMENT_METHOD' }; }
     }
     const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]);
-    const taxes = activityTaxes(current.tax_mode || 'added', parseFloat(current.total_amount), ps, paidDirectly(paymentMethod));
+    const taxes = activityTaxes(current.tax_mode || 'added', parseFloat(current.total_amount), ps, paidDirectly(paymentMethod), await taxOptsFor(client, current));
     let { rows: [updated] } = await client.query(
       `UPDATE activity_bookings SET payment_method = $1, service_charge_amount = $2, tax_amount = $3, updated_at = NOW()
        WHERE id = $4 RETURNING *`,
@@ -257,4 +298,4 @@ async function setPayment(propertyId, id, paymentMethod, actorUserId) {
   }
 }
 
-module.exports = { createBooking, setStatus, setPayment, activityTaxes, amountPaid };
+module.exports = { createBooking, setStatus, setPayment, activityTaxes, amountPaid, recomputeTaxes };

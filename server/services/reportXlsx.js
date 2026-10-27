@@ -87,8 +87,8 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     { item: 'Restaurant & POS', detail: 'charged to rooms + paid at the restaurant (POS sessions)', amount: rev.fnb.outlets, _indent: true },
     { item: 'Extras', detail: 'Sales items', amount: rev.extras.total, _group: true },
     ...rev.extras.by_category.map(c => ({ item: c.label, detail: plural(c.qty, 'unit'), amount: c.amount, _indent: true })),
-    { item: 'Activities', detail: plural(rev.activities.bookings, 'booking'), amount: rev.activities.total, _group: true },
-    ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${a.pax} pax`, amount: a.amount, _indent: true })),
+    { item: 'Activities', detail: plural(rev.activities.bookings, 'booking') + (rev.activities.vendor_share > 0 ? ` · vendors Rp ${Math.round(rev.activities.vendor_share).toLocaleString('id-ID')}` : ''), amount: rev.activities.total, _group: true },
+    ...rev.activities.by_activity.map(a => ({ item: a.name, detail: `${plural(a.bookings, 'booking')} · ${a.pax} pax` + (a.vendor_share > 0 ? ` · vendor Rp ${Math.round(a.vendor_share).toLocaleString('id-ID')}` : ''), amount: a.amount, _indent: true })),
     ...(rev.events?.total ? [
       { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, _group: true },
       ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${ev.pax} pax`].filter(Boolean).join(' · '), amount: ev.amount, _indent: true })),

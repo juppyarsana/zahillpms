@@ -19,6 +19,9 @@
 //   bills        supplier bills (Payables, migrations 129–130) on the bill date:
 //                Dr the category's cost (same keys as Expenses) · Cr Accounts payable — suppliers
 //   bill_paid    payments to suppliers: Dr Accounts payable · Cr Cash / Bank
+//   vendor_share what a tour / transport trip owes its vendors (migration 140), on
+//                the trip's day: Dr Vendor share (lowers revenue) or Cost · Cr Owed to vendors
+//   vendor_paid  payouts to vendors: Dr Owed to vendors · Cr Cash
 //
 // Service charge + tax on a stay are the folio's own figures: worked out on
 // the stay's running total (as loadFolio does) and each day takes the
@@ -32,6 +35,7 @@
 const db = require('../db');
 const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
 const { loadMapping, EXTRA_CATEGORIES } = require('./accountingService');
+const { OWED_SQL: VENDOR_OWED_SQL } = require('./vendorPayoutService');
 
 const TZ = `'Asia/Makassar'`;
 const dayOf = col => `(${col} AT TIME ZONE ${TZ})::date`;
@@ -52,6 +56,8 @@ const ENTRIES = [
   ['expenses', 'Expenses'],
   ['bills', 'Supplier bills'],
   ['bill_paid', 'Payments to suppliers'],
+  ['vendor_share', 'Vendor share of activities'],
+  ['vendor_paid', 'Payments to vendors'],
   ['opening', 'Opening balances'],
   ['manual', 'Journal entries'],
   ['adjust', 'Corrections to closed days'],
@@ -114,6 +120,7 @@ async function collectPosts(propertyId, from, to) {
     { rows: groupPayments }, { rows: groupTransfers }, { rows: directSales }, { rows: activityMoney },
     { rows: activityRevenue }, { rows: posSessions }, { rows: agentPayments }, { rows: billed },
     { rows: commissions }, { rows: expenses }, { rows: billLines }, { rows: billPayments },
+    { rows: vendorLines }, { rows: vendorPayouts },
   ] = await Promise.all([
     loadMapping(propertyId),
     db.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]),
@@ -255,6 +262,19 @@ async function collectPosts(propertyId, from, to) {
     db.query(`
       SELECT ${ymd('p.paid_on')} AS day, p.amount, p.method, p.reference, s.name AS supplier
       FROM supplier_payments p JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.property_id = $3 AND p.is_voided = false AND p.paid_on BETWEEN $1::date AND $2::date`, P),
+    db.query(`
+      SELECT ${ymd('ab.scheduled_date')} AS day, bv.amount, ab.vendor_treatment, s.name AS supplier, a.name AS activity,
+             COALESCE(g.name, ab.guest_name, 'Walk-in') AS guest
+      FROM activity_booking_vendors bv
+      JOIN activity_bookings ab ON ab.id = bv.activity_booking_id
+      JOIN activities a ON a.id = ab.activity_id
+      JOIN suppliers s ON s.id = bv.supplier_id
+      LEFT JOIN bookings b ON b.id = ab.booking_id LEFT JOIN guests g ON g.id = b.guest_id
+      WHERE bv.property_id = $3 AND ${VENDOR_OWED_SQL} AND bv.amount > 0 AND ab.scheduled_date BETWEEN $1::date AND $2::date`, P),
+    db.query(`
+      SELECT ${ymd('p.paid_on')} AS day, p.amount, p.method, p.reference, p.payout_no, s.name AS supplier
+      FROM vendor_payouts p JOIN suppliers s ON s.id = p.supplier_id
       WHERE p.property_id = $3 AND p.is_voided = false AND p.paid_on BETWEEN $1::date AND $2::date`, P),
   ]);
 
@@ -468,6 +488,19 @@ async function collectPosts(propertyId, from, to) {
     const memo = [p.supplier, p.reference].filter(Boolean).join(' · ');
     post(p.day, 'bill_paid', 'payables.supplier', num(p.amount), p.supplier, memo);
     post(p.day, 'bill_paid', `pay.${p.method || 'other'}`, -num(p.amount), p.supplier, memo);
+  }
+
+  // ── Vendors of tours / transport (migration 140) ──
+  for (const v of vendorLines) {
+    const memo = `${v.supplier} · ${v.activity}`;
+    post(v.day, 'vendor_share', v.vendor_treatment === 'cost' ? 'vendor.cost' : 'vendor.share', num(v.amount), v.guest, memo);
+    post(v.day, 'vendor_share', 'vendor.owed', -num(v.amount), v.guest, memo);
+  }
+  for (const p of vendorPayouts) {
+    const ref = `VP-${String(p.payout_no).padStart(4, '0')}`;
+    const memo = [p.supplier, p.reference].filter(Boolean).join(' · ');
+    post(p.day, 'vendor_paid', 'vendor.owed', num(p.amount), ref, memo);
+    post(p.day, 'vendor_paid', `pay.${p.method || 'other'}`, -num(p.amount), ref, memo);
   }
 
   // ── The accountant's own entries (migration 111): stored, each line on its account ──

@@ -59,7 +59,7 @@ async function buildFullReport(propertyId, from, to) {
       FROM x JOIN products p ON p.id = x.product_id WHERE NOT x.comp GROUP BY p.category`, P),
     db.query(`
       WITH x AS (${ACTIVITY_SQL})
-      SELECT name, tax_mode, comp, COUNT(*) AS bookings, SUM(num_participants) AS pax, SUM(net) AS net,
+      SELECT name, tax_mode, comp, COUNT(*) AS bookings, SUM(num_participants) AS pax, SUM(net) AS net, SUM(vendor) AS vendor,
              SUM(CASE WHEN tax_mode = 'included' THEN sc_part ELSE 0 END) AS sc_included,
              SUM(CASE WHEN tax_mode = 'included' THEN tax_part ELSE 0 END) AS tax_included
       FROM x GROUP BY name, tax_mode, comp`, P),
@@ -192,13 +192,16 @@ async function buildFullReport(propertyId, from, to) {
   let actSc = 0, actTax = 0, actAddedNet = 0;
   for (const a of activities) {
     if (a.comp) continue;
-    const cur = actMap.get(a.name) || { name: a.name, bookings: 0, pax: 0, amount: 0 };
+    const cur = actMap.get(a.name) || { name: a.name, bookings: 0, pax: 0, amount: 0, vendor_share: 0 };
     cur.bookings += parseInt(a.bookings); cur.pax += parseInt(a.pax) || 0; cur.amount += parseFloat(a.net);
+    cur.vendor_share += parseFloat(a.vendor) || 0;   // what the trips owe their vendors (migration 140)
     actMap.set(a.name, cur);
     if (a.tax_mode === 'added') actAddedNet += parseFloat(a.net);
     actSc += parseFloat(a.sc_included); actTax += parseFloat(a.tax_included);
   }
-  const activitiesByName = [...actMap.values()].map(a => ({ ...a, amount: r2(a.amount) })).sort((a, b) => b.amount - a.amount);
+  const activitiesByName = [...actMap.values()].map(a => ({ ...a, amount: r2(a.amount), vendor_share: r2(a.vendor_share), hotel_share: r2(a.amount - a.vendor_share) }))
+    .sort((a, b) => b.amount - a.amount);
+  const activityVendorShare = r2(activitiesByName.reduce((s, a) => s + a.vendor_share, 0));
 
   // Meeting room & events: confirmed events' own lines (not their restaurant bills), per event.
   const { rows: eventRows } = await db.query(`
@@ -213,7 +216,8 @@ async function buildFullReport(propertyId, from, to) {
     room: r2(base.room_revenue),
     fnb: { total: r2(base.fnb_revenue), ...base.fnb_breakdown },
     extras: { total: r2(base.ancillary_revenue), by_category: extrasByCategory },
-    activities: { total: r2(base.activity_revenue), bookings: base.activity_count, by_activity: activitiesByName },
+    activities: { total: r2(base.activity_revenue), bookings: base.activity_count, by_activity: activitiesByName,
+      vendor_share: activityVendorShare, hotel_share: r2(base.activity_revenue - activityVendorShare) },
     // Meeting room & events (migration 106): venue hire + other lines of confirmed events.
     events: { total: r2(base.event_revenue || 0), by_event: eventsByName },
     total: r2(base.total_revenue),

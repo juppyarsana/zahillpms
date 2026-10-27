@@ -144,6 +144,7 @@ app.use('/api/board', auth, moduleGuard('in_room_media'), require('./routes/boar
 app.use('/api/iot', auth, moduleGuard('room_controller'), require('./routes/iot'));
 app.use('/api/insights', auth, moduleGuard('insights'), require('./routes/insights'));
 app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/activities'));
+app.use('/api/vendors', auth, moduleGuard('activities'), require('./middleware/requireOwnerOrMenu')('vendors'), require('./routes/vendors'));
 app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/expenses'));
 app.use('/api/stock', auth, moduleGuard('back_office'), require('./routes/stock'));

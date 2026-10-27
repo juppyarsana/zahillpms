@@ -8,7 +8,10 @@ const CATEGORIES = ['tour', 'transport', 'wellness', 'other'];
 const CAT_ICONS = { tour: '🥾', transport: '🚐', wellness: '🧘', other: '📦' };
 const STATUSES = ['requested', 'confirmed', 'completed', 'cancelled', 'no_show'];
 const STATUS_BADGE = { requested: 'amber', confirmed: 'blue', completed: 'green', cancelled: 'gray', no_show: 'red' };
-const EMPTY_ACTIVITY_FORM = { name: '', category: 'tour', price: '', duration_minutes: '', capacity_per_slot: '', description: '', is_available: true, tax_mode: 'added' };
+const EMPTY_ACTIVITY_FORM = { name: '', category: 'tour', price: '', duration_minutes: '', capacity_per_slot: '', description: '', is_available: true, tax_mode: 'added',
+  tax_base: 'full', charge_service: true, vendor_treatment: 'rebate', vendors: [] };
+// How a vendor is paid for one trip (migration 140).
+const PRICE_MODES = [['per_trip', 'per trip'], ['per_person', 'per person'], ['typed', 'typed for each trip']];
 // How service charge + tax work for an activity (migration 078).
 const TAX_MODES = [
   { key: 'added',    label: 'Added on top (price is before tax)', short: '++', hint: 'Like rooms: service charge and tax are added to the price. Usual for things the hotel runs itself.' },
@@ -18,8 +21,12 @@ const TAX_MODES = [
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID'); }
 
 export default function Activities() {
-  const { user } = useAuth();
+  const { user, can, hasModule } = useAuth();
   const isOwner = user?.role === 'owner';
+  // Vendor prices (migration 140): owner or the `vendors` permission.
+  const seesVendors = can('vendors');
+  const [vendorList, setVendorList] = useState([]);
+  const [newVendor, setNewVendor] = useState('');
 
   const [tab, setTab] = useState('bookings');
   const [activities, setActivities] = useState([]);
@@ -48,7 +55,11 @@ export default function Activities() {
     setSummary(r.data);
   }
 
-  useEffect(() => { loadActivities(); loadSummary(); }, []);
+  async function loadVendorList() {
+    if (!seesVendors) return;
+    try { const r = await api.get('/api/vendors'); setVendorList(r.data.filter(v => v.is_active)); } catch { /* module or permission missing */ }
+  }
+  useEffect(() => { loadActivities(); loadSummary(); loadVendorList(); }, []);
   useEffect(() => { loadBookings(); }, [statusFilter, dateFilter]);
 
   function openAddActivity() { setActivityForm(EMPTY_ACTIVITY_FORM); setActivityModal({ mode: 'add' }); }
@@ -56,7 +67,9 @@ export default function Activities() {
     setActivityForm({
       name: a.name, category: a.category, price: a.price, duration_minutes: a.duration_minutes ?? '',
       capacity_per_slot: a.capacity_per_slot ?? '', description: a.description || '', is_available: a.is_available,
-      tax_mode: a.tax_mode || 'added',
+      tax_mode: a.tax_mode || 'added', tax_base: a.tax_base || 'full', charge_service: a.charge_service !== false,
+      vendor_treatment: a.vendor_treatment || 'rebate',
+      vendors: (a.vendors || []).map(v => ({ supplier_id: v.supplier_id, price_mode: v.price_mode, price: v.price ?? '' })),
     });
     setActivityModal({ mode: 'edit', id: a.id });
   }
@@ -68,17 +81,38 @@ export default function Activities() {
       duration_minutes: activityForm.duration_minutes === '' ? null : parseInt(activityForm.duration_minutes),
       capacity_per_slot: activityForm.capacity_per_slot === '' ? null : parseInt(activityForm.capacity_per_slot),
       tax_mode: activityForm.tax_mode,
+      tax_base: activityForm.tax_base, charge_service: activityForm.charge_service, vendor_treatment: activityForm.vendor_treatment,
+      ...(seesVendors ? { vendors: activityForm.vendors.filter(v => v.supplier_id) } : {}),
     };
-    if (activityModal.mode === 'add') {
-      await api.post('/api/activities', payload);
-    } else {
-      await api.put(`/api/activities/${activityModal.id}`, { ...payload, is_available: activityForm.is_available });
+    try {
+      if (activityModal.mode === 'add') {
+        await api.post('/api/activities', payload);
+      } else {
+        await api.put(`/api/activities/${activityModal.id}`, { ...payload, is_available: activityForm.is_available });
+      }
+    } catch (err) {
+      alert(err?.response?.data?.error || 'Could not save the activity');
+      return;
     }
     setActivityModal(null);
     loadActivities();
   }
 
   function openNewBooking() { setBookingModal(true); }
+
+  const setVendor = (i, patch) => setActivityForm(f => ({ ...f, vendors: f.vendors.map((v, j) => j === i ? { ...v, ...patch } : v) }));
+  async function addNewVendor() {
+    const name = newVendor.trim();
+    if (!name) return;
+    try {
+      const { data } = await api.post('/api/vendors', { name });
+      await loadVendorList();
+      setActivityForm(f => ({ ...f, vendors: [...f.vendors, { supplier_id: data.vendor.id, price_mode: 'per_trip', price: '' }] }));
+      setNewVendor('');
+    } catch (err) { alert(err?.response?.data?.error || 'Could not add the vendor'); }
+  }
+  // What one trip of `pax` people owes the vendors, from the form (for the hint).
+  const formVendorTotal = (pax = 1) => activityForm.vendors.reduce((s, v) => s + (v.price_mode === 'typed' ? 0 : (parseFloat(v.price) || 0) * (v.price_mode === 'per_person' ? pax : 1)), 0);
 
   async function downloadReceipt(b) {
     try {
@@ -203,7 +237,11 @@ export default function Activities() {
                 <tbody>
                   {activities.map(a => (
                     <tr key={a.id}>
-                      <td style={{ fontWeight: 600 }}>{a.name}</td>
+                      <td style={{ fontWeight: 600 }}>{a.name}
+                        {seesVendors && a.vendors?.length > 0 && <div className="text-muted" style={{ fontSize: 11, fontWeight: 400 }}>
+                          🚐 {a.vendors.map(v => `${v.supplier_name} ${v.price_mode === 'typed' ? '(typed)' : `${fmtIDR(v.price)}${v.price_mode === 'per_person' ? '/pax' : ''}`}`).join(', ')}
+                        </div>}
+                      </td>
                       <td>{CAT_ICONS[a.category]} {a.category}</td>
                       <td>{fmtIDR(a.price)} <span className="badge badge-gray" style={{ fontSize: 10 }} title={TAX_MODES.find(m => m.key === (a.tax_mode || 'added'))?.label}>{TAX_MODES.find(m => m.key === (a.tax_mode || 'added'))?.short}</span></td>
                       <td>{a.duration_minutes ? `${a.duration_minutes} min` : '—'}</td>
@@ -250,6 +288,63 @@ export default function Activities() {
                   {TAX_MODES.find(m => m.key === activityForm.tax_mode)?.hint} Applies to new bookings.
                 </div>
               </div>
+              {activityForm.tax_mode === 'included' && (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Service charge</label>
+                    <select className="form-select" value={activityForm.charge_service ? 'yes' : 'no'} onChange={e => setActivityForm(f => ({ ...f, charge_service: e.target.value === 'yes' }))}>
+                      <option value="yes">Inside the price</option>
+                      <option value="no">None on this activity</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Tax worked out on</label>
+                    <select className="form-select" value={activityForm.tax_base} onChange={e => setActivityForm(f => ({ ...f, tax_base: e.target.value }))}>
+                      <option value="full">The full price</option>
+                      <option value="margin">Hotel's part only (− vendor)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+              {seesVendors && hasModule('activities') && (
+                <div className="form-group" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                  <label className="form-label">Vendor (who runs it — paid from the guest's money)</label>
+                  {activityForm.vendors.map((v, i) => (
+                    <div key={i} className="flex gap-2" style={{ marginBottom: 8, flexWrap: 'wrap' }}>
+                      <select className="form-select" style={{ flex: '2 1 160px' }} value={v.supplier_id} onChange={e => setVendor(i, { supplier_id: e.target.value })}>
+                        <option value="">Choose vendor…</option>
+                        {vendorList.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
+                      </select>
+                      <select className="form-select" style={{ flex: '1 1 130px' }} value={v.price_mode} onChange={e => setVendor(i, { price_mode: e.target.value })}>
+                        {PRICE_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                      {v.price_mode !== 'typed' && <input className="form-input" style={{ flex: '1 1 110px' }} type="number" min="0" placeholder="Rp" value={v.price} onChange={e => setVendor(i, { price: e.target.value })} />}
+                      <button className="btn btn-sm btn-secondary" onClick={() => setActivityForm(f => ({ ...f, vendors: f.vendors.filter((_, j) => j !== i) }))}>✕</button>
+                    </div>
+                  ))}
+                  <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                    {activityForm.vendors.length < 10 && <button className="btn btn-sm btn-secondary" onClick={() => setActivityForm(f => ({ ...f, vendors: [...f.vendors, { supplier_id: '', price_mode: 'per_trip', price: '' }] }))}>+ Vendor</button>}
+                    <input className="form-input" style={{ flex: '1 1 160px', height: 30 }} placeholder="New vendor name" value={newVendor} onChange={e => setNewVendor(e.target.value)} />
+                    <button className="btn btn-sm btn-secondary" disabled={!newVendor.trim()} onClick={addNewVendor}>Add new vendor</button>
+                  </div>
+                  {activityForm.vendors.length > 0 && (
+                    <>
+                      <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
+                        <label className="form-label">The vendor's part in the books</label>
+                        <select className="form-select" value={activityForm.vendor_treatment} onChange={e => setActivityForm(f => ({ ...f, vendor_treatment: e.target.value }))}>
+                          <option value="rebate">Taken off revenue (rebate)</option>
+                          <option value="cost">Booked as a cost</option>
+                        </select>
+                      </div>
+                      {activityForm.price !== '' && formVendorTotal() > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                          1 person: guest pays {fmtIDR(activityForm.price)}, vendor {fmtIDR(formVendorTotal(1))}, hotel keeps {fmtIDR(parseFloat(activityForm.price) - formVendorTotal(1))}.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               <div className="form-group"><label className="form-label">Description</label><textarea className="form-textarea" value={activityForm.description} onChange={e => setActivityForm(f => ({ ...f, description: e.target.value }))} /></div>
               {activityModal.mode === 'edit' && (
                 <div className="form-group">

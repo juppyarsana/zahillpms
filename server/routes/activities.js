@@ -8,6 +8,9 @@ const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { renderActivityReceipt } = require('../services/activityReceiptPdf');
 
+// Vendor prices (migration 140) are only for the owner or the `vendors` permission.
+const canVendors = req => req.user?.role === 'owner' || (Array.isArray(req.user?.allowed_menus) && req.user.allowed_menus.includes('vendors'));
+
 // GET /api/activities — catalog
 router.get('/', auth, async (req, res) => {
   const { category, available } = req.query;
@@ -18,6 +21,13 @@ router.get('/', auth, async (req, res) => {
   query += ' ORDER BY sort_order, name';
   try {
     const { rows } = await db.query(query, params);
+    if (canVendors(req) && rows.length) {
+      const { rows: vendors } = await db.query(
+        `SELECT av.activity_id, av.supplier_id, av.price_mode, av.price, s.name AS supplier_name
+         FROM activity_vendors av JOIN suppliers s ON s.id = av.supplier_id
+         WHERE av.property_id = $1 ORDER BY av.sort_order, av.created_at`, [req.propertyId]);
+      for (const a of rows) a.vendors = vendors.filter(v => v.activity_id === a.id);
+    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -33,11 +43,23 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
   const { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
   if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
+  const vs = activitiesService.cleanVendorSettings(req.body);
+  if (vs.error) return res.status(400).json({ error: vs.error });
+  const client = await db.pool.connect();
   try {
-    const activity = await activitiesService.createActivity(req.propertyId, { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode });
+    await client.query('BEGIN');
+    const activity = await activitiesService.createActivity(req.propertyId, { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode, ...vs.value }, client);
+    if (vs.value.vendors) {
+      const r = await activitiesService.saveVendors(client, req.propertyId, activity.id, vs.value.vendors);
+      if (r.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: r.error }); }
+    }
+    await client.query('COMMIT');
     res.status(201).json(activity);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -45,20 +67,36 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
   const { name, category, price, description, duration_minutes, capacity_per_slot, is_available, tax_mode } = req.body;
   if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
+  const client = await db.pool.connect();
   try {
-    const { rows } = await db.query(
+    await client.query('BEGIN');
+    const { rows: [current] } = await client.query('SELECT * FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]);
+    if (!current) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Activity not found' }); }
+    const vs = activitiesService.cleanVendorSettings(req.body, current);
+    if (vs.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: vs.error }); }
+    const { rows } = await client.query(
       `UPDATE activities SET
         name = COALESCE($1, name), category = COALESCE($2, category),
         price = COALESCE($3, price), description = COALESCE($4, description),
         duration_minutes = COALESCE($5, duration_minutes), capacity_per_slot = COALESCE($6, capacity_per_slot),
-        is_available = COALESCE($7, is_available), tax_mode = COALESCE($10, tax_mode)
+        is_available = COALESCE($7, is_available), tax_mode = COALESCE($10, tax_mode),
+        tax_base = $11, charge_service = $12, vendor_treatment = COALESCE($13, vendor_treatment)
        WHERE id = $8 AND property_id = $9 RETURNING *`,
-      [name, category, price, description, duration_minutes, capacity_per_slot, is_available, req.params.id, req.propertyId, tax_mode ?? null]
+      [name, category, price, description, duration_minutes, capacity_per_slot, is_available, req.params.id, req.propertyId, tax_mode ?? null,
+       vs.value.tax_base, vs.value.charge_service, vs.value.vendor_treatment ?? null]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Activity not found' });
+    if (vs.value.vendors) {
+      if (!canVendors(req)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Forbidden' }); }
+      const r = await activitiesService.saveVendors(client, req.propertyId, current.id, vs.value.vendors);
+      if (r.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: r.error }); }
+    }
+    await client.query('COMMIT');
     res.json(rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -4,7 +4,7 @@ Last updated: 2026-10-16
 
 ---
 
-## 🔵 Vendor share — tours / transport paid to a third party (DISCUSSED 2026-10-26, not built — continue when the owner is back)
+## 🟢 Vendor share — tours / transport paid to a third party (BUILT 2026-10-27 on `dev`, migration 140 — Finance → Vendor payouts; write-up in CLAUDE.md "Vendor payouts")
 
 Jeep tracking, transport (e.g. a FO note "transport to Amed 29 Oct Rp 650.000, pick-up Hot Spring 28 Oct Rp 300.000") etc. are delivered by a vendor the hotel pays from the guest's money. Today the guest side works (Activities / Sales items) but nothing records what is owed to the vendor.
 
@@ -42,7 +42,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Stock page (migration 136, 2026-10-23, on `dev`):** Operations → Stock, separate from Purchasing (POs, Bought without a PO, Suppliers): stock items + Sales items kept in stock in one list with history, Adjust (waste / used / correction), Stock opname (count sheet PDF, counts saved as typed, finish = fixed; Telegram summary + email list), Usage between two opnames (sold / used / waste / corrections / opname difference, Excel), Stock value; `stock` permission; write-off alert. Next: room supplies per occupied room-night taken off stock at the night audit. Details: CLAUDE.md → "Stock page".
 **OTA price ladder (migration 137, 2026-10-23, on `dev`):** sales' OTA prices follow rooms sold in the whole hotel. Pricing → My rules → 📈 OTA price ladder: per meal plan (Breakfast Non Refund / Breakfast Refundable) a grid of "sold up to" tiers × room types, pasted from Excel; the channel manager sends the price of the tier the next room falls in, re-counted on every booking / cancellation (~20 s). A fixed OTA price still wins on its nights. Details: CLAUDE.md → "OTA price ladder".
 **App colour + tab icon (migration 138, 2026-10-23, on `dev`):** each property has its own staff-app colour (Superadmin → Branding) and its own tab / home-screen icon (its logo, or its first letter) — no more Zahill maroon and lotus for every hotel. Details: CLAUDE.md → "Per-property app colour + tab icon".
-Next migration number: **140**.
+Next migration number: **141**.
 
 ### Channex re-certification run sheet (2026-10-21)
 

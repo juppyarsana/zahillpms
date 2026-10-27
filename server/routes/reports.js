@@ -117,7 +117,8 @@ const ACTIVITY_SQL = `
          CASE WHEN ab.tax_mode = 'included'
               THEN ab.total_amount - COALESCE(ab.service_charge_amount, 0) - COALESCE(ab.tax_amount, 0)
               ELSE ab.total_amount END AS net,
-         COALESCE(ab.payment_method = 'room_charge' AND b.complimentary_scope = 'all', false) AS comp
+         COALESCE(ab.payment_method = 'room_charge' AND b.complimentary_scope = 'all', false) AS comp,
+         (SELECT COALESCE(SUM(bv.amount), 0) FROM activity_booking_vendors bv WHERE bv.activity_booking_id = ab.id) AS vendor
   FROM activity_bookings ab
   JOIN activities a ON a.id = ab.activity_id
   LEFT JOIN bookings b ON b.id = ab.booking_id
