@@ -15,6 +15,7 @@ export const GROUPS = [
     { id: 'about', icon: '📘', title: { id: 'Tentang panduan ini', en: 'About this guide' } },
   ] },
   { label: { id: 'Front Desk', en: 'Front Desk' }, chapters: [
+    { id: 'today', icon: '☀', title: { id: 'Today — halaman front desk', en: 'Today — the front desk page' } },
     { id: 'late-arrival', icon: '🌙', title: { id: 'Tamu datang lewat tengah malam', en: 'Guests arriving after midnight' } },
     { id: 'room-move', icon: '🔀', title: { id: 'Pindah kamar', en: 'Moving to another room' } },
     { id: 'kids-breakfast', icon: '🧒', title: { id: 'Anak & sarapan gratis', en: 'Children & free breakfast' } },

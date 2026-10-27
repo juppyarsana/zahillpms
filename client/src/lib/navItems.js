@@ -26,6 +26,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   const hasCosts = hasModule('back_office') || hasModule('accounting');   // where costs are entered
   const groups = [
     { id: 'front-desk', label: 'Front Desk', items: [
+      // Today: the day's figures, room board and arrivals / in house / departures with Check in / out.
+      (can('checkin_full') || can('guest_lists') || can('dashboard')) && res && { to: '/today', icon: '☀', label: 'Today' },
       can('reservations') && res && { to: '/availability', icon: '🔎', label: 'Availability' },
       can('reservations') && res && { to: '/reservations', icon: '📅', label: 'Reservations' },
       can('reservations') && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },

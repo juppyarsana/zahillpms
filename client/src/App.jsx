@@ -24,6 +24,7 @@ import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
+import Today from './pages/Today';
 import Forecast from './pages/Forecast';
 import Costs from './pages/Costs';
 import Revenue from './pages/Revenue';
@@ -322,6 +323,7 @@ export default function App() {
                   <Route path="/reservations/:id" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><BookingDetail /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/group/:groupId" element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><GroupDetail /></RequireModule></RequireMenu>} />
                   <Route path="/checkin"          element={<RequireMenu menuKey="checkin_full"><RequireModule moduleName={['reservations', 'front_desk']}><CheckIn /></RequireModule></RequireMenu>} />
+                  <Route path="/today"            element={<RequireMenu menuKey={['checkin_full', 'guest_lists', 'dashboard']}><RequireModule moduleName="reservations"><Today /></RequireModule></RequireMenu>} />
                   <Route path="/guest-lists"      element={<RequireMenu menuKey="guest_lists"><RequireModule moduleName="reservations"><GuestLists /></RequireModule></RequireMenu>} />
                   <Route path="/guide"            element={<Guide />} />
                   <Route path="/guide/:chapter"   element={<Guide />} />
