@@ -26,6 +26,8 @@ import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
 import Forecast from './pages/Forecast';
 import Costs from './pages/Costs';
+import Revenue from './pages/Revenue';
+import Profit from './pages/Profit';
 import Overview from './pages/Overview';
 import Guide from './pages/Guide';
 import Restaurant from './pages/Restaurant';
@@ -295,6 +297,8 @@ export default function App() {
                   <Route path="/forecast"         element={<RequireMenu menuKey="forecast"><RequireModule moduleName="reservations"><Forecast /></RequireModule></RequireMenu>} />
                   <Route path="/overview"         element={<RequireMenu menuKey="overview"><Overview /></RequireMenu>} />
                   <Route path="/costs"            element={<RequireMenu menuKey="costs"><Costs /></RequireMenu>} />
+                  <Route path="/revenue"          element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Revenue /></RequireModule></RequireMenu>} />
+                  <Route path="/profit"           element={<RequireMenu menuKey="profit"><RequireModule moduleName="accounting"><Profit /></RequireModule></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />

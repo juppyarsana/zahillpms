@@ -32,7 +32,7 @@ export const GROUPS = [
     { id: 'stock', icon: '🗃', title: { id: 'Stok: adjust, stock opname & pemakaian', en: 'Stock: adjust, stock opname & usage' } },
   ] },
   { label: { id: 'Keuangan', en: 'Finance' }, chapters: [
-    { id: 'costs', icon: '🏷', title: { id: 'Overview & biaya per departemen', en: 'Overview & costs by department' } },
+    { id: 'costs', icon: '🏷', title: { id: 'Overview, pendapatan, biaya & laba', en: 'Overview, revenue, costs & profit' } },
     { id: 'purchasing', icon: '🛒', title: { id: 'Belanja: pakai halaman yang mana', en: 'Buying: which page to use' } },
     { id: 'payables', icon: '📥', title: { id: 'Hutang ke supplier (Payables)', en: 'Payables — supplier bills' } },
     { id: 'vendor-payouts', icon: '🚐', title: { id: 'Bayar vendor tur & transport', en: 'Vendor payouts — tours & transport' } },

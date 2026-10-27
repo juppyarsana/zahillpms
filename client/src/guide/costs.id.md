@@ -1,6 +1,8 @@
-# Overview & Biaya per departemen
+# Overview, pendapatan, biaya & laba
 
-Dua halaman untuk owner dan manajer. Owner selalu bisa membukanya; yang lain perlu izin **Overview** atau **Costs by department** (Roles & Permissions).
+Empat halaman untuk owner dan manajer, di **Overview** dan **Insights**. Owner selalu bisa membukanya; yang lain perlu izinnya (Roles & Permissions): **Overview**, **Revenue + Reports**, **Costs by department**, **Profit**.
+
+Keempatnya membandingkan satu bulan dengan bulan sebelumnya. Bulan yang masih berjalan dibandingkan dengan **tanggal yang sama** bulan sebelumnya.
 
 ## Overview
 
@@ -27,3 +29,21 @@ Semua angka sama dengan angka di halamannya sendiri (Reports, Cashier Closing, R
 > Yang dihitung: semua yang dicatat di **Expenses** dan **Payables** (tagihan supplier), menurut **Department**-nya. Gaji, komisi agen dan jurnal manual akuntan belum termasuk.
 
 Biaya masuk departemen yang salah? Ubah **Department** pada expense atau tagihan tersebut. *Usual department* supplier (Payables → Suppliers → Edit) akan mengisinya otomatis lain kali.
+
+## Pendapatan (Revenue)
+
+**[Insights → Revenue](/revenue)** — uang yang masuk, dari mana asalnya, dan bagaimana kamar terjual. Angkanya sama dengan halaman Reports; Excel dan PDF tetap di sana.
+
+- Total pendapatan, okupansi, rata-rata harga kamar (ADR) dan pendapatan per kamar tersedia (RevPAR) — dan bulan yang sama tahun lalu jika ada.
+- **Every day** — kamar, makanan & minuman, extras & aktivitas. Arahkan kursor ke satu hari untuk melihat angkanya.
+- **Where it came from**, **Stays by channel** (OTA ditandai — mereka mengambil komisi) dan **Room types**.
+
+Semua angka bersih — sebelum service charge dan pajak.
+
+## Laba (Profit)
+
+**[Insights → Profit](/profit)** — Laba Rugi akuntan dalam empat langkah: pendapatan → laba departemen → gross operating profit (GOP) → laba bersih. Ketuk baris "−" untuk melihat akunnya. Laporan lengkap tetap di Accounting → Profit & Loss.
+
+> Laba hanya selengkap pembukuannya. Kotak kuning menyebut apa yang belum ada — misalnya belum ada jurnal untuk gaji, sewa atau penyusutan. Selama itu belum dicatat, laba yang tampil lebih tinggi dari sebenarnya.
+
+Pendapatan di halaman Profit adalah yang sudah masuk ke tagihan tamu, jadi bisa lebih rendah daripada di halaman Revenue selama tamu belum check-in. Halaman menyebut selisihnya.

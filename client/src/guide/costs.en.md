@@ -1,6 +1,8 @@
-# Overview & Costs by department
+# Overview, revenue, costs & profit
 
-Two pages for the owner and managers. Owners always see them; anyone else needs the **Overview** or **Costs by department** permission (Roles & Permissions).
+Four pages for the owner and managers, under **Overview** and **Insights**. Owners always see them; anyone else needs the permission (Roles & Permissions): **Overview**, **Revenue + Reports**, **Costs by department**, **Profit**.
+
+All four compare a month with the month before. While a month is still running, it is compared with the **same days** of the month before.
 
 ## Overview
 
@@ -27,3 +29,21 @@ Every figure is the same as on its own page (Reports, Cashier Closing, Receivabl
 > What is counted: everything entered in **Expenses** and **Payables** (supplier bills), each by its **Department**. Salaries, agent commission and the accountant's journal entries are not in it yet.
 
 A cost in the wrong department? Change the **Department** on the expense or the bill. The supplier's *usual department* (Payables → Suppliers → Edit) fills it in next time.
+
+## Revenue
+
+**[Insights → Revenue](/revenue)** — what came in, where it came from, how the rooms sold. The same figures as the Reports page; the Excel and PDF stay there.
+
+- Total revenue, occupancy, average room rate (ADR) and revenue per available room (RevPAR) — and the same month last year when there is one.
+- **Every day** — rooms, food & beverage, extras & activities. Hover a day for its figures.
+- **Where it came from**, **Stays by channel** (OTAs marked — they take a commission) and **Room types**.
+
+All amounts are net — before service charge and tax.
+
+## Profit
+
+**[Insights → Profit](/profit)** — the accountant's Profit & Loss in four steps: revenue → department profit → gross operating profit (GOP) → net profit. Tap a "−" line to see its accounts. The full statement stays in Accounting → Profit & Loss.
+
+> Profit is only as complete as the books. A yellow box says what is missing — for example no journal entries yet for salaries, rent or depreciation. Until those are entered, the profit shown is higher than it really is.
+
+Revenue on Profit is what is posted to the guests' bills, so it can be lower than on the Revenue page while guests have not checked in yet. The page says how much.

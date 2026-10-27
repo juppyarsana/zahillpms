@@ -51,10 +51,11 @@ export const MENU_DEFS = [
   { key: 'vendors',          label: 'Vendor prices & payouts (tours / transport vendors)', group: 'Finance' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
   { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
-  { key: 'reports',          label: 'Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },
+  { key: 'reports',          label: 'Revenue + Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },
   // The owner's home: needs-you list, tonight, revenue, money in, owed, biggest costs (a manager's login).
   { key: 'overview',         label: 'Overview (owner / manager home — revenue, money, costs, what needs attention)', group: 'Revenue' },
   { key: 'costs',            label: 'Costs by department (Expenses + supplier bills, department profit)', group: 'Revenue' },
+  { key: 'profit',           label: 'Profit (the books in four steps: department profit, GOP, net profit)', group: 'Revenue' },
   { key: 'purchasing',       label: 'Purchasing (suppliers, purchase orders, bought without a PO)', group: 'Operations' },
   { key: 'stock',            label: 'Stock (stock items, adjust, stock opname, usage)', group: 'Operations' },
   // An action permission: approve a purchase order (needs Purchasing too).
