@@ -4,6 +4,7 @@ The owner's and managers' pages: **Overview** at the top of the menu, and the **
 
 | Insights | Answers |
 |---|---|
+| **Summary** | Every figure on one page, for any period — with Excel / PDF |
 | **Sales** → Revenue | How much did we sell, and where did it come from? |
 | **Sales** → Rooms | How full were we, which rooms and meal plans sell? |
 | **Sales** → Guests | Who are our guests, where are they from, do they come back? |
@@ -45,7 +46,7 @@ A cost in the wrong department? Change the **Department** on the expense or the 
 
 ## Revenue
 
-**[Insights → Revenue](/revenue)** — what came in and where it came from. The full figures, with Excel and PDF, are the **Manager report** (button at the top, or Export / Print).
+**[Insights → Revenue](/revenue)** — what came in and where it came from. The full figures, with Excel and PDF, are on **Insights → Summary**.
 
 - Total revenue, occupancy, average room rate (ADR) and revenue per available room (RevPAR) — and the same month last year when there is one.
 - **Every day** — rooms, food & beverage, extras & activities. Hover a day for its figures.
@@ -71,9 +72,9 @@ These three have **Month / 3 months / Year** at the top, with ‹ › to move, a
 
 ## Export / Print — every report in one place
 
-**[Insights → Export / Print](/reports)** lists every report you may print or download: guest lists, registration cards, the police guest report, balance due, cashier closing, night audit, the kitchen list, the Manager report, costs, forecast, and for the accountant expenses, purchase orders, the journal, Profit & Loss, balance sheet and trial balance.
+**[Insights → Export / Print](/reports)** lists every report you may print or download: guest lists, registration cards, the police guest report, balance due, cashier closing, night audit, the kitchen list, the summary report, costs, forecast, and for the accountant expenses, purchase orders, the journal, Profit & Loss, balance sheet and trial balance.
 
 1. Find the report (or type in **Find a report…**).
 2. Tap it, choose the day, month or dates, and press **Download**.
 
-You only see the reports of the pages you can open — nothing new to set up. The buttons on each page still work as before. The **Manager report** is the old Reports page: every figure for any period, with Excel / PDF / CSV.
+You only see the reports of the pages you can open — nothing new to set up. The buttons on each page still work as before. **Insights → Summary** is the old Reports page: every figure for any period, with Excel / PDF / CSV.

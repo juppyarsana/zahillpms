@@ -254,6 +254,12 @@ function RequireModule({ moduleName, children }) {
   return children;
 }
 
+// An old address that moved: same query string, new path.
+function KeepQuery({ to }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
+
 // The Reports library: anyone with at least one report (lib/reportLibrary.js).
 function RequireReports({ children }) {
   const { can, hasModule, user } = useAuth();
@@ -356,7 +362,8 @@ export default function App() {
                   <Route path="/agents"          element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/agents/:agentId" element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/reports"          element={<RequireReports><ReportsLibrary /></RequireReports>} />
-                  <Route path="/reports/revenue"  element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
+                  <Route path="/insights/summary" element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
+                  <Route path="/reports/revenue"  element={<KeepQuery to="/insights/summary" />} />
                   <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
                   <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />

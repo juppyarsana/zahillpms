@@ -43,14 +43,14 @@ export const REPORTS = [
     can: c => c('stock'), mod: ['back_office'], link: { to: '/stock', label: 'Open Stock' } },
 
   // ── Insights ──
-  { group: 'Insights', id: 'revenue', title: 'Manager report', what: 'The full figures: revenue, rooms, channels, money — with room nights and reservations in the Excel.',
+  { group: 'Insights', id: 'revenue', title: 'Summary report', what: 'Every figure for any period: revenue, rooms, channels, money — with room nights and reservations in the Excel.',
     can: c => c('reports'), mod: ['financial'], fields: [D('from', 'From', monthStart), D('to', 'To', propertyToday)],
     files: [
       { label: 'Excel', url: () => '/api/reports/full/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `report-${v.from}_to_${v.to}.xlsx` },
       { label: 'PDF', url: () => '/api/reports/full/pdf', params: v => ({ from: v.from, to: v.to }), name: v => `report-${v.from}_to_${v.to}.pdf` },
       { label: 'CSV', url: () => '/api/reports/revenue/export', params: v => ({ from: v.from, to: v.to }), name: v => `revenue-${v.from}_to_${v.to}.csv` },
     ],
-    page: { to: '/reports/revenue', label: 'Open on screen' },
+    page: { to: '/insights/summary', label: 'Open on screen' },
     schedule: 'The Monthly Report emails it on the 1st, with the Excel / CSV attached.' },
   { group: 'Insights', id: 'costs', title: 'Costs by department', what: 'Departments, their categories and every expense and supplier bill.',
     can: c => c('costs'), mod: ['back_office', 'accounting'], anyMod: true, fields: [M('month', 'Month', thisMonth)],

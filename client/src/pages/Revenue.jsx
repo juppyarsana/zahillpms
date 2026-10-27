@@ -3,7 +3,7 @@
 // it runs) and the same days last year. The Reports page's own figures in an
 // owner's layout (server/services/revenueInsights.js). Channels, room types and
 // countries have their own pages (Bookings, Rooms, Guests); the full tables and
-// the Excel / PDF are the Manager report (/reports/revenue). Owner, or the `reports` permission.
+// the Excel / PDF are on Summary (/insights/summary). Owner, or the `reports` permission.
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
@@ -75,9 +75,6 @@ export default function Revenue() {
         <div>
           <div className="page-title">Revenue</div>
           <div className="page-subtitle">What came in, where it came from, and how the rooms sold.</div>
-        </div>
-        <div>
-          <Link to="/reports/revenue" className="btn btn-secondary"><Icon name="download" />Manager report · Excel / PDF</Link>
         </div>
       </div>
 

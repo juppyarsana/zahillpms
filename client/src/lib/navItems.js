@@ -56,6 +56,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
     // Insights (owner's figures, one question per page), in small sub-groups:
     // Sales · Bookings · Money, then Export / Print (every printable report).
     { id: 'revenue', label: 'Insights', items: withSubs([
+      // Every figure on one page, any period, Excel / PDF (the old Reports page).
+      [null, [can('reports') && hasModule('financial') && { to: '/insights/summary', icon: '📊', label: 'Summary' }]],
       ['Sales', [
         can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
         can('reports') && res && { to: '/insights/rooms', icon: '🛏', label: 'Rooms' },

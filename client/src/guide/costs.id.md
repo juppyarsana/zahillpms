@@ -4,6 +4,7 @@ Halaman untuk owner dan manajer: **Overview** di paling atas menu, dan grup **In
 
 | Insights | Menjawab |
 |---|---|
+| **Summary** | Semua angka di satu halaman, untuk periode apa pun — dengan Excel / PDF |
 | **Sales** → Revenue | Berapa penjualan kita, dan dari mana? |
 | **Sales** → Rooms | Seberapa penuh hotel, kamar dan meal plan mana yang laku? |
 | **Sales** → Guests | Siapa tamu kita, dari negara mana, apakah mereka kembali? |
@@ -45,7 +46,7 @@ Biaya masuk departemen yang salah? Ubah **Department** pada expense atau tagihan
 
 ## Pendapatan (Revenue)
 
-**[Insights → Revenue](/revenue)** — uang yang masuk dan dari mana asalnya. Angka lengkapnya, dengan Excel dan PDF, ada di **Manager report** (tombol di atas, atau Export / Print).
+**[Insights → Revenue](/revenue)** — uang yang masuk dan dari mana asalnya. Angka lengkapnya, dengan Excel dan PDF, ada di **Insights → Summary**.
 
 - Total pendapatan, okupansi, rata-rata harga kamar (ADR) dan pendapatan per kamar tersedia (RevPAR) — dan bulan yang sama tahun lalu jika ada.
 - **Every day** — kamar, makanan & minuman, extras & aktivitas. Arahkan kursor ke satu hari untuk melihat angkanya.
@@ -71,9 +72,9 @@ Ketiganya punya **Month / 3 months / Year** di atas, dengan ‹ › untuk berpin
 
 ## Export / Print — semua laporan di satu tempat
 
-**[Insights → Export / Print](/reports)** berisi semua laporan yang boleh Anda cetak atau unduh: guest lists, kartu registrasi, laporan tamu untuk polisi, balance due, cashier closing, night audit, daftar dapur, Manager report, biaya, forecast, dan untuk akuntan: expenses, purchase order, jurnal, Laba Rugi, neraca dan neraca saldo.
+**[Insights → Export / Print](/reports)** berisi semua laporan yang boleh Anda cetak atau unduh: guest lists, kartu registrasi, laporan tamu untuk polisi, balance due, cashier closing, night audit, daftar dapur, laporan Summary, biaya, forecast, dan untuk akuntan: expenses, purchase order, jurnal, Laba Rugi, neraca dan neraca saldo.
 
 1. Cari laporannya (atau ketik di **Find a report…**).
 2. Ketuk, pilih hari, bulan atau tanggal, lalu tekan **Download**.
 
-Anda hanya melihat laporan dari halaman yang memang bisa Anda buka — tidak ada yang perlu diatur. Tombol di setiap halaman tetap berfungsi seperti biasa. **Manager report** adalah halaman Reports yang lama: semua angka untuk periode apa pun, dengan Excel / PDF / CSV.
+Anda hanya melihat laporan dari halaman yang memang bisa Anda buka — tidak ada yang perlu diatur. Tombol di setiap halaman tetap berfungsi seperti biasa. **Insights → Summary** adalah halaman Reports yang lama: semua angka untuk periode apa pun, dengan Excel / PDF / CSV.
