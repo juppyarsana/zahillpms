@@ -9,7 +9,7 @@ import { TodaySection } from '../components/DashboardSections';
 import UnitStatusBoard, { cleanAskedText } from '../components/UnitStatusBoard';
 import { useCheckInOut } from '../components/CheckInOutWindows';
 import LateArrivals from '../components/LateArrivals';
-import { OtaTodayBox } from '../components/OtaInbox';
+import { useOtaToday } from '../components/OtaInbox';
 import { NoteReminders } from '../components/StaffNotes';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 
@@ -201,6 +201,10 @@ export default function Today() {
   const cleanAsked = units.filter(u => u.clean_request_at);
   const notReady = units.filter(u => u.arriving_booking_id && u.housekeeping_status === 'dirty' && u.status !== 'occupied');
   const overdue = summary?.overdue_checkouts || [];
+  // Stays already over that never checked in, and today's OTA news — one line each in Needs you now.
+  const neverArrived = summary?.today?.never_arrived || [];
+  const ota = useOtaToday();
+  const otaActive = ota && (ota.new + ota.changed + ota.cancelled + ota.needs) > 0;
 
   const rows = lists ? (tab === 'in_house' ? lists.in_house : tab === 'departures' ? lists.departures : lists.arrivals) : [];
   const s = lists?.summary;
@@ -351,7 +355,7 @@ export default function Today() {
       {error && <div className="alert alert-error"><div>{error}</div></div>}
 
       {isToday && summary && (
-        <TodaySection today={summary.today} occupancy={summary.occupancy} canLists={false} canReservations={canRes} />
+        <TodaySection today={summary.today} occupancy={summary.occupancy} canLists={false} canReservations={canRes} hideNeverArrived />
       )}
       {!isToday && s && (
         <div className="stat-grid">
@@ -364,7 +368,7 @@ export default function Today() {
 
       {/* ── Needs you now — what used to be the Dashboard's banners (never-arrived
            bookings are already flagged by TodaySection) ── */}
-      {isToday && (overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0) && (
+      {isToday && (overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0 || neverArrived.length > 0 || otaActive) && (
         <div className="card today-needs">
           <div className="card-title">Needs you now</div>
           {overdue.map(o => (
@@ -391,10 +395,26 @@ export default function Today() {
               {hasModule('operations') && can('operations') && <Link to="/housekeeping" className="btn btn-sm btn-secondary">Housekeeping</Link>}
             </div>
           ))}
+          {otaActive && (
+            <div className={`today-need ${ota.needs > 0 ? 'danger' : 'info'}`}>
+              <span className="today-need-tag">OTAs today</span>
+              <span className="today-need-text">
+                {[ota.new && `${ota.new} new`, ota.changed && `${ota.changed} changed`, ota.cancelled && `${ota.cancelled} cancelled`].filter(Boolean).join(' · ') || 'Nothing new'}
+                {ota.needs > 0 && <b> · {ota.needs} need{ota.needs === 1 ? 's' : ''} you</b>}
+              </span>
+              {canRes && <Link to="/reservations?view=ota" className="btn btn-sm btn-secondary">Open</Link>}
+            </div>
+          )}
+          {neverArrived.length > 0 && (
+            <div className="today-need warn">
+              <span className="today-need-tag">Never arrived</span>
+              <span className="today-need-text"><b>{plural(neverArrived.length, 'stay')}</b> already over but never checked in — mark no-show or cancel; until then they count as sold.</span>
+              {(can('guest_lists') || canDesk) && <Link to="/guest-lists" className="btn btn-sm btn-secondary">See the list</Link>}
+            </div>
+          )}
         </div>
       )}
       {isToday && canDesk && hasModule('front_desk') && <LateArrivals lang="en" onRestored={load} />}
-      {isToday && <OtaTodayBox />}
       {canRes && <NoteReminders date={date} title={isToday ? 'Reminders for today' : 'Reminders for this day'} />}
 
       {isToday ? (

@@ -5,7 +5,7 @@
 ## What's on it
 
 - **The day's figures** — arriving, staying over, departing, tonight's rooms, reservations made today, and tomorrow in one line.
-- **Needs you now** — guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), and rooms still to clean with a guest arriving today.
+- **Needs you now** — guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), rooms still to clean with a guest arriving today, stays already over that never checked in (**See the list** to mark no-show or cancel) and, when something came in, today's OTA bookings (**Open** for the OTA bookings tab).
 - **Live unit status** — every room in colour by room type. Tap a room for its window (guest, balance, check in / out, payment, Mark clean, Call room).
 - **Arrivals · In house · Departures · Kitchen · Balance due** — the guests of the day, and who still owes money (Balance due: front desk with Check-in / out only).
 

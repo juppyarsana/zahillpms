@@ -48,7 +48,8 @@ function Box({ label, value, children, to, title, accent }) {
 
 // Today: totals fixed for the whole day, progress inside ("12 arrived · 16 to
 // come"), and Arriving + Staying over (+ overdue) = Tonight, visibly.
-export function TodaySection({ today, occupancy, canLists, canReservations }) {
+// hideNeverArrived: Today shows those stays as a line in its Needs you now card.
+export function TodaySection({ today, occupancy, canLists, canReservations, hideNeverArrived }) {
   if (!today) return null;
   const { arriving, staying, departing, tonight, made, tomorrow } = today;
   const lists = canLists ? '/guest-lists' : undefined;
@@ -119,7 +120,7 @@ export function TodaySection({ today, occupancy, canLists, canReservations }) {
         </div>
       )}
 
-      {today.never_arrived?.length > 0 && (
+      {!hideNeverArrived && today.never_arrived?.length > 0 && (
         <div className="alert alert-warn" style={{ marginTop: 10 }}>
           <span>
             🗑 <b>{plural(today.never_arrived.length, 'old booking')} never checked in</b> and the stay is already over

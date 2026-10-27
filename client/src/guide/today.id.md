@@ -5,7 +5,7 @@
 ## Isinya
 
 - **Angka hari ini** — tamu datang, menginap, pulang, kamar terisi malam ini, reservasi yang dibuat hari ini, dan besok dalam satu baris.
-- **Needs you now** — tamu yang sudah lewat tanggal check-out tapi masih check-in, kamar yang minta dibersihkan (**Mark clean**), dan kamar yang belum bersih padahal ada tamu datang hari ini.
+- **Needs you now** — tamu yang sudah lewat tanggal check-out tapi masih check-in, kamar yang minta dibersihkan (**Mark clean**), kamar yang belum bersih padahal ada tamu datang hari ini, menginap yang sudah lewat tapi tidak pernah check-in (**See the list** untuk no-show atau batal) dan, kalau ada yang masuk, booking OTA hari ini (**Open** ke tab OTA bookings).
 - **Live unit status** — semua kamar berwarna per tipe kamar. Ketuk kamar untuk membuka jendelanya (tamu, saldo, check in / out, pembayaran, Mark clean, Call room).
 - **Arrivals · In house · Departures · Kitchen · Balance due** — tamu hari ini, dan siapa yang masih punya tagihan (Balance due: hanya front desk dengan izin Check-in / out).
 

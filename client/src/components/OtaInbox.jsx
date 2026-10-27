@@ -180,6 +180,20 @@ export function OtaPopup() {
 
 // ── The Dashboard box ───────────────────────────────────────
 
+// Today's OTA counts for a one-line summary (the Today page's Needs you now):
+// null while off / loading, else { new, changed, cancelled, needs }.
+export function useOtaToday() {
+  const { enabled, unseen, open } = useOtaInbox();
+  const [data, setData] = useState(null);
+  const sig = `${unseen.map(r => r.id).join(',')}|${open}`;
+  useEffect(() => {
+    if (!enabled) { setData(null); return; }
+    api.get('/api/ota-inbox').then(r => setData(r.data)).catch(() => {});
+  }, [enabled, sig]);
+  if (!enabled || !data) return null;
+  return { new: data.today.new, changed: data.today.changed, cancelled: data.today.cancelled, needs: data.open.length };
+}
+
 export function OtaTodayBox() {
   const { enabled, unseen, open } = useOtaInbox();
   const [data, setData] = useState(null);
