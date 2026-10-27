@@ -5,6 +5,7 @@ const AuthContext = createContext(null);
 
 const ORDERED_PATHS = [
   { key: 'dashboard',     path: '/' },
+  { key: 'overview',      path: '/overview' },
   { key: 'quick_checkin', path: '/quick-checkin' },
   { key: 'reservations',  path: '/reservations' },
   { key: 'checkin_full',  path: '/checkin' },
@@ -24,6 +25,7 @@ const ORDERED_PATHS = [
   { key: 'expenses',      path: '/expenses' },
   { key: 'accounting',    path: '/accounting' },
   { key: 'reports',       path: '/reports' },
+  { key: 'costs',         path: '/costs' },
   { key: 'purchasing',    path: '/purchasing' },
   { key: 'direct_purchase', path: '/purchasing' },
   { key: 'stock',         path: '/stock' },

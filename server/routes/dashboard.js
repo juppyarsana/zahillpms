@@ -75,6 +75,23 @@ async function todayAtAGlance(propertyId, sellable) {
   };
 }
 
+// Room money not paid yet: pending deposit / balance lines of every booking
+// not cancelled / no-show, + groups billed as a whole (migration 097), each
+// counted as one. Shared by the Dashboard month card and the Overview page.
+async function unpaidRoomMoney(propertyId) {
+  const { rows: [r] } = await db.query(`
+    WITH owed AS (
+      SELECT b.id::text AS ref, p.amount
+      FROM payments p JOIN bookings b ON b.id = p.booking_id
+      WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
+        AND b.status NOT IN ('cancelled', 'no_show')
+      UNION ALL
+      SELECT go.id::text, go.owed FROM (${GROUP_OWED_SQL}) go WHERE go.owed >= 1
+    )
+    SELECT COUNT(DISTINCT ref) AS bookings, COALESCE(SUM(amount), 0) AS amount FROM owed`, [propertyId]);
+  return { bookings: parseInt(r.bookings, 10), amount: parseFloat(r.amount) };
+}
+
 // GET /api/dashboard/summary
 router.get('/summary', auth, async (req, res) => {
   try {
@@ -223,24 +240,14 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_s
     const prevFirst = `${py}-${pad(pm)}-01`;
     const prevTo = `${py}-${pad(pm)}-${pad(prevDays)}`;
 
-    const [{ rows: [u] }, soFar, prev, books, made, madePrev, { rows: [unpaid] }] = await Promise.all([
+    const [{ rows: [u] }, soFar, prev, books, made, madePrev, unpaid] = await Promise.all([
       db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [pid]),
       getReport(pid, first, today),
       getReport(pid, prevFirst, prevTo),
       getReport(pid, first, last),
       bookingsMade(pid, first, today),
       bookingsMade(pid, prevFirst, prevTo),
-      // + groups billed as a whole (migration 097), each counted as one
-      db.query(`
-        WITH owed AS (
-          SELECT b.id::text AS ref, p.amount
-          FROM payments p JOIN bookings b ON b.id = p.booking_id
-          WHERE b.property_id = $1 AND p.status = 'pending' AND p.amount > 0
-            AND b.status NOT IN ('cancelled', 'no_show')
-          UNION ALL
-          SELECT go.id::text, go.owed FROM (${GROUP_OWED_SQL}) go WHERE go.owed >= 1
-        )
-        SELECT COUNT(DISTINCT ref) AS bookings, COALESCE(SUM(amount), 0) AS amount FROM owed`, [pid]),
+      unpaidRoomMoney(pid),
     ]);
     const sellable = parseInt(u.sellable, 10) || 0;
     const figures = (r, days) => ({
@@ -287,7 +294,7 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_s
         rooms: parseInt(r.nights_sold, 10),
       })),
       by_source: top.map(s => ({ ...s, share: stayRevenue > 0 ? Math.round((s.revenue / stayRevenue) * 100) : 0 })),
-      unpaid: { bookings: parseInt(unpaid.bookings, 10), amount: parseFloat(unpaid.amount) },
+      unpaid,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -295,3 +302,5 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu('month_s
 });
 
 module.exports = router;
+module.exports.todayAtAGlance = todayAtAGlance;
+module.exports.unpaidRoomMoney = unpaidRoomMoney;

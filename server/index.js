@@ -127,6 +127,9 @@ app.use('/api/reports', auth, moduleGuard('financial'), require('./routes/report
 app.use('/api/night-audit', auth, moduleGuard('financial'), require('./routes/nightAudit'));
 app.use('/api/cashier-closing', auth, moduleGuard('financial'), require('./routes/cashierClosing'));
 app.use('/api/forecast', auth, moduleGuard('reservations'), require('./routes/forecast'));
+// Insights: costs by department + the owner's Overview — no module of their own (each part follows its own module)
+app.use('/api/costs', auth, require('./middleware/requireOwnerOrMenu')('costs'), require('./routes/costs'));
+app.use('/api/overview', auth, require('./middleware/requireOwnerOrMenu')('overview'), require('./routes/overview'));
 app.use('/api/room-tablets', auth, require('./middleware/requireOwnerOrMenu')('room_tablets'), require('./routes/roomTablets'));
 app.use('/api/events', auth, moduleGuard('events'), require('./middleware/requireOwnerOrMenu')('events'), require('./routes/events'));
 app.use('/api/assistant', auth, moduleGuard('assistant'), require('./middleware/requireOwnerOrMenu')('assistant'), require('./routes/assistant'));

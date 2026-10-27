@@ -1,6 +1,34 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-10-16
+Last updated: 2026-10-27
+
+---
+
+## 🟡 Owner insights + menu regroup (PLANNED 2026-10-27 — step 1 built, steps 2–4 not started)
+
+The hotel owner asked to see easily which department costs the most. That grew into a plan for the product as a whole: easy to run on site, easy to oversee for owners / high-level roles, nothing lost. **Mock-up (6 screens):** https://claude.ai/artifact/529eyNnQP4tmenRhpcEA6c (private, owner's account) — Costs, Overview, Revenue, Profit, Reports library by role, menu now vs proposed. Figures are Zahill's September 2026 VHP trial balance; the Profit screen's net (−Rp 2.154.000) matches VHP's own result (−Rp 2.153.742).
+
+**Research (2026-10-27, Opera Cloud, Cloudbeds, Mews, GuestPro, VHP):** competitors' owner views (Cloudbeds Insights, Mews BI — 14 dashboards) stop at revenue / occupancy / ADR / payments and are sold as add-ons; none shows operating costs or department profit. Staff complaints (Cloudbeds / NYU 2025 survey): confusing interface with several windows, unclear workflows, mistakes staff can't fix, 4 months – 3 years to feel confident. Our edge: costs + department profit (USALI) + cost per occupied room built in, exceptions first ("Needs you"), one page per job.
+
+**Agreed menu (owner sees 22 items, was 28):**
+- **Overview** (new) — owner / manager home: needs you, tonight, revenue this month, money in, still owed, biggest costs, next 14 nights. Staff keep landing on their own page.
+- **Front Desk** — Today (room board + arrivals / in house / departures + check-in / out + guest lists, merged) · Reservations (tabs: calendar, list, groups, availability, from OTAs, to check) · Guests · End of day (cashier closing + night audit)
+- **Guest services** — Extras · Activities · Restaurant
+- **Operations** — Housekeeping · Purchasing · Stock (Guest Board → Settings, "Guest screens")
+- **Sales** — Pricing (+ OTA prices, price ladder) · Events. Agents stay in Receivables for now (profile vs money split later).
+- **Insights** — Revenue · Costs (new) · Profit (new) · Forecast · Reports (the library)
+- **Finance** — Receivables · Payables (+ vendor payouts tab) · Expenses · Accounting
+- "Performance" as a label rejected (not common, vague).
+
+**Reports library:** one menu item listing every printable report (guest lists, police report, cashier closing / night audit any day, balance due, kitchen list, revenue Excel / PDF, department costs, profit summary, forecast, owner's monthly pack, stock sheets, agent statements, expenses CSV, journal, P&L, BS / TB). Each report follows the permission of the page it comes from (server checks on download, as today); a user with none doesn't see the item. The download buttons on the source pages stay. Each report shows its schedule (link to Settings → Notifications). Today's `reports` permission → "Revenue report"; new `costs` permission.
+
+**Costs page details:** departments ranked (Rp, share, change vs last month), tap → categories, "All costs (incl. salaries)" vs "Expenses & bills only", department profit + cost per occupied room, 6-month trend. Salaries come from the accountant's journal entries — need a department per GL account (from the standard chart's DD segment, or a `department` field on accounts first). Until then the page says salaries are not included.
+
+**Build order:** 1. Costs + Overview → 2. Revenue + Profit (from fullReport / plService) → 3. Reports library → 4. Menu regroup + tab merges (Reservations tabs, End of day; "Today" merge last, show FO first).
+
+**Step 1 built 2026-10-27 (on `dev`, not released):** Costs (`/costs`) and Overview (`/overview`), permissions `costs` / `overview`; the sidebar's Revenue group is now labelled Insights (Reports · Costs · Forecast · Pricing). Costs counts Expenses + supplier bills only (salaries wait for the chart of accounts). Details in CLAUDE.md → "Overview + Costs by department".
+
+**Related, waiting:** the accountant's answers on the **standard chart of accounts** (draft `C:\Users\dj03p\Documents\COA Standar PMS (usulan).xlsx`: 322 accounts, code `GGG-DD-NNN`, same NNN = same cost in every department, Zahill's 256 VHP accounts mapped; 13 questions). The earlier `Pemetaan COA PMS-VHP.xlsx` / `COA mapping PMS-VHP.xlsx` used wrong codes — don't send. Also open: backfilling activities on past stays (owner checking whether the money is already in the PMS).
 
 ---
 

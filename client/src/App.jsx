@@ -25,6 +25,8 @@ import GroupDetail from './pages/GroupDetail';
 import CheckIn from './pages/CheckIn';
 import GuestLists from './pages/GuestLists';
 import Forecast from './pages/Forecast';
+import Costs from './pages/Costs';
+import Overview from './pages/Overview';
 import Guide from './pages/Guide';
 import Restaurant from './pages/Restaurant';
 import QuickCheckIn from './pages/QuickCheckIn';
@@ -92,6 +94,7 @@ function BottomNav() {
   const { badge: otaBadge } = useOtaInbox();
   const navDef = buildNav({ user, can, hasModule, otaBadge });
   const moreGroups = [
+    navDef.overview && { label: 'Owner', items: [navDef.overview] },
     ...navDef.groups,
     { label: 'Help', items: [navDef.guide] },
     navDef.settingsGroups.length && { label: 'Setup', items: [{ to: '/settings', icon: '⚙️', label: 'Settings' }] },
@@ -290,6 +293,8 @@ export default function App() {
                   <Route path="/guide"            element={<Guide />} />
                   <Route path="/guide/:chapter"   element={<Guide />} />
                   <Route path="/forecast"         element={<RequireMenu menuKey="forecast"><RequireModule moduleName="reservations"><Forecast /></RequireModule></RequireMenu>} />
+                  <Route path="/overview"         element={<RequireMenu menuKey="overview"><Overview /></RequireMenu>} />
+                  <Route path="/costs"            element={<RequireMenu menuKey="costs"><Costs /></RequireMenu>} />
                   <Route path="/quick-checkin"    element={<RequireMenu menuKey="quick_checkin"><RequireModule moduleName={['reservations', 'front_desk']}><QuickCheckIn /></RequireModule></RequireMenu>} />
                   <Route path="/guests"           element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><Guests /></RequireModule></RequireMenu>} />
                   <Route path="/guests/:id"       element={<RequireMenu menuKey="guests"><RequireModule moduleName="guest_crm"><GuestProfile /></RequireModule></RequireMenu>} />

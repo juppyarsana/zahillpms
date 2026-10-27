@@ -9,6 +9,7 @@
 export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   const isOwner = user?.role === 'owner';
   const res = hasModule('reservations');
+  const hasCosts = hasModule('back_office') || hasModule('accounting');   // where costs are entered
   const groups = [
     { id: 'front-desk', label: 'Front Desk', items: [
       can('reservations') && res && { to: '/availability', icon: '🔎', label: 'Availability' },
@@ -37,10 +38,12 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
     ] },
-    { id: 'revenue', label: 'Revenue', items: [
+    // Insights (was Revenue): Pricing moves to a Sales group in the menu regroup (ROADMAP "Owner insights").
+    { id: 'revenue', label: 'Insights', items: [
+      can('reports') && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
+      can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
       can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
-      can('reports') && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
     ] },
     { id: 'finance', label: 'Finance', items: [
       // In the money's order: owed to the hotel, owed by the hotel, spent, the books.
@@ -78,6 +81,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length);
 
   return {
+    // The owner's / manager's home (pages/Overview.jsx), above the front desk's Dashboard.
+    overview: can('overview') ? { to: '/overview', icon: '🧭', label: 'Overview' } : null,
     dashboard: can('dashboard') ? { to: '/', end: true, icon: '📊', label: 'Dashboard' } : null,
     groups,
     settingsGroups,
