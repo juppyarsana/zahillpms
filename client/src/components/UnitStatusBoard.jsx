@@ -819,10 +819,10 @@ function tileState(u) {
 const STATUS_META = [
   { key: 'available',    color: TILE_BG.available,    label: 'Available' },
   { key: 'occupied',     color: TILE_BG.occupied,     label: 'Occupied' },
-  { key: 'departing',    color: TILE_BG.departing,    label: 'Departing' },
   { key: 'arriving',     color: TILE_BG.arriving,     label: 'Arriving' },
+  { key: 'departing',    color: TILE_BG.departing,    label: 'Departing' },
   { key: 'dirty',        color: TILE_BG.dirty,        label: 'To clean' },
-  { key: 'out_of_order', color: TILE_BG.out_of_order, label: 'Out of Order' },
+  { key: 'out_of_order', color: TILE_BG.out_of_order, label: 'Out of order' },
 ];
 
 function bucketOf(u) {
@@ -859,22 +859,6 @@ function UnitPopover({ unit, flags, health, onClose, onChanged }) {
         </div>
         <div className="modal-body"><UnitCard unit={unit} flags={flags} health={health} onChanged={onChanged} /></div>
       </div>
-    </div>
-  );
-}
-
-function TypeCounts({ counts, filter }) {
-  const shown = STATUS_META.filter(m => counts[m.key] > 0);
-  if (!shown.length) return null;
-  return (
-    <div className="unit-type-counts">
-      {shown.map(m => (
-        <span key={m.key} className={`unit-type-chip${filter && filter !== m.key ? ' dim' : ''}`} title={`${counts[m.key]} ${m.label}`}>
-          <span className="unit-type-chip-dot" style={{ background: m.color }} />
-          <b>{counts[m.key]}</b>
-          <span className="unit-type-chip-lbl">{m.label}</span>
-        </span>
-      ))}
     </div>
   );
 }
@@ -931,22 +915,9 @@ export default function UnitStatusBoard({ units, guestRequests = [], onChanged }
   const groups = groupUnitsByType(units);
   const requestFlags = unitRequestFlags(guestRequests, units);
   const overall = countByState(units);
-  const total = units.length;
 
   return (
     <div>
-      {/* Whole-property status at a glance — one proportional bar. */}
-      <div className="unit-overview-bar" title={`${total} rooms`}>
-        {STATUS_META.filter(m => overall[m.key] > 0).map(m => (
-          <div
-            key={m.key}
-            className="unit-overview-seg"
-            style={{ flexGrow: overall[m.key], background: m.color }}
-            title={`${overall[m.key]} ${m.label}`}
-          />
-        ))}
-      </div>
-
       {/* Legend + click-to-filter. Filtering narrows the tile grids below. */}
       <div className="unit-summary-strip">
         {STATUS_META.map(m => (
@@ -956,7 +927,7 @@ export default function UnitStatusBoard({ units, guestRequests = [], onChanged }
             onClick={() => setFilter(f => (f === m.key ? null : m.key))}
           >
             <span className="unit-summary-dot" style={{ background: m.color }} />
-            <b>{overall[m.key]}</b> {m.label}
+            {m.label} <b>{overall[m.key]}</b>
           </button>
         ))}
         {filter && (
@@ -973,9 +944,10 @@ export default function UnitStatusBoard({ units, guestRequests = [], onChanged }
           <div key={g.type} className="unit-tile-group">
             <div className="unit-type-head">
               <span className="unit-type-name">{g.type}</span>
-              <span className="unit-type-total">{g.list.length} room{g.list.length !== 1 ? 's' : ''}</span>
+              <span className="unit-type-total">
+                {g.list.length} room{g.list.length !== 1 ? 's' : ''} · {g.list.filter(u => bucketOf(u) === 'available').length} ready
+              </span>
             </div>
-            <TypeCounts counts={countByState(g.list)} filter={filter} />
             <div className="unit-tile-grid">
               {list.map(u => (
                 <UnitTile

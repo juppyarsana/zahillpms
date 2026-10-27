@@ -588,31 +588,19 @@ tr:hover td { background: #FAFAF8; }
 
 /* ── Compact unit status board (dashboard) ── */
 
-/* Whole-property proportional bar */
-.unit-overview-bar {
-  display: flex;
-  height: 10px;
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  background: var(--border);
-  margin-bottom: 10px;
-}
-.unit-overview-seg { flex-basis: 0; min-width: 2px; }
-.unit-overview-seg + .unit-overview-seg { border-left: 1px solid rgba(255,255,255,0.55); }
-
 /* Legend / filter chips */
-.unit-summary-strip { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-bottom: 4px; }
+.unit-summary-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 .unit-summary-item  {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
-  background: none; border: 1px solid transparent; border-radius: var(--radius-full);
-  padding: 4px 10px; cursor: pointer; font-family: inherit; transition: all var(--transition);
+  display: inline-flex; align-items: center; gap: 6px; height: 32px;
+  font-size: 13px; font-weight: 500; color: var(--text);
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius-full);
+  padding: 0 11px; cursor: pointer; font-family: inherit; transition: all var(--transition);
 }
 .unit-summary-item:hover  { background: var(--bg-subtle); }
-.unit-summary-item.active  { background: var(--bg-subtle); border-color: var(--border); color: var(--text); }
-.unit-summary-item.zero    { opacity: 0.4; }
-.unit-summary-item b { font-weight: 800; color: var(--text); }
-.unit-summary-dot   { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.unit-summary-item.active { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.unit-summary-item.zero   { opacity: 0.45; }
+.unit-summary-item b { font-weight: 700; color: var(--text); }
+.unit-summary-dot   { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
 .unit-summary-clear {
   display: inline-flex; align-items: center;
   font-size: 11px; font-weight: 700; color: var(--text-muted);
@@ -621,23 +609,12 @@ tr:hover td { background: #FAFAF8; }
 }
 
 /* Per-type section */
-.unit-tile-group        { margin-top: 16px; }
-.unit-tile-group:first-of-type { margin-top: 10px; }
+.unit-tile-group        { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .unit-type-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px;
 }
-.unit-type-name  { font-size: 12px; font-weight: 800; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
-.unit-type-total { font-size: 11px; font-weight: 600; color: var(--text-muted); flex-shrink: 0; }
-.unit-type-counts { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 7px 0 8px; }
-.unit-type-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; color: var(--text-muted); transition: opacity var(--transition);
-}
-.unit-type-chip.dim  { opacity: 0.3; }
-.unit-type-chip b    { font-weight: 800; color: var(--text); }
-.unit-type-chip-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.unit-type-chip-lbl  { }
+.unit-type-name  { font-size: 14px; font-weight: 700; color: var(--text); }
+.unit-type-total { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
 
 .unit-tile-grid         { display: grid; grid-template-columns: repeat(auto-fill, 64px); gap: 8px; }
 .unit-tile              { position: relative; height: 54px; border-radius: 8px; border: none; color: #fff; font-family: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; line-height: 1; transition: transform 0.1s; }
@@ -650,9 +627,6 @@ tr:hover td { background: #FAFAF8; }
 .unit-tile-badge.warn   { background: #B91C1C; }
 .unit-tile-badge.ok     { background: #15803D; }
 
-@media (max-width: 560px) {
-  .unit-type-chip-lbl { display: none; }
-}
 
 /* ── Kanban ── */
 .kanban { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }

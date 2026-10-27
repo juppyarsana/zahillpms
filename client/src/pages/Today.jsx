@@ -289,7 +289,7 @@ export default function Today() {
       {isToday ? (
         <div className="today-cols">
           <div className="card today-board">
-            <div className="card-title">Live unit status</div>
+            <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700 }}>Live unit status</h2>
             {summary && <UnitStatusBoard units={units} guestRequests={guestRequests} onChanged={load} />}
           </div>
           <div className="today-lists">{listsCard}</div>
