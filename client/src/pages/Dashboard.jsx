@@ -6,6 +6,7 @@ import { useCall } from '../context/CallContext';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 import api from '../services/api';
+import { groupUnitsByType } from '../lib/roomTypeOrder';
 import { TodaySection, MonthSection, SectionHeading } from '../components/DashboardSections';
 import { OtaTodayBox } from '../components/OtaInbox';
 import { NotesPreview, NoteReminders } from '../components/StaffNotes';
@@ -840,25 +841,6 @@ function countByState(list) {
   return c;
 }
 
-const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
-function typeRank(t) {
-  const i = TYPE_ORDER.findIndex(x => (t || '').includes(x));
-  return i === -1 ? 99 : i;
-}
-function groupUnitsByType(units) {
-  const m = new Map();
-  for (const u of units) {
-    const k = u.type || 'Other';
-    if (!m.has(k)) m.set(k, []);
-    m.get(k).push(u);
-  }
-  return [...m.entries()]
-    .map(([type, list]) => ({
-      type,
-      list: list.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-    }))
-    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.type.localeCompare(b.type));
-}
 // strip the leading type word so a "Deluxe 101" tile just reads "101"
 function shortRoomName(name, type) {
   const w = (type || '').split(/\s+/)[0];

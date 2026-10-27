@@ -411,9 +411,10 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 137 | OTA price ladders — `channel_price_ladders` (property, meal plan, room type, `sold_up_to`, price; PK of the four; trigger `channel_mark_dirty`). Per meal plan linked to the channel manager, a price per room type for each tier of rooms sold in the whole hotel. See "OTA price ladder". |
 | 135 | Buy without a PO — `purchase_orders.supplier_id` nullable (CHECK: only for a direct one), `is_direct`, `bought_from`, `purchased_on`, `reference`, `category`, `voided_at/_by`, `void_reason`; `purchase_order_items.line_total` (the price typed per line); `expenses.purchase_order_id`; `property_settings.direct_purchase_alerts` (JSONB, NULL = defaults); owners' Telegram recipients get `alert_direct_purchase` ticked. See "Buy without a PO". |
 | 133 | POS bill numbers on the invoice — `sales.pos_bill_no` / `pos_outlet` and the same on `event_charges` (the number on the guest's POS receipt, e.g. SG-00001/10/26, and the restaurant's name, sent by the POS with each Room / Event Charge). See "Restaurant bills on the invoice". Additive only. |
+| 141 | Room types in the owner's order — `room_types.sort_order` (from 062) set for every property to the order the Dashboard showed (Villa, Suite, Glamping, Deluxe, then by name), now set in Settings → Units with ↑ ↓ (`PUT /api/room-types/order { ids }`, owner) and used by the Dashboard room board, Reservations calendar, Call a Room, Pricing and Forecast (Availability, Housekeeping, Reports already used it). The fixed word list in the client is gone (`lib/roomTypeOrder.js`). |
 | 131 | Costs by department — `expenses.department`, `supplier_bills.department` (NOT NULL, CHECK front_office / housekeeping / fnb / engineering / activities / sales / admin; existing rows = their category's usual department), `suppliers.default_department`. A management tag only; the category still decides the account. See "Costs by department". |
 
-**Next migration number: 141** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
+**Next migration number: 142** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
 
 ---
 
@@ -939,6 +940,8 @@ See `server/.env.example` for the full current list (kept up to date — check t
 ## Pending on the next production deploy
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
+
+- **Room type order (migration 141) — on `dev`, not released.** Runs itself; Zahill keeps the order the Dashboard shows today (Availability / Housekeeping / Reports, which used price order, follow it too). To change it: Settings → Units → ↑ ↓ on a room type.
 
 - **Overview + Costs + Revenue + Profit pages + Reports library (no migration) — on `dev`, not released.** Nothing runs by itself. Tell staff: Insights → Reports lists every report they can download; the old Reports page is now *Revenue report*. By hand afterwards: give **Overview**, **Costs by department** and **Profit** (Roles & Permissions → Revenue; Revenue follows the existing *Revenue + Reports* tick) to the manager's role if they should see them (they log in again); tell the owner: Overview at the top of the menu, Insights → Costs, Guide → *Overview & biaya per departemen*. Costs show only what is in Expenses / Payables with a department.
 

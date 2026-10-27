@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { RateCalendarTab, AutomaticTab, EventsTab, ReportsTab } from './pricing/YieldTabs';
 import OtaPricesModal from '../components/OtaPricesModal';
 import OtaLadderModal from '../components/OtaLadderModal';
+import { typeComparator } from '../lib/roomTypeOrder';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(d) { return d?.slice(0, 10) || ''; }
@@ -79,13 +80,14 @@ function MyRules() {
     }));
   }
 
-  // Units grouped by room type (natural room order), so a whole type can be ticked at once.
+  // Units grouped by room type (owner's type order, natural room order), so a whole type can be ticked at once.
+  const typeCmp = typeComparator(units);
   const unitGroups = Object.values(units.reduce((acc, u) => {
     const type = u.type || 'Other';
     (acc[type] ||= { type, units: [] }).units.push(u);
     return acc;
   }, {})).map(g => ({ ...g, units: [...g.units].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) }))
-    .sort((a, b) => a.type.localeCompare(b.type));
+    .sort((a, b) => typeCmp(a.type, b.type));
 
   // Tick a room type: select all of its rooms — or, if they're all selected already, clear them.
   function toggleType(g) {

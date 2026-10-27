@@ -104,7 +104,8 @@ router.get('/summary', auth, async (req, res) => {
       birthdaysQ,
     ] = await Promise.all([
       db.query(`
-        SELECT u.id, u.name, u.status, u.type, u.controller_id, u.housekeeping_status,
+        SELECT u.id, u.name, u.status, u.type, (SELECT sort_order FROM room_types WHERE id = u.room_type_id) AS type_order,
+          u.controller_id, u.housekeeping_status,
           u.clean_request_at, u.clean_request_via, (SELECT name FROM users WHERE id = u.clean_request_by) AS clean_request_by_name,
           u.status_reason, u.status_expected_back, u.status_updated_at,
           sub.name as status_updated_by_name,

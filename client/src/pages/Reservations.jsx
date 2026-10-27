@@ -4,26 +4,8 @@ import { propertyToday, addDaysYmd, fmtYmd, PROPERTY_TZ } from '../lib/propertyT
 import api from '../services/api';
 import Icon from '../components/Icon';
 import { SourceBadge, useSettings } from '../context/SettingsContext';
+import { groupUnitsByType, typeComparator } from '../lib/roomTypeOrder';
 
-const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
-function typeRank(t) {
-  const i = TYPE_ORDER.findIndex(x => (t || '').includes(x));
-  return i === -1 ? 99 : i;
-}
-function groupUnitsByType(units) {
-  const m = new Map();
-  for (const u of units) {
-    const k = u.type || 'Other';
-    if (!m.has(k)) m.set(k, []);
-    m.get(k).push(u);
-  }
-  return [...m.entries()]
-    .map(([type, list]) => ({
-      type,
-      list: list.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-    }))
-    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.type.localeCompare(b.type));
-}
 const groupStorageKey = t => `resv-cal-group-${(t || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
 const PALETTE = ['#5C1A2E','#7A2540','#C9A227','#1E40AF','#7C3AED','#DB2777','#0891B2','#9A3412'];
@@ -856,7 +838,7 @@ export default function Reservations() {
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setTypeMenuOpen(false)} />
                   <div className="card" style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 41, padding: 8, minWidth: 180, boxShadow: 'var(--shadow-md)' }}>
-                    {[...allTypes].sort((a, b) => typeRank(a) - typeRank(b) || a.localeCompare(b)).map(t => (
+                    {[...allTypes].sort(typeComparator(units)).map(t => (
                       <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 13, cursor: 'pointer' }}>
                         <input type="checkbox" checked={selTypes ? selTypes.has(t) : true} onChange={() => toggleType(t)} />
                         {t}

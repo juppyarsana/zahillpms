@@ -7,7 +7,11 @@ const sse = require('../sse');
 // GET /api/units
 router.get('/', auth, async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT * FROM units WHERE property_id = $1 ORDER BY name', [req.propertyId]);
+    // type_order = the room type's place in the owner's order (Settings → Units).
+    const { rows } = await db.query(
+      `SELECT u.*, rt.sort_order AS type_order FROM units u
+       LEFT JOIN room_types rt ON rt.id = u.room_type_id
+       WHERE u.property_id = $1 ORDER BY u.name`, [req.propertyId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

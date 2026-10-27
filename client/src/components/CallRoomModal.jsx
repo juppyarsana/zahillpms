@@ -1,26 +1,8 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useCall } from '../context/CallContext';
+import { groupUnitsByType } from '../lib/roomTypeOrder';
 
-const TYPE_ORDER = ['Villa', 'Suite', 'Glamping', 'Deluxe'];
-function typeRank(t) {
-  const i = TYPE_ORDER.findIndex(x => (t || '').includes(x));
-  return i === -1 ? 99 : i;
-}
-function groupUnitsByType(units) {
-  const m = new Map();
-  for (const u of units) {
-    const k = u.type || 'Other';
-    if (!m.has(k)) m.set(k, []);
-    m.get(k).push(u);
-  }
-  return [...m.entries()]
-    .map(([type, list]) => ({
-      type,
-      list: list.slice().sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
-    }))
-    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.type.localeCompare(b.type));
-}
 
 // Room picker for staff placing an outgoing call. Deliberately doesn't show
 // an online/offline badge — `GET /api/iot/units`'s `connected` field is the

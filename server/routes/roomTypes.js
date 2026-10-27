@@ -74,6 +74,36 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 // PUT /api/room-types/:id (owner) — the triggers push name/base_rate/max_guests to every room.
 // A rename also has to follow the things that key off the type NAME: yield settings, the
 // auto pricing periods ("Auto: <name>") and the yield change log. Done in one transaction.
+// PUT /api/room-types/order { ids: [...] } (owner) — the order room types are listed in
+// everywhere (room board, Reservations calendar, Availability, Forecast, Housekeeping…).
+// ids = every room type of the property, first to last.
+router.put('/order', auth, requireRole('owner'), async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : null;
+  if (!ids || !ids.length || new Set(ids).size !== ids.length) return res.status(400).json({ error: 'ids must list each room type once' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT id FROM room_types WHERE property_id = $1 FOR UPDATE', [req.propertyId]);
+    const mine = new Set(rows.map(r => r.id));
+    if (rows.length !== ids.length || ids.some(id => !mine.has(id))) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'ids must list every room type of this property' });
+    }
+    await client.query(
+      `UPDATE room_types rt SET sort_order = o.n
+       FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, n)
+       WHERE rt.id = o.id AND rt.property_id = $1`, [req.propertyId, ids]);
+    await client.query('COMMIT');
+    const { rows: list } = await db.query(LIST_SQL, [req.propertyId]);
+    res.json(list);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 router.put('/:id', auth, requireRole('owner'), async (req, res) => {
   const { error, value } = parseBody(req.body || {}, true);
   if (error) return res.status(400).json({ error });

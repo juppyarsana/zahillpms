@@ -53,8 +53,9 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
         AND a.service_date BETWEEN $2::date - 1 AND $3::date
       GROUP BY a.service_date`, [propertyId, start, end]),
     db.query(`
-      SELECT type AS room_type, status, to_char(status_expected_back, 'YYYY-MM-DD') AS expected_back
-      FROM units WHERE property_id = $1`, [propertyId]),
+      SELECT u.type AS room_type, u.status, to_char(u.status_expected_back, 'YYYY-MM-DD') AS expected_back
+      FROM units u LEFT JOIN room_types rt ON rt.id = u.room_type_id
+      WHERE u.property_id = $1 ORDER BY rt.sort_order NULLS LAST, u.type`, [propertyId]),
     db.query(`
       SELECT to_char(holiday_date, 'YYYY-MM-DD') AS date, string_agg(DISTINCT name, ' · ') AS name
       FROM holidays WHERE holiday_date BETWEEN $1::date AND $2::date GROUP BY holiday_date`, [start, end]),
@@ -73,7 +74,7 @@ async function buildForecast(propertyId, { from, days = 14, withMoney = false } 
   const addonBy = new Map(addons.rows.map(r => [r.night, r]));
   const holidayBy = new Map(holidays.rows.map(r => [r.date, r.name]));
   const moneyBy = new Map(money.rows.map(r => [r.night, r]));
-  const types = [...new Set(units.rows.map(u => u.room_type).filter(Boolean))].sort();
+  const types = [...new Set(units.rows.map(u => u.room_type).filter(Boolean))]; // in the owner's room-type order
   const totalRooms = units.rows.length;
   // Out of order is a current status, not dated: a room counts as out until
   // its expected-back date (every day when none was given).

@@ -112,6 +112,18 @@ export default function UnitSettings() {
     } catch (err) { setTypeDeleteError(errText(err, 'Failed to delete')); }
   }
   const setT = (k, v) => setTypeForm(f => ({ ...f, [k]: v }));
+  // ↑ ↓ — the order room types are listed in everywhere (room board, calendar, Availability, Forecast…).
+  async function moveType(i, dir) {
+    const ids = types.map(t => t.id);
+    const j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    setTypes(ids.map(id => types.find(t => t.id === id)));
+    try {
+      const { data } = await api.put('/api/room-types/order', { ids });
+      setTypes(data);
+    } catch (err) { flash(errText(err, 'Failed to change the order')); load(); }
+  }
 
   // ── rooms ──
   function openEdit(unit) {
@@ -194,7 +206,7 @@ export default function UnitSettings() {
       <div className="page-header">
         <div>
           <div className="page-title">Unit Settings</div>
-          <div className="page-subtitle">Rooms grouped by room type — set the rate and capacity once per type</div>
+          <div className="page-subtitle">Rooms grouped by room type — set the rate and capacity once per type; ↑ ↓ sets the order room types are listed in everywhere</div>
         </div>
         <button className="btn btn-primary" onClick={openNewType}><Icon name="plus" />Add room type</button>
       </div>
@@ -227,7 +239,7 @@ export default function UnitSettings() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {groups.map(g => {
+        {groups.map((g, gi) => {
           const open = openId === g.id;
           const counts = { available: 0, occupied: 0, out_of_order: 0 };
           for (const u of g.units) if (counts[u.status] !== undefined) counts[u.status]++;
@@ -280,6 +292,14 @@ export default function UnitSettings() {
                         <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>per night · base rate</div>
                       </div>
                       <div className="flex gap-2" style={{ alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                        {groups.length > 1 && (
+                          <span style={{ display: 'inline-flex', gap: 2 }}>
+                            <button className="btn btn-sm btn-secondary" disabled={gi === 0} onClick={() => moveType(gi, -1)}
+                              aria-label={`Move ${g.name} up`} title="Move up — the order room types are listed in everywhere">↑</button>
+                            <button className="btn btn-sm btn-secondary" disabled={gi === groups.length - 1} onClick={() => moveType(gi, 1)}
+                              aria-label={`Move ${g.name} down`} title="Move down — the order room types are listed in everywhere">↓</button>
+                          </span>
+                        )}
                         <button className="btn btn-sm btn-secondary" onClick={() => { setAddingTo(g.id); setAddError(''); setEditing(null); setEditingType(null); setOpenId(g.id); }}>+ Add Room</button>
                         <button className="btn btn-sm btn-secondary" onClick={() => openEditType(g)}>Edit Type</button>
                         <button className="btn btn-sm btn-danger" title={g.rooms > 0 ? 'Move or delete its rooms first' : 'Delete room type'}
