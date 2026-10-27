@@ -1327,3 +1327,16 @@ tr:hover td { background: #FAFAF8; }
 .drawer-subhead::before { content: ''; width: 6px; height: 6px; border-radius: 2px; background: var(--green-dark); }
 .drawer-item[data-sub] { padding-left: 40px; border-left: 2px solid var(--border); margin-left: 22px; }
 .drawer-subdivider { height: 1px; background: var(--border); margin: 6px 20px; }
+/* Insights drill-down: rows, cards and chips that open the reservations behind a figure. */
+.ins-tap { display: block; width: 100%; text-align: left; background: none; border: none; font: inherit; color: inherit; padding: 6px 8px; margin: -6px -8px; box-sizing: content-box; border-radius: var(--radius-md); cursor: pointer; }
+.ins-tap.ins-row-head { display: flex; box-sizing: border-box; width: calc(100% + 16px); }
+.ins-tap:hover:not(:disabled) { background: var(--green-light); }
+.ins-tap:disabled { cursor: default; }
+.ins-tap-row { cursor: pointer; }
+.ins-tap-row:hover td { background: var(--green-light); }
+.ins-tap-card { cursor: pointer; transition: border-color var(--transition); }
+.ins-tap-card:hover { border-color: var(--green-dark); }
+.ins-chip { background: none; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; }
+.ins-chip:hover { border-color: var(--green-dark); background: var(--green-light); }
+.stay-item:disabled { cursor: default; }
+@media (max-width: 520px) { .stay-item .cost-item-sub, .stay-item .cost-item-what { white-space: normal; } }

@@ -4,6 +4,7 @@
 // permission. Tip shown on the page: the Year view answers "our top countries".
 import { useState } from 'react';
 import InsightPeriodBar, { useInsightPeriod, useInsightFetch, idr, Up, Bar } from '../components/InsightPeriod';
+import StayList, { PARTY_RANGES } from '../components/StayList';
 
 const pct = (now, before) => (before > 0 ? ((now - before) / before) * 100 : null);
 
@@ -11,6 +12,7 @@ export default function InsightGuests() {
   const P = useInsightPeriod();
   const { data, loading, error } = useInsightFetch('/api/insight/guests', P);
   const [all, setAll] = useState(false);
+  const [drill, setDrill] = useState(null);   // { title, filter } → the reservations behind a figure
   const t = data?.totals;
   const countries = data?.countries || [];
   const shown = all ? countries : countries.slice(0, 10);
@@ -37,9 +39,10 @@ export default function InsightGuests() {
           <div className="stat-card">
             <div className="stat-label">Top country</div>
             <div className="stat-value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{countries.find(c => c.nationality)?.nationality || '—'}</div>
-            <div className="stat-sub">{countries.find(c => c.nationality) ? `${Math.round(countries.find(c => c.nationality).share)}% of guests · ${countries.filter(c => c.nationality).length} {countries.filter(c => c.nationality).length === 1 ? 'country' : 'countries'}` : 'No nationality recorded'}</div>
+            <div className="stat-sub">{countries.find(c => c.nationality) ? `${Math.round(countries.find(c => c.nationality).share)}% of guests · ${countries.filter(c => c.nationality).length} ${countries.filter(c => c.nationality).length === 1 ? 'country' : 'countries'}` : 'No nationality recorded'}</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card ins-tap-card" role="button" tabIndex={0} title="See the returning guests"
+               onClick={() => setDrill({ title: 'Returning guests', filter: { basis: 'arrivals', returning: '1' } })}>
             <div className="stat-label">Returning guests</div>
             <div className="stat-value">{Math.round(data.returning.share)}%</div>
             <div className="stat-sub">{data.returning.stays} of {t.stays} stays had stayed before</div>
@@ -58,13 +61,14 @@ export default function InsightGuests() {
               {P.period !== 'year' && <button type="button" className="btn btn-secondary btn-sm" onClick={() => P.setPeriod('year')}>See the whole year</button>}
             </div>
             <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>
-              Guests who arrived, by the nationality of the guest each room is booked under.
+              Guests who arrived, by the nationality of the guest each room is booked under. Tap a country to see the reservations.
               {data.not_recorded > 0 && ` ${data.not_recorded} ${data.not_recorded === 1 ? 'stay has' : 'stays have'} no nationality recorded.`}
             </div>
             {countries.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No arrivals in this period.</div> : (<>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {shown.map((c, i) => (
-                  <div key={c.nationality || 'none'}>
+                  <button type="button" className="ins-tap" key={c.nationality || 'none'}
+                          onClick={() => setDrill({ title: `Guests from ${c.nationality || 'no nationality recorded'}`, filter: { basis: 'arrivals', nationality: c.nationality || '' } })}>
                     <div className="ins-row-head" style={{ fontSize: 14 }}>
                       <span style={{ fontWeight: c.nationality ? 600 : 400 }} className={c.nationality ? undefined : 'text-muted'}>
                         {i + 1}. {c.nationality || 'Not recorded'}
@@ -79,7 +83,7 @@ export default function InsightGuests() {
                       {c.returning > 0 && ` · ${c.returning} returning`}
                       {c.ly_guests != null && <> · last year {c.ly_guests}</>}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
               {countries.length > 10 && (
@@ -94,13 +98,14 @@ export default function InsightGuests() {
             <div className="card">
               <div className="card-title" style={{ marginBottom: 12 }}>Party size</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {data.party.buckets.map(b => (
-                  <div key={b.label}>
+                {data.party.buckets.map((b, i) => (
+                  <button type="button" className="ins-tap" key={b.label} disabled={!b.count}
+                          onClick={() => setDrill({ title: `Rooms with ${b.label}`, filter: { basis: 'arrivals', guests_min: PARTY_RANGES[i][0], guests_max: PARTY_RANGES[i][1] } })}>
                     <div className="ins-row-head" style={{ fontSize: 14 }}>
                       <span>{b.label}</span><span style={{ whiteSpace: 'nowrap' }}>{b.count} {b.count === 1 ? 'room' : 'rooms'} <span className="text-muted">· {Math.round(b.share)}%</span></span>
                     </div>
                     <Bar pct={b.share} />
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -117,6 +122,7 @@ export default function InsightGuests() {
           </div>
         </div>
       </div>)}
+      {drill && <StayList P={P} what={drill} onClose={() => setDrill(null)} />}
     </div>
   );
 }

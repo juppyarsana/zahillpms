@@ -66,6 +66,8 @@ Pendapatan di halaman Profit adalah yang sudah masuk ke tagihan tamu, jadi bisa 
 
 Ketiganya punya **Month / 3 months / Year** di atas, dengan ‹ › untuk berpindah, dan dibandingkan dengan periode sebelumnya serta periode yang sama tahun lalu.
 
+**Ketuk angka mana pun untuk melihat reservasi di baliknya** — channel, tipe kamar, meal plan, negara, batang "berapa lama sebelumnya" atau lama menginap, tamu yang kembali, pembatalan, reservasi yang dibuat. Sebuah jendela menampilkan daftarnya (tamu, kamar, tanggal, channel, nilai); cari, urutkan, dan ketuk satu untuk membuka reservasinya.
+
 - **[Rooms](/insights/rooms)** — okupansi per malam (per bulan untuk periode panjang), rata-rata harga kamar, pendapatan per kamar tersedia, setiap tipe kamar, meal plan yang terjual, berapa lama tamu menginap.
 - **[Guests](/insights/guests)** — tamu yang datang: **dari negara mana** (negara diurutkan, ketuk *See the whole year* untuk negara teratas setahun), tamu yang kembali, jumlah orang per kamar, anak-anak. Negara diambil dari kewarganegaraan tamu atas nama siapa kamar dipesan — pastikan diisi saat check-in.
 - **[Bookings](/insights/bookings)** — reservasi yang dibuat, **channel** (OTA ditandai), **berapa lama sebelumnya** tamu memesan, pembatalan dan no-show, dan **pickup**: berapa kamar bertambah untuk 30 malam ke depan dalam seminggu terakhir.

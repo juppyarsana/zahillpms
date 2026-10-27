@@ -66,6 +66,8 @@ Revenue on Profit is what is posted to the guests' bills, so it can be lower tha
 
 These three have **Month / 3 months / Year** at the top, with ‹ › to move, and compare with the period before and the same period last year.
 
+**Tap any figure to see the reservations behind it** — a channel, a room type, a meal plan, a country, a "how far ahead" or length-of-stay bar, returning guests, cancellations, reservations made. A window lists them (guest, room, dates, channel, value); search, sort, and tap one to open the reservation.
+
 - **[Rooms](/insights/rooms)** — occupancy night by night (month by month for longer periods), average room rate, revenue per available room, every room type, the meal plans sold, how long guests stay.
 - **[Guests](/insights/guests)** — the guests who arrived: **where they come from** (countries ranked, tap *See the whole year* for the year's top countries), returning guests, party size, children. Countries go by the nationality of the guest each room is booked under — keep it filled in at check-in.
 - **[Bookings](/insights/bookings)** — reservations made, **channels** (OTAs marked), **how far ahead** guests book, cancellations and no-shows, and **pickup**: how many rooms were added for the next 30 nights in the last week.

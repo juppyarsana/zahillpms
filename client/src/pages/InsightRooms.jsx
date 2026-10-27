@@ -1,12 +1,15 @@
 // Insights → Rooms: how full the hotel was, which room types and meal plans
 // sell, how long guests stay (server/services/insightPages.js buildRooms —
 // the Reports page's room figures). Owner, or the `reports` permission.
+import { useState } from 'react';
 import InsightPeriodBar, { useInsightPeriod, useInsightFetch, idr, jt, Up, Bar } from '../components/InsightPeriod';
+import StayList, { NIGHT_RANGES } from '../components/StayList';
 
 export default function InsightRooms() {
   const P = useInsightPeriod();
   const { data, loading, error } = useInsightFetch('/api/insight/rooms', P);
   const n = data?.now;
+  const [drill, setDrill] = useState(null);   // { title, filter } → the reservations behind a figure
   const card = (label, value, cmpPrev, cmpLy, sub) => (
     <div className="stat-card">
       <div className="stat-label">{label}</div>
@@ -64,12 +67,13 @@ export default function InsightRooms() {
         <div className="rev-cols">
           <div className="card">
             <div className="card-title" style={{ marginBottom: 10 }}>Room types</div>
+            <div className="text-muted" style={{ fontSize: 12, margin: '-6px 0 8px' }}>Tap a row, a meal plan or a length of stay to see the reservations</div>
             <div className="table-wrap">
               <table className="rev-types">
                 <thead><tr><th>Type</th><th className="num">Occ.</th><th className="num">ADR</th><th className="num">RevPAR</th><th className="num">Revenue</th></tr></thead>
                 <tbody>
                   {data.room_types.map(t => (
-                    <tr key={t.room_type}>
+                    <tr key={t.room_type} className="ins-tap-row" onClick={() => setDrill({ title: `${t.room_type} — stays`, filter: { basis: 'stays', room_type: t.room_type } })}>
                       <td><b>{t.room_type}</b><div className="text-muted" style={{ fontSize: 12 }}>{t.nights} nights · {t.rooms} {t.rooms === 1 ? 'room' : 'rooms'}</div></td>
                       <td className="num">{Math.round(t.occupancy)}%</td>
                       <td className="num">{t.adr ? jt(t.adr) : '—'}</td>
@@ -87,7 +91,7 @@ export default function InsightRooms() {
             {data.rate_plans.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No nights sold.</div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {data.rate_plans.map((p, i) => (
-                  <div key={p.rate_plan + i}>
+                  <button type="button" className="ins-tap" key={p.rate_plan + i} onClick={() => setDrill({ title: `${p.rate_plan} — stays`, filter: { basis: 'stays', rate_plan: p.rate_plan } })}>
                     <div className="ins-row-head" style={{ fontSize: 14 }}>
                       <span style={{ fontWeight: 600 }}>{p.rate_plan}</span>
                       <span style={{ whiteSpace: 'nowrap' }}>{p.nights} nights <span className="text-muted">· {Math.round(p.share)}%</span></span>
@@ -96,7 +100,7 @@ export default function InsightRooms() {
                     <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
                       ADR {idr(p.adr)}{p.meal_revenue > 0 && ` · meals ${idr(p.meal_revenue)}`}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -106,18 +110,20 @@ export default function InsightRooms() {
             <div className="card-title" style={{ marginBottom: 4 }}>How long guests stay</div>
             <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Stays that arrived in the period</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {data.length_of_stay.buckets.map(b => (
-                <div key={b.label}>
+              {data.length_of_stay.buckets.map((b, i) => (
+                <button type="button" className="ins-tap" key={b.label} disabled={!b.count}
+                        onClick={() => setDrill({ title: `Stays of ${b.label}`, filter: { basis: 'arrivals', nights_min: NIGHT_RANGES[i][0], nights_max: NIGHT_RANGES[i][1] } })}>
                   <div className="ins-row-head" style={{ fontSize: 14 }}>
                     <span>{b.label}</span><span style={{ whiteSpace: 'nowrap' }}>{b.count} <span className="text-muted">· {Math.round(b.share)}%</span></span>
                   </div>
                   <Bar pct={b.share} />
-                </div>
+                </button>
               ))}
             </div>
           </div>
         </div>
       </div>)}
+      {drill && <StayList P={P} what={drill} onClose={() => setDrill(null)} />}
     </div>
   );
 }

@@ -256,4 +256,75 @@ async function buildBookings(propertyId, P) {
   };
 }
 
-module.exports = { buildRooms, buildGuests, buildBookings };
+
+// ── Drill-down: the reservations behind a figure of Rooms, Guests or Bookings ──
+// basis: stays (a night in the period — Rooms, channels), arrivals (arrived in
+// the period — Guests, how far ahead, cancellations), made (reserved in the
+// period). Filters match the pages' own groupings, by name. One row per room;
+// at most 500.
+const LIST_LIMIT = 500;
+async function buildStayList(propertyId, P, q = {}) {
+  const basis = ['stays', 'arrivals', 'made'].includes(q.basis) ? q.basis : 'stays';
+  const params = [propertyId, P.from, P.to];
+  const where = ['b.property_id = $1'];
+  const add = (sql, v) => { params.push(v); where.push(sql.replace('$?', `$${params.length}`)); };
+  if (basis === 'stays') where.push('b.check_in_date <= $3::date AND b.check_out_date > $2::date');
+  if (basis === 'arrivals') where.push('b.check_in_date BETWEEN $2::date AND $3::date');
+  if (basis === 'made') where.push(`(b.created_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date`);
+  if (['cancelled', 'no_show'].includes(q.status)) add('b.status = $?', q.status);
+  else if (basis !== 'made') where.push(`b.status NOT IN ('cancelled', 'no_show')`);
+  if (q.source) add(`COALESCE(bs.label, b.source, 'Unspecified') = $?`, String(q.source));
+  if (q.room_type) add(`COALESCE(rt.name, u.type, 'Other') = $?`, String(q.room_type));
+  if (q.rate_plan) add(`COALESCE(rp.name, 'No rate plan') = $?`, String(q.rate_plan));
+  if (q.nationality !== undefined) {
+    if (q.nationality === '' || q.nationality === 'Not recorded') where.push(`NULLIF(TRIM(g.nationality), '') IS NULL`);
+    else add('TRIM(g.nationality) = $?', String(q.nationality));
+  }
+  const LEAD = `(b.check_in_date - (b.created_at AT TIME ZONE 'Asia/Makassar')::date)`;
+  const int = v => (v === undefined || v === '' ? null : parseInt(v, 10));
+  if (int(q.lead_min) != null) add(`GREATEST(${LEAD}, 0) >= $?`, int(q.lead_min));
+  if (int(q.lead_max) != null) add(`GREATEST(${LEAD}, 0) <= $?`, int(q.lead_max));
+  if (int(q.nights_min) != null) add('b.nights >= $?', int(q.nights_min));
+  if (int(q.nights_max) != null) add('b.nights <= $?', int(q.nights_max));
+  if (int(q.guests_min) != null) add('COALESCE(b.num_guests, 0) >= $?', int(q.guests_min));
+  if (int(q.guests_max) != null) add('COALESCE(b.num_guests, 0) <= $?', int(q.guests_max));
+  if (q.returning === '1') where.push(`EXISTS (SELECT 1 FROM bookings p WHERE p.guest_id = b.guest_id AND p.property_id = b.property_id AND p.id <> b.id
+    AND p.status NOT IN ('cancelled', 'no_show') AND p.check_in_date < b.check_in_date)`);
+  const { rows } = await db.query(`
+    SELECT b.id, b.reservation_group_id, b.status, b.check_in_date, b.check_out_date, b.nights, COALESCE(b.num_guests, 0) AS guests,
+           COALESCE(b.children, 0) AS children, ${VALUE_SQL} AS value,
+           g.name AS guest_name, NULLIF(TRIM(g.nationality), '') AS nationality, u.name AS unit_name,
+           COALESCE(rt.name, u.type, 'Other') AS room_type, COALESCE(rp.name, 'No rate plan') AS rate_plan,
+           COALESCE(bs.label, b.source, 'Unspecified') AS source,
+           (b.created_at AT TIME ZONE 'Asia/Makassar')::date AS made_on, GREATEST(${LEAD}, 0) AS lead,
+           GREATEST(0, LEAST(b.check_out_date, $3::date + 1) - GREATEST(b.check_in_date, $2::date)) AS nights_in_period
+    FROM bookings b
+    JOIN guests g ON g.id = b.guest_id
+    JOIN units u ON u.id = b.unit_id
+    LEFT JOIN room_types rt ON rt.id = u.room_type_id
+    LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
+    LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY b.check_in_date, u.name
+    LIMIT ${LIST_LIMIT + 1}`, params);
+  const more = rows.length > LIST_LIMIT;
+  const list = rows.slice(0, LIST_LIMIT).map(r => ({
+    id: r.id, group_id: r.reservation_group_id, status: r.status,
+    check_in: ymd(r.check_in_date), check_out: ymd(r.check_out_date), nights: r.nights,
+    nights_in_period: parseInt(r.nights_in_period, 10) || 0,
+    guests: parseInt(r.guests, 10) || 0, children: parseInt(r.children, 10) || 0, value: r2(r.value),
+    guest_name: r.guest_name, nationality: r.nationality, unit_name: r.unit_name, room_type: r.room_type,
+    rate_plan: r.rate_plan, source: r.source, made_on: ymd(r.made_on), lead: parseInt(r.lead, 10) || 0,
+  }));
+  return {
+    basis, more, rows: list,
+    totals: {
+      rooms: list.length,
+      guests: list.reduce((s, r) => s + r.guests, 0),
+      nights: list.reduce((s, r) => s + (basis === 'stays' ? r.nights_in_period : r.nights), 0),
+      value: r2(list.reduce((s, r) => s + r.value, 0)),
+    },
+  };
+}
+
+module.exports = { buildRooms, buildGuests, buildBookings, buildStayList };
