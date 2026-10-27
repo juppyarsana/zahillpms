@@ -1,8 +1,9 @@
 // Revenue (Insights → Revenue): what came in, where it came from and how the
 // rooms sold — one month, compared with the month before (the same days while
 // it runs) and the same days last year. The Reports page's own figures in an
-// owner's layout (server/services/revenueInsights.js); the full tables and the
-// Excel / PDF stay on Reports. Owner, or the `reports` permission.
+// owner's layout (server/services/revenueInsights.js). Channels, room types and
+// countries have their own pages (Bookings, Rooms, Guests); the full tables and
+// the Excel / PDF are the Manager report (/reports/revenue). Owner, or the `reports` permission.
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
@@ -10,7 +11,6 @@ import api from '../services/api';
 import { propertyToday } from '../lib/propertyTime';
 
 const idr = n => { const v = Math.round(Number(n) || 0); return (v < 0 ? '− Rp ' : 'Rp ') + Math.abs(v).toLocaleString('id-ID'); };
-const jt = n => (Math.round((Number(n) || 0) / 100000) / 10).toLocaleString('id-ID') + ' jt';
 const shiftMonth = (ym, n) => {
   const [y, m] = ym.split('-').map(Number);
   const t = y * 12 + (m - 1) + n;
@@ -59,7 +59,7 @@ export default function Revenue() {
   const lyLabel = data?.last_year?.label;
   const maxDay = data ? Math.max(1, ...data.daily.map(d => d.total)) : 1;
   const maxMix = data ? Math.max(1, ...data.mix.map(m => m.amount)) : 1;
-  const maxChan = data?.channels?.length ? Math.max(...data.channels.map(c => c.revenue)) : 1;
+  const qs = month === current ? '' : `?at=${month}`;   // the same month on Rooms / Guests / Bookings
 
   const card = (label, value, cmp, sub) => (
     <div className="stat-card">
@@ -77,7 +77,7 @@ export default function Revenue() {
           <div className="page-subtitle">What came in, where it came from, and how the rooms sold.</div>
         </div>
         <div>
-          <Link to="/reports/revenue" className="btn btn-secondary"><Icon name="download" />Full report · Excel / PDF</Link>
+          <Link to="/reports/revenue" className="btn btn-secondary"><Icon name="download" />Manager report · Excel / PDF</Link>
         </div>
       </div>
 
@@ -163,59 +163,24 @@ export default function Revenue() {
           </div>
 
           <div className="card">
-            <div className="card-title" style={{ marginBottom: 4 }}>Stays by channel</div>
-            <div className="text-muted" style={{ fontSize: 12, marginBottom: 12 }}>Room + meal plan revenue of the stays, by where they were booked</div>
-            {data.channels.length === 0 ? <div className="text-muted" style={{ fontSize: 13 }}>No stays this month.</div> : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {data.channels.map(c => (
-                  <div key={c.source}>
-                    <div className="ins-row-head" style={{ fontSize: 14 }}>
-                      <span>{c.source}{c.ota && <span className="badge badge-blue" style={{ marginLeft: 6 }}>OTA</span>}</span>
-                      <span style={{ whiteSpace: 'nowrap' }}><b>{idr(c.revenue)}</b> <span className="text-muted">· {Math.round(c.share)}%</span></span>
-                    </div>
-                    <div className="ins-bar"><div className={`ins-bar-fill${c.ota ? '' : ' strong'}`} style={{ width: `${(c.revenue / maxChan) * 100}%` }} /></div>
-                    <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>{c.bookings} {c.bookings === 1 ? 'booking' : 'bookings'} · {c.nights} {c.nights === 1 ? 'night' : 'nights'} · ADR {idr(c.adr)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {data.ota_share != null && (
-              <div className="text-muted" style={{ fontSize: 13, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                {Math.round(data.ota_share)}% of stay revenue came through an OTA (pays a commission).
-              </div>
-            )}
-          </div>
-
-          <div className="card">
-            <div className="card-title" style={{ marginBottom: 10 }}>Room types</div>
-            <div className="table-wrap">
-              <table className="rev-types">
-                <thead>
-                  <tr><th>Type</th><th className="num">Occ.</th><th className="num">ADR</th><th className="num">Revenue</th></tr>
-                </thead>
-                <tbody>
-                  {data.room_types.map(t => (
-                    <tr key={t.room_type}>
-                      <td ><b>{t.room_type}</b><div className="text-muted" style={{ fontSize: 12 }}>{t.nights} nights · {t.rooms} {t.rooms === 1 ? 'room' : 'rooms'}</div></td>
-                      <td className="num">{Math.round(t.occupancy)}%</td>
-                      <td className="num">{t.adr ? jt(t.adr) : '—'}</td>
-                      <td className="num">{jt(t.revenue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="card-title" style={{ marginBottom: 12 }}>More on these figures</div>
+            <div className="rev-more">
+              {[
+                { to: `/insights/bookings${qs}`, title: 'Bookings', line: data.channels.length
+                    ? `${data.channels[0].source} brought the most (${Math.round(data.channels[0].share)}%)${data.ota_share != null ? ` · ${Math.round(data.ota_share)}% through OTAs` : ''}`
+                    : 'Channels, how far ahead guests book, cancellations' },
+                { to: `/insights/rooms${qs}`, title: 'Rooms', line: data.room_types.length
+                    ? `${[...data.room_types].sort((a, b) => b.revenue - a.revenue)[0].room_type} earned the most · occupancy ${Math.round(data.now.occupancy)}%`
+                    : 'Room types, meal plans, length of stay' },
+                { to: `/insights/guests${qs}`, title: 'Guests', line: data.nationalities.find(x => x.nationality)
+                    ? `Most room-nights from ${data.nationalities.find(x => x.nationality).nationality} · ${data.arrivals.guests} guests arrived`
+                    : 'Countries, returning guests, party size' },
+              ].map(x => (
+                <Link key={x.title} to={x.to} className="rev-more-item">
+                  <b>{x.title} →</b><span className="text-muted">{x.line}</span>
+                </Link>
+              ))}
             </div>
-            {data.nationalities.length > 0 && (<>
-              <div className="stat-label" style={{ marginTop: 14 }}>Guests from</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {data.nationalities.map(n => (
-                  <span key={n.nationality} className="badge badge-gray" title={`${n.bookings} bookings · ${n.room_nights} room-nights · ${idr(n.revenue)}`}>
-                    {n.nationality || 'Not recorded'} · {n.room_nights}
-                  </span>
-                ))}
-              </div>
-              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>room-nights · {data.arrivals.guests} guests arrived</div>
-            </>)}
           </div>
         </div>
       </div>)}

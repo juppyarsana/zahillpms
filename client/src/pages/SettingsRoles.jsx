@@ -51,7 +51,7 @@ export const MENU_DEFS = [
   { key: 'vendors',          label: 'Vendor prices & payouts (tours / transport vendors)', group: 'Finance' },
   // The Accounting page: chart of accounts, account mapping, daily journal (an accountant's login).
   { key: 'accounting',       label: 'Accounting (the books — journal, P&L, balance sheet)', group: 'Finance' },
-  { key: 'reports',          label: 'Revenue + Reports (revenue, occupancy, channels, money — Excel / PDF)', group: 'Revenue' },
+  { key: 'reports',          label: 'Insights — Revenue, Rooms, Guests, Bookings + the Manager report (Excel / PDF)', group: 'Revenue' },
   // The owner's home: needs-you list, tonight, revenue, money in, owed, biggest costs (a manager's login).
   { key: 'overview',         label: 'Overview (owner / manager home — revenue, money, costs, what needs attention)', group: 'Revenue' },
   { key: 'costs',            label: 'Costs by department (Expenses + supplier bills, department profit)', group: 'Revenue' },

@@ -8,6 +8,18 @@
 
 import { reportsFor } from './reportLibrary';
 
+// Sub-groups inside one menu group: the first visible item of each carries
+// the small heading (`sub`), or a line above it (`divider`); a sub-group with
+// nothing visible disappears with its heading.
+function withSubs(subs) {
+  const out = [];
+  for (const [label, items, opts = {}] of subs) {
+    const shown = items.filter(Boolean);
+    if (shown.length) out.push({ ...shown[0], ...(label ? { sub: label } : {}), ...(opts.divider ? { divider: true } : {}) }, ...shown.slice(1));
+  }
+  return out;
+}
+
 export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   const isOwner = user?.role === 'owner';
   const res = hasModule('reservations');
@@ -33,6 +45,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('activities') && hasModule('activities') && { to: '/activities', icon: '🥾', label: 'Activities' },
       can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
       can('restaurant') && hasModule('pos_integration') && { to: '/restaurant', icon: '🍽', label: 'Restaurant' },
+      can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },   // moves to a Sales group with Events in the menu regroup
     ] },
     { id: 'operations', label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },
@@ -40,15 +53,24 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
     ] },
-    // Insights (was Revenue): Pricing moves to a Sales group in the menu regroup (ROADMAP "Owner insights").
-    { id: 'revenue', label: 'Insights', items: [
-      can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
-      can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
-      can('profit') && hasModule('accounting') && { to: '/profit', icon: '⚖', label: 'Profit' },
-      reportsFor(can, hasModule).length > 0 && { to: '/reports', end: true, icon: '📈', label: 'Reports' },   // the library — every printable report
-      can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
-      can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
-    ] },
+    // Insights (owner's figures, one question per page), in small sub-groups:
+    // Sales · Bookings · Money, then Export / Print (every printable report).
+    { id: 'revenue', label: 'Insights', items: withSubs([
+      ['Sales', [
+        can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
+        can('reports') && res && { to: '/insights/rooms', icon: '🛏', label: 'Rooms' },
+        can('reports') && res && { to: '/insights/guests', icon: '🌏', label: 'Guests' },
+      ]],
+      ['Bookings', [
+        can('reports') && res && { to: '/insights/bookings', icon: '🧾', label: 'Bookings' },
+        can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
+      ]],
+      ['Money', [
+        can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
+        can('profit') && hasModule('accounting') && { to: '/profit', icon: '⚖', label: 'Profit' },
+      ]],
+      [null, [reportsFor(can, hasModule).length > 0 && { to: '/reports', end: true, icon: '🖨', label: 'Export / Print' }], { divider: true }],
+    ]) },
     { id: 'finance', label: 'Finance', items: [
       // In the money's order: owed to the hotel, owed by the hotel, spent, the books.
       can('receivables') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Receivables' },   // agents, companies, OTAs (owner or the accountant)

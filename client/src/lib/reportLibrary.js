@@ -43,7 +43,7 @@ export const REPORTS = [
     can: c => c('stock'), mod: ['back_office'], link: { to: '/stock', label: 'Open Stock' } },
 
   // ── Insights ──
-  { group: 'Insights', id: 'revenue', title: 'Revenue report', what: 'Revenue, rooms, channels and money — with room nights and reservations in the Excel.',
+  { group: 'Insights', id: 'revenue', title: 'Manager report', what: 'The full figures: revenue, rooms, channels, money — with room nights and reservations in the Excel.',
     can: c => c('reports'), mod: ['financial'], fields: [D('from', 'From', monthStart), D('to', 'To', propertyToday)],
     files: [
       { label: 'Excel', url: () => '/api/reports/full/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `report-${v.from}_to_${v.to}.xlsx` },

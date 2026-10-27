@@ -1,8 +1,21 @@
-# Overview, revenue, costs & profit
+# Overview & Insights
 
-Four pages for the owner and managers, under **Overview** and **Insights**. Owners always see them; anyone else needs the permission (Roles & Permissions): **Overview**, **Revenue + Reports**, **Costs by department**, **Profit**.
+The owner's and managers' pages: **Overview** at the top of the menu, and the **Insights** group — one question per page:
 
-All four compare a month with the month before. While a month is still running, it is compared with the **same days** of the month before.
+| Insights | Answers |
+|---|---|
+| **Sales** → Revenue | How much did we sell, and where did it come from? |
+| **Sales** → Rooms | How full were we, which rooms and meal plans sell? |
+| **Sales** → Guests | Who are our guests, where are they from, do they come back? |
+| **Bookings** → Bookings | How do reservations come in — channels, how far ahead, cancellations? |
+| **Bookings** → Forecast | What is on the books for the days ahead? |
+| **Money** → Costs | Which department spends the most? |
+| **Money** → Profit | What is left after costs? |
+| **Export / Print** | Every report to print or download |
+
+Owners always see them; anyone else needs the permission (Roles & Permissions): **Overview**, **Insights — Revenue, Rooms, Guests, Bookings**, **Costs by department**, **Profit**.
+
+Each page compares the period with the one before. While a month is still running, it is compared with the **same days** of the month before.
 
 ## Overview
 
@@ -32,11 +45,11 @@ A cost in the wrong department? Change the **Department** on the expense or the 
 
 ## Revenue
 
-**[Insights → Revenue](/revenue)** — what came in, where it came from, how the rooms sold. The same figures as the Reports page; the Excel and PDF stay there.
+**[Insights → Revenue](/revenue)** — what came in and where it came from. The full figures, with Excel and PDF, are the **Manager report** (button at the top, or Export / Print).
 
 - Total revenue, occupancy, average room rate (ADR) and revenue per available room (RevPAR) — and the same month last year when there is one.
 - **Every day** — rooms, food & beverage, extras & activities. Hover a day for its figures.
-- **Where it came from**, **Stays by channel** (OTAs marked — they take a commission) and **Room types**.
+- **Where it came from** — rooms, food & beverage, extras & activities — and links to Bookings, Rooms and Guests for the detail.
 
 All amounts are net — before service charge and tax.
 
@@ -48,11 +61,19 @@ All amounts are net — before service charge and tax.
 
 Revenue on Profit is what is posted to the guests' bills, so it can be lower than on the Revenue page while guests have not checked in yet. The page says how much.
 
-## Reports — every report in one place
+## Rooms, Guests and Bookings
 
-**[Insights → Reports](/reports)** lists every report you may print or download: guest lists, registration cards, the police guest report, balance due, cashier closing, night audit, the kitchen list, the revenue report, costs, forecast, and for the accountant expenses, purchase orders, the journal, Profit & Loss, balance sheet and trial balance.
+These three have **Month / 3 months / Year** at the top, with ‹ › to move, and compare with the period before and the same period last year.
+
+- **[Rooms](/insights/rooms)** — occupancy night by night (month by month for longer periods), average room rate, revenue per available room, every room type, the meal plans sold, how long guests stay.
+- **[Guests](/insights/guests)** — the guests who arrived: **where they come from** (countries ranked, tap *See the whole year* for the year's top countries), returning guests, party size, children. Countries go by the nationality of the guest each room is booked under — keep it filled in at check-in.
+- **[Bookings](/insights/bookings)** — reservations made, **channels** (OTAs marked), **how far ahead** guests book, cancellations and no-shows, and **pickup**: how many rooms were added for the next 30 nights in the last week.
+
+## Export / Print — every report in one place
+
+**[Insights → Export / Print](/reports)** lists every report you may print or download: guest lists, registration cards, the police guest report, balance due, cashier closing, night audit, the kitchen list, the Manager report, costs, forecast, and for the accountant expenses, purchase orders, the journal, Profit & Loss, balance sheet and trial balance.
 
 1. Find the report (or type in **Find a report…**).
 2. Tap it, choose the day, month or dates, and press **Download**.
 
-You only see the reports of the pages you can open — the same as before, nothing new to set up. The buttons on each page still work as they did. The old revenue report page is now **Revenue report** (`/reports/revenue`), opened from Reports or from the Revenue page.
+You only see the reports of the pages you can open — nothing new to set up. The buttons on each page still work as before. The **Manager report** is the old Reports page: every figure for any period, with Excel / PDF / CSV.

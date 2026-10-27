@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { buildNav } from '../lib/navItems';
 import { useAuth } from '../context/AuthContext';
@@ -43,7 +43,17 @@ function SidebarSection({ id, label, items, defaultOpen = true }) {
           <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
-      {open && <div className="sidebar-group-items">{items.map(item => <SidebarLink key={item.to} {...item} />)}</div>}
+      {open && (
+        <div className="sidebar-group-items">
+          {items.map(item => (
+            <Fragment key={item.to}>
+              {item.divider && <div className="sidebar-subdivider" />}
+              {item.sub && <div className="sidebar-subhead">{item.sub}</div>}
+              <SidebarLink {...item} />
+            </Fragment>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

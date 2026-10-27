@@ -1,8 +1,21 @@
-# Overview, pendapatan, biaya & laba
+# Overview & Insights
 
-Empat halaman untuk owner dan manajer, di **Overview** dan **Insights**. Owner selalu bisa membukanya; yang lain perlu izinnya (Roles & Permissions): **Overview**, **Revenue + Reports**, **Costs by department**, **Profit**.
+Halaman untuk owner dan manajer: **Overview** di paling atas menu, dan grup **Insights** — satu pertanyaan per halaman:
 
-Keempatnya membandingkan satu bulan dengan bulan sebelumnya. Bulan yang masih berjalan dibandingkan dengan **tanggal yang sama** bulan sebelumnya.
+| Insights | Menjawab |
+|---|---|
+| **Sales** → Revenue | Berapa penjualan kita, dan dari mana? |
+| **Sales** → Rooms | Seberapa penuh hotel, kamar dan meal plan mana yang laku? |
+| **Sales** → Guests | Siapa tamu kita, dari negara mana, apakah mereka kembali? |
+| **Bookings** → Bookings | Bagaimana reservasi masuk — channel, berapa lama sebelumnya, pembatalan? |
+| **Bookings** → Forecast | Apa yang sudah terisi untuk hari-hari ke depan? |
+| **Money** → Costs | Departemen mana yang paling banyak biayanya? |
+| **Money** → Profit | Berapa sisanya setelah biaya? |
+| **Export / Print** | Semua laporan untuk dicetak atau diunduh |
+
+Owner selalu bisa membukanya; yang lain perlu izinnya (Roles & Permissions): **Overview**, **Insights — Revenue, Rooms, Guests, Bookings**, **Costs by department**, **Profit**.
+
+Setiap halaman membandingkan periodenya dengan periode sebelumnya. Bulan yang masih berjalan dibandingkan dengan **tanggal yang sama** bulan sebelumnya.
 
 ## Overview
 
@@ -32,11 +45,11 @@ Biaya masuk departemen yang salah? Ubah **Department** pada expense atau tagihan
 
 ## Pendapatan (Revenue)
 
-**[Insights → Revenue](/revenue)** — uang yang masuk, dari mana asalnya, dan bagaimana kamar terjual. Angkanya sama dengan halaman Reports; Excel dan PDF tetap di sana.
+**[Insights → Revenue](/revenue)** — uang yang masuk dan dari mana asalnya. Angka lengkapnya, dengan Excel dan PDF, ada di **Manager report** (tombol di atas, atau Export / Print).
 
 - Total pendapatan, okupansi, rata-rata harga kamar (ADR) dan pendapatan per kamar tersedia (RevPAR) — dan bulan yang sama tahun lalu jika ada.
 - **Every day** — kamar, makanan & minuman, extras & aktivitas. Arahkan kursor ke satu hari untuk melihat angkanya.
-- **Where it came from**, **Stays by channel** (OTA ditandai — mereka mengambil komisi) dan **Room types**.
+- **Where it came from** — kamar, makanan & minuman, extras & aktivitas — dan tautan ke Bookings, Rooms dan Guests untuk rinciannya.
 
 Semua angka bersih — sebelum service charge dan pajak.
 
@@ -48,11 +61,19 @@ Semua angka bersih — sebelum service charge dan pajak.
 
 Pendapatan di halaman Profit adalah yang sudah masuk ke tagihan tamu, jadi bisa lebih rendah daripada di halaman Revenue selama tamu belum check-in. Halaman menyebut selisihnya.
 
-## Reports — semua laporan di satu tempat
+## Rooms, Guests dan Bookings
 
-**[Insights → Reports](/reports)** berisi semua laporan yang boleh Anda cetak atau unduh: guest lists, kartu registrasi, laporan tamu untuk polisi, balance due, cashier closing, night audit, daftar dapur, laporan pendapatan, biaya, forecast, dan untuk akuntan: expenses, purchase order, jurnal, Laba Rugi, neraca dan neraca saldo.
+Ketiganya punya **Month / 3 months / Year** di atas, dengan ‹ › untuk berpindah, dan dibandingkan dengan periode sebelumnya serta periode yang sama tahun lalu.
+
+- **[Rooms](/insights/rooms)** — okupansi per malam (per bulan untuk periode panjang), rata-rata harga kamar, pendapatan per kamar tersedia, setiap tipe kamar, meal plan yang terjual, berapa lama tamu menginap.
+- **[Guests](/insights/guests)** — tamu yang datang: **dari negara mana** (negara diurutkan, ketuk *See the whole year* untuk negara teratas setahun), tamu yang kembali, jumlah orang per kamar, anak-anak. Negara diambil dari kewarganegaraan tamu atas nama siapa kamar dipesan — pastikan diisi saat check-in.
+- **[Bookings](/insights/bookings)** — reservasi yang dibuat, **channel** (OTA ditandai), **berapa lama sebelumnya** tamu memesan, pembatalan dan no-show, dan **pickup**: berapa kamar bertambah untuk 30 malam ke depan dalam seminggu terakhir.
+
+## Export / Print — semua laporan di satu tempat
+
+**[Insights → Export / Print](/reports)** berisi semua laporan yang boleh Anda cetak atau unduh: guest lists, kartu registrasi, laporan tamu untuk polisi, balance due, cashier closing, night audit, daftar dapur, Manager report, biaya, forecast, dan untuk akuntan: expenses, purchase order, jurnal, Laba Rugi, neraca dan neraca saldo.
 
 1. Cari laporannya (atau ketik di **Find a report…**).
 2. Ketuk, pilih hari, bulan atau tanggal, lalu tekan **Download**.
 
-Anda hanya melihat laporan dari halaman yang memang bisa Anda buka — sama seperti sebelumnya, tidak ada yang perlu diatur. Tombol di setiap halaman tetap berfungsi seperti biasa. Halaman laporan pendapatan yang lama sekarang bernama **Revenue report** (`/reports/revenue`), dibuka dari Reports atau dari halaman Revenue.
+Anda hanya melihat laporan dari halaman yang memang bisa Anda buka — tidak ada yang perlu diatur. Tombol di setiap halaman tetap berfungsi seperti biasa. **Manager report** adalah halaman Reports yang lama: semua angka untuk periode apa pun, dengan Excel / PDF / CSV.

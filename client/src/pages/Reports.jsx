@@ -332,7 +332,7 @@ export default function Reports() {
     <div id="report-top" style={{ scrollMarginTop: 80 }}>
       <div className="page-header">
         <div>
-          <div className="page-title">Revenue report</div>
+          <div className="page-title">Manager report</div>
           <div className="page-subtitle">{label} · amounts are net (after discounts, before service charge &amp; tax)</div>
         </div>
         <div>

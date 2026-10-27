@@ -1,4 +1,4 @@
-// Reports (Insights → Reports): every printable report in one place. Each
+// Export / Print (Insights → Export / Print, at /reports): every printable report in one place. Each
 // report follows the permission of the page it comes from — someone sees only
 // what they could already download there, and the server checks again on
 // download. The download buttons on the source pages stay. Reports tied to
@@ -99,7 +99,7 @@ export default function ReportsLibrary() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Reports</div>
+          <div className="page-title">Export / Print</div>
           <div className="page-subtitle">Every report you can print or download, in one place.</div>
         </div>
       </div>
