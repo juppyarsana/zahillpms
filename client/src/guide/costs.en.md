@@ -5,11 +5,11 @@ The owner's and managers' pages: **Overview** at the top of the menu, and the **
 | Insights | Answers |
 |---|---|
 | **Summary** | Every figure on one page, for any period — with Excel / PDF |
-| **Sales** → Revenue | How much did we sell, and where did it come from? |
-| **Sales** → Rooms | How full were we, which rooms and meal plans sell? |
-| **Sales** → Guests | Who are our guests, where are they from, do they come back? |
-| **Bookings** → Bookings | How do reservations come in — channels, how far ahead, cancellations? |
-| **Bookings** → Forecast | What is on the books for the days ahead? |
+| **Forecast** | What is on the books for the days ahead? |
+| **Stays** → Bookings | How do reservations come in — channels, how far ahead, cancellations? |
+| **Stays** → Rooms | How full were we, which rooms and meal plans sell? |
+| **Stays** → Guests | Who are our guests, where are they from, do they come back? |
+| **Money** → Revenue | How much did we sell, and where did it come from? |
 | **Money** → Costs | Which department spends the most? |
 | **Money** → Profit | What is left after costs? |
 | **Export / Print** | Every report to print or download |

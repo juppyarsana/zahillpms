@@ -53,21 +53,22 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
     ] },
-    // Insights (owner's figures, one question per page), in small sub-groups:
-    // Sales · Bookings · Money, then Export / Print (every printable report).
+    // Insights (owner's figures, one question per page): Summary · Forecast,
+    // sub-groups Stays · Money, then Export / Print (every printable report).
     { id: 'revenue', label: 'Insights', items: withSubs([
-      // Every figure on one page, any period, Excel / PDF (the old Reports page).
-      [null, [can('reports') && hasModule('financial') && { to: '/insights/summary', icon: '📊', label: 'Summary' }]],
-      ['Sales', [
-        can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
+      // Overall (every figure for any period) and the days ahead, then the
+      // stays and the money (revenue − costs = profit), then the downloads.
+      [null, [
+        can('reports') && hasModule('financial') && { to: '/insights/summary', icon: '📊', label: 'Summary' },
+        can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
+      ]],
+      ['Stays', [
+        can('reports') && res && { to: '/insights/bookings', icon: '🧾', label: 'Bookings' },
         can('reports') && res && { to: '/insights/rooms', icon: '🛏', label: 'Rooms' },
         can('reports') && res && { to: '/insights/guests', icon: '🌏', label: 'Guests' },
       ]],
-      ['Bookings', [
-        can('reports') && res && { to: '/insights/bookings', icon: '🧾', label: 'Bookings' },
-        can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
-      ]],
       ['Money', [
+        can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
         can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
         can('profit') && hasModule('accounting') && { to: '/profit', icon: '⚖', label: 'Profit' },
       ]],

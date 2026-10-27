@@ -5,11 +5,11 @@ Halaman untuk owner dan manajer: **Overview** di paling atas menu, dan grup **In
 | Insights | Menjawab |
 |---|---|
 | **Summary** | Semua angka di satu halaman, untuk periode apa pun — dengan Excel / PDF |
-| **Sales** → Revenue | Berapa penjualan kita, dan dari mana? |
-| **Sales** → Rooms | Seberapa penuh hotel, kamar dan meal plan mana yang laku? |
-| **Sales** → Guests | Siapa tamu kita, dari negara mana, apakah mereka kembali? |
-| **Bookings** → Bookings | Bagaimana reservasi masuk — channel, berapa lama sebelumnya, pembatalan? |
-| **Bookings** → Forecast | Apa yang sudah terisi untuk hari-hari ke depan? |
+| **Forecast** | Apa yang sudah terisi untuk hari-hari ke depan? |
+| **Stays** → Bookings | Bagaimana reservasi masuk — channel, berapa lama sebelumnya, pembatalan? |
+| **Stays** → Rooms | Seberapa penuh hotel, kamar dan meal plan mana yang laku? |
+| **Stays** → Guests | Siapa tamu kita, dari negara mana, apakah mereka kembali? |
+| **Money** → Revenue | Berapa penjualan kita, dan dari mana? |
 | **Money** → Costs | Departemen mana yang paling banyak biayanya? |
 | **Money** → Profit | Berapa sisanya setelah biaya? |
 | **Export / Print** | Semua laporan untuk dicetak atau diunduh |
