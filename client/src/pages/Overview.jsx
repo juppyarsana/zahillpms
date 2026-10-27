@@ -14,7 +14,7 @@ import { MonthSection, SectionHeading } from '../components/DashboardSections';
 import MarketSection from '../components/MarketSection';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
-const jt = n => (Math.round((Number(n) || 0) / 100000) / 10).toLocaleString('id-ID') + ' jt';
+const jt = n => 'Rp ' + (Math.round((Number(n) || 0) / 100000) / 10).toLocaleString('id-ID') + ' jt';
 const dayShort = ymd => { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
 const weekday = ymd => { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short' }); };
 
@@ -45,9 +45,9 @@ function YesterdayLine({ y }) {
   return (
     <div className="tomorrow-line ov-yday">
       <span className="tomorrow-label">Yesterday · {weekday(y.date)} {dayShort(y.date)}</span>
-      <span>revenue <b>{idr(y.revenue)}</b> <Delta now={y.revenue} before={b.revenue} /></span>
       <span>occupancy <b>{y.occupancy}%</b> <Delta now={y.occupancy} before={b.occupancy} pts /></span>
       <span>ADR <b>{idr(y.adr)}</b> <Delta now={y.adr} before={b.adr} /></span>
+      <span>revenue <b>{idr(y.revenue)}</b> <Delta now={y.revenue} before={b.revenue} /></span>
       <span className="text-muted">compared with {weekday(y.compare_date)} {dayShort(y.compare_date)}</span>
     </div>
   );
@@ -125,10 +125,10 @@ export default function Overview() {
                 right={(can('checkin_full') || can('guest_lists') || can('dashboard')) && <Link to="/today" className="tomorrow-link">Open Today →</Link>} />
               <div className="stat-grid stat-grid-money ov-today" style={{ marginBottom: 0 }}>
                 <div className="stat-card">
-                  <div className="stat-label">Rooms tonight</div>
-                  <div className="stat-value">{t.rooms} of {t.sellable} · {t.pct}%</div>
+                  <div className="stat-label">Occupancy tonight</div>
+                  <div className="stat-value">{t.pct}% · {t.rooms} of {t.sellable}</div>
                   <div className="stat-sub">{t.staying} staying + {t.arriving} arriving{t.overdue > 0 ? ` + ${t.overdue} overdue` : ''}</div>
-                  {y && <VsYesterday now={t.pct} before={y.occupancy} pts arrow>{plural(y.room_nights, 'room')} ({y.occupancy}%)</VsYesterday>}
+                  {y && <VsYesterday now={t.pct} before={y.occupancy} pts arrow>{y.occupancy}% · {plural(y.room_nights, 'room')}</VsYesterday>}
                 </div>
                 {t.adr != null && (
                   <div className="stat-card" title="Average room rate of tonight's paid rooms (room revenue ÷ paid rooms; free nights left out). RevPAR = room revenue ÷ rooms for sale.">
@@ -138,15 +138,18 @@ export default function Overview() {
                     {y && <VsYesterday now={t.adr} before={y.adr} arrow>{idr(y.adr)}</VsYesterday>}
                   </div>
                 )}
-                <div className="stat-card">
-                  <div className="stat-label">Arriving · departing</div>
-                  <div className="stat-value">{t.arriving_today} in · {t.departing_today} out</div>
-                  <div className="stat-sub">{t.arrived} arrived, {t.to_come} to come · {t.checked_out} left, {t.to_go} to go</div>
-                </div>
+                {t.revenue != null && (
+                  <div className="stat-card" title="Tonight's rooms and meals as booked, plus what has been sold today (extras, restaurant). Net, before service and tax.">
+                    <div className="stat-label">Revenue today</div>
+                    <div className="stat-value">{idr(t.revenue)}</div>
+                    <div className="stat-sub">room {jt(t.revenue_rooms)}{t.revenue_fnb > 0 && ` · F&B ${jt(t.revenue_fnb)}`}</div>
+                    {y && <VsYesterday now={t.revenue} before={y.revenue} arrow>{idr(y.revenue)}</VsYesterday>}
+                  </div>
+                )}
                 <div className="stat-card" title="Reservations entered today (any stay date); a group counts once; value is net">
                   <div className="stat-label">Reservations made</div>
-                  <div className="stat-value">{t.made_today.bookings} · {jt(t.made_today.value)}</div>
-                  <div className="stat-sub">{plural(t.made_today.rooms, 'room')}</div>
+                  <div className="stat-value">{plural(t.made_today.bookings, 'booking')}</div>
+                  <div className="stat-sub">{plural(t.made_today.rooms, 'room')} · {jt(t.made_today.value)}</div>
                   {y?.made && <VsYesterday now={t.made_today.value} before={y.made.value}>{y.made.bookings} · {jt(y.made.value)}</VsYesterday>}
                 </div>
                 {t.money_in_today != null && (
@@ -162,10 +165,10 @@ export default function Overview() {
               {t.tomorrow && (
                 <div className="tomorrow-line ov-yday">
                   <span className="tomorrow-label">Tomorrow · {weekday(t.tomorrow.date)} {dayShort(t.tomorrow.date)}</span>
+                  <span>occupancy <b>{t.tomorrow.tonight.pct}%</b> ({t.tomorrow.tonight.rooms} of {t.sellable})</span>
                   <span><b>{t.tomorrow.arriving.rooms}</b> arriving ({plural(t.tomorrow.arriving.guests, 'guest')})</span>
                   <span><b>{t.tomorrow.staying.rooms}</b> staying over</span>
                   <span><b>{t.tomorrow.departing.rooms}</b> departing</span>
-                  <span><b>{t.tomorrow.tonight.rooms} of {t.sellable}</b> rooms that night ({t.tomorrow.tonight.pct}%)</span>
                   {(can('guest_lists') || can('checkin_full')) && <Link to={`/today?date=${t.tomorrow.date}`} className="tomorrow-link">See the guests →</Link>}
                 </div>
               )}

@@ -199,6 +199,9 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       money_in_today: tMoney ? r2(tMoney.total) : null,
       tomorrow: glance.tomorrow,
       // Tonight's average room rate and RevPAR from what is booked for tonight (getReport's night rule).
+      revenue: tRep ? r2(tRep.total_revenue) : null,
+      revenue_rooms: tRep ? r2(tRep.room_revenue) : null,
+      revenue_fnb: tRep ? r2(tRep.fnb_revenue) : null,
       adr: tRep ? (tRep.paid_nights > 0 ? r2(tRep.room_revenue / tRep.paid_nights) : 0) : null,
       revpar: tRep ? (sell > 0 ? r2(tRep.room_revenue / sell) : 0) : null,
     },

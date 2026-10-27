@@ -11,11 +11,13 @@ import { fmtYmd } from '../lib/propertyTime';
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 // Rp 12.4M / Rp 850K — for tight boxes; the exact figure is in the tooltip.
+// Indonesian short form, as on Overview: Rp 1,25 miliar / Rp 19,2 jt / Rp 850 rb.
 function fmtShortIDR(n) {
   const v = Math.round(Number(n) || 0);
-  if (Math.abs(v) >= 1e9) return `Rp ${(v / 1e9).toFixed(2).replace(/\.?0+$/, '')}B`;
-  if (Math.abs(v) >= 1e6) return `Rp ${(v / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
-  if (Math.abs(v) >= 1e3) return `Rp ${Math.round(v / 1e3)}K`;
+  const dec = (x, d) => Number(x.toFixed(d)).toLocaleString('id-ID', { maximumFractionDigits: d });
+  if (Math.abs(v) >= 1e9) return `Rp ${dec(v / 1e9, 2)} miliar`;
+  if (Math.abs(v) >= 1e6) return `Rp ${dec(v / 1e6, 1)} jt`;
+  if (Math.abs(v) >= 1e3) return `Rp ${Math.round(v / 1e3)} rb`;
   return `Rp ${v}`;
 }
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -193,11 +195,8 @@ export function MonthSection({ showReportLink }) {
       {!m ? (!error && <div className="text-muted" style={{ padding: 20 }}>Loading…</div>) : (
         <>
           <div className="month-strip">
-            <Box label="Revenue so far" value={<span title={fmtIDR(m.so_far.revenue)}>{fmtShortIDR(m.so_far.revenue)}</span>}>
-              <div>room {fmtShortIDR(m.so_far.room)}{m.so_far.meals > 0 && ` · F&B ${fmtShortIDR(m.so_far.meals)}`}{m.so_far.extras > 0 && ` · extras ${fmtShortIDR(m.so_far.extras)}`}{m.so_far.activities > 0 && ` · activities ${fmtShortIDR(m.so_far.activities)}`}</div>
-              <div><Change value={m.change.revenue} /></div>
-            </Box>
-            <Box label="Occupancy so far" value={`${m.so_far.occupancy}%`}>
+            {/* Same order as Overview's Today: occupancy · ADR · revenue · reservations made, then the month's outlook */}
+            <Box label="Occupancy" value={`${m.so_far.occupancy}%`}>
               <div>{plural(m.so_far.room_nights, 'room-night')}</div>
               <div><Change value={m.change.occupancy_pts} suffix=" pts" /></div>
             </Box>
@@ -206,10 +205,9 @@ export function MonthSection({ showReportLink }) {
               <div>RevPAR {fmtShortIDR(m.so_far.revpar)}</div>
               <div><Change value={m.change.adr} /></div>
             </Box>
-            <Box label="On the books" value={`${m.on_the_books.occupancy}%`}
-              title="Where the whole month lands if nothing else is booked: nights stayed so far + nights still booked to the end of the month. Same as the Reports page for this month.">
-              <div title={fmtIDR(m.on_the_books.revenue)}>{fmtShortIDR(m.on_the_books.revenue)} whole month</div>
-              <div>{plural(m.on_the_books.room_nights, 'room-night')}</div>
+            <Box label="Revenue" value={<span title={fmtIDR(m.so_far.revenue)}>{fmtShortIDR(m.so_far.revenue)}</span>}>
+              <div>room {fmtShortIDR(m.so_far.room)}{m.so_far.meals > 0 && ` · F&B ${fmtShortIDR(m.so_far.meals)}`}{m.so_far.extras > 0 && ` · extras ${fmtShortIDR(m.so_far.extras)}`}{m.so_far.activities > 0 && ` · activities ${fmtShortIDR(m.so_far.activities)}`}</div>
+              <div><Change value={m.change.revenue} /></div>
             </Box>
             <Box label="Reservations made" value={plural(m.made.bookings, 'booking')}
               title="Made this month so far (any stay date). A group counts as one booking. Value is net.">
@@ -218,6 +216,11 @@ export function MonthSection({ showReportLink }) {
                 {m.made.cancelled.bookings > 0 && <span style={{ color: '#B91C1C' }}>{m.made.cancelled.bookings} cancelled · </span>}
                 <Change value={m.change.made_value} />
               </div>
+            </Box>
+            <Box label="Whole month on the books" value={`${m.on_the_books.occupancy}%`}
+              title="Where the whole month lands if nothing else is booked: nights stayed so far + nights still booked to the end of the month. Same as the Reports page for this month.">
+              <div title={fmtIDR(m.on_the_books.revenue)}>{fmtShortIDR(m.on_the_books.revenue)}</div>
+              <div>{plural(m.on_the_books.room_nights, 'room-night')}</div>
             </Box>
           </div>
 
