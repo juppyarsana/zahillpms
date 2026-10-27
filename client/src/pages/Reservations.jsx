@@ -5,6 +5,10 @@ import api from '../services/api';
 import Icon from '../components/Icon';
 import { SourceBadge, useSettings } from '../context/SettingsContext';
 import { groupUnitsByType, typeComparator } from '../lib/roomTypeOrder';
+import { useAuth } from '../context/AuthContext';
+import { useOtaInbox } from '../components/OtaInbox';
+import Availability from './Availability';
+import OtaBookings from './OtaBookings';
 
 const groupStorageKey = t => `resv-cal-group-${(t || 'other').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
@@ -471,7 +475,7 @@ function BookedView({ nav }) {
   );
 }
 
-export default function Reservations() {
+export default function Reservations({ initialView }) {
   const nav = useNavigate();
   const { sources } = useSettings();
   const now = new Date();
@@ -483,8 +487,27 @@ export default function Reservations() {
   const [units, setUnits]   = useState([]);
   const [rates, setRates]   = useState({});
   // ?view=booked (e.g. from the Dashboard's "New reservations" box).
+  // /availability and /ota-bookings open their tab (initialView).
   const [params] = useSearchParams();
-  const [view, setView]     = useState(['list', 'groups', 'booked', 'tocheck'].includes(params.get('view')) ? params.get('view') : 'calendar');
+  const { hasModule } = useAuth();
+  const { badge: otaBadge } = useOtaInbox();
+  const VIEWS = ['list', 'availability', 'ota', 'groups', 'booked', 'tocheck'];
+  const asked = params.get('view') || initialView;
+  const [view, setViewState] = useState(VIEWS.includes(asked) && (asked !== 'ota' || hasModule('channel_manager')) ? asked : 'calendar');
+  // Opened as /availability or /ota-bookings: move to /reservations?view=… (keeping
+  // the query, e.g. Ask's ?check_in=), so the menu shows Reservations.
+  useEffect(() => {
+    if (!initialView) return;
+    const q = new URLSearchParams(window.location.search);
+    q.set('view', initialView);
+    nav(`/reservations?${q}`, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  function setView(v) {
+    setViewState(v);
+    // the URL follows the tab (a reload stays on it); always /reservations, also when
+    // the page was opened as /availability or /ota-bookings
+    nav(v === 'calendar' ? '/reservations' : `/reservations?view=${v}`, { replace: true });
+  }
   const calScrollRef        = useRef(null);
   // Bookings still "to check" (migration 109) — the button only shows when there are any.
   // Counted in reservations (a group = 1). Also shown while bookings only
@@ -801,14 +824,18 @@ export default function Reservations() {
           </div>
         </div>
         <div>
-          <Link to="/availability" className="btn btn-secondary"><Icon name="search" />Check availability</Link>
+          {view !== 'availability' && <button type="button" className="btn btn-secondary" onClick={() => setView('availability')}><Icon name="search" />Check availability</button>}
           <Link to="/reservations/new" className="btn btn-primary"><Icon name="plus" />New booking</Link>
         </div>
       </div>
 
       <div className="tab-bar">
-        {[['calendar', 'Calendar'], ['list', 'List'], ['groups', 'Groups'], ['booked', 'Booked on', 'Reservations by the day they were made — e.g. how many we took today']].map(([k, l, hint]) => (
-          <button key={k} type="button" className={`tab-bar-item${view === k ? ' active' : ''}`} onClick={() => setView(k)} title={hint}>{l}</button>
+        {[['calendar', 'Calendar'], ['list', 'List'], ['availability', 'Availability', 'Which rooms are free for some dates — then book them'],
+          hasModule('channel_manager') && ['ota', 'OTA bookings', 'What came in from Agoda, Booking.com and the other OTAs'],
+          ['groups', 'Groups'], ['booked', 'Booked on', 'Reservations by the day they were made — e.g. how many we took today']].filter(Boolean).map(([k, l, hint]) => (
+          <button key={k} type="button" className={`tab-bar-item${view === k ? ' active' : ''}`} onClick={() => setView(k)} title={hint}>
+            {l}{k === 'ota' && otaBadge > 0 && <span className="tab-count">{otaBadge}</span>}
+          </button>
         ))}
         {(toCheckCount > 0 || namesWaiting > 0 || view === 'tocheck') && (
           <button type="button" className={`tab-bar-item${view === 'tocheck' ? ' active' : ''}`} onClick={() => setView('tocheck')}
@@ -962,6 +989,10 @@ export default function Reservations() {
             ))}
           </div>
         </>
+      ) : view === 'availability' ? (
+        <Availability embedded />
+      ) : view === 'ota' ? (
+        <OtaBookings embedded />
       ) : view === 'groups' ? (
         <GroupsView nav={nav} />
       ) : view === 'booked' ? (

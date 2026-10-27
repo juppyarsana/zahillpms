@@ -8,7 +8,8 @@ import { OtaRow, useOtaInbox, timeText } from '../components/OtaInbox';
 // the reservations Channex sent, for front desk: what needs someone first,
 // then today's, then the latest. Owner's setup and history stay on
 // Settings → Channel Manager.
-export default function OtaBookings() {
+// embedded: shown as the OTA bookings tab of Reservations — no page title.
+export default function OtaBookings({ embedded = false }) {
   const { refresh, markAll, unseen } = useOtaInbox();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -38,9 +39,9 @@ export default function OtaBookings() {
   const earlier = (data?.recent || []).filter(r => !todayIds.has(r.id));
   return (
     <div>
-      <div className="page-header">
+      <div className={embedded ? 'tab-intro' : 'page-header'}>
         <div>
-          <div className="page-title">OTA bookings</div>
+          {!embedded && <div className="page-title">OTA bookings</div>}
           <div className="page-subtitle">
             Bookings from Agoda, Booking.com and the other OTAs come in by themselves through the channel manager.
             {data?.last_pull_at && <> Last checked {timeText(data.last_pull_at)}.</>}

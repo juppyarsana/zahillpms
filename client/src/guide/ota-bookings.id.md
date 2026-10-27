@@ -5,7 +5,7 @@ Kalau hotel sudah terhubung ke channel manager, booking dari Agoda, Booking.com,
 ## Cara melihatnya
 
 - **Pop-up** di kanan atas setiap halaman: *New Agoda booking*, *booking changed*, *booking cancelled* atau *needs you*, dengan nama tamu, kamar dan tanggal, plus bunyi singkat. **Open** membuka booking-nya, **OK** menutupnya — untuk semua orang di front desk, jadi cukup satu orang yang menekan. **All seen** menutup semuanya.
-- **🌐 OTA bookings** di menu (Front Desk), dengan angka merah selama ada yang baru atau butuh Anda: yang butuh Anda paling atas, lalu hari ini, lalu sebelumnya. **↻ Check now** langsung membaca channel manager.
+- Tab **Reservations → OTA bookings** (angka merah tampil di Reservations pada menu dan di tab selama ada yang baru atau butuh Anda): yang butuh Anda paling atas, lalu hari ini, lalu sebelumnya. **↻ Check now** langsung membaca channel manager.
 - Kotak **Dashboard** *From the OTAs — today*: berapa yang baru / diubah / dibatalkan hari ini dan apa yang butuh Anda.
 
 ## Booking OTA baru
@@ -45,7 +45,7 @@ Beberapa hal tidak dikerjakan PMS sendiri:
 - tipe kamar yang belum di-link,
 - perubahan pada booking yang dulu dimasukkan manual.
 
-Semua itu muncul sebagai pop-up *needs you*, paling atas di **🌐 OTA bookings**, di Dashboard dan di Telegram. Selesaikan (pindahkan tamu, telepon OTA, masukkan atau ubah booking secara manual), lalu tekan **Done — handled**.
+Semua itu muncul sebagai pop-up *needs you*, paling atas di **Reservations → OTA bookings**, di Dashboard dan di Telegram. Selesaikan (pindahkan tamu, telepon OTA, masukkan atau ubah booking secara manual), lalu tekan **Done — handled**.
 
 > Jangan mengetik booking OTA secara manual kalau hotel sudah terhubung — booking-nya jadi dua. Masukkan manual hanya kalau PMS memintanya.
 

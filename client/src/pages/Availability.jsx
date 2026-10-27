@@ -22,7 +22,8 @@ const REASON = {
   out_of_order: r => `Out of order${r.note ? ` — ${r.note}` : ''}${r.expected_back ? ` · back ${fmtShort(r.expected_back)}` : ''}`,
 };
 
-export default function Availability() {
+// embedded: shown as the Availability tab of Reservations — no page title.
+export default function Availability({ embedded = false }) {
   const nav = useNavigate();
   const today = ymd(new Date());
   // Opened from the Ask page with a search already made: ?check_in=&check_out=&guests=&rooms=
@@ -126,11 +127,14 @@ export default function Availability() {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Check Availability</div>
-          <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
-        </div>      </div>
+      {!embedded && (
+        <div className="page-header">
+          <div>
+            <div className="page-title">Check Availability</div>
+            <div className="page-subtitle"><BackLink to="/reservations" label="Reservations" /></div>
+          </div>
+        </div>
+      )}
 
       <div className="card mb-3">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, alignItems: 'end' }}>

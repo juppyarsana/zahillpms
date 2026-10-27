@@ -28,9 +28,8 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
     { id: 'front-desk', label: 'Front Desk', items: [
       // Today: the day's figures, room board and arrivals / in house / departures with Check in / out.
       (can('checkin_full') || can('guest_lists') || can('dashboard')) && res && { to: '/today', icon: '☀', label: 'Today' },
-      can('reservations') && res && { to: '/availability', icon: '🔎', label: 'Availability' },
-      can('reservations') && res && { to: '/reservations', icon: '📅', label: 'Reservations' },
-      can('reservations') && hasModule('channel_manager') && { to: '/ota-bookings', icon: '🌐', label: 'OTA bookings', badge: otaBadge },
+      // Reservations: Calendar · List · Availability · OTA bookings (with the unseen count) · Groups · Booked on.
+      can('reservations') && res && { to: '/reservations', icon: '📅', label: 'Reservations', badge: hasModule('channel_manager') ? otaBadge : 0 },
       // Quick Check-in is reached from Check-in / out (⚡ Quick Mode); only staff
       // who can't open Check-in / out get it as its own menu item.
       can('quick_checkin') && !can('checkin_full') && res && hasModule('front_desk') && { to: '/quick-checkin', icon: '⚡', label: 'Quick Check-in' },

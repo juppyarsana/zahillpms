@@ -16,7 +16,6 @@ import RoomCheckPublic from './pages/RoomCheckPublic';
 import Dashboard from './pages/Dashboard';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
-import Availability from './pages/Availability';
 import Ask from './pages/Ask';
 import Events from './pages/Events';
 import EventDetail from './pages/EventDetail';
@@ -69,7 +68,6 @@ import Expenses from './pages/Expenses';
 import Payables from './pages/Payables';
 import VendorPayouts from './pages/VendorPayouts';
 import Accounting from './pages/Accounting';
-import OtaBookings from './pages/OtaBookings';
 import SettingsHub from './pages/SettingsHub';
 import { buildNav } from './lib/navItems';
 import SettingsShell from './components/SettingsShell';
@@ -312,9 +310,10 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/"                 element={<RequireMenu menuKey="dashboard"><Dashboard /></RequireMenu>} />
-                  <Route path="/ota-bookings"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="channel_manager"><OtaBookings /></RequireModule></RequireMenu>} />
+                  {/* Availability and OTA bookings are tabs of Reservations; their old addresses open the tab */}
+                  <Route path="/ota-bookings"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName={['reservations', 'channel_manager']}><Reservations key="ota" initialView="ota" /></RequireModule></RequireMenu>} />
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
-                  <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Availability /></RequireModule></RequireMenu>} />
+                  <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations key="availability" initialView="availability" /></RequireModule></RequireMenu>} />
                   <Route path="/events"           element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><Events /></RequireModule></RequireMenu>} />
                   <Route path="/events/:id"       element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><EventDetail /></RequireModule></RequireMenu>} />
                   <Route path="/ask"              element={<RequireMenu menuKey="assistant"><RequireModule moduleName="assistant"><Ask /></RequireModule></RequireMenu>} />
