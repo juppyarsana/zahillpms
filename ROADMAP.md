@@ -17,7 +17,9 @@ Jeep tracking, transport (e.g. a FO note "transport to Amed 29 Oct Rp 650.000, p
 4. Finance → **Vendor payouts**: per vendor trips not paid + amount; Pay → tick trips, Cash, date; part payments allowed; printable payout slip for the vendor to sign. Does not touch FO drawer / Cashier Closing.
 5. Reports per activity / vendor: guest price − vendor share = net. P&L: revenue less vendor share (rebate) or a cost line. Journal: Dr Vendor share (contra-revenue) · Cr Owed to vendors; payout Dr Owed to vendors · Cr Cash.
 
-**Still to confirm before building:** (a) service charge + tax stay on the full guest price, vendor price carries none of ours — accounting to confirm; (b) vendor price visible / editable only for owner + Accounting / Activities permission, FO sees the guest price only?; (c) one vendor per activity, or can a trip have two (jeep + guide)?
+**Owner's answers 2026-10-27:** vendors = the same **Suppliers** list (a tick *Provides tours / transport*); payouts on a new **Finance → Vendor payouts** screen (option 1, not Payables); tax: usually no service charge, tax only, worked out on the hotel's own revenue rather than the guest price — but build it flexible (per activity: service charge yes / no, tax on full price / hotel's part); vendor price seen / edited with a **new permission** the owner assigns; one vendor can supply several activities (two vendors on one trip not ruled out — allow several vendor lines per activity).
+
+**Earlier open points (now answered above):** (a) service charge + tax stay on the full guest price, vendor price carries none of ours — accounting to confirm; (b) vendor price visible / editable only for owner + Accounting / Activities permission, FO sees the guest price only?; (c) one vendor per activity, or can a trip have two (jeep + guide)?
 
 ## 🟡 Accounting step 2 — the accountant moves off VHP (started 2026-10-16, PAUSED — continue when the owner says, after the accountant answers the questions below)
 
