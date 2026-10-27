@@ -187,7 +187,7 @@ export function MonthSection({ showReportLink }) {
   return (
     <div style={{ marginTop: 24 }}>
       <SectionHeading title="This Month" sub={m ? `${monthName} · so far = ${range} (tonight included), compared with ${prevRange}` : ''}
-        right={showReportLink && <Link to="/reports" className="tomorrow-link">Full report →</Link>} />
+        right={showReportLink && <Link to="/reports/revenue" className="tomorrow-link">Full report →</Link>} />
       {error && <div className="alert alert-error">{error}</div>}
       {!m ? (!error && <div className="text-muted" style={{ padding: 20 }}>Loading…</div>) : (
         <>

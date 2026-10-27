@@ -6,6 +6,8 @@
 // step when adding a page). Settings items carry a one-line description for
 // the Settings page.
 
+import { reportsFor } from './reportLibrary';
+
 export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
   const isOwner = user?.role === 'owner';
   const res = hasModule('reservations');
@@ -43,7 +45,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
       can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
       can('profit') && hasModule('accounting') && { to: '/profit', icon: '⚖', label: 'Profit' },
-      can('reports') && hasModule('financial') && { to: '/reports', icon: '📈', label: 'Reports' },
+      reportsFor(can, hasModule).length > 0 && { to: '/reports', end: true, icon: '📈', label: 'Reports' },   // the library — every printable report
       can('forecast') && res && { to: '/forecast', icon: '🔭', label: 'Forecast' },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
     ] },

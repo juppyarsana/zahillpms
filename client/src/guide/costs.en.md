@@ -47,3 +47,12 @@ All amounts are net — before service charge and tax.
 > Profit is only as complete as the books. A yellow box says what is missing — for example no journal entries yet for salaries, rent or depreciation. Until those are entered, the profit shown is higher than it really is.
 
 Revenue on Profit is what is posted to the guests' bills, so it can be lower than on the Revenue page while guests have not checked in yet. The page says how much.
+
+## Reports — every report in one place
+
+**[Insights → Reports](/reports)** lists every report you may print or download: guest lists, registration cards, the police guest report, balance due, cashier closing, night audit, the kitchen list, the revenue report, costs, forecast, and for the accountant expenses, purchase orders, the journal, Profit & Loss, balance sheet and trial balance.
+
+1. Find the report (or type in **Find a report…**).
+2. Tap it, choose the day, month or dates, and press **Download**.
+
+You only see the reports of the pages you can open — the same as before, nothing new to set up. The buttons on each page still work as they did. The old revenue report page is now **Revenue report** (`/reports/revenue`), opened from Reports or from the Revenue page.

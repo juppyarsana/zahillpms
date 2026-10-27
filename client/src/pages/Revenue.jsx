@@ -77,7 +77,7 @@ export default function Revenue() {
           <div className="page-subtitle">What came in, where it came from, and how the rooms sold.</div>
         </div>
         <div>
-          <Link to="/reports" className="btn btn-secondary"><Icon name="download" />Excel / PDF in Reports</Link>
+          <Link to="/reports/revenue" className="btn btn-secondary"><Icon name="download" />Full report · Excel / PDF</Link>
         </div>
       </div>
 

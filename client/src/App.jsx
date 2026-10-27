@@ -28,6 +28,8 @@ import Forecast from './pages/Forecast';
 import Costs from './pages/Costs';
 import Revenue from './pages/Revenue';
 import Profit from './pages/Profit';
+import ReportsLibrary from './pages/ReportsLibrary';
+import { reportsFor } from './lib/reportLibrary';
 import Overview from './pages/Overview';
 import Guide from './pages/Guide';
 import Restaurant from './pages/Restaurant';
@@ -236,6 +238,13 @@ function RequireModule({ moduleName, children }) {
   return children;
 }
 
+// The Reports library: anyone with at least one report (lib/reportLibrary.js).
+function RequireReports({ children }) {
+  const { can, hasModule, user } = useAuth();
+  if (!reportsFor(can, hasModule).length) return <Navigate to={firstAllowedPath(user)} replace />;
+  return children;
+}
+
 function RequireOwner({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>Loading…</div>;
@@ -327,7 +336,8 @@ export default function App() {
                   <Route path="/night-audit"      element={<RequireMenu menuKey="night_audit"><RequireModule moduleName="financial"><NightAudit /></RequireModule></RequireMenu>} />
                   <Route path="/agents"          element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
                   <Route path="/agents/:agentId" element={<RequireMenu menuKey={['receivables', 'ota_payouts']}><RequireModule moduleName="financial"><Agents /></RequireModule></RequireMenu>} />
-                  <Route path="/reports"         element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
+                  <Route path="/reports"          element={<RequireReports><ReportsLibrary /></RequireReports>} />
+                  <Route path="/reports/revenue"  element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
                   <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
                   <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />

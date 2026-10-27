@@ -52,7 +52,23 @@ export default function Costs() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [win, setWin] = useState(null);   // the entries window: { category?, entry? }
+  const [win, setWin] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  async function downloadXlsx() {
+    setDownloading(true);
+    try {
+      const r = await api.get('/api/costs/xlsx', { params: { month }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = `costs-by-department-${month}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError('Could not make the Excel file');
+    } finally {
+      setDownloading(false);
+    }
+  }   // the entries window: { category?, entry? }
 
   useEffect(() => {
     let off = false;
@@ -101,6 +117,11 @@ export default function Costs() {
         <div>
           <div className="page-title">Costs by department</div>
           <div className="page-subtitle">Which part of the hotel spends the most, and what changed.</div>
+        </div>
+        <div>
+          <button type="button" className="btn btn-secondary" onClick={downloadXlsx} disabled={!data || downloading}>
+            <Icon name="download" />{downloading ? 'Preparing…' : 'Download Excel'}
+          </button>
         </div>
       </div>
 

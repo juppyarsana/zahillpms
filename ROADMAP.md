@@ -4,7 +4,7 @@ Last updated: 2026-10-27
 
 ---
 
-## 🟡 Owner insights + menu regroup (PLANNED 2026-10-27 — steps 1–2 built, 3–4 not started)
+## 🟡 Owner insights + menu regroup (PLANNED 2026-10-27 — steps 1–3 built, step 4 not started)
 
 The hotel owner asked to see easily which department costs the most. That grew into a plan for the product as a whole: easy to run on site, easy to oversee for owners / high-level roles, nothing lost. **Mock-up (6 screens):** https://claude.ai/artifact/529eyNnQP4tmenRhpcEA6c (private, owner's account) — Costs, Overview, Revenue, Profit, Reports library by role, menu now vs proposed. Figures are Zahill's September 2026 VHP trial balance; the Profit screen's net (−Rp 2.154.000) matches VHP's own result (−Rp 2.153.742).
 
@@ -29,6 +29,8 @@ The hotel owner asked to see easily which department costs the most. That grew i
 **Step 1 built 2026-10-27 (on `dev`, not released):** Costs (`/costs`) and Overview (`/overview`), permissions `costs` / `overview`; the sidebar's Revenue group is now labelled Insights (Reports · Costs · Forecast · Pricing). Costs counts Expenses + supplier bills only (salaries wait for the chart of accounts). Details in CLAUDE.md → "Overview + Costs by department".
 
 **Step 2 built 2026-10-27 (on `dev`, not released):** Revenue (`/revenue`, the `reports` permission) and Profit (`/profit`, new `profit` permission, accounting module) — the Accounting P&L in four steps, with a box saying what the books still miss. Details in CLAUDE.md → "Revenue + Profit pages".
+
+**Step 3 built 2026-10-27 (on `dev`, not released):** the Reports library at `/reports` (list in `client/src/lib/reportLibrary.js`, each report follows its page's permission); the old Reports page is `/reports/revenue`; new Costs Excel. Not built from the plan: a profit summary PDF and an owner's monthly pack. Details in CLAUDE.md → "Reports library".
 
 **Related, waiting:** the accountant's answers on the **standard chart of accounts** (draft `C:\Users\dj03p\Documents\COA Standar PMS (usulan).xlsx`: 322 accounts, code `GGG-DD-NNN`, same NNN = same cost in every department, Zahill's 256 VHP accounts mapped; 13 questions). The earlier `Pemetaan COA PMS-VHP.xlsx` / `COA mapping PMS-VHP.xlsx` used wrong codes — don't send. Also open: backfilling activities on past stays (owner checking whether the money is already in the PMS).
 

@@ -47,3 +47,12 @@ Semua angka bersih — sebelum service charge dan pajak.
 > Laba hanya selengkap pembukuannya. Kotak kuning menyebut apa yang belum ada — misalnya belum ada jurnal untuk gaji, sewa atau penyusutan. Selama itu belum dicatat, laba yang tampil lebih tinggi dari sebenarnya.
 
 Pendapatan di halaman Profit adalah yang sudah masuk ke tagihan tamu, jadi bisa lebih rendah daripada di halaman Revenue selama tamu belum check-in. Halaman menyebut selisihnya.
+
+## Reports — semua laporan di satu tempat
+
+**[Insights → Reports](/reports)** berisi semua laporan yang boleh Anda cetak atau unduh: guest lists, kartu registrasi, laporan tamu untuk polisi, balance due, cashier closing, night audit, daftar dapur, laporan pendapatan, biaya, forecast, dan untuk akuntan: expenses, purchase order, jurnal, Laba Rugi, neraca dan neraca saldo.
+
+1. Cari laporannya (atau ketik di **Find a report…**).
+2. Ketuk, pilih hari, bulan atau tanggal, lalu tekan **Download**.
+
+Anda hanya melihat laporan dari halaman yang memang bisa Anda buka — sama seperti sebelumnya, tidak ada yang perlu diatur. Tombol di setiap halaman tetap berfungsi seperti biasa. Halaman laporan pendapatan yang lama sekarang bernama **Revenue report** (`/reports/revenue`), dibuka dari Reports atau dari halaman Revenue.
