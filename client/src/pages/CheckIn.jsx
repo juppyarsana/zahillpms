@@ -133,6 +133,7 @@ export default function CheckIn() {
     <div>
       <div className="page-header">
         <div>
+          <div className="page-eyebrow"><Link to="/today">← Today</Link></div>
           <div className="page-title">Check-in / Check-out</div>
           <div className="page-subtitle">{today}</div>
         </div>
@@ -248,7 +249,7 @@ export default function CheckIn() {
                 {results && (
                   <div style={{ fontSize: 11, marginBottom: 8, paddingLeft: 4 }}>
                     {results.succeeded} of {results.attempted} rooms checked in
-                    {results.failed > 0 && ` — ${results.failed} failed`}
+                    {results.failed > 0 && ` — ${results.failed} not: ${[...new Set(results.results.filter(x => !x.ok).map(x => x.error))].join(' · ')}`}
                   </div>
                 )}
                 {rows}

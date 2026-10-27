@@ -7,7 +7,7 @@
 - **The day's figures** — arriving, staying over, departing, tonight's rooms, reservations made today, and tomorrow in one line.
 - **Needs you now** — guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), and rooms still to clean with a guest arriving today.
 - **Live unit status** — every room in colour by room type. Tap a room for its window (guest, balance, check in / out, payment, Mark clean, Call room).
-- **Arrivals · In house · Departures · Kitchen** — the guests of the day.
+- **Arrivals · In house · Departures · Kitchen · Balance due** — the guests of the day, and who still owes money (Balance due: front desk with Check-in / out only).
 
 ## Checking in and out
 
@@ -15,7 +15,18 @@
 2. **Departures** (or **In house** for someone leaving early) → **Check out**. The same check-out window opens (balance, minibar check, early departure).
 3. **Reg. card** prints the guest's registration card; **Print all arrival cards** prints every arrival of the day, one per page.
 
-A group still checks in room by room here; **Check In Whole Group** stays on **Check-in / out**.
+A group's rooms sit together under one line with the booker's name. **Check in whole group** checks in every room of the group due today at once; if some rooms can't (e.g. the group hasn't paid), the line says why. A room of a group paid as a whole shows **Group bill** instead of an amount.
+
+## A busy day — the full pages
+
+Each list has **Full page →**. On a full house at check-in time it opens the bigger screen:
+
+- **Arrivals / In house / Departures** → **Check-in / out** (every arrival on one long list, groups together, Quick Mode).
+- **Kitchen** → the room-by-room kitchen list.
+- **Balance due** → Guest Lists → Balance Due, with the PDF.
+- **Guest Lists** at the top opens all the lists of the day shown.
+
+Each full page has **← Today** at the top to come back.
 
 ## Another day
 

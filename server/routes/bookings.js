@@ -465,6 +465,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
              b.special_requests, b.bed_preference, b.reservation_group_id, b.children, b.kids_free_breakfast,
              g.name AS guest_name, g.nationality, g.whatsapp AS guest_whatsapp,
              u.name AS unit_name, u.type AS unit_type, u.housekeeping_status,
+             gb.name AS group_booker, COALESCE(rg.group_billing, false) AS group_billed,
              rp.code AS rate_plan_code, rp.includes_breakfast, rp.includes_dinner,
              COALESCE(bs.label, b.source) AS source_label, ${otaCollectsSql('b', 'bs')} AS is_ota,
              CASE WHEN $2::date = $3::date THEN
@@ -485,6 +486,8 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
       JOIN units u ON u.id = b.unit_id
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+      LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
+      LEFT JOIN guests gb ON gb.id = rg.primary_guest_id
       WHERE b.property_id = $1
         AND b.status NOT IN ('cancelled', 'no_show')
         AND CASE WHEN $2::date = $3::date THEN

@@ -265,7 +265,7 @@ export default function GuestLists() {
   // Balance Due holds money details — only for staff who take payments
   // (owner or Check-in/out), enforced server-side too.
   const canSeeBalances = can('checkin_full');
-  const [tab, setTab] = useState('lists');
+  const [tab, setTab] = useState(['balance', 'kitchen'].includes(params.get('tab')) ? params.get('tab') : 'lists');
   const [balance, setBalance] = useState(null);
   const [kitchen, setKitchen] = useState(null);
   // Registration Cards: one arrival's card, or all of the date's arrivals in
@@ -336,6 +336,7 @@ export default function GuestLists() {
     <div className="guest-lists-page">
       <div className="page-header">
         <div>
+          <div className="page-eyebrow"><Link to={`/today${date === propertyToday() ? '' : `?date=${date}`}`}>← Today</Link></div>
           <div className="page-title">Guest Lists</div>
           <div className="page-subtitle">Who arrives, stays and leaves on a day — for front desk, housekeeping and the kitchen</div>
         </div>

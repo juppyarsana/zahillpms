@@ -19,6 +19,27 @@ import RegistrationCardModal from '../components/RegistrationCardModal';
 // day (‹ ›) shows that day's guest lists, read-only, like Guest Lists.
 // Lists from GET /api/bookings/guest-lists (the one rule every page uses);
 // the buttons from /api/bookings/today/arrivals, /today/departures, /in-house.
+// A group's arrivals sit under one header with Check in whole group (the
+// Check-in / out page's POST /api/checkin/group/:id/start). Balance due is
+// the Guest Lists tab's list (/api/bookings/balance-due), shortened. Each
+// list has "Full page" to Check-in / out or Guest Lists for a busy day.
+
+// Rows of a group (2+ rooms in this list) folded under one item, in the order
+// their first room appears.
+function clusterByGroup(list) {
+  const counts = new Map();
+  for (const r of list) if (r.reservation_group_id) counts.set(r.reservation_group_id, (counts.get(r.reservation_group_id) || 0) + 1);
+  const out = []; const seen = new Set();
+  for (const r of list) {
+    const g = r.reservation_group_id;
+    if (g && counts.get(g) > 1) {
+      if (seen.has(g)) continue;
+      seen.add(g);
+      out.push({ type: 'group', groupId: g, rows: list.filter(x => x.reservation_group_id === g) });
+    } else out.push({ type: 'single', row: r });
+  }
+  return out;
+}
 
 function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 function fmtIDR(n) { return 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID'); }
@@ -59,6 +80,7 @@ function GuestRow({ r, list, action, canOpen, onCheckin, onCheckout, onRegCard }
       </div>
       <div className="today-row-money">
         {due > 0 ? <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>{fmtIDR(due)}{r.is_ota && <span className="text-muted" style={{ fontWeight: 400 }}> (OTA)</span>}</span>
+          : r.group_billed ? <span className="badge badge-gray" title="The room is on the group's bill — see Balance due or the group page">Group bill</span>
           : <span className="badge badge-green">Paid</span>}
       </div>
       <div className="today-row-actions">
@@ -88,6 +110,9 @@ export default function Today() {
   const [error, setError] = useState('');
   const [regCardFor, setRegCardFor] = useState(null);
   const [busy, setBusy] = useState('');
+  const [balance, setBalance] = useState(null);       // /api/bookings/balance-due, loaded on its tab
+  const [groupBusy, setGroupBusy] = useState(null);
+  const [groupResult, setGroupResult] = useState(null);
 
   const canDesk = can('checkin_full');
   const canRes = can('reservations') && hasModule('reservations');
@@ -121,6 +146,23 @@ export default function Today() {
   }, [date, isToday, canDesk, canLists, hasModule]);
 
   const { startCheckin, startCheckout, windows } = useCheckInOut({ onChanged: load });
+
+  useEffect(() => {
+    if (tab !== 'balance' || !canDesk) return;
+    setBalance(null);
+    api.get('/api/bookings/balance-due', { params: { date } }).then(r => setBalance(r.data)).catch(() => setBalance({ error: true }));
+  }, [tab, date, canDesk]);
+
+  async function checkInGroup(groupId) {
+    setGroupBusy(groupId); setGroupResult(null);
+    try {
+      const r = await api.post(`/api/checkin/group/${groupId}/start`);
+      setGroupResult({ groupId, ...r.data });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to check in the group');
+    } finally { setGroupBusy(null); }
+  }
 
   useEffect(() => {
     load();
@@ -167,26 +209,94 @@ export default function Today() {
     { id: 'in_house', label: 'In house', count: s.in_house.rooms },
     { id: 'departures', label: 'Departures', count: s.departures.rooms },
     { id: 'kitchen', label: 'Kitchen', count: `breakfast ${s.breakfast_pax}` },
-  ] : [];
-  const kitchenLink = hasModule('pos_integration') && can('restaurant') ? '/restaurant?tab=kitchen' : can('guest_lists') ? '/guest-lists' : null;
+    canDesk && { id: 'balance', label: 'Balance due', count: null },
+  ].filter(Boolean) : [];
+  const dateQ = isToday ? '' : `date=${date}`;
+  const listsPage = (t) => (can('guest_lists') || canDesk ? `/guest-lists?${[dateQ, t && `tab=${t}`].filter(Boolean).join('&')}` : null);
+  const kitchenLink = hasModule('pos_integration') ? (can('restaurant') ? '/restaurant?tab=kitchen' : null) : listsPage('kitchen');
+  // The bigger screen for a busy day: Check-in / out (today, with the buttons) or Guest Lists.
+  const fullPage = isToday && canDesk && hasModule('front_desk') ? { to: '/checkin', label: 'Check-in / out' } : listsPage() && { to: listsPage(), label: 'Guest Lists' };
+  const owing = balance && !balance.error
+    ? ['overdue', 'departing', 'staying'].flatMap(sec => (balance[sec] || []).map(r => ({ ...r, section: sec }))) : [];
+
+  const row = r => (
+    <GuestRow key={r.id} r={r} list={tab} action={actions.get(r.id)} canOpen={canRes}
+      onCheckin={startCheckin} onCheckout={startCheckout} onRegCard={setRegCardFor} />
+  );
+  const groupBlock = item => {
+    const first = item.rows[0];
+    const canGroup = isToday && canDesk && hasModule('front_desk') && item.rows.some(r => actions.get(r.id)?.kind === 'in');
+    const res = groupResult?.groupId === item.groupId ? groupResult : null;
+    return (
+      <div key={item.groupId} className="today-group">
+        <div className="today-group-head">
+          <div>
+            <span className="today-group-name">👥 {canRes ? <Link to={`/reservations/group/${item.groupId}`}>{first.group_booker || first.guest_name}</Link> : (first.group_booker || first.guest_name)}</span>
+            <span className="text-muted"> · {plural(item.rows.length, 'room')} · {plural(item.rows.reduce((n, r) => n + (r.num_guests || 0), 0), 'guest')}</span>
+            {res && <div className={`today-group-result${res.failed > 0 ? ' warn' : ''}`}>{res.succeeded} of {res.attempted} rooms checked in{res.failed > 0 && ` — ${res.failed} not: ${[...new Set(res.results.filter(x => !x.ok).map(x => x.error))].join(' · ')}`}</div>}
+          </div>
+          {canGroup && (
+            <button type="button" className="btn btn-sm btn-primary" disabled={groupBusy === item.groupId} onClick={() => checkInGroup(item.groupId)}>
+              {groupBusy === item.groupId ? 'Checking in…' : 'Check in whole group'}
+            </button>
+          )}
+        </div>
+        {item.rows.map(row)}
+      </div>
+    );
+  };
 
   const listsCard = lists && (
     <div className="card today-lists-card">
       <div className="tab-bar today-tabs">
         {tabs.map(t => (
           <button key={t.id} type="button" className={`tab-bar-item${tab === t.id ? ' active' : ''}`} onClick={() => pickTab(t.id)}>
-            {t.label} <span className="tab-count">{t.count}</span>
+            {t.label}{t.count != null && <> <span className="tab-count">{t.count}</span></>}
           </button>
         ))}
       </div>
-      {tab === 'kitchen' ? (
+      {tab === 'balance' ? (
+        <div className="today-balance">
+          {!balance ? <div className="text-muted" style={{ padding: 16 }}>Loading…</div>
+            : balance.error ? <div className="text-muted" style={{ padding: 16 }}>Could not load the balances.</div> : (<>
+            <div className="today-list-tools">
+              <span style={{ fontSize: 13 }}>
+                To collect from guests leaving <b style={{ color: 'var(--danger-text)' }}>{fmtIDR(balance.totals.departing + balance.totals.overdue)}</b>
+                <span className="text-muted"> · all owing {fmtIDR(balance.totals.all)}</span>
+              </span>
+              {listsPage('balance') && <Link to={listsPage('balance')} className="btn btn-sm btn-secondary">Full page →</Link>}
+            </div>
+            {owing.length === 0 ? <div className="text-muted" style={{ padding: '18px 16px' }}>Nobody owes anything.</div> : owing.map(r => (
+              <div key={r.id || `g${r.group_id}`} className="today-row">
+                <div className="today-row-room">{r.is_group ? 'Group' : r.unit_name}</div>
+                <div className="today-row-guest">
+                  <div className="today-row-name">{r.is_group && '👥 '}{r.guest_name}</div>
+                  <div className="text-muted today-row-sub">
+                    {r.is_group && `Rooms ${r.unit_name.replace(/^Group · /, '')} · `}
+                    {r.section === 'overdue' ? 'Overdue — still checked in' : r.section === 'departing' ? 'Leaving' : 'Staying'} · out {fmtShort(r.check_out_date)}
+                    {r.is_group ? ' · group bill' : r.agent_billed ? ' · billed to agent' : r.is_ota ? ' · OTA' : ''}
+                  </div>
+                </div>
+                <div className="today-row-money">
+                  <span style={{ color: r.agent_billed ? 'var(--text-muted)' : 'var(--danger-text)', fontWeight: 600 }}>{fmtIDR(r.balance_due)}</span>
+                </div>
+                <div className="today-row-actions">
+                  {r.is_group
+                    ? <Link to={`/reservations/group/${r.group_id}`} className="btn btn-sm btn-secondary">Group</Link>
+                    : !r.agent_billed && <Link to={`/reservations/${r.id}#record-payment`} className="btn btn-sm btn-secondary">Record payment</Link>}
+                </div>
+              </div>
+            ))}
+          </>)}
+        </div>
+      ) : tab === 'kitchen' ? (
         <div className="today-kitchen">
           <div className="stat-grid">
             <div className="stat-card"><div className="stat-label">Breakfast this morning</div><div className="stat-value">{s.breakfast_pax}</div>
               <div className="stat-sub">guests{s.breakfast_kids ? ` + ${plural(s.breakfast_kids, 'kid')} free` : ''}</div></div>
             <div className="stat-card"><div className="stat-label">Dinner tonight</div><div className="stat-value">{s.dinner_pax}</div><div className="stat-sub">guests on half / full board</div></div>
           </div>
-          {kitchenLink && <Link to={kitchenLink} className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}>Room by room for the kitchen →</Link>}
+          {kitchenLink && <Link to={kitchenLink} className="btn btn-secondary btn-sm" style={{ marginTop: 12 }}>Full page — room by room for the kitchen →</Link>}
         </div>
       ) : (
         <>
@@ -203,16 +313,16 @@ export default function Today() {
               <button type="button" className="btn btn-sm btn-secondary" disabled={busy === 'lists'} onClick={() => download('lists')}>
                 <Icon name="download" />{busy === 'lists' ? 'Preparing…' : 'Guest lists PDF'}
               </button>
+              {fullPage && <Link to={fullPage.to} className="btn btn-sm btn-secondary" title={`Open ${fullPage.label} — a bigger screen for a busy day`}>Full page →</Link>}
             </div>
           </div>
           {rows.length === 0 ? (
             <div className="text-muted" style={{ padding: '18px 16px' }}>
               {tab === 'arrivals' ? 'No arrivals' : tab === 'in_house' ? 'Nobody staying over' : 'No departures'} {isToday ? 'today' : 'on this day'}.
             </div>
-          ) : rows.map(r => (
-            <GuestRow key={r.id} r={r} list={tab} action={actions.get(r.id)} canOpen={canRes}
-              onCheckin={startCheckin} onCheckout={startCheckout} onRegCard={setRegCardFor} />
-          ))}
+          ) : tab === 'arrivals'
+            ? clusterByGroup(rows).map(item => (item.type === 'group' ? groupBlock(item) : row(item.row)))
+            : rows.map(row)}
           {!isToday && <div className="text-muted" style={{ fontSize: 12, padding: '10px 16px' }}>Another day: the guests booked for {fmtLong(date)}. Check in and check out happen on today's page.</div>}
         </>
       )}
@@ -227,6 +337,7 @@ export default function Today() {
           <div className="page-subtitle">{isToday ? propertyClock() : fmtLong(date)} — who arrives, who stays, who leaves, and what needs you</div>
         </div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+          {listsPage() && <Link to={listsPage()} className="btn btn-secondary"><Icon name="book" />Guest Lists</Link>}
           {canRes && <button type="button" className="btn btn-secondary" onClick={() => navigate('/availability')}><Icon name="search" />Check availability</button>}
           {canRes && <button type="button" className="btn btn-primary" onClick={() => navigate('/reservations/new')}><Icon name="plus" />New booking</button>}
         </div>
