@@ -1310,11 +1310,20 @@ tr:hover td { background: #FAFAF8; }
 .lib-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .lib-field .form-input, .lib-field .form-select { height: 36px; min-width: 150px; }
 .lib-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-.sidebar-subhead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.45); padding: 8px 14px 2px 40px; }
-.sidebar-subdivider { height: 1px; background: rgba(255,255,255,0.12); margin: 8px 14px; }
-.drawer-subhead { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #B0B5BD; padding: 8px 20px 0 56px; }
-.drawer-subdivider { height: 1px; background: var(--border); margin: 6px 20px; }
 .rev-more { display: flex; flex-direction: column; gap: 8px; }
 .rev-more-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); text-decoration: none; color: var(--text); font-size: 14px; }
 .rev-more-item .text-muted { font-size: 12px; }
 .rev-more-item:hover { border-color: var(--green-dark); background: var(--green-light); }
+/* Sub-groups inside a menu group (Insights → Sales / Bookings / Money):
+   level 1 = the group (small capitals, chevron), level 2 = the sub-group
+   (normal case, bold), level 3 = its pages, indented on a guide line. */
+.sidebar-subgroup { margin: 6px 0 4px; }
+.sidebar-subhead { display: flex; align-items: center; gap: 8px; padding: 6px 12px 4px; font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.92); }
+.sidebar-subhead::before { content: ''; width: 6px; height: 6px; border-radius: 2px; background: var(--sand); flex-shrink: 0; margin-left: 6px; margin-right: 4px; }
+.sidebar-subitems { margin-left: 22px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.18); }
+.sidebar-subitems .sidebar-link { padding: 8px 10px; font-size: 13px; }
+.sidebar-subdivider { height: 1px; background: rgba(255,255,255,0.14); margin: 8px 12px; }
+.drawer-subhead { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text); padding: 10px 20px 2px; }
+.drawer-subhead::before { content: ''; width: 6px; height: 6px; border-radius: 2px; background: var(--green-dark); }
+.drawer-item[data-sub] { padding-left: 40px; border-left: 2px solid var(--border); margin-left: 22px; }
+.drawer-subdivider { height: 1px; background: var(--border); margin: 6px 20px; }

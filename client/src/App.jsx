@@ -78,6 +78,17 @@ import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
 
+// In the phone drawer, the pages of a sub-group (Sales, Bookings, Money) are
+// indented under its heading; a page after a divider is not.
+function subOf(items, item) {
+  let sub = null;
+  for (const i of items) {
+    if (i.sub) sub = i.sub; else if (i.divider) sub = null;
+    if (i === item) return sub;
+  }
+  return null;
+}
+
 function BottomNav() {
   const { user, logout, can, hasModule } = useAuth();
   const { branding } = useSettings();
@@ -162,7 +173,7 @@ function BottomNav() {
                 {group.items.map(item => (<Fragment key={item.to}>
                   {item.sub && <div className="drawer-subhead">{item.sub}</div>}
                   {item.divider && !item.sub && <div className="drawer-subdivider" />}
-                  <button
+                  <button data-sub={subOf(group.items, item) ? '' : undefined}
                     className="drawer-item"
                     onClick={() => { nav(item.to); setDrawerOpen(false); }}
                   >

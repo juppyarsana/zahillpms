@@ -16,6 +16,17 @@ function SidebarLink({ to, end, icon, label, badge }) {
   );
 }
 
+// A group's items cut into its sub-groups (lib/navItems.js withSubs): an item
+// with `sub` or `divider` starts a new run. Exported for the phone drawer.
+export function chunks(items) {
+  const out = [];
+  for (const item of items) {
+    if (!out.length || item.sub || item.divider) out.push({ sub: item.sub || null, divider: !!item.divider, items: [] });
+    out[out.length - 1].items.push(item);
+  }
+  return out;
+}
+
 // A collapsible group (Front Desk, Services, …): the whole header row
 // toggles it, a drawn chevron points right when closed and down when open,
 // and the state is remembered on this device. Closed, the header still shows
@@ -45,11 +56,15 @@ function SidebarSection({ id, label, items, defaultOpen = true }) {
       </button>
       {open && (
         <div className="sidebar-group-items">
-          {items.map(item => (
-            <Fragment key={item.to}>
-              {item.divider && <div className="sidebar-subdivider" />}
-              {item.sub && <div className="sidebar-subhead">{item.sub}</div>}
-              <SidebarLink {...item} />
+          {chunks(items).map((c, i) => (
+            <Fragment key={i}>
+              {c.divider && <div className="sidebar-subdivider" />}
+              {c.sub ? (
+                <div className="sidebar-subgroup">
+                  <div className="sidebar-subhead">{c.sub}</div>
+                  <div className="sidebar-subitems">{c.items.map(item => <SidebarLink key={item.to} {...item} />)}</div>
+                </div>
+              ) : c.items.map(item => <SidebarLink key={item.to} {...item} />)}
             </Fragment>
           ))}
         </div>

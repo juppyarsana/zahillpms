@@ -36,7 +36,7 @@ export default function InsightRooms() {
           {card('Revenue per available room', idr(n.revpar), <Up pct={data.compare_prev.revpar} />, data.compare_last_year && <Up pct={data.compare_last_year.revpar} />, 'RevPAR')}
           <div className="stat-card">
             <div className="stat-label">Average stay</div>
-            <div className="stat-value">{data.length_of_stay.average.toLocaleString('id-ID', { maximumFractionDigits: 1 })} nights</div>
+            <div className="stat-value">{data.length_of_stay.average.toLocaleString('id-ID', { maximumFractionDigits: 1 })} {data.length_of_stay.average === 1 ? 'night' : 'nights'}</div>
             <div className="stat-sub">{data.length_of_stay.stays} stays arrived · {data.guest_nights} guest-nights</div>
           </div>
         </div>

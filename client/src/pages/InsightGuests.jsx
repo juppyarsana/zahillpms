@@ -37,7 +37,7 @@ export default function InsightGuests() {
           <div className="stat-card">
             <div className="stat-label">Top country</div>
             <div className="stat-value" style={{ fontSize: 20, whiteSpace: 'normal' }}>{countries.find(c => c.nationality)?.nationality || '—'}</div>
-            <div className="stat-sub">{countries.find(c => c.nationality) ? `${Math.round(countries.find(c => c.nationality).share)}% of guests · ${countries.filter(c => c.nationality).length} countries` : 'No nationality recorded'}</div>
+            <div className="stat-sub">{countries.find(c => c.nationality) ? `${Math.round(countries.find(c => c.nationality).share)}% of guests · ${countries.filter(c => c.nationality).length} {countries.filter(c => c.nationality).length === 1 ? 'country' : 'countries'}` : 'No nationality recorded'}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Returning guests</div>
@@ -109,7 +109,7 @@ export default function InsightGuests() {
               <div style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div className="ins-row-head"><span>Stays (rooms) arrived</span><b>{t.stays}</b></div>
                 <div className="ins-row-head"><span>Room-nights</span><b>{t.room_nights}</b></div>
-                <div className="ins-row-head"><span>Average stay</span><b>{data.length_of_stay.average.toLocaleString('id-ID', { maximumFractionDigits: 1 })} nights</b></div>
+                <div className="ins-row-head"><span>Average stay</span><b>{data.length_of_stay.average.toLocaleString('id-ID', { maximumFractionDigits: 1 })} {data.length_of_stay.average === 1 ? 'night' : 'nights'}</b></div>
                 <div className="ins-row-head"><span>Value of these stays</span><b>{idr(t.value)}</b></div>
               </div>
               <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Room + meal plan, net, for the whole stay.</div>
