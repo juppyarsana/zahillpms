@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
@@ -634,8 +634,11 @@ function ExpenseDetail({ e, onClose, onVoid }) {
 
 export function ExpensesTab() {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  // ?month=YYYY-MM&expense=<id> (from Insights → Costs) opens that month and that expense.
+  const [params, setParams] = useSearchParams();
+  const linked = /^(\d{4})-(\d{2})$/.exec(params.get('month') || '');
+  const [month, setMonth] = useState(linked ? Number(linked[2]) : now.getMonth() + 1);
+  const [year, setYear] = useState(linked ? Number(linked[1]) : now.getFullYear());
   const [category, setCategory] = useState('');
   const [department, setDepartment] = useState('');
   const [showVoided, setShowVoided] = useState(false);
@@ -660,6 +663,13 @@ export function ExpensesTab() {
     api.get('/api/expenses', { params }).then(r => setExpenses(r.data)).catch(() => {});
   }
   useEffect(() => { load(); }, [month, year, category, department, showVoided]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const id = params.get('expense');
+    const e = id && expenses.find(x => x.id === id);
+    if (!e) return;
+    setOpen(e);
+    const n = new URLSearchParams(params); n.delete('expense'); n.delete('month'); setParams(n, { replace: true });
+  }, [expenses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});

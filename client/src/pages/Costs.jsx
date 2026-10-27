@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon';
+import CostEntries from '../components/CostEntries';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
@@ -51,7 +52,7 @@ export default function Costs() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [allEntries, setAllEntries] = useState(false);
+  const [win, setWin] = useState(null);   // the entries window: { category?, entry? }
 
   useEffect(() => {
     let off = false;
@@ -64,11 +65,11 @@ export default function Costs() {
   }, [month]);
 
   const setParam = (k, v) => setParams(p => { const n = new URLSearchParams(p); if (v) n.set(k, v); else n.delete(k); return n; }, { replace: true });
-  const goMonth = ym => { setAllEntries(false); setParam('month', ym === current ? '' : ym); };
+  const goMonth = ym => { setWin(null); setParam('month', ym === current ? '' : ym); };
 
   const depts = data?.departments || [];
   const sel = depts.find(d => d.department === params.get('department')) || depts[0] || null;
-  const pickDept = key => { setAllEntries(false); setParam('department', key); };
+  const pickDept = key => { setWin(null); setParam('department', key); };
   const selEntries = useMemo(() => (data && sel ? data.entries.filter(e => e.department === sel.department) : []), [data, sel]);
 
   const prevLabel = data ? (data.partial ? `the same days of ${data.prev.label.split(' ')[0]}` : data.prev.label) : '';
@@ -203,43 +204,36 @@ export default function Costs() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {sel.categories.map(c => (
-                    <div key={c.category}>
+                    <button key={c.category} type="button" className="ins-cat" disabled={!c.entries}
+                            onClick={() => setWin({ category: c.category })} title={c.entries ? `See the ${c.entries} ${c.label} entries` : undefined}>
                       <div className="ins-row-head" style={{ fontSize: 14 }}>
-                        <span>{c.label}</span>
+                        <span>{c.label}{c.entries > 0 && <span className="text-muted" style={{ fontSize: 12 }}> · {c.entries}</span>}</span>
                         <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{idr(c.amount)}</span>
                       </div>
                       <Bar pct={sel.categories[0].amount ? (c.amount / sel.categories[0].amount) * 100 : 0} />
                       {c.before > 0 && <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>was {idr(c.before)}</div>}
-                    </div>
+                    </button>
                   ))}
                 </div>
                 {insight && <div className="ins-note">{insight}</div>}
 
                 {selEntries.length > 0 && (<>
-                  <div className="stat-label" style={{ marginTop: 16 }}>Entries, biggest first</div>
-                  <div className="table-wrap">
-                    <table style={{ width: '100%', fontSize: 13 }}>
-                      <tbody>
-                        {(allEntries ? selEntries : selEntries.slice(0, 8)).map(e => (
-                          <tr key={e.kind + e.id}>
-                            <td style={{ padding: '7px 6px', whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>{dayShort(e.day)}</td>
-                            <td style={{ padding: '7px 6px' }}>
-                              <div>{e.text || e.category_label}</div>
-                              <div className="text-muted" style={{ fontSize: 12 }}>
-                                {[e.kind === 'bill' ? `Bill ${e.bill_no}` : 'Expense', e.supplier, e.reference].filter(Boolean).join(' · ')}
-                              </div>
-                            </td>
-                            <td style={{ padding: '7px 6px', textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{idr(e.amount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="stat-label" style={{ marginTop: 16 }}>Biggest entries</div>
+                  <div className="cost-list">
+                    {selEntries.slice(0, 5).map(e => (
+                      <button key={e.kind + e.id} type="button" className="cost-item" onClick={() => setWin({ entry: e })}>
+                        <span className="cost-item-day">{dayShort(e.day)}</span>
+                        <span className="cost-item-main">
+                          <span className="cost-item-what">{e.text || e.category_label}</span>
+                          <span className="text-muted cost-item-sub">{[e.kind === 'bill' ? e.bill_no : 'Expense', e.supplier].filter(Boolean).join(' · ')}</span>
+                        </span>
+                        <span className="cost-item-amt">{idr(e.amount)}</span>
+                      </button>
+                    ))}
                   </div>
-                  {selEntries.length > 8 && (
-                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setAllEntries(v => !v)}>
-                      {allEntries ? 'Show fewer' : `Show all ${selEntries.length}`}
-                    </button>
-                  )}
+                  <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 10 }} onClick={() => setWin({})}>
+                    See all {selEntries.length} {selEntries.length === 1 ? 'entry' : 'entries'} →
+                  </button>
                 </>)}
               </div>
             )}
@@ -288,6 +282,11 @@ export default function Costs() {
           </div>
         </div>
       </div>))}
+
+      {win && sel && (
+        <CostEntries dept={sel} entries={selEntries} month={month} monthLabel={`${monthLong(month)}${data.partial ? ' so far' : ''}`}
+                     initialCategory={win.category || ''} initialEntry={win.entry || null} onClose={() => setWin(null)} />
+      )}
     </div>
   );
 }

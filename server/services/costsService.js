@@ -14,7 +14,7 @@
 // vs 1–27 Sep), never a part month against a whole one — the Dashboard rule.
 // Nothing is stored.
 const db = require('../db');
-const { COSTS_SQL, DEPARTMENTS, CATEGORY_LABEL } = require('./costCategories');
+const { COSTS_SQL, DEPARTMENTS, DEPARTMENT_LABEL, CATEGORY_LABEL } = require('./costCategories');
 const { todayWITA } = require('./roomChargeService');
 
 const pad = n => String(n).padStart(2, '0');
@@ -194,4 +194,60 @@ async function buildCosts(propertyId, month, { today = todayWITA() } = {}) {
   };
 }
 
-module.exports = { buildCosts, costPeriod };
+
+// One entry of the page, for its details window: an expense or a supplier
+// bill of this property → the fields worth reading, or null. Read-only; the
+// Costs permission is enough (the entry's own page needs its own).
+async function costEntry(propertyId, kind, id) {
+  if (!/^[0-9a-f-]{36}$/i.test(id || '')) return null;
+  const day = d => (typeof d === 'string' ? d.slice(0, 10) : d ? new Date(d).toISOString().slice(0, 10) : null);
+  if (kind === 'expense') {
+    const { rows: [e] } = await db.query(`
+      SELECT e.*, s.name AS supplier, u.name AS created_by_name, po.po_number,
+             COALESCE(pm.label, e.payment_method) AS method_label
+      FROM expenses e
+      LEFT JOIN suppliers s ON s.id = e.supplier_id
+      LEFT JOIN users u ON u.id = e.created_by
+      LEFT JOIN purchase_orders po ON po.id = e.purchase_order_id
+      LEFT JOIN payment_methods pm ON pm.id = e.payment_method AND pm.property_id = e.property_id
+      WHERE e.id = $1 AND e.property_id = $2`, [id, propertyId]);
+    if (!e) return null;
+    return {
+      kind, id: e.id, day: day(e.incurred_on), amount: r2(e.amount),
+      category: e.category, category_label: CATEGORY_LABEL[e.category] || e.category,
+      department: e.department, department_label: DEPARTMENT_LABEL[e.department] || e.department,
+      text: e.description || '', reference: e.reference || '', supplier: e.supplier || '',
+      paid_with: e.method_label || null, po_number: e.po_number || null,
+      created_by: e.created_by_name || null, created_at: e.created_at,
+      is_voided: e.is_voided,
+    };
+  }
+  if (kind === 'bill') {
+    const { rows: [b] } = await db.query(`
+      SELECT b.*, s.name AS supplier, u.name AS created_by_name, po.po_number,
+             COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocations a
+                       JOIN supplier_payments p ON p.id = a.payment_id
+                       WHERE a.bill_id = b.id AND NOT p.is_voided), 0) AS paid
+      FROM supplier_bills b
+      LEFT JOIN suppliers s ON s.id = b.supplier_id
+      LEFT JOIN users u ON u.id = b.created_by
+      LEFT JOIN purchase_orders po ON po.id = b.purchase_order_id
+      WHERE b.id = $1 AND b.property_id = $2`, [id, propertyId]);
+    if (!b) return null;
+    const paid = r2(b.paid), balance = r2(b.total - b.paid), due = day(b.due_date);
+    const status = b.is_voided ? 'voided' : balance <= 0.004 ? 'paid' : due < todayWITA() ? 'overdue' : paid > 0 ? 'part_paid' : 'not_paid';
+    return {
+      kind, id: b.id, day: day(b.bill_date), amount: r2(b.total),
+      category: b.category, category_label: CATEGORY_LABEL[b.category] || b.category,
+      department: b.department, department_label: DEPARTMENT_LABEL[b.department] || b.department,
+      text: b.notes || '', reference: b.supplier_ref || '', supplier: b.supplier || '',
+      bill_no: `BILL-${String(b.bill_no).padStart(4, '0')}`, due_date: due, paid, balance, status,
+      po_number: b.po_number || null,
+      created_by: b.created_by_name || null, created_at: b.created_at,
+      is_voided: b.is_voided,
+    };
+  }
+  return null;
+}
+
+module.exports = { buildCosts, costPeriod, costEntry };

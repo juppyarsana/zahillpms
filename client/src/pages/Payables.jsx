@@ -55,6 +55,14 @@ export default function Payables() {
   useEffect(() => { const t = setTimeout(loadBills, 300); return () => clearTimeout(t); }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (tab === 'payments') loadPayments(); }, [tab, supplierId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ?bill=<id> (from Insights → Costs) opens that bill.
+  useEffect(() => {
+    const id = params.get('bill');
+    if (!id) return;
+    setViewing(id);
+    params.delete('bill'); setParams(params, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Make bill from a purchase order
   useEffect(() => {
     const po = params.get('from_po');

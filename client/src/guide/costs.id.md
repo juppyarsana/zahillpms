@@ -18,7 +18,9 @@ Semua angka sama dengan angka di halamannya sendiri (Reports, Cashier Closing, R
 
 1. Pilih bulan dengan ‹ ›. Bulan yang masih berjalan dibandingkan dengan **tanggal yang sama** bulan sebelumnya.
 2. Kartu di atas: total biaya, departemen terbesar, kenaikan terbesar, dan **biaya per kamar terisi**.
-3. **Departments, biggest first** — ketuk satu departemen untuk melihat untuk apa uangnya, perubahannya dibanding bulan lalu, dan setiap catatannya.
+3. **Departments, biggest first** — ketuk satu departemen untuk melihat untuk apa uangnya, perubahannya dibanding bulan lalu, dan catatan terbesarnya.
+   - Ketuk **kategori** untuk melihat catatan kategori itu saja, atau **See all entries** untuk semua catatan departemen: saring per kategori, cari, urutkan terbesar atau terbaru.
+   - Ketuk **satu catatan** untuk melihat siapa yang mencatat, supplier, nomor nota dan, untuk tagihan, sudah dibayar atau belum. **Open in Expenses / Payables** membukanya di halamannya (jika Anda punya akses).
 4. **Department profit** — sisa Rooms, Food & Beverage dan Activities setelah biayanya sendiri, dan berapa yang dikeluarkan untuk setiap Rp 100 pendapatan.
 5. **6 bulan terakhir** — ketuk bulan untuk membukanya.
 

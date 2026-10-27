@@ -18,7 +18,9 @@ Every figure is the same as on its own page (Reports, Cashier Closing, Receivabl
 
 1. Pick the month with ‹ ›. While a month is still running it is compared with the **same days** of the month before.
 2. The cards: total costs, the biggest department, the biggest jump, and **cost per occupied room**.
-3. **Departments, biggest first** — tap one to see what it spent on, the change on last month and every entry.
+3. **Departments, biggest first** — tap one to see what it spent on, the change on last month and its biggest entries.
+   - Tap a **category** to see only its entries, or **See all entries** for the whole department: filter by category, search, sort by biggest or newest.
+   - Tap an **entry** to see who recorded it, the supplier, the receipt number and, for a bill, whether it is paid. **Open in Expenses / Payables** takes you to it (if you have that page).
 4. **Department profit** — what Rooms, Food & Beverage and Activities keep after their own costs, and what each spends for every Rp 100 it brings in.
 5. **Last 6 months** — tap a month to open it.
 
