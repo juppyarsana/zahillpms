@@ -26,7 +26,7 @@ Setiap halaman membandingkan periodenya dengan periode sebelumnya. Bulan yang ma
 Setiap baris memakai urutan yang sama: **hunian → ADR → pendapatan → reservasi dibuat**, lalu satu angka lagi.
 
 - **Today so far** — hunian malam ini, **ADR malam ini** (rata-rata harga kamar yang dibayar malam ini, dengan RevPAR), pendapatan hari ini, reservasi yang dibuat dan uang masuk hari ini, masing-masing dengan angka kemarin di bawahnya (**Open Today** untuk daftarnya). Satu baris di bawah kartu memuat pendapatan, hunian dan ADR **kemarin** dibanding hari yang sama minggu lalu, dan satu baris untuk **besok**: tamu datang, menginap, pulang dan kamar terisi malam itu (**See the guests** membuka Today pada tanggal itu).
-- **This month** — sejauh ini dibanding tanggal yang sama bulan lalu, yang sudah dipesan, pendapatan per malam, asal tamu, deposit yang belum dibayar.
+- **This month** — sejauh ini dibanding tanggal yang sama bulan lalu, **whole month on the books** (hunian sebulan penuh dengan pesanan yang ada sekarang, dibanding hasil akhir bulan lalu), pendapatan per malam, asal tamu, deposit yang belum dibayar.
 - **Still owed to the hotel**, **biaya terbesar** bulan ini dan **14 malam ke depan** yang sudah terisi.
 - **Market** — rating pesaing, pencarian Google dan ringkasan AI mingguan (jika Market Insights aktif).
 

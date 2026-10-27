@@ -143,6 +143,12 @@ function Change({ value, suffix = '%' }) {
   return <span style={{ color: up ? '#15803D' : '#B91C1C', fontWeight: 600 }}>{up ? '▲' : '▼'} {Math.abs(value)}{suffix} <span style={{ fontWeight: 400 }} className="text-muted">vs last month</span></span>;
 }
 
+// ▲ 6 pts / ▼ 2 pts with no "vs" text (the line says what it compares with).
+function PtsArrow({ value }) {
+  if (!value) return null;
+  return <span style={{ color: value > 0 ? '#15803D' : '#B91C1C', fontWeight: 600 }}>{value > 0 ? '▲' : '▼'} {Math.abs(value)} pts</span>;
+}
+
 // Whole month, night by night: past nights solid, today dark, nights still
 // to come (already booked) light.
 function MonthChart({ daily, todayYmd }) {
@@ -218,9 +224,13 @@ export function MonthSection({ showReportLink }) {
               </div>
             </Box>
             <Box label="Whole month on the books" value={`${m.on_the_books.occupancy}%`}
-              title="Where the whole month lands if nothing else is booked: nights stayed so far + nights still booked to the end of the month. Same as the Reports page for this month.">
-              <div title={fmtIDR(m.on_the_books.revenue)}>{fmtShortIDR(m.on_the_books.revenue)}</div>
-              <div>{plural(m.on_the_books.room_nights, 'room-night')}</div>
+              title="Where the whole month lands if nothing else is booked: nights stayed so far + nights still booked to the end of the month, compared with how last month ended. Same as the Reports page for this month.">
+              <div title={fmtIDR(m.on_the_books.revenue)}>{fmtShortIDR(m.on_the_books.revenue)} · {plural(m.on_the_books.room_nights, 'room-night')}</div>
+              {m.last_month_full && m.last_month_full.room_nights > 0 && (
+                <div title={`${fmtYmd(m.last_month_full.from, { month: 'long' })} in full: ${fmtIDR(m.last_month_full.revenue)}, ${plural(m.last_month_full.room_nights, 'room-night')}`}>
+                  <PtsArrow value={m.on_the_books.occupancy - m.last_month_full.occupancy} /> {fmtYmd(m.last_month_full.from, { month: 'short' })} ended at {m.last_month_full.occupancy}% · {fmtShortIDR(m.last_month_full.revenue)}
+                </div>
+              )}
             </Box>
           </div>
 

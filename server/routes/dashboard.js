@@ -241,7 +241,8 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu(['month_
     const prevFirst = `${py}-${pad(pm)}-01`;
     const prevTo = `${py}-${pad(pm)}-${pad(prevDays)}`;
 
-    const [{ rows: [u] }, soFar, prev, books, made, madePrev, unpaid] = await Promise.all([
+    const prevLast = `${py}-${pad(pm)}-${pad(monthLen(py, pm))}`;
+    const [{ rows: [u] }, soFar, prev, books, made, madePrev, unpaid, prevFull] = await Promise.all([
       db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'out_of_order') AS sellable FROM units WHERE property_id = $1`, [pid]),
       getReport(pid, first, today),
       getReport(pid, prevFirst, prevTo),
@@ -249,6 +250,7 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu(['month_
       bookingsMade(pid, first, today),
       bookingsMade(pid, prevFirst, prevTo),
       unpaidRoomMoney(pid),
+      getReport(pid, prevFirst, prevLast),   // last month in full, for the on-the-books card
     ]);
     const sellable = parseInt(u.sellable, 10) || 0;
     const figures = (r, days) => ({
@@ -285,6 +287,13 @@ router.get('/month', auth, moduleGuard('financial'), requireOwnerOrMenu(['month_
         revenue: booksRevenue,
         room_nights: books.total_nights,
         occupancy: sellable ? Math.round((books.total_nights / (sellable * monthLen(y, m))) * 100) : 0,
+      },
+      // How last month ended, to set the whole month on the books against.
+      last_month_full: {
+        from: prevFirst, to: prevLast,
+        revenue: prevFull.total_revenue,
+        room_nights: prevFull.total_nights,
+        occupancy: sellable ? Math.round((prevFull.total_nights / (sellable * monthLen(py, pm))) * 100) : 0,
       },
       made: { ...made.made, cancelled: made.cancelled },
       made_last_month: { ...madePrev.made, cancelled: madePrev.cancelled },

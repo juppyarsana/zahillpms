@@ -26,7 +26,7 @@ Each page compares the period with the one before. While a month is still runnin
 Every row reads in the same order: **occupancy → ADR → revenue → reservations made**, then one more figure.
 
 - **Today so far** — occupancy tonight, **ADR tonight** (average room rate of tonight's paid rooms, with RevPAR), revenue today, reservations made and money received today, each with yesterday's figure under it (**Open Today** for the lists). One line under the cards gives **yesterday**'s revenue, occupancy and ADR against the same weekday a week before, and one line for **tomorrow**: arriving, staying over, departing and rooms that night (**See the guests** opens Today on that date).
-- **This month** — so far against the same days of last month, what is on the books, revenue night by night, where stays came from, deposits not paid yet.
+- **This month** — so far against the same days of last month, the **whole month on the books** (occupancy the month reaches with what is booked now, against how last month ended), revenue night by night, where stays came from, deposits not paid yet.
 - **Still owed to the hotel**, **biggest costs** this month and the **next 14 nights** booked.
 - **Market** — competitor ratings, Google searches and the weekly AI briefing (when Market Insights is on).
 
