@@ -111,6 +111,7 @@ public class MainActivity extends Activity {
     private final List<Runnable> accentPainters = new ArrayList<>();
     private PopupWindow inputsPopup;
     private int lastFocusedId = View.NO_ID;
+    private String zahillKey;
     private int packageSeq;
     private boolean okHeld, settingsOpened;
 
@@ -657,6 +658,14 @@ public class MainActivity extends Activity {
                 "Today at " + hotel, "Hari ini di " + hotel,
                 "Events · Notices", "Acara · Pengumuman", "/info/today"));
 
+        // Rebuilt only when what it shows changes — the state refreshes every minute, and new
+        // views would lose the remote's place.
+        StringBuilder key = new StringBuilder(lang).append('|').append(accent);
+        for (InfoTile t : tiles) key.append('|').append(t.path).append(t.en);
+        if (key.toString().equals(zahillKey)) return;
+        zahillKey = key.toString();
+        View focused = getCurrentFocus();
+        int focusedAt = focused == null ? -1 : zahillCards.indexOf(focused);
         zahillRow.removeAllViews();
         zahillCards.clear();
         for (int i = 0; i < tiles.size(); i++) {
@@ -664,6 +673,7 @@ public class MainActivity extends Activity {
             zahillRow.addView(v, llp(d(404), -1, i == 0 ? 0 : d(22), 0, 0, 0));
         }
         wireFocus();
+        if (focusedAt >= 0 && !zahillCards.isEmpty()) zahillCards.get(Math.min(focusedAt, zahillCards.size() - 1)).requestFocus();
     }
 
     private View infoTile(InfoTile t) {

@@ -30,7 +30,7 @@ ZHP PMS/
 ├── kitchen-display/      ← Kitchen Display PWA (kitchen ticket board kiosk)
 ├── resto-display/        ← Resto Ordering app (guest QR self-order + floor staff order-taking/confirm-queue/table PWA)
 ├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView (to be retired by tv-launcher)
-├── tv-launcher/         ← Zahill TV Home (`com.zahill.tv`): the guest TV's launcher + screensaver — TV_LAUNCHER_PLAN.md, Phase 1 built 2026-10-28
+├── tv-launcher/         ← Zahill TV Home (`com.zahill.tv`): the guest TV's launcher + screensaver — TV_LAUNCHER_PLAN.md, Phases 1–2 built 2026-10-28
 ├── room-display-kiosk/   ← Android tablet kiosk APK (Kotlin) that wraps room-display in a WebView + posts device telemetry (Phase 1; no lock-down yet — see ROOM_DISPLAY_KIOSK_PLAN.md)
 ├── PLANNING.md          ← original single-property feature/schema spec (historical reference)
 ├── ROADMAP.md           ← current feature roadmap, phase status, module registry
@@ -413,9 +413,10 @@ One backend, one database, many properties. The client app, Room Display, and TV
 | 135 | Buy without a PO — `purchase_orders.supplier_id` nullable (CHECK: only for a direct one), `is_direct`, `bought_from`, `purchased_on`, `reference`, `category`, `voided_at/_by`, `void_reason`; `purchase_order_items.line_total` (the price typed per line); `expenses.purchase_order_id`; `property_settings.direct_purchase_alerts` (JSONB, NULL = defaults); owners' Telegram recipients get `alert_direct_purchase` ticked. See "Buy without a PO". |
 | 133 | POS bill numbers on the invoice — `sales.pos_bill_no` / `pos_outlet` and the same on `event_charges` (the number on the guest's POS receipt, e.g. SG-00001/10/26, and the restaurant's name, sent by the POS with each Room / Event Charge). See "Restaurant bills on the invoice". Additive only. |
 | 141 | Room types in the owner's order — `room_types.sort_order` (from 062) set for every property to the order the Dashboard showed (Villa, Suite, Glamping, Deluxe, then by name), now set in Settings → Units with ↑ ↓ (`PUT /api/room-types/order { ids }`, owner) and used by the Dashboard room board, Reservations calendar, Call a Room, Pricing and Forecast (Availability, Housekeeping, Reports already used it). The fixed word list in the client is gone (`lib/roomTypeOrder.js`). |
+| 142 | Room TV Home (tv-launcher Phase 2) — `property_settings.tv_backgrounds` JSONB (morning / day / night `{slot, start, image_url}`), `tv_bg_use_board` (default true = Guest Board pictures rotate behind Home), `guest_wifi_ssid` / `guest_wifi_password`, `breakfast_hours` / `breakfast_outlet`, `checkout_time`. Set on Guest Board → 📺 Room TV Home (`components/TvHomeCard.jsx`; `GET|PUT /api/board/tv`, `POST|DELETE /api/board/tv/background/:slot` — photos resized to 1920×1080 into `uploads/board`, same permission as Guest Board). `services/tvHome.js` builds the `tv` object of `GET /api/display/room/:roomId/state` (`background_urls` resolved for now in WITA, `accent`, `wifi`, `breakfast`, `checkout_time`; `unit.type` added too). `tv-display/src/info/` = the TV's hotel info pages `/info/dining` (POS / PMS menu, all-in prices like the tablet), `/info/activities` (photos from linked Guest Board cards), `/info/guide`, `/info/today`, remote-driven (`dpad.js`), opened by the launcher's `HotelInfoActivity`. Additive only. |
 | 131 | Costs by department — `expenses.department`, `supplier_bills.department` (NOT NULL, CHECK front_office / housekeeping / fnb / engineering / activities / sales / admin; existing rows = their category's usual department), `suppliers.default_department`. A management tag only; the category still decides the account. See "Costs by department". |
 
-**Next migration number: 142** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
+**Next migration number: 143** (keep `ROADMAP.md` in sync when you add one — this line was found stale at 047 when 047 already existed on disk; double-check against the actual highest-numbered file in `server/db/migrations/` if in doubt, don't trust this line blindly).
 
 ---
 
@@ -951,6 +952,8 @@ See `server/.env.example` for the full current list (kept up to date — check t
 ## Pending on the next production deploy
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
+
+- **Room TV Home (migration 142) + tv-display info pages — on `dev`, not released.** The migration runs itself; `deploy.sh` rebuilds `tv-display` (the `/info/*` pages need no nginx change — the TV host already serves the SPA for any path). Nothing changes for the existing screensaver TVs. By hand afterwards: Guest Board → 📺 Room TV Home → guest Wi-Fi, check-out time, breakfast hours / outlet → Save. The new TV app (`tv-launcher/`, `com.zahill.tv`) is installed per TV by adb (see its README) — only the test TV has it; Phase 3 (setup script, release key, debloat) comes before the other TVs.
 
 - **Reservations tabs (no migration) — released to `main` 69fd7df 2026-10-28 (checked on a copy of production: migrations 139–141, ~400 API calls, every page, journal and reports identical to the old code), not deployed yet.** Tell front desk: Availability and OTA bookings are tabs of Reservations now.
 

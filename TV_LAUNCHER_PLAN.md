@@ -1,7 +1,7 @@
 # Zahill TV Launcher — Implementation Plan
 
-> Status: **Phase 1 built 2026-10-28** (`tv-launcher/`, see its README; tried on the room TV at
-> 192.168.20.116 against a local server). Phases 2–4 not started. Design approved in principle: the
+> Status: **Phases 1–2 built 2026-10-28** (`tv-launcher/`, see its README; tried on the room TV at
+> 192.168.20.116 against a local server). Phases 3–4 not started. Design approved in principle: the
 > "Zahill TV Home" design canvas (4 screens: Home with guest, Home room ready, Dining,
 > Activities), exported as images to `tv-launcher/design/`. Supersedes the "Android TV" track of `ROOM_DISPLAY_KIOSK_PLAN.md`, which
 > planned to add a launcher activity to `tv-screensaver/`; this plan replaces the
@@ -107,6 +107,19 @@ the logo `property_settings.logo_url`, so every property on the PMS gets its own
   `/info/activities`, `/info/guide`, `/info/today`) matching the design: large focus
   rings, arrow-key navigation, Back closes. Dining/Activities read-only first; ordering
   and booking from the TV later (endpoints already exist for the tablet).
+
+- **Built 2026-10-28** as planned, with these choices: the settings live on the **Guest Board page**
+  (card *Room TV Home*, `/api/board/tv`, Guest Board permission) rather than a new Settings page;
+  check-out time added (`checkout_time`); photos go to `uploads/board` / `/board-images/` so no
+  nginx change is needed; the `tv` object carries `checkout_time` too. Info pages: Dining shows the
+  POS menu (emoji instead of dish photos — the POS has none) and only for a checked-in room (the
+  POS endpoint needs a stay); Activities take photos and text from linked Guest Board cards;
+  Guide = Wi-Fi / breakfast / check-out + *property* and *dining* cards; Today = *notice* and
+  *activity* cards. The page's ‹ button closes via a `ZahillTV.close()` bridge. Checked: 17 HTTP
+  checks, the Guest Board card in headless Chrome at 1366px and 390px (found and fixed the settings
+  frame growing past a phone's width), all four pages and Home on the TV with the remote.
+  Not done: ordering / booking from the TV, an EN / ID switch inside the pages (they follow
+  Home's language via `?lang=`).
 
 ## Phase 3 — Rollout
 - **Debloat list for the TVX19A** using CleanYourTV's tools (no TVX19A list exists

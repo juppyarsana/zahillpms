@@ -40,6 +40,17 @@ TV lobi memutar lagu satu per satu dan berulang. Saat video **bersuara** tampil,
 
 > Pakai musik bebas royalti, atau lagu yang lisensinya dimiliki hotel (LMKN). Lagu komersial yang diputar di area umum memerlukan lisensi.
 
+## Home TV kamar
+
+TV kamar dengan aplikasi **Zahill TV** yang baru membuka layar Home: nama tamu dan kamar, hari check-out, aplikasi streaming, dan empat ubin hotel (Makan & Menu, Aktivitas, Panduan Hotel, Hari ini). Kamar kosong menampilkan **Welcome to your room · Ready for guests** sampai tamu menekan OK.
+
+Isinya diatur di halaman Guest Board → **📺 Room TV Home**:
+
+1. **Guest Wi-Fi name** dan **Wi-Fi password**, **Check-out time**, **Breakfast hours** dan **Breakfast served at** — lalu **Save**. Kolom yang dikosongkan tidak tampil di TV.
+2. **Background photo** — jika **Rotate the Guest Board's pictures** dicentang, gambar kartu-kartu di bawah bergantian di belakang layar Home. Hapus centang (atau tanpa gambar kartu) untuk memakai foto sendiri: **Morning**, **Day** dan **Night**, masing-masing mulai jam yang diisi. Satu foto = dipakai sepanjang hari; tanpa foto = gambar matahari terbit bawaan TV. Pakai foto lebar (landscape).
+
+TV mengambil perubahan dalam satu menit. **Makan & Menu** menampilkan menu restoran setelah tamu check-in; **Panduan Hotel** menampilkan Wi-Fi, sarapan, check-out dan kartu *Property* serta *Dining*; **Hari ini** menampilkan kartu *Notice* dan *Activity*. Tamu memesan lewat tablet kamar — TV hanya menampilkan.
+
 ## Menyiapkan TV lobi
 
 TV lobi memakai aplikasi **Zahill** yang sama dengan TV kamar. Di pengaturannya (tahan **OK** 3 detik di layar sambutan) ketik **lobby** sebagai **Room ID**, display token yang sama dengan kamar, lalu **Save**. Kemudian tekan **Zahill Welcome**. Atur **sleep timer** TV ke **Never** supaya tetap menyala.

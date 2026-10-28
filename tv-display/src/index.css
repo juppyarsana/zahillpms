@@ -53,3 +53,16 @@
 .tv-bg-fade-in {
   animation: tv-bg-fade-in 900ms ease forwards;
 }
+
+/* Hotel info pages (src/info): the focused card under the remote. */
+.tvf {
+  outline: none;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  cursor: pointer;
+}
+.tvf:focus {
+  box-shadow: 0 0 0 calc(4 * 100vw / 1920) var(--accent), 0 calc(18 * 100vw / 1920) calc(40 * 100vw / 1920) rgba(0, 0, 0, 0.5);
+  transform: scale(1.03);
+  position: relative;
+  z-index: 1;
+}

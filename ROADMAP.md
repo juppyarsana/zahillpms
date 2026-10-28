@@ -76,7 +76,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **Stock page (migration 136, 2026-10-23, on `dev`):** Operations → Stock, separate from Purchasing (POs, Bought without a PO, Suppliers): stock items + Sales items kept in stock in one list with history, Adjust (waste / used / correction), Stock opname (count sheet PDF, counts saved as typed, finish = fixed; Telegram summary + email list), Usage between two opnames (sold / used / waste / corrections / opname difference, Excel), Stock value; `stock` permission; write-off alert. Next: room supplies per occupied room-night taken off stock at the night audit. Details: CLAUDE.md → "Stock page".
 **OTA price ladder (migration 137, 2026-10-23, on `dev`):** sales' OTA prices follow rooms sold in the whole hotel. Pricing → My rules → 📈 OTA price ladder: per meal plan (Breakfast Non Refund / Breakfast Refundable) a grid of "sold up to" tiers × room types, pasted from Excel; the channel manager sends the price of the tier the next room falls in, re-counted on every booking / cancellation (~20 s). A fixed OTA price still wins on its nights. Details: CLAUDE.md → "OTA price ladder".
 **App colour + tab icon (migration 138, 2026-10-23, on `dev`):** each property has its own staff-app colour (Superadmin → Branding) and its own tab / home-screen icon (its logo, or its first letter) — no more Zahill maroon and lotus for every hotel. Details: CLAUDE.md → "Per-property app colour + tab icon".
-Next migration number: **142**.
+Next migration number: **143**.
 
 ### Channex re-certification run sheet (2026-10-21)
 
@@ -2155,7 +2155,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 142
+## Next migration number: 143
 
 ---
 

@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 
 // A hotel info screen (Dining & Menu, Activities, Hotel Guide, Today) — a
@@ -21,6 +22,10 @@ class HotelInfoActivity : Activity() {
             isFocusableInTouchMode = true
             setBackgroundColor(0xFF0A0C10.toInt())
         }
+        // The page's ‹ button calls ZahillTV.close() (tv-display src/info/dpad.js).
+        webView.addJavascriptInterface(object {
+            @JavascriptInterface fun close() = runOnUiThread { finish() }
+        }, "ZahillTV")
         setContentView(webView)
         window.insetsController?.let {
             it.hide(WindowInsets.Type.systemBars())

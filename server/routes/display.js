@@ -6,6 +6,7 @@ const mqttClient = require('../mqtt');
 const sse = require('../sse');
 const { getWeather } = require('../weather');
 const { musicState } = require('../services/lobbyMusic');
+const tvHome = require('../services/tvHome');
 const salesService = require('../services/salesService');
 const activityBookingService = require('../services/activityBookingService');
 const telegramService = require('../services/telegramService');
@@ -176,6 +177,10 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       [unit.id]
     );
 
+    // The room TV's Home screen (tv-launcher, migration 142): background, Wi-Fi, breakfast,
+    // check-out time. The tablet ignores it.
+    const tv = await tvHome.tvForState(unit.property_id, cardRows, propertyRows[0]?.brand_color);
+
     res.json({
       unit: { id: unit.id, name: unit.name, type: unit.type, controller_id: unit.controller_id, bed_config: unit.bed_config, housekeeping_status: unit.housekeeping_status },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
@@ -187,6 +192,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
       weather,
       property: propertyRows[0] || null,
+      tv,
       // Dining orders from the POS when its link is set (migration 094),
       // otherwise from the PMS's own food menu as before.
       orderingEnabled: posRoomOrders.linked(await posRoomOrders.config(unit.property_id))

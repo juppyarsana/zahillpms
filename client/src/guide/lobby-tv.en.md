@@ -40,6 +40,17 @@ The lobby TV plays the songs one after the other in a loop. When a video **with 
 
 > Use royalty-free music, or songs the hotel holds a licence for (LMKN). Commercial songs played in a public area need a licence.
 
+## Room TV Home
+
+Room TVs with the new **Zahill TV** app open on a Home screen: the guest's name and room, their check-out day, the streaming apps, and four hotel tiles (Dining & Menu, Activities, Hotel Guide, Today). An empty room shows **Welcome to your room · Ready for guests** until the guest presses OK.
+
+What it shows comes from the Guest Board page → **📺 Room TV Home**:
+
+1. **Guest Wi-Fi name** and **Wi-Fi password**, **Check-out time**, **Breakfast hours** and **Breakfast served at** — then **Save**. A field left empty is simply not shown on the TV.
+2. **Background photo** — with **Rotate the Guest Board's pictures** ticked, the pictures of the cards below rotate behind the Home screen. Untick it (or have no card pictures) to use your own photos: **Morning**, **Day** and **Night**, each from its start time. One photo is used all day; none = the TV's own sunrise picture. Use a wide landscape photo.
+
+The TVs pick changes up within a minute. **Dining & Menu** shows the restaurant menu once the guest has checked in; **Hotel Guide** shows the Wi-Fi, breakfast and check-out details and the *Property* and *Dining* cards; **Today** shows the *Notice* and *Activity* cards. Guests order and book on the room tablet — the TV only shows.
+
 ## Setting up the lobby TV
 
 It runs the same **Zahill** app as the room TVs. In its settings (hold **OK** for 3 seconds on the welcome screen) type **lobby** as the **Room ID**, the same display token as the rooms, and **Save**. Then press **Zahill Welcome**. Set the TV's own **sleep timer to Never** so it stays on.

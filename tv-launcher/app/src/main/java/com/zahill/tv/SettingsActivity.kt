@@ -26,7 +26,8 @@ class SettingsActivity : AppCompatActivity() {
         val provRoom = intent.getStringExtra(Preferences.KEY_ROOM_ID)?.trim()
         val provToken = intent.getStringExtra(Preferences.KEY_DISPLAY_TOKEN)?.trim()
         if (!provRoom.isNullOrEmpty() && !provToken.isNullOrEmpty()) {
-            prefs.edit {
+            // Written at once (not in the background): a setup script may stop the app right after.
+            prefs.edit(commit = true) {
                 putString(Preferences.KEY_ROOM_ID, provRoom)
                 putString(Preferences.KEY_DISPLAY_TOKEN, provToken)
                 intent.getStringExtra(Preferences.KEY_BASE_URL)?.trim()?.takeIf { it.isNotEmpty() }

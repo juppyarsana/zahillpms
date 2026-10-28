@@ -3,6 +3,7 @@ const db = require('../db');
 const auth = require('../middleware/auth');
 const multer = require('multer');
 const sharp = require('sharp');
+const tvHome = require('../services/tvHome');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -110,6 +111,65 @@ router.get('/', auth, async (req, res) => {
         c.sort_order, c.id
     `, [req.propertyId]);
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Room TV Home (migration 142) ───────────────────────────────────────────
+// Background photos by time of day, guest Wi-Fi, breakfast and check-out time —
+// what the room TV's Home screen shows (services/tvHome.js, tv-launcher/).
+// Declared before PUT /:id, which would otherwise take /tv.
+
+// GET /api/board/tv
+router.get('/tv', auth, async (req, res) => {
+  try {
+    res.json(await tvHome.settings(req.propertyId));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/board/tv { use_board?, starts?, wifi_ssid?, wifi_password?, breakfast_hours?, breakfast_outlet?, checkout_time? }
+router.put('/tv', auth, async (req, res) => {
+  try {
+    res.json(await tvHome.save(req.propertyId, req.body || {}));
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// POST /api/board/tv/background/:slot — multipart `image` (morning / day / night)
+router.post('/tv/background/:slot', auth, upload, async (req, res) => {
+  const file = uploaded(req, 'image');
+  try {
+    if (!tvHome.SLOTS.includes(req.params.slot)) return res.status(400).json({ error: 'slot must be morning, day or night' });
+    if (!file) return res.status(400).json({ error: 'Choose a photo' });
+    if (file.size > IMAGE_MAX) return res.status(400).json({ error: 'A picture can be at most 10 MB.' });
+    const filename = `tv-${req.params.slot}-${Date.now()}.jpg`;
+    // Full HD across, the TV's own size — a TV background is seen from a bed.
+    await sharp(file.path).rotate()
+      .resize({ width: 1920, height: 1080, fit: 'cover', withoutEnlargement: true })
+      .jpeg({ quality: 84 })
+      .toFile(path.join(UPLOAD_DIR, filename));
+    const { settings, removed } = await tvHome.setBackground(req.propertyId, req.params.slot, `/board-images/${filename}`);
+    removeStored(removed);
+    res.json(settings);
+  } catch (err) {
+    res.status(/unsupported image|Input file/i.test(err.message) ? 400 : 500)
+      .json({ error: /unsupported image|Input file/i.test(err.message) ? 'That file is not a photo (JPG or PNG).' : err.message });
+  } finally {
+    removeTemp(req);
+  }
+});
+
+// DELETE /api/board/tv/background/:slot
+router.delete('/tv/background/:slot', auth, async (req, res) => {
+  try {
+    if (!tvHome.SLOTS.includes(req.params.slot)) return res.status(400).json({ error: 'slot must be morning, day or night' });
+    const { settings, removed } = await tvHome.setBackground(req.propertyId, req.params.slot, null);
+    removeStored(removed);
+    res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

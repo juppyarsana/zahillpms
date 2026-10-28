@@ -4,6 +4,7 @@ import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
 import { hotelHM, hotelDate } from './hotelTime';
 import { precacheVideos, playableUrl, release, MUSIC_CACHE } from './videoCache';
+import InfoApp from './info/InfoApp.jsx';
 
 const POLL_MS = 15_000;
 const VERSION_CHECK_MS = 10 * 60 * 1000;
@@ -632,6 +633,12 @@ function ErrorScreen({ message, onRetry }) {
 // ─── App root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // /info/* = a hotel info page opened from the room TV's Home (tv-launcher).
+  if (window.location.pathname.startsWith('/info/')) return <InfoApp />;
+  return <WelcomeApp />;
+}
+
+function WelcomeApp() {
   const queryRoom = useMemo(() => getQueryValue('room'), []);
   const queryToken = useMemo(() => getQueryValue('token'), []);
 

@@ -1067,7 +1067,7 @@ tr:hover td { background: #FAFAF8; }
 .settings-body .page-title { font-family: var(--font-base); font-size: 20px; }
 .settings-back { display: none; }
 @media (max-width: 900px) {
-  .settings-cols { grid-template-columns: 1fr; gap: 0; }
+  .settings-cols { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .settings-subnav, .settings-shell-header { display: none; }
   .settings-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; }
 }
