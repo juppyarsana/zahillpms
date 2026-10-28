@@ -1,0 +1,47 @@
+# SHARP AQUOS-TVX19A (the Zahill guest TVs), Android TV 11 (SDK 30), MediaTek, 1280x720 at 213 dpi.
+# Stock launcher: com.google.android.tvlauncher. Live TV: com.mediatek.wwtv.tvcenter.
+#
+# Used by provision.ps1: every package below is DISABLED for user 0 (never uninstalled), and
+# restore.ps1 enables exactly the ones provision.ps1 disabled. One package per line, # comments.
+# Built from CleanYourTV's Sharp lists (examples/sharp-aquos-tve21f, -tve23a) and checked against
+# `pm list packages` on room TV 192.168.20.116 (2026-10-29).
+#
+# Already disabled from the factory (left alone): com.cltv.fast (FAST channels),
+# com.google.android.marvin.talkback.
+#
+# Kept on purpose — the hotel needs them:
+# - com.mediatek.tv.service, com.mediatek.tvinput, com.mediatek.wwtv.tvcenter: remote, HDMI, Live TV
+#   (and the Inputs list on Home). com.mediatek.wwtv.setupwizard: channel scan.
+# - com.google.android.apps.mediashell: Chromecast — the "Cast from phone" tile.
+# - com.google.android.tv.remote.service, com.google.android.katniss: phone remote and the mic button.
+# - Play Store + Play Services (Netflix, YouTube… update through them), Gboard, WebView, TTS.
+# - Netflix, YouTube, Prime Video, Vidio, Spotify: the Watch row.
+# - com.mediatek.wwtv.mediaplayer (USB media), factory menus (never launched), Sharp legal pages,
+#   rcota.android.av.sharp.co.jp.rcota (unknown, registers as a Home screen — leave until known),
+#   com.mstar.android.tv.disclaimercustomization.
+
+# --- Telemetry and on-screen content recognition ---
+tv.anoki.acr.controller                      # Anoki ACR: recognises what is on screen; boot receiver
+com.sharplabs.dmt.aas.analyticsservice       # Sharp analytics; boot receiver
+com.google.android.feedback
+
+# --- Store demo, partner rows and auto-installs ---
+fusion.android.tv.demo                       # retail demo mode
+jp.co.sharp.av.android.epopdemo              # store demo
+android.autoinstalls.config.sharp.av         # Play auto-install of partner apps
+com.google.android.partnersetup              # Play partner customizations
+com.google.android.leanbacklauncher.partnercustomizer  # partner rows for the stock launcher
+com.google.android.tvrecommendations         # recommendation rows (the stock home's ads)
+
+# --- Not for hotel guests ---
+azan.android.av.sharp.co.jp                  # Azan prayer-time reminders (pop up over the screen)
+jp.co.sharp.av.android.emanual               # on-screen manual
+com.google.android.backdrop                  # Google ambient screensaver; Zahill TV has its own
+com.google.android.syncadapters.calendar
+com.google.android.play.games
+com.google.android.youtube.tvmusic
+
+# --- Stock home and its first-run wizard: LAST, once com.zahill.tv is installed and is Home ---
+# provision.ps1 skips setupwraith while it owns the saved Wi-Fi network (Android would delete it).
+com.google.android.tungsten.setupwraith
+com.google.android.tvlauncher

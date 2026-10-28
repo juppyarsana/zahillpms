@@ -28,20 +28,36 @@ export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"; export PATH="$JA
 ```
 `local.properties` needs `sdk.dir=C\:\\Android\\Sdk` (double backslashes).
 
-## Put it on a TV
-```bash
-A="adb -s <tv-ip>:5555"
-$A install -r app-debug.apk
-$A shell pm grant com.zahill.tv android.permission.WRITE_SECURE_SETTINGS
-$A shell am start -n com.zahill.tv/.SettingsActivity --es room_id 101 --es display_token <token>   # [--es base_url https://...]
-$A shell pm disable-user --user 0 com.google.android.tvlauncher
-$A shell cmd package set-home-activity com.zahill.tv/.MainActivity
-$A shell input keyevent KEYCODE_HOME
+## Put it on a TV — `provision/provision.ps1`
+One TV:
+```powershell
+cd tv-launcher\provision
+.\provision.ps1 -Tv 192.168.20.116 -Room 101 -Token <display token>     # -BaseUrl defaults to https://tv.zahill.kdai.cloud
 ```
-Then hold OK 3 s → *Set as screensaver*. Default TV URL: `https://tv.zahill.kdai.cloud`
-(serves `/api/display`, `/property-logos`, `/board-images` and the `tv-display` pages).
+Every TV: copy `rooms.example.csv` to `rooms.csv` (columns `room,ip`, not in git), then
+`.\provision.ps1 -RoomsCsv rooms.csv -Token <display token>`. Safe to run again — a TV already
+set up is updated in place.
 
-**Back to the stock home:** `$A shell pm enable com.google.android.tvlauncher`, then press Home.
+It installs the release APK (the debug one if there is none; a copy signed with another key is
+replaced), grants the two permissions it needs over adb (write secure settings, draw over apps —
+the second lets it take the screen back from Live TV after power-on), writes Room ID / token / URL,
+sets the screensaver, names the TV **Room 101** (what guests see in their Cast list), disables the
+packages in `debloat-tvx19a.txt`, makes Zahill TV the Home screen, removes the old
+`com.zahill.tvscreensaver` and checks Home opens. What it changed is kept in
+`provision/state/<ip>.json` (not in git).
+
+Safety rules (from CleanYourTV): it refuses a list with core Android / TV packages in it, never
+disables the setup wizard while that owns the saved Wi-Fi, only disables what is installed and
+enabled, and stops on a model other than AQUOS-TVX19A unless `-AnyModel -SkipDebloat`.
+
+**Back to the stock home:** `.\restore.ps1 -Tv <ip>` (add `-Uninstall` to remove Zahill TV) — enables
+exactly the packages the setup disabled, puts back the TV name and screensaver.
+
+## Release key
+`zahill-tv-release.jks` + `keystore.properties` in this folder, **not in git**. Every TV app must be
+signed with it or the next update won't install over it — keep a copy of both files (and the
+password inside `keystore.properties`) somewhere safe, e.g. the owner's password manager. Release
+builds skip Play's "target API 33" lint rule on purpose (sideloaded, never on Play).
 
 Trying it against a PC's local server: `adb reverse tcp:4000 tcp:4000` and
 `--es base_url http://127.0.0.1:4000` (the hotel info pages need `tv-display` too, so they

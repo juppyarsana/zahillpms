@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Granted over ADB (provision.ps1, appops): lets BootReceiver bring Home back over Live TV.
+         Android 10+ refuses activity starts from the background otherwise. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Lets the app set itself as the screensaver (granted over ADB). -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
@@ -55,6 +59,15 @@
             android:exported="true"
             android:label="@string/settings_name"
             android:theme="@style/Settings" />
+
+        <!-- Takes the screen back from Live TV after the TV boots (see BootReceiver). -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".ZahillDreamService"

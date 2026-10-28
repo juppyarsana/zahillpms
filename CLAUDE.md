@@ -30,7 +30,7 @@ ZHP PMS/
 ├── kitchen-display/      ← Kitchen Display PWA (kitchen ticket board kiosk)
 ├── resto-display/        ← Resto Ordering app (guest QR self-order + floor staff order-taking/confirm-queue/table PWA)
 ├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView (to be retired by tv-launcher)
-├── tv-launcher/         ← Zahill TV Home (`com.zahill.tv`): the guest TV's launcher + screensaver — TV_LAUNCHER_PLAN.md, Phases 1–2 built 2026-10-28
+├── tv-launcher/         ← Zahill TV Home (`com.zahill.tv`): the guest TV's launcher + screensaver — TV_LAUNCHER_PLAN.md, Phases 1–3 built 2026-10-28/29 (setup script in `tv-launcher/provision/`)
 ├── room-display-kiosk/   ← Android tablet kiosk APK (Kotlin) that wraps room-display in a WebView + posts device telemetry (Phase 1; no lock-down yet — see ROOM_DISPLAY_KIOSK_PLAN.md)
 ├── PLANNING.md          ← original single-property feature/schema spec (historical reference)
 ├── ROADMAP.md           ← current feature roadmap, phase status, module registry
@@ -953,7 +953,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
 
-- **Room TV Home (migration 142) + tv-display info pages — on `dev`, not released.** The migration runs itself; `deploy.sh` rebuilds `tv-display` (the `/info/*` pages need no nginx change — the TV host already serves the SPA for any path). Nothing changes for the existing screensaver TVs. By hand afterwards: Guest Board → 📺 Room TV Home → guest Wi-Fi, check-out time, breakfast hours / outlet → Save. The new TV app (`tv-launcher/`, `com.zahill.tv`) is installed per TV by adb (see its README) — only the test TV has it; Phase 3 (setup script, release key, debloat) comes before the other TVs.
+- **Room TV Home (migration 142) + tv-display info pages — on `dev`, not released.** The migration runs itself; `deploy.sh` rebuilds `tv-display` (the `/info/*` pages need no nginx change — the TV host already serves the SPA for any path). Nothing changes for the existing screensaver TVs. By hand afterwards: Guest Board → 📺 Room TV Home → guest Wi-Fi, check-out time, breakfast hours / outlet → Save. The new TV app (`tv-launcher/`, `com.zahill.tv`) is installed per TV by adb (see its README) — only the test TV has it; The Phase 3 setup script (`tv-launcher/provision/provision.ps1`) installs it per TV; only the test TV (192.168.20.116) has it, pointed at a dev PC — run it again there with the production token before using that room. The release key (`tv-launcher/zahill-tv-release.jks` + `keystore.properties`) is only on the PC that made it: back it up.
 
 - **Reservations tabs (no migration) — released to `main` 69fd7df 2026-10-28 (checked on a copy of production: migrations 139–141, ~400 API calls, every page, journal and reports identical to the old code), not deployed yet.** Tell front desk: Availability and OTA bookings are tabs of Reservations now.
 

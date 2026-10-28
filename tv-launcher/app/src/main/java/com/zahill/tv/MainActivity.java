@@ -74,7 +74,7 @@ public class MainActivity extends Activity {
     static final int DEFAULT_ACCENT = 0xFFC9A227;
     static final int GROUND = 0xFF05070A;
     static final int TEXT = 0xFFF4F1EA, TEXT_2 = 0xFFD9D4C7, LABEL = 0xFFB7B1A3;
-    static final long REFRESH_MS = 60_000, BG_ROTATE_MS = 30_000, HOLD_FOR_SETTINGS_MS = 3000;
+    static final long REFRESH_MS = 60_000, RETRY_MS = 10_000, BG_ROTATE_MS = 30_000, HOLD_FOR_SETTINGS_MS = 3000;
 
     private String[] watchApps;
     private String liveTvPkg, inputPickerPkg;
@@ -794,6 +794,12 @@ public class MainActivity extends Activity {
                 });
             } catch (Exception e) {
                 android.util.Log.w("ZahillTV", "state: " + e.getMessage());
+                // Network not up yet (the TV just booted) or the server is away: try again soon.
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    handler.removeCallbacks(refresh);
+                    handler.postDelayed(refresh, RETRY_MS);
+                });
             }
         });
     }

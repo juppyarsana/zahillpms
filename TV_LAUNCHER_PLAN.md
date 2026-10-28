@@ -1,7 +1,7 @@
 # Zahill TV Launcher — Implementation Plan
 
-> Status: **Phases 1–2 built 2026-10-28** (`tv-launcher/`, see its README; tried on the room TV at
-> 192.168.20.116 against a local server). Phases 3–4 not started. Design approved in principle: the
+> Status: **Phases 1–3 built 2026-10-28/29** (`tv-launcher/`, see its README; tried on the room TV at
+> 192.168.20.116 against a local server). Phase 4 not started. Not rolled out to other TVs. Design approved in principle: the
 > "Zahill TV Home" design canvas (4 screens: Home with guest, Home room ready, Dining,
 > Activities), exported as images to `tv-launcher/design/`. Supersedes the "Android TV" track of `ROOM_DISPLAY_KIOSK_PLAN.md`, which
 > planned to add a launcher activity to `tv-screensaver/`; this plan replaces the
@@ -131,6 +131,21 @@ the logo `property_settings.logo_url`, so every property on the PMS gets its own
   `set-home-activity com.zahill.tv/.MainActivity`, uninstall `com.zahill.tvscreensaver`.
 - Room list from the PMS (units) → run once per TV.
 - Restore path: `pm enable com.google.android.tvlauncher` + CleanYourTV `restore.sh`.
+
+- **Built 2026-10-29.** `tv-launcher/provision/`: `provision.ps1` (one TV or `-RoomsCsv`),
+  `restore.ps1`, `debloat-tvx19a.txt`, `rooms.example.csv`. Written as PowerShell around `adb.exe`
+  instead of CleanYourTV's Python tools — those connect with their own adb key, so every TV would
+  ask someone at the screen to allow it; their Sharp lists and safety rules were reused. Release
+  key made (`zahill-tv-release.jks`, not in git — back it up). Found on the TV: after power-on the
+  Live TV app opens itself over Home; the app now takes the screen back after boot (BootReceiver,
+  allowed because provision grants SYSTEM_ALERT_WINDOW over adb), and retries the PMS every 10 s
+  until it answers (network late after boot). Checked on 192.168.20.116: provision from a
+  debug-signed copy (replaced), 16 packages disabled + stock launcher, two reboots (Home stays
+  Zahill TV, nothing re-enabled, network and Chromecast up), Netflix / Live TV / HDMI 1 / Home key,
+  a second run (updates in place), restore (back to stock exactly) and provision again.
+  Still to do for rollout: the room → TV IP list (`rooms.csv`), a DHCP reservation per TV,
+  allowing network debugging on each TV once, a few days on the test TV first. Not found: the
+  TV's own "power-on input" menu setting (the boot fix makes it unnecessary).
 
 ## Phase 4 — Device Owner, lock-down, checkout reset (later)
 - Requires a factory reset per TV and provisioning without a Google account first

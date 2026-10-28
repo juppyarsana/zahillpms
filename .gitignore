@@ -71,3 +71,5 @@ tv-launcher/gradle/wrapper/tmp*/
 tv-launcher/keystore.properties
 tv-launcher/*.jks
 tv-launcher/*.keystore
+tv-launcher/provision/state/
+tv-launcher/provision/rooms.csv
