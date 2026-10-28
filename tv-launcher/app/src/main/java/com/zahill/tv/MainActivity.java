@@ -39,6 +39,8 @@ import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
+import java.util.Arrays;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -76,7 +78,7 @@ public class MainActivity extends Activity {
     static final int TEXT = 0xFFF4F1EA, TEXT_2 = 0xFFD9D4C7, LABEL = 0xFFB7B1A3;
     static final long REFRESH_MS = 60_000, RETRY_MS = 10_000, BG_ROTATE_MS = 30_000, HOLD_FOR_SETTINGS_MS = 3000;
 
-    private String[] watchApps;
+    private String[] watchApps, defaultWatchApps;
     private String liveTvPkg, inputPickerPkg;
     private float s; // screen pixels per design pixel
     private int accent = DEFAULT_ACCENT;
@@ -132,7 +134,8 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         prefs = PmsClient.prefs(this);
         lang = "id".equals(prefs.getString(Preferences.KEY_LANG, "en")) ? "id" : "en";
-        watchApps = getResources().getStringArray(R.array.watch_apps);
+        defaultWatchApps = getResources().getStringArray(R.array.watch_apps);
+        watchApps = defaultWatchApps;
         liveTvPkg = getString(R.string.live_tv_package);
         inputPickerPkg = getString(R.string.input_picker_package);
         s = getResources().getDisplayMetrics().widthPixels / 1920f;
@@ -816,6 +819,18 @@ public class MainActivity extends Activity {
         if (newAccent != accent) {
             accent = newAccent;
             for (Runnable r : accentPainters) r.run();
+        }
+
+        // Watch row apps chosen in the PMS (Guest Board → Room TVs); none chosen → config.xml.
+        String[] wanted = defaultWatchApps;
+        JSONArray chosen = tv == null ? null : tv.optJSONArray("watch_apps");
+        if (chosen != null && chosen.length() > 0) {
+            wanted = new String[chosen.length()];
+            for (int i = 0; i < chosen.length(); i++) wanted[i] = chosen.optString(i, "");
+        }
+        if (!Arrays.equals(wanted, watchApps)) {
+            watchApps = wanted;
+            if (!first) buildWatchRow();   // at start buildWatchRow() runs right after
         }
 
         // Logo, or the hotel's name when it has none.

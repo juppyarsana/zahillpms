@@ -44,10 +44,11 @@ The lobby TV plays the songs one after the other in a loop. When a video **with 
 
 Room TVs with the new **Zahill TV** app open on a Home screen: the guest's name and room, their check-out day, the streaming apps, and four hotel tiles (Dining & Menu, Activities, Hotel Guide, Today). An empty room shows **Welcome to your room · Ready for guests** until the guest presses OK.
 
-What it shows comes from the Guest Board page → **📺 Room TV Home**:
+What it shows is set on the Guest Board page → **Room TVs** tab:
 
-1. **Guest Wi-Fi name** and **Wi-Fi password**, **Check-out time**, **Breakfast hours** and **Breakfast served at** — then **Save**. A field left empty is simply not shown on the TV.
-2. **Background photo** — with **Rotate the Guest Board's pictures** ticked, the pictures of the cards below rotate behind the Home screen. Untick it (or have no card pictures) to use your own photos: **Morning**, **Day** and **Night**, each from its start time. One photo is used all day; none = the TV's own sunrise picture. Use a wide landscape photo.
+1. **Details for guests** — **Guest Wi-Fi name** and **Wi-Fi password**, **Check-out time**, **Breakfast hours** and **Breakfast served at** — then **Save**. A field left empty is simply not shown on the TV.
+2. **Watch row apps** — the streaming apps on the Home screen, left to right, at most 6 (**Cast from phone** is always last). **Start from this list** takes the TVs' own list (Netflix, YouTube, Prime Video, Disney+ Hotstar, Vidio, Spotify); add an app with its button, or any other app by its Android package name; ↑ ↓ to order, ✕ to remove, then **Save**. A TV that doesn't have an app leaves it out — install apps from the **Google Play Store** on the TV (or from play.google.com with the TVs' Google account). Needs **Zahill TV app 0.2.2** on the TV.
+3. **Home background photo** — with **Rotate the Guest Board's pictures** ticked, the pictures of the Guest Board cards rotate behind the Home screen. Untick it (or have no card pictures) to use your own photos: **Morning**, **Day** and **Night**, each from its start time. One photo is used all day; none = the TV's own sunrise picture. Use a wide landscape photo.
 
 The TVs pick changes up within a minute. **Dining & Menu** shows the restaurant menu once the guest has checked in; **Hotel Guide** shows the Wi-Fi, breakfast and check-out details and the *Property* and *Dining* cards; **Today** shows the *Notice* and *Activity* cards. Guests order and book on the room tablet — the TV only shows.
 

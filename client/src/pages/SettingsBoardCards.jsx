@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Icon from '../components/Icon';
 import api from '../services/api';
@@ -23,6 +23,13 @@ const SHOW_ON = [
 ];
 const VIDEO_MAX_MB = 100;
 
+// The page's tabs (?tab=): the cards themselves, then the settings of each kind of screen.
+const TABS = [
+  { id: 'cards', label: 'Cards', subtitle: 'Pictures, texts, notices and videos. Each card\'s Show on decides where it appears: room TVs and tablets, the lobby TV, or both.' },
+  { id: 'rooms', label: 'Room TVs', subtitle: 'The Home screen guests see on the room TVs: details for guests, the streaming apps and the background photo.' },
+  { id: 'lobby', label: 'Lobby TV', subtitle: 'The slideshow on the front office TV, and the music that plays with it.' },
+];
+
 function catMeta(cat) {
   return CATEGORIES.find(c => c.value === cat) || CATEGORIES[0];
 }
@@ -31,6 +38,8 @@ function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 
 export default function SettingsBoardCards() {
   const { user, hasModule } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.find(t => t.id === params.get('tab')) || TABS[0];
   const [cards, setCards]       = useState([]);
   const [catalog, setCatalog]   = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -198,17 +207,44 @@ export default function SettingsBoardCards() {
       <div className="page-header">
         <div>
           <div className="page-title">Guest Board</div>
-          <div className="page-subtitle">Pictures, notices and lobby videos — shown on the room TVs and tablets, and on the lobby TV</div>
+          <div className="page-subtitle">What guests see on the room TVs, the room tablets and the lobby TV</div>
         </div>
-        <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New card</button>
+        {tab.id === 'cards' && <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New card</button>}
       </div>
 
-      {loading ? (
+      <div className="tab-bar">
+        {TABS.map(t => (
+          <button key={t.id} type="button" className={`tab-bar-item${tab.id === t.id ? ' active' : ''}`}
+            onClick={() => setParams(t.id === 'cards' ? {} : { tab: t.id }, { replace: true })}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '-4px 0 16px' }}>{tab.subtitle}</div>
+
+      {tab.id === 'rooms' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <TvHomeCard />
+        </div>
+      )}
+
+      {tab.id === 'lobby' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 6 }}>Slideshow</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              The lobby TV shows every card set to <b>Rooms &amp; lobby</b> or <b>Lobby only</b> — pictures for 8 seconds,
+              videos to their end (with sound when the card says so) — with the hotel's name, the clock, weather and notices.
+              Add or change them on the <Link to="/settings/board">Cards</Link> tab.
+              To set up the TV: in the Zahill app's settings, type <b>lobby</b> as the Room ID.
+            </div>
+          </div>
+          <LobbyMusicCard />
+        </div>
+      )}
+
+      {tab.id === 'cards' && (loading ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Loading…</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <TvHomeCard />
-          <LobbyMusicCard />
           {grouped.map(group => (
             <div key={group.value} className="card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -273,7 +309,7 @@ export default function SettingsBoardCards() {
             </div>
           ))}
         </div>
-      )}
+      ))}
 
       {/* Form modal */}
       {showForm && (

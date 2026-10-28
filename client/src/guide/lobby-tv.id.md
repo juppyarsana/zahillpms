@@ -44,10 +44,11 @@ TV lobi memutar lagu satu per satu dan berulang. Saat video **bersuara** tampil,
 
 TV kamar dengan aplikasi **Zahill TV** yang baru membuka layar Home: nama tamu dan kamar, hari check-out, aplikasi streaming, dan empat ubin hotel (Makan & Menu, Aktivitas, Panduan Hotel, Hari ini). Kamar kosong menampilkan **Welcome to your room · Ready for guests** sampai tamu menekan OK.
 
-Isinya diatur di halaman Guest Board → **📺 Room TV Home**:
+Isinya diatur di halaman Guest Board → tab **Room TVs**:
 
-1. **Guest Wi-Fi name** dan **Wi-Fi password**, **Check-out time**, **Breakfast hours** dan **Breakfast served at** — lalu **Save**. Kolom yang dikosongkan tidak tampil di TV.
-2. **Background photo** — jika **Rotate the Guest Board's pictures** dicentang, gambar kartu-kartu di bawah bergantian di belakang layar Home. Hapus centang (atau tanpa gambar kartu) untuk memakai foto sendiri: **Morning**, **Day** dan **Night**, masing-masing mulai jam yang diisi. Satu foto = dipakai sepanjang hari; tanpa foto = gambar matahari terbit bawaan TV. Pakai foto lebar (landscape).
+1. **Details for guests** — **Guest Wi-Fi name** dan **Wi-Fi password**, **Check-out time**, **Breakfast hours** dan **Breakfast served at** — lalu **Save**. Kolom yang dikosongkan tidak tampil di TV.
+2. **Watch row apps** — aplikasi streaming di layar Home, dari kiri ke kanan, paling banyak 6 (**Cast from phone** selalu terakhir). **Start from this list** memakai daftar bawaan TV (Netflix, YouTube, Prime Video, Disney+ Hotstar, Vidio, Spotify); tambah aplikasi dengan tombolnya, atau aplikasi lain lewat nama paket Android-nya; ↑ ↓ untuk urutan, ✕ untuk menghapus, lalu **Save**. TV yang tidak punya aplikasinya tidak menampilkannya — pasang aplikasi dari **Google Play Store** di TV (atau dari play.google.com dengan akun Google TV). Perlu **aplikasi Zahill TV 0.2.2** di TV.
+3. **Home background photo** — jika **Rotate the Guest Board's pictures** dicentang, gambar kartu-kartu Guest Board bergantian di belakang layar Home. Hapus centang (atau tanpa gambar kartu) untuk memakai foto sendiri: **Morning**, **Day** dan **Night**, masing-masing mulai jam yang diisi. Satu foto = dipakai sepanjang hari; tanpa foto = gambar matahari terbit bawaan TV. Pakai foto lebar (landscape).
 
 TV mengambil perubahan dalam satu menit. **Makan & Menu** menampilkan menu restoran setelah tamu check-in; **Panduan Hotel** menampilkan Wi-Fi, sarapan, check-out dan kartu *Property* serta *Dining*; **Hari ini** menampilkan kartu *Notice* dan *Activity*. Tamu memesan lewat tablet kamar — TV hanya menampilkan.
 
