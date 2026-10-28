@@ -54,6 +54,20 @@
   animation: tv-bg-fade-in 900ms ease forwards;
 }
 
+/* Slideshow pictures move in slowly while they show (8 s each). */
+@keyframes tv-bg-zoom {
+  from { transform: scale(1); }
+  to   { transform: scale(1.07); }
+}
+
+.tv-bg-zoom {
+  animation: tv-bg-zoom 12s ease-out forwards;
+}
+
+.tv-bg-fade-in.tv-bg-zoom {
+  animation: tv-bg-fade-in 900ms ease forwards, tv-bg-zoom 12s ease-out forwards;
+}
+
 /* Hotel info pages (src/info): the focused card under the remote. */
 .tvf {
   outline: none;

@@ -4,7 +4,7 @@
 
 | Layar | Menampilkan |
 | --- | --- |
-| **TV kamar** (screensaver) | gambar kartu sebagai slideshow, nama tamu dan masa inapnya |
+| **TV kamar** (screensaver) | gambar dan **video** kartu layar penuh (video tanpa suara), dengan nama tamu, kamar, jam dan cuaca di bagian bawah |
 | **Tablet kamar** (Explore) | kartu beserta gambarnya |
 | **TV lobi** | gambar dan **video** kartu sebagai slideshow, nama hotel, jam, cuaca dan pengumuman — tanpa data tamu |
 
@@ -19,13 +19,13 @@ Buka kartu → **Show on**:
 ## Menambah video
 
 1. **+ New Card** (atau **Edit** kartu), isi judul dan teks, lalu tambahkan **gambar** — gambar itu menjadi sampul video.
-2. **Video** → pilih filenya. Kartu video baru otomatis diatur **Lobby only**.
+2. **Video** → pilih filenya. Atur **Show on** ke tempat video diputar.
 3. **Play with sound** — dengan suara atau tidak.
 4. **Create Card** / **Save Changes** lalu tunggu sampai video selesai diunggah (tombol menunjukkan %).
 
 > Video harus **MP4 (H.264)**, paling lama **2 menit** dan paling besar **100 MB**. Video dari iPhone (.mov atau HEVC) harus diekspor dulu sebagai MP4 "Most compatible". Halaman akan memberi tahu kalau file tidak bisa diputar di TV.
 
-Di TV lobi gambar tampil 8 detik; video diputar sampai selesai, lalu slideshow berlanjut. TV mengunduh setiap video **sekali** lalu menyimpannya, jadi internet hotel tidak terpakai setiap kali berulang. TV kamar dan tablet hanya menampilkan gambar kartu, tidak pernah videonya.
+Di TV lobi gambar tampil 8 detik; video diputar sampai selesai, lalu slideshow berlanjut. TV mengunduh setiap video **sekali** lalu menyimpannya, jadi internet hotel tidak terpakai setiap kali berulang. TV kamar juga memutar video, selalu **tanpa suara** (screensaver juga menyala malam hari saat tamu tidur); TV kamar menunggu beberapa menit sebelum mengunduh video baru, supaya 30 TV tidak mengunduh bersamaan. Buat video untuk kamar singkat — sebaiknya di bawah satu menit. Tablet kamar hanya menampilkan gambar kartu.
 
 ## Musik di lobi
 

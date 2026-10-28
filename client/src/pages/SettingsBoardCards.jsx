@@ -115,8 +115,6 @@ export default function SettingsBoardCards() {
     setError('');
     setVideoFile(file);
     setRemoveVideo(false);
-    // A new video card is meant for the lobby — rooms only ever show the picture.
-    if (!editing) setForm(f => ({ ...f, show_on: 'lobby' }));
   }
 
   const editingCard = editing ? cards.find(c => c.id === editing) : null;

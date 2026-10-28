@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import api from './api.js';
-import BoardCarousel from './components/BoardCarousel.jsx';
 import NoticeTicker from './components/NoticeTicker.jsx';
 import { hotelHM, hotelDate } from './hotelTime';
 import { precacheVideos, playableUrl, release, MUSIC_CACHE } from './videoCache';
@@ -56,29 +55,8 @@ function formatClock(time) {
   };
 }
 
-function formatDate(value) {
-  if (!value) return '';
-  const [y, m, d] = value.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  });
-}
-
 function getQueryValue(key) {
   return new URLSearchParams(window.location.search).get(key)?.trim() || '';
-}
-
-// Drives the board-content rotation index — shared by the background image
-// and the caption panel so both change in lockstep.
-function useCardRotation(count, duration = 8000) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => { setIndex(0); }, [count]);
-  useEffect(() => {
-    if (count < 2) return;
-    const id = setInterval(() => setIndex(i => (i + 1) % count), duration);
-    return () => clearInterval(id);
-  }, [count, duration]);
-  return index;
 }
 
 // ─── Shared background ──────────────────────────────────────────────────────
@@ -101,7 +79,8 @@ function useImageLayers(src) {
   return layers;
 }
 
-function TVBackground({ imageUrl, light = false }) {
+// zoom: each picture moves in slowly while it shows (index.css tv-bg-zoom).
+function TVBackground({ imageUrl, light = false, zoom = false }) {
   const layers = useImageLayers(imageUrl || '/hero.png');
   return (
     <>
@@ -110,7 +89,7 @@ function TVBackground({ imageUrl, light = false }) {
           key={layer.id}
           src={layer.url}
           alt=""
-          className={i === layers.length - 1 ? 'tv-bg-fade-in' : ''}
+          className={[i === layers.length - 1 && 'tv-bg-fade-in', zoom && 'tv-bg-zoom'].filter(Boolean).join(' ')}
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
@@ -131,202 +110,183 @@ function TVBackground({ imageUrl, light = false }) {
   );
 }
 
-// ─── Vacant screen ──────────────────────────────────────────────────────────
+// ─── Slideshow (room TVs and the lobby TV) ──────────────────────────────────
+// The Guest Board cards one after the other: a picture stays 8 s; a video
+// plays full screen to its end, then the slideshow carries on. Videos are
+// downloaded once and kept on the TV (videoCache.js); until a video is on the
+// TV its card shows its picture instead.
 
-function VacantScreen({ unitName, cards = [], property }) {
-  const time = useClock();
-  const { h, m, ampm } = formatClock(time);
-  const dateStr = hotelDate(time, {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
-  const hasNotices = cards.some(c => c.category === 'notice');
+const PICTURE_MS = 8000;
+const VIDEO_MAX_MS = 3 * 60 * 1000;   // a stuck video never holds the screen longer
+const VIDEO_WAIT_MS = 15 * 1000;      // still loading → show the picture, move on
+// 30+ room TVs come on together after a power cut or a deploy: each waits a
+// random while before downloading the videos, so they don't all at once.
+const ROOM_DOWNLOAD_SPREAD_MS = 10 * 60 * 1000;
 
-  return (
-    <div className="w-screen h-screen relative overflow-hidden bg-bg-dark">
-      <TVBackground />
+function useSlideshow(cards, { sound = false, spreadDownloads = false } = {}) {
+  const slides = useMemo(() => cards.filter(c => c.category !== 'notice'), [cards]);
+  const videoKey = cards.map(c => c.video_url || '').join('|');
 
-      {/* Clock — top right */}
-      <div className="absolute z-10 text-right"
-        style={{ top: 'clamp(1.5rem, 3vh, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)' }}>
-        <div className="flex items-end justify-end leading-none"
-          style={{ gap: 'clamp(0.3rem, 0.6vw, 0.6rem)' }}>
-          <span className="font-extralight text-white tracking-tighter"
-            style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1 }}>{h}:{m}</span>
-          <span className="font-bold" style={{ fontSize: 'clamp(0.9rem, 1.8vw, 1.5rem)', color: '#c9a227', marginBottom: '0.25em' }}>
-            {ampm}
-          </span>
-        </div>
-        <p className="font-bold uppercase text-slate-500"
-          style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', letterSpacing: '0.35em', marginTop: '0.25rem', color: '#e2e8f0' }}>
-          {dateStr}
-        </p>
-      </div>
+  const [index, setIndex] = useState(0);
+  const [turn, setTurn] = useState(0);            // bumps on every advance (replays a lone video)
+  const [videoSrc, setVideoSrc] = useState(null);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const videoRef = useRef(null);
+  const firstDownload = useRef(true);
 
-      {/* Center branding card */}
-      <div className="absolute z-10 left-1/2 -translate-x-1/2 glass-card rounded-2xl flex flex-col items-center text-center"
-        style={{
-          bottom: hasNotices ? 'clamp(4.5rem, 11vh, 8rem)' : 'clamp(3rem, 8vh, 6rem)',
-          padding: 'clamp(2rem, 4vh, 3.5rem) clamp(3rem, 7vw, 6rem)',
-          minWidth: 'clamp(280px, 38vw, 560px)',
-        }}>
-        <img
-          src={property?.logo_url || '/logo.png'}
-          alt={property?.name || 'ZHP PMS'}
-          style={{ width: 'clamp(160px, 20vw, 300px)', marginBottom: 'clamp(0.5rem, 1.2vh, 1rem)' }}
-        />
-        {property?.location && (
-          <p className="font-bold uppercase tracking-[0.45em]"
-            style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', color: '#c9a227',
-              marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }}>
-            {property.location}
-          </p>
-        )}
-        <div className="w-12 h-px" style={{ background: 'rgba(201,162,39,0.35)',
-          marginBottom: 'clamp(0.75rem, 1.5vh, 1.25rem)' }} />
-        {unitName && (
-          <p className="font-light uppercase tracking-widest text-slate-400"
-            style={{ fontSize: 'clamp(0.7rem, 1.3vw, 1rem)' }}>{unitName}</p>
-        )}
-        <div className="flex items-center gap-2" style={{ marginTop: 'clamp(1rem, 2vh, 1.75rem)' }}>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-bold uppercase text-slate-500"
-            style={{ fontSize: 'clamp(0.55rem, 1vw, 0.7rem)', letterSpacing: '0.3em' }}>
-            Ready for Guests
-          </span>
-        </div>
-      </div>
+  const card = slides.length ? slides[index % slides.length] : null;
+  const showVideo = !!(card?.video_url && videoSrc && !videoFailed);
 
-      <NoticeTicker cards={cards} />
-    </div>
+  const next = () => { setIndex(i => (slides.length ? (i + 1) % slides.length : 0)); setTurn(t => t + 1); };
+
+  // Keep every video on the TV (downloads new ones, drops removed ones).
+  useEffect(() => {
+    const urls = cards.map(c => c.video_url);
+    if (!urls.some(Boolean)) { precacheVideos(urls); return undefined; }
+    const wait = spreadDownloads && firstDownload.current ? Math.random() * ROOM_DOWNLOAD_SPREAD_MS : 0;
+    firstDownload.current = false;
+    const id = setTimeout(() => precacheVideos(urls), wait);
+    return () => clearTimeout(id);
+  }, [videoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (index >= slides.length) setIndex(0); }, [slides.length, index]);
+
+  // Load this slide's video — from the TV's copy once it has one.
+  useEffect(() => {
+    let off = false, src = null;
+    setVideoSrc(null); setVideoFailed(false); setProgress(0);
+    if (card?.video_url) {
+      playableUrl(card.video_url).then(u => { src = u; if (!off) setVideoSrc(u); else release(u); });
+    }
+    return () => { off = true; release(src); };
+  }, [card?.video_url, turn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // How long this slide stays: a picture 8 s; a video until it ends.
+  useEffect(() => {
+    if (!card) return undefined;
+    const ms = card.video_url
+      ? (showVideo ? VIDEO_MAX_MS : videoFailed ? PICTURE_MS : VIDEO_WAIT_MS)
+      : PICTURE_MS;
+    if (!card.video_url && slides.length < 2) return undefined;
+    const id = setTimeout(next, ms);
+    return () => clearTimeout(id);
+  }, [card?.id, turn, showVideo, videoFailed, slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Start the video. The lobby plays sound when the card says so (a browser
+  // that refuses sound without a click still plays it muted); rooms never do.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!showVideo || !v) return;
+    v.muted = !sound || card.video_sound === false;
+    v.play().catch(() => { v.muted = true; v.play().catch(() => setVideoFailed(true)); });
+  }, [showVideo, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const media = (
+    <>
+      {showVideo ? (
+        <video key={`${card.id}-${turn}`} ref={videoRef} src={videoSrc} playsInline muted={!sound}
+          onEnded={next} onError={() => setVideoFailed(true)}
+          onTimeUpdate={e => { const v = e.currentTarget; if (v.duration) setProgress(v.currentTime / v.duration); }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
+      ) : (
+        <TVBackground imageUrl={card?.image_url} light zoom />
+      )}
+      {showVideo && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+          background: 'linear-gradient(to bottom, rgba(5,7,10,0.35) 0%, rgba(5,7,10,0) 18%, rgba(5,7,10,0) 75%, rgba(5,7,10,0.6) 100%)' }} />
+      )}
+    </>
   );
+
+  return { card, showVideo, progress, media };
 }
 
-// ─── Guest screen ────────────────────────────────────────────────────────────
+// ─── Room screen (guest or empty room) ──────────────────────────────────────
+// The picture / video fills the screen; everything sits along the bottom:
+// the card's title + the welcome bottom left, the logo in the middle, the
+// clock, date and weather bottom right. Videos play without sound — a room
+// TV's screensaver also comes on at night with the guest asleep.
 
-function GuestScreen({ unit, booking, cards = [], weather, property }) {
+const GOLD = '#e3c27a';
+const SHADOW = '0 2px 14px rgba(0,0,0,0.7)';
+
+function shortDate(value) {
+  if (!value) return '';
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function RoomScreen({ unit, booking, cards = [], weather, property }) {
   const time = useClock();
   const { h, m, ampm } = formatClock(time);
+  const dateStr = hotelDate(time, { weekday: 'long', day: 'numeric', month: 'long' });
   const hasNotices = cards.some(c => c.category === 'notice');
-  const carouselCards = cards.filter(c => c.category !== 'notice');
-  const activeIndex = useCardRotation(carouselCards.length);
-  const activeCard = carouselCards[activeIndex] ?? null;
-  const dateStr = hotelDate(time, {
-    weekday: 'long', day: 'numeric', month: 'long',
-  });
+  const { card, showVideo, progress, media } = useSlideshow(cards, { spreadDownloads: true });
+
+  const edge = 'clamp(1.5rem, 3.1vw, 3.75rem)';
+  const bottom = hasNotices ? 'clamp(3.75rem, 9vh, 6.5rem)' : 'clamp(1.5rem, 5vh, 3.5rem)';
+  const room = unit?.name ? `Room ${unit.name}` : '';
 
   return (
     <div className="w-screen h-screen relative overflow-hidden bg-bg-dark">
-      <TVBackground imageUrl={activeCard?.image_url} />
+      {media}
+      {/* A little more shade along the bottom, so the text stays readable on a bright picture */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 6, pointerEvents: 'none',
+        background: 'linear-gradient(to bottom, rgba(5,7,10,0) 55%, rgba(5,7,10,0.5) 100%)' }} />
 
-      {/* Identity card — top left */}
-      <div className="absolute z-10 glass-card rounded-xl flex flex-col items-center text-center"
-        style={{
-          top: 'clamp(1.5rem, 3vh, 2.5rem)',
-          left: 'clamp(1.5rem, 3vw, 2.5rem)',
-          padding: 'clamp(1rem, 2vh, 1.75rem) clamp(1.25rem, 2.5vw, 2rem)',
-          gap: 'clamp(0.3rem, 0.8vh, 0.6rem)',
-        }}>
-        <img
-          src={property?.logo_url || '/logo.png'}
-          alt={property?.name || 'ZHP PMS'}
-          style={{ width: 'clamp(90px, 10vw, 160px)' }}
-        />
-        {property?.location && (
-          <p className="font-bold uppercase tracking-[0.4em]"
-            style={{ fontSize: 'clamp(0.5rem, 0.85vw, 0.65rem)', color: '#c9a227' }}>
-            {property.location}
-          </p>
+      {/* Caption + welcome — bottom left */}
+      <div className="absolute z-20 flex flex-col"
+        style={{ left: edge, bottom, maxWidth: '42vw', gap: '0.4vw', textShadow: SHADOW }}>
+        {card?.title && (
+          <div className="flex items-center" style={{ gap: '0.5vw', marginBottom: '0.5vw' }}>
+            {showVideo && (
+              <span className="material-symbols-outlined" style={{ fontSize: 'clamp(0.9rem, 1.3vw, 1.6rem)', color: 'rgba(255,255,255,0.8)' }}>volume_off</span>
+            )}
+            <p style={{ fontSize: 'clamp(0.75rem, 1.05vw, 1.25rem)', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.85)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {card.title}
+            </p>
+          </div>
         )}
-        {unit?.name && (
-          <p className="font-light uppercase tracking-widest text-white"
-            style={{ fontSize: 'clamp(0.6rem, 1.1vw, 0.85rem)' }}>{unit.name}</p>
+        <p className="font-bold uppercase"
+          style={{ fontSize: 'clamp(0.65rem, 0.95vw, 1.15rem)', letterSpacing: '0.35em', color: GOLD }}>
+          {booking ? 'Welcome' : 'Welcome to'}
+        </p>
+        <h1 className="text-white" style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(2rem, 4.1vw, 5rem)', lineHeight: 1.05 }}>
+          {booking ? booking.guest_name : (property?.name || 'Welcome')}
+        </h1>
+        {(room || booking) && (
+          <p style={{ fontSize: 'clamp(0.85rem, 1.2vw, 1.45rem)', color: 'rgba(255,255,255,0.88)' }}>
+            {[room, booking?.check_out_date && `until ${shortDate(booking.check_out_date)}`].filter(Boolean).join(' · ')}
+          </p>
         )}
       </div>
 
-      {/* Clock — top right */}
-      <div className="absolute z-10 text-right"
-        style={{ top: 'clamp(1.5rem, 3vh, 2.5rem)', right: 'clamp(1.5rem, 3vw, 2.5rem)' }}>
-        <div className="flex items-end justify-end leading-none"
-          style={{ gap: 'clamp(0.3rem, 0.6vw, 0.6rem)' }}>
-          <span className="font-extralight text-white tracking-tighter"
-            style={{ fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', lineHeight: 1 }}>{h}:{m}</span>
-          <span className="font-bold" style={{ fontSize: 'clamp(0.9rem, 1.8vw, 1.5rem)', color: '#c9a227', marginBottom: '0.25em' }}>
-            {ampm}
-          </span>
-        </div>
-        <p className="font-bold uppercase text-slate-500"
-          style={{ fontSize: 'clamp(0.55rem, 1vw, 0.75rem)', letterSpacing: '0.35em', marginTop: '0.25rem', color: '#e2e8f0' }}>
+      {/* Logo — bottom centre */}
+      <img src={property?.logo_url || '/logo.png'} alt={property?.name || ''}
+        className="absolute z-20"
+        style={{ left: '50%', transform: 'translateX(-50%)', bottom: `calc(${bottom} - 0.5vw)`,
+          width: 'clamp(140px, 14vw, 280px)', height: 'auto', filter: 'drop-shadow(0 2px 12px rgba(0,0,0,0.6))' }} />
+
+      {/* Clock, date, weather — bottom right */}
+      <div className="absolute z-20 flex flex-col items-end text-right"
+        style={{ right: edge, bottom, gap: '0.5vw', textShadow: SHADOW }}>
+        <p className="text-white font-light leading-none" style={{ fontSize: 'clamp(2.25rem, 4.4vw, 5.25rem)', letterSpacing: '-0.02em' }}>
+          {h}:{m}<span className="font-bold" style={{ fontSize: '0.32em', color: GOLD, marginLeft: '0.3em', letterSpacing: 0 }}>{ampm}</span>
+        </p>
+        <p style={{ fontSize: 'clamp(0.75rem, 1.05vw, 1.25rem)', color: 'rgba(255,255,255,0.88)' }}>
           {dateStr}
+          {weather?.today && <> &middot; {weather.today.temp}&deg; {weather.today.desc}</>}
         </p>
       </div>
 
-      {/* Bottom bar — board carousel (rotating, left) + stay info (fixed, right) */}
-      <div className="absolute z-10 flex"
-        style={{
-          bottom: hasNotices ? 'clamp(3.5rem, 8vh, 6rem)' : 'clamp(2rem, 5vh, 4rem)',
-          left: 'clamp(1.5rem, 3vw, 2.5rem)',
-          right: 'clamp(1.5rem, 3vw, 2.5rem)',
-          gap: 'clamp(1rem, 2vw, 1.5rem)',
-          alignItems: 'stretch',
-        }}>
-        <BoardCarousel card={activeCard} cards={carouselCards} index={activeIndex} />
-
-        {/* Welcome card */}
-        <div className="glass-card rounded-2xl"
-          style={{
-            flex: 1,
-            padding: 'clamp(1.25rem, 3vh, 2.25rem) clamp(1.5rem, 3vw, 2.5rem)',
-          }}>
-          {/* Welcome label */}
-          <p className="font-bold uppercase"
-            style={{ color: 'rgba(201,162,39,0.75)', fontSize: 'clamp(0.5rem, 0.85vw, 0.7rem)',
-              letterSpacing: '0.4em', marginBottom: 'clamp(0.35rem, 0.9vh, 0.65rem)' }}>
-            Welcome to your stay
-          </p>
-
-          {/* Guest name */}
-          <h1 className="text-white leading-none"
-            style={{ fontFamily: 'var(--font-brand)', fontWeight: 700, fontSize: 'clamp(1.4rem, 3.4vw, 3rem)', marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }}>
-            {booking.guest_name}
-          </h1>
-
-          {/* Divider */}
-          <div style={{ height: 1, background: 'rgba(201,162,39,0.25)',
-            marginBottom: 'clamp(0.6rem, 1.6vh, 1.25rem)' }} />
-
-          {/* Stay details */}
-          <div className="grid grid-cols-3" style={{ gap: 'clamp(0.6rem, 1.6vw, 1.25rem)' }}>
-            <DetailCell label="Check-in" value={formatDate(booking.check_in_date)} />
-            <DetailCell label="Check-out" value={formatDate(booking.check_out_date)} />
-            <DetailCell label="Guests" value={booking.num_guests ?? '1'} />
-          </div>
-
-          {weather?.today && (
-            <>
-              <div style={{ height: 1, background: 'rgba(201,162,39,0.25)',
-                margin: 'clamp(0.6rem, 1.6vh, 1.25rem) 0' }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(0.6rem, 1.2vw, 1rem)' }}>
-                <span className="material-symbols-outlined"
-                  style={{ fontSize: 'clamp(1.6rem, 3.2vw, 2.4rem)', color: '#c9a227' }}>
-                  {weather.today.icon}
-                </span>
-                <div>
-                  <div className="flex items-baseline" style={{ gap: 6 }}>
-                    <span className="text-white font-extralight"
-                      style={{ fontSize: 'clamp(1.1rem, 2vw, 1.6rem)' }}>{weather.today.temp}&deg;C</span>
-                    <span className="text-slate-400"
-                      style={{ fontSize: 'clamp(0.65rem, 1.1vw, 0.9rem)' }}>{weather.today.desc}</span>
-                  </div>
-                  <div className="text-slate-500 uppercase"
-                    style={{ fontSize: 'clamp(0.5rem, 0.8vw, 0.65rem)', letterSpacing: '0.08em', marginTop: 2 }}>
-                    Feels {weather.today.feels_like}&deg; &middot; Humidity {weather.today.humidity}% &middot; Wind {weather.today.wind}km/h
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+      {/* How far the video is */}
+      {showVideo && (
+        <div className="absolute z-20" style={{ left: 0, right: 0, bottom: hasNotices ? 'clamp(2.25rem, 4.2vh, 3.25rem)' : 0, height: 3, background: 'rgba(255,255,255,0.15)' }}>
+          <div style={{ width: `${Math.round(progress * 1000) / 10}%`, height: '100%', background: GOLD, transition: 'width 0.25s linear' }} />
         </div>
-      </div>
+      )}
 
       <NoticeTicker cards={cards} />
     </div>
@@ -445,69 +405,15 @@ function LobbyMusic({ music, quiet }) {
 }
 
 // ─── Lobby screen (Room ID "lobby", migration 116) ──────────────────────────
-// The Guest Board cards set to show in the lobby, one after the other: a
-// picture stays 8 s with its caption; a video plays full screen to its end
-// (with sound when the card says so), then the slideshow carries on. Videos
-// are downloaded once and kept on the TV (videoCache.js); until a video is on
-// the TV its card shows its picture instead. No room, no guest.
-
-const PICTURE_MS = 8000;
-const VIDEO_MAX_MS = 3 * 60 * 1000;   // a stuck video never holds the screen longer
-const VIDEO_WAIT_MS = 15 * 1000;      // still loading → show the picture, move on
+// The Guest Board cards set to show in the lobby as a slideshow (useSlideshow,
+// with sound when the card says so). No room, no guest.
 
 function LobbyScreen({ cards = [], weather, property, music }) {
   const time = useClock();
   const { h, m, ampm } = formatClock(time);
   const dateStr = hotelDate(time, { weekday: 'long', day: 'numeric', month: 'long' });
   const hasNotices = cards.some(c => c.category === 'notice');
-  const slides = useMemo(() => cards.filter(c => c.category !== 'notice'), [cards]);
-  const videoKey = cards.map(c => c.video_url || '').join('|');
-
-  const [index, setIndex] = useState(0);
-  const [turn, setTurn] = useState(0);            // bumps on every advance (replays a lone video)
-  const [videoSrc, setVideoSrc] = useState(null);
-  const [videoFailed, setVideoFailed] = useState(false);
-  const videoRef = useRef(null);
-
-  const card = slides.length ? slides[index % slides.length] : null;
-  const showVideo = !!(card?.video_url && videoSrc && !videoFailed);
-
-  const next = () => { setIndex(i => (slides.length ? (i + 1) % slides.length : 0)); setTurn(t => t + 1); };
-
-  // Keep every lobby video on the TV (downloads new ones, drops removed ones).
-  useEffect(() => { precacheVideos(cards.map(c => c.video_url)); }, [videoKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { if (index >= slides.length) setIndex(0); }, [slides.length, index]);
-
-  // Load this slide's video from the TV's copy.
-  useEffect(() => {
-    let off = false, src = null;
-    setVideoSrc(null); setVideoFailed(false);
-    if (card?.video_url) {
-      playableUrl(card.video_url).then(u => { src = u; if (!off) setVideoSrc(u); else release(u); });
-    }
-    return () => { off = true; release(src); };
-  }, [card?.video_url, turn]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // How long this slide stays: a picture 8 s; a video until it ends.
-  useEffect(() => {
-    if (!card) return undefined;
-    const ms = card.video_url
-      ? (showVideo ? VIDEO_MAX_MS : videoFailed ? PICTURE_MS : VIDEO_WAIT_MS)
-      : PICTURE_MS;
-    if (!card.video_url && slides.length < 2) return undefined;
-    const id = setTimeout(next, ms);
-    return () => clearTimeout(id);
-  }, [card?.id, turn, showVideo, videoFailed, slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Start the video — with sound when allowed; a browser that refuses sound
-  // without a click still plays it muted.
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!showVideo || !v) return;
-    v.muted = card.video_sound === false;
-    v.play().catch(() => { v.muted = true; v.play().catch(() => setVideoFailed(true)); });
-  }, [showVideo, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { card, showVideo, media } = useSlideshow(cards, { sound: true });
 
   // Everything sits small in the bottom corners so the picture / video fills
   // the screen: logo + hotel name bottom left, time · weather bottom right,
@@ -523,17 +429,7 @@ function LobbyScreen({ cards = [], weather, property, music }) {
 
   return (
     <div className="w-screen h-screen relative overflow-hidden bg-bg-dark">
-      {showVideo ? (
-        <video key={`${card.id}-${turn}`} ref={videoRef} src={videoSrc} playsInline
-          onEnded={next} onError={() => setVideoFailed(true)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
-      ) : (
-        <TVBackground imageUrl={card?.image_url} light />
-      )}
-      {showVideo && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-          background: 'linear-gradient(to bottom, rgba(5,7,10,0.35) 0%, rgba(5,7,10,0) 18%, rgba(5,7,10,0) 75%, rgba(5,7,10,0.6) 100%)' }} />
-      )}
+      {media}
 
       {/* The card's title — small, top left */}
       {card?.title && (
@@ -589,16 +485,6 @@ function LobbyScreen({ cards = [], weather, property, music }) {
   );
 }
 
-function DetailCell({ label, value }) {
-  return (
-    <div className="flex flex-col" style={{ gap: 'clamp(0.2rem, 0.6vh, 0.5rem)' }}>
-      <p className="font-bold uppercase text-slate-600"
-        style={{ fontSize: 'clamp(0.45rem, 0.7vw, 0.6rem)', letterSpacing: '0.3em' }}>{label}</p>
-      <p className="font-light text-white"
-        style={{ fontSize: 'clamp(0.7rem, 1.35vw, 1.1rem)' }}>{value}</p>
-    </div>
-  );
-}
 
 // ─── Error / unconfigured screens ────────────────────────────────────────────
 
@@ -686,16 +572,9 @@ function WelcomeApp() {
     </>
   );
 
-  if (!state.booking) return (
-    <>
-      <VacantScreen unitName={state.unit?.name} cards={state.cards} property={state.property} />
-      <BuildBadge />
-    </>
-  );
-
   return (
     <>
-      <GuestScreen unit={state.unit} booking={state.booking} cards={state.cards} weather={state.weather} property={state.property} />
+      <RoomScreen unit={state.unit} booking={state.booking} cards={state.cards} weather={state.weather} property={state.property} />
       <BuildBadge />
     </>
   );

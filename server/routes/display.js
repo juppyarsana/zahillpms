@@ -107,7 +107,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     const { rows: cardRows } = await db.query(
-      `SELECT c.id, c.title, c.body, c.category, c.meta, c.image_url,
+      `SELECT c.id, c.title, c.body, c.category, c.meta, c.image_url, c.video_url,
               CASE WHEN a.is_available THEN a.id END AS activity_id,
               CASE WHEN a.is_available THEN a.price END AS activity_price
        FROM guest_board_cards c
