@@ -63,3 +63,11 @@ designs/
 
 # Local dev/demo data-seeding scripts (throwaway fixtures, not onboarding tools)
 server/scripts/
+tv-launcher/.gradle/
+tv-launcher/build/
+tv-launcher/app/build/
+tv-launcher/local.properties
+tv-launcher/gradle/wrapper/tmp*/
+tv-launcher/keystore.properties
+tv-launcher/*.jks
+tv-launcher/*.keystore

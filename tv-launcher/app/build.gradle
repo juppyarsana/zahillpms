@@ -1,0 +1,59 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Zahill TV Home: the guest TV's launcher. Started from tv-home
+// (github.com/mihirgupta0900/tv-home, MIT — see LICENSE-tv-home) and absorbs
+// the old tv-screensaver app (screensaver, settings). See TV_LAUNCHER_PLAN.md.
+android {
+    namespace 'com.zahill.tv'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.zahill.tv'
+        minSdk 30
+        // 30 on purpose: the TVs are Android 11, and tv-home's package
+        // visibility / HOME behaviour was written against it.
+        targetSdk 30
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    // Release key kept out of git: keystore.properties next to settings.gradle
+    // (storeFile, storePassword, keyAlias, keyPassword). Without it the
+    // release build is unsigned; debug builds use the machine's debug key.
+    def keystoreProps = new Properties()
+    def keystoreFile = rootProject.file('keystore.properties')
+    if (keystoreFile.exists()) keystoreProps.load(new FileInputStream(keystoreFile))
+
+    signingConfigs {
+        release {
+            storeFile keystoreProps['storeFile'] ? rootProject.file(keystoreProps['storeFile']) : null
+            storePassword keystoreProps['storePassword']
+            keyAlias keystoreProps['keyAlias']
+            keyPassword keystoreProps['keyPassword']
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystoreFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

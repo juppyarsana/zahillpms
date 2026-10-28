@@ -71,7 +71,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
   const { roomId } = req.params;
   try {
     const { rows: unitRows } = await db.query(
-      `SELECT u.id, u.name, u.controller_id, u.property_id, u.bed_config,
+      `SELECT u.id, u.name, u.type, u.controller_id, u.property_id, u.bed_config,
               u.housekeeping_status,
               rcs.connected, rcs.rgb, rcs.last_seen
        FROM units u
@@ -177,7 +177,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     );
 
     res.json({
-      unit: { id: unit.id, name: unit.name, controller_id: unit.controller_id, bed_config: unit.bed_config, housekeeping_status: unit.housekeeping_status },
+      unit: { id: unit.id, name: unit.name, type: unit.type, controller_id: unit.controller_id, bed_config: unit.bed_config, housekeeping_status: unit.housekeeping_status },
       controller: { connected: unit.connected ?? false, rgb: unit.rgb ?? {}, last_seen: unit.last_seen },
       booking: bookingRows[0] || null,
       relays: relayRows,

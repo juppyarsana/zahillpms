@@ -29,7 +29,8 @@ ZHP PMS/
 ├── tv-display/           ← TV Welcome Display (React/Vite page loaded by the screensaver APK)
 ├── kitchen-display/      ← Kitchen Display PWA (kitchen ticket board kiosk)
 ├── resto-display/        ← Resto Ordering app (guest QR self-order + floor staff order-taking/confirm-queue/table PWA)
-├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView
+├── tv-screensaver/       ← Android TV DreamService APK (Kotlin) that wraps tv-display in a WebView (to be retired by tv-launcher)
+├── tv-launcher/         ← Zahill TV Home (`com.zahill.tv`): the guest TV's launcher + screensaver — TV_LAUNCHER_PLAN.md, Phase 1 built 2026-10-28
 ├── room-display-kiosk/   ← Android tablet kiosk APK (Kotlin) that wraps room-display in a WebView + posts device telemetry (Phase 1; no lock-down yet — see ROOM_DISPLAY_KIOSK_PLAN.md)
 ├── PLANNING.md          ← original single-property feature/schema spec (historical reference)
 ├── ROADMAP.md           ← current feature roadmap, phase status, module registry
