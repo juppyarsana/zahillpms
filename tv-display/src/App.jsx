@@ -123,20 +123,38 @@ const VIDEO_WAIT_MS = 15 * 1000;      // still loading → show the picture, mov
 // random while before downloading the videos, so they don't all at once.
 const ROOM_DOWNLOAD_SPREAD_MS = 10 * 60 * 1000;
 
+// A clear 1×1 picture: without a poster the TV's web view draws its own grey
+// "play" placeholder until the first frame is ready.
+const NO_POSTER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
 function useSlideshow(cards, { sound = false, spreadDownloads = false } = {}) {
   const slides = useMemo(() => cards.filter(c => c.category !== 'notice'), [cards]);
   const videoKey = cards.map(c => c.video_url || '').join('|');
 
   const [index, setIndex] = useState(0);
   const [turn, setTurn] = useState(0);            // bumps on every advance (replays a lone video)
-  const [videoSrc, setVideoSrc] = useState(null);
-  const [videoFailed, setVideoFailed] = useState(false);
+  const [loaded, setLoaded] = useState({});       // video url → playable src, for this slide and the next
+  const [failed, setFailed] = useState({});       // video url → true once it would not play
+  const [playing, setPlaying] = useState(false);  // this slide's video is on screen → fade it in
   const [progress, setProgress] = useState(0);
-  const videoRef = useRef(null);
+  const players = useRef({});                     // video url → <video>
+  const lastPicture = useRef(null);
   const firstDownload = useRef(true);
 
   const card = slides.length ? slides[index % slides.length] : null;
-  const showVideo = !!(card?.video_url && videoSrc && !videoFailed);
+  const nextCard = slides.length ? slides[(index + 1) % slides.length] : null;
+  const url = card?.video_url || null;
+  const nextUrl = nextCard?.video_url || null;
+  // This slide's video and the next slide's are loaded and waiting in their
+  // players, so a video starts at once when its turn comes.
+  const wanted = [url, nextUrl].filter((u, i, a) => u && a.indexOf(u) === i && !failed[u]);
+  const showVideo = !!(url && loaded[url] && !failed[url]);
+  const videoFailed = !!(url && failed[url]);
+
+  // A video card with no picture of its own keeps the last picture on screen
+  // until its video is playing (rather than a black screen).
+  if (card?.image_url) lastPicture.current = card.image_url;
+  const picture = card?.image_url || lastPicture.current;
 
   const next = () => { setIndex(i => (slides.length ? (i + 1) % slides.length : 0)); setTurn(t => t + 1); };
 
@@ -152,15 +170,25 @@ function useSlideshow(cards, { sound = false, spreadDownloads = false } = {}) {
 
   useEffect(() => { if (index >= slides.length) setIndex(0); }, [slides.length, index]);
 
-  // Load this slide's video — from the TV's copy once it has one.
+  // Load the wanted videos (from the TV's copy once it has one); let go of the rest.
+  const wantedKey = wanted.join('|');
   useEffect(() => {
-    let off = false, src = null;
-    setVideoSrc(null); setVideoFailed(false); setProgress(0);
-    if (card?.video_url) {
-      playableUrl(card.video_url).then(u => { src = u; if (!off) setVideoSrc(u); else release(u); });
+    let off = false;
+    setLoaded(prev => {
+      const keep = {};
+      for (const [u, src] of Object.entries(prev)) { if (wanted.includes(u)) keep[u] = src; else release(src); }
+      return keep;
+    });
+    for (const u of wanted) {
+      playableUrl(u).then(src => {
+        if (off) { release(src); return; }
+        setLoaded(prev => (prev[u] ? (release(src), prev) : { ...prev, [u]: src }));
+      });
     }
-    return () => { off = true; release(src); };
-  }, [card?.video_url, turn]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { off = true; };
+  }, [wantedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => setLoaded(prev => { Object.values(prev).forEach(release); return {}; }), []);
 
   // How long this slide stays: a picture 8 s; a video until it ends.
   useEffect(() => {
@@ -173,29 +201,39 @@ function useSlideshow(cards, { sound = false, spreadDownloads = false } = {}) {
     return () => clearTimeout(id);
   }, [card?.id, turn, showVideo, videoFailed, slides.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Start the video. The lobby plays sound when the card says so (a browser
-  // that refuses sound without a click still plays it muted); rooms never do.
+  // Its turn: play from the start. The lobby plays sound when the card says so
+  // (a browser that refuses sound without a click still plays it muted); rooms
+  // never do. The next slide's video waits paused on its first frame.
   useEffect(() => {
-    const v = videoRef.current;
-    if (!showVideo || !v) return;
-    v.muted = !sound || card.video_sound === false;
-    v.play().catch(() => { v.muted = true; v.play().catch(() => setVideoFailed(true)); });
-  }, [showVideo, videoSrc]); // eslint-disable-line react-hooks/exhaustive-deps
+    setPlaying(false); setProgress(0);
+    for (const [u, v] of Object.entries(players.current)) {
+      if (!v) continue;
+      if (u === url && showVideo) {
+        try { v.currentTime = 0; } catch { /* not ready yet */ }
+        v.muted = !sound || card.video_sound === false;
+        v.play().catch(() => { v.muted = true; v.play().catch(() => setFailed(f => ({ ...f, [u]: true }))); });
+      } else {
+        v.muted = true; v.pause();
+        try { v.currentTime = 0; } catch { /* not ready yet */ }
+      }
+    }
+  }, [url, showVideo, loaded[url], turn]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The picture shows underneath; this slide's video fades in over it once it
+  // is really playing.
   const media = (
     <>
-      {showVideo ? (
-        <video key={`${card.id}-${turn}`} ref={videoRef} src={videoSrc} playsInline muted={!sound}
-          onEnded={next} onError={() => setVideoFailed(true)}
-          onTimeUpdate={e => { const v = e.currentTarget; if (v.duration) setProgress(v.currentTime / v.duration); }}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#000' }} />
-      ) : (
-        <TVBackground imageUrl={card?.image_url} light zoom />
-      )}
-      {showVideo && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-          background: 'linear-gradient(to bottom, rgba(5,7,10,0.35) 0%, rgba(5,7,10,0) 18%, rgba(5,7,10,0) 75%, rgba(5,7,10,0.6) 100%)' }} />
-      )}
+      <TVBackground imageUrl={picture} light zoom />
+      {wanted.filter(u => loaded[u]).map(u => (
+        <video key={u} ref={el => { if (el) players.current[u] = el; else delete players.current[u]; }}
+          src={loaded[u]} poster={NO_POSTER} playsInline muted preload="auto"
+          onPlaying={() => { if (u === url) setPlaying(true); }}
+          onEnded={() => { if (u === url) next(); }}
+          onError={() => setFailed(f => ({ ...f, [u]: true }))}
+          onTimeUpdate={e => { const v = e.currentTarget; if (u === url && v.duration) setProgress(v.currentTime / v.duration); }}
+          style={{ position: 'absolute', inset: 0, zIndex: 5, width: '100%', height: '100%', objectFit: 'cover',
+            background: 'transparent', opacity: u === url && showVideo && playing ? 1 : 0, transition: 'opacity 700ms ease' }} />
+      ))}
     </>
   );
 
