@@ -5,7 +5,7 @@ The **Guest Board** (Settings → Guest Board) is one list of cards — pictures
 | Screen | Shows |
 | --- | --- |
 | **Room TVs** (screensaver) | the cards' pictures and **videos** full screen (videos without sound), with the guest's name, room, the clock and weather along the bottom |
-| **Room tablets** (Explore) | the cards with their pictures |
+| **Room tablets** (Explore) | the cards with their pictures (not video cards) |
 | **Lobby TV** | the cards' pictures and **videos** as a slideshow, the hotel's name, clock, weather and notices — no guest data |
 
 ## Where a card shows
@@ -25,7 +25,7 @@ Open a card → **Show on**:
 
 > The video must be **MP4 (H.264)**, at most **2 minutes** and **100 MB**. A video from an iPhone (.mov or HEVC) must first be exported as MP4 "Most compatible". The page says so when a file can't be played on the TV.
 
-On the lobby TV a picture stays 8 seconds; a video plays to its end, then the slideshow carries on. The TV downloads each video **once** and keeps it, so the hotel's internet isn't used every time it loops. Room TVs play the videos too, always **without sound** (the screensaver also comes on at night with a guest asleep); a room TV waits a few minutes before downloading new videos, so 30 TVs don't all download at once. Keep room videos short — under a minute is best. Room tablets only show the card's picture.
+On the lobby TV a picture stays 8 seconds; a video plays to its end, then the slideshow carries on. The TV downloads each video **once** and keeps it, so the hotel's internet isn't used every time it loops. Room TVs play the videos too, always **without sound** (the screensaver also comes on at night with a guest asleep); a room TV waits a few minutes before downloading new videos, so 30 TVs don't all download at once. Keep room videos short — under a minute is best. Room tablets never show a card that has a video — video cards are only for the TVs.
 
 ## Music in the lobby
 

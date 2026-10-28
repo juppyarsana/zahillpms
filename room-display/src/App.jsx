@@ -530,7 +530,8 @@ export default function App() {
         roomId={roomId}
         online={!error}
         weather={state.weather}
-        cards={state.cards || []}
+        // Video cards are for the TVs (room screensaver + lobby); the tablet never shows them.
+        cards={(state.cards || []).filter(c => !c.video_url)}
         orderingEnabled={state.orderingEnabled}
         activitiesEnabled={state.activitiesEnabled}
         roomControllerEnabled={state.roomControllerEnabled}
