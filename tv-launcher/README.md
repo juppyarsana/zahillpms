@@ -28,7 +28,42 @@ export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"; export PATH="$JA
 ```
 `local.properties` needs `sdk.dir=C\:\\Android\\Sdk` (double backslashes).
 
-## Put it on a TV — `provision/provision.ps1`
+## Set up another TV — step by step
+**1. At the TV (once per TV)**
+1. Connect it to the hotel network.
+2. Note its IP address (Settings → Network & Internet → the network) and give that address a fixed
+   reservation on the router (DHCP reservation), so it never changes.
+3. Settings → System → About → press **Build** 7 times (turns on developer options).
+4. Settings → System → Developer options → turn on **USB debugging** (on this Sharp model that also
+   lets the PC reach the TV over the network, port 5555).
+
+**2. From the PC that has the release key** (see *Release key* below)
+```powershell
+cd C:\Users\dj03p\Documents\zahillpms\tv-launcher\provision
+.\provision.ps1 -Tv <tv ip> -Room <room id> -Token <display token>
+```
+- The first time, the TV asks **"Allow USB debugging?"** — tick *Always allow from this computer*,
+  press OK. If the script stopped there, run it again.
+- `-Room` = the room's **Room ID** exactly as in the PMS (Settings → Units), e.g. `302`.
+- Display token = PMS → Settings → Property Details → Device Setup.
+- It ends with "Room X: done" after about a minute.
+
+**3. Check it**
+- Press **Home** on the remote → Zahill TV with the guest's name (or the welcome card if the room is empty).
+- Switch the TV off and on at the wall once → it comes back on Zahill TV, not Live TV.
+
+**Many TVs at once:** copy `provision/rooms.example.csv` to `rooms.csv`, one `room,ip` line per TV
+(e.g. `101,192.168.20.121`), then `.\provision.ps1 -RoomsCsv rooms.csv -Token <display token>`. It
+lists the TVs that failed — fix those and run again (safe to repeat).
+
+**Good to know**
+- Only the AQUOS-TVX19A — on another model the script stops before changing anything.
+- Back to the stock home: `.\restore.ps1 -Tv <tv ip>` (add `-Uninstall` to remove the app too).
+- A guest signed into Netflix / YouTube stays signed in after check-out (not handled yet, Phase 4) —
+  sign the apps out when the room is turned over.
+- First TV on production: Room 302 (192.168.20.116), 2026-10-29.
+
+## What `provision/provision.ps1` does
 One TV:
 ```powershell
 cd tv-launcher\provision
