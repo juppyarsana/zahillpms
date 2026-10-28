@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
     static final int DEFAULT_ACCENT = 0xFFC9A227;
     static final int GROUND = 0xFF05070A;
     static final int TEXT = 0xFFF4F1EA, TEXT_2 = 0xFFD9D4C7, LABEL = 0xFFB7B1A3;
+    static final int LOGO_H = 150, LOGO_MAX_W = 360;   // Home logo, design px (trimmed, left-aligned)
     static final long REFRESH_MS = 60_000, RETRY_MS = 10_000, BG_ROTATE_MS = 30_000, HOLD_FOR_SETTINGS_MS = 3000;
 
     private String[] watchApps, defaultWatchApps;
@@ -255,7 +256,7 @@ public class MainActivity extends Activity {
         logoView = new ImageView(this);
         logoView.setScaleType(ImageView.ScaleType.FIT_START);
         logoView.setAdjustViewBounds(true);
-        logoBox.addView(logoView, new FrameLayout.LayoutParams(d(260), d(130), Gravity.START | Gravity.TOP));
+        logoBox.addView(logoView, new FrameLayout.LayoutParams(d(LOGO_MAX_W), d(LOGO_H), Gravity.START | Gravity.TOP));
         logoText = text(40, serif(500), TEXT);
         logoText.setVisibility(View.GONE);
         logoBox.addView(logoText, new FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.TOP));
@@ -999,12 +1000,39 @@ public class MainActivity extends Activity {
     }
 
     private void showLogo(Bitmap bm) {
+        bm = trimEmptyBorder(bm);
+        // The view takes the logo's own shape (same height, width to match, at most the
+        // header's logo space), so the logo starts exactly at the left edge like the text.
+        ViewGroup.LayoutParams lp = logoView.getLayoutParams();
+        lp.height = d(LOGO_H);
+        lp.width = Math.min(d(LOGO_MAX_W), Math.round(lp.height * (float) bm.getWidth() / Math.max(1, bm.getHeight())));
+        logoView.setLayoutParams(lp);
         logoView.setImageBitmap(bm);
         vacantLogo.setImageBitmap(bm);
         logoView.setVisibility(View.VISIBLE);
         vacantLogo.setVisibility(View.VISIBLE);
         logoText.setVisibility(View.GONE);
         vacantLogoText.setVisibility(View.GONE);
+    }
+
+    /** The logo without its transparent margin, so it lines up with the text under it. */
+    private static Bitmap trimEmptyBorder(Bitmap bm) {
+        int w = bm.getWidth(), h = bm.getHeight();
+        int[] px = new int[w * h];
+        bm.getPixels(px, 0, w, 0, 0, w, h);
+        int left = w, top = h, right = -1, bottom = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) > 16) {
+                    if (x < left) left = x;
+                    if (x > right) right = x;
+                    if (y < top) top = y;
+                    if (y > bottom) bottom = y;
+                }
+            }
+        }
+        if (right < 0 || (left == 0 && top == 0 && right == w - 1 && bottom == h - 1)) return bm;
+        return Bitmap.createBitmap(bm, left, top, right - left + 1, bottom - top + 1);
     }
 
     /** The logo, kept on the TV once downloaded so it shows at boot without network. */
