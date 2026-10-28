@@ -33,7 +33,11 @@ object WelcomeWeb {
         val baseUrl = prefs.getString(Preferences.KEY_BASE_URL, Preferences.DEFAULT_BASE_URL)!!.trimEnd('/')
         if (roomId.isNullOrBlank() || token.isNullOrBlank()) return null
         val langPart = if (lang != null) "&lang=${Uri.encode(lang)}" else ""
-        return "$baseUrl$path?room=${Uri.encode(roomId)}&token=${Uri.encode(token)}$langPart"
+        // &t= makes every start a new address: the server sends the page with no
+        // cache rule, so the WebView would otherwise keep showing an old build for
+        // days. The page's own files have the build in their names, so they still
+        // come from the cache.
+        return "$baseUrl$path?room=${Uri.encode(roomId)}&token=${Uri.encode(token)}$langPart&t=${System.currentTimeMillis()}"
     }
 
     fun load(webView: WebView, path: String = "", lang: String? = null) {
