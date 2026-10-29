@@ -360,7 +360,7 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
   const showPos = department === 'fnb' && pos?.linked && pos.items.length > 0;
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 760, width: '100%' }}>
+      <div className="modal" style={{ maxWidth: 980, width: '100%' }}>
         <div className="modal-header"><div className="modal-title">New purchase request</div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
         <div className="modal-body">
           {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
@@ -377,7 +377,7 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
             The kitchen's ingredients are kept in the restaurant app — the chef can also ask from there (Inventory → Request to buy).</div>}
           <div className="table-wrap">
             <table style={{ minWidth: 600 }}>
-              <thead><tr><th>Item</th><th style={{ width: 170 }}>How many</th><th style={{ width: 160 }}>Note</th><th style={{ width: 30 }}></th></tr></thead>
+              <thead><tr><th>Item</th><th style={{ width: 190 }}>How many</th><th style={{ width: 240 }}>Note</th><th style={{ width: 30 }}></th></tr></thead>
               <tbody>
                 {lines.map((l, i) => {
                   const it = itemOf(l);
