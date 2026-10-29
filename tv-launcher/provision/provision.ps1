@@ -26,7 +26,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Pkg = 'com.zahill.tv'
-$Model = 'AQUOS-TVX19A'
+$ExpectedModel = 'AQUOS-TVX19A'   # not $Model: PowerShell names are case-insensitive, $model below would overwrite it
 
 $adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
 if (-not $adb -and (Test-Path 'C:\platform-tools\adb.exe')) { $adb = 'C:\platform-tools\adb.exe' }
@@ -69,7 +69,7 @@ function Provision-One([string]$Ip, [string]$RoomId) {
     if ($c -notmatch 'connected') { throw "Cannot connect to ${serial}: $($c.Trim()). Is the TV on, with network debugging allowed?" }
     if ((Run $serial @('get-state')) -ne 'device') { throw "$serial is not ready (accept the debugging prompt on the TV, then run again)" }
     $model = Run $serial @('shell', 'getprop ro.product.model')
-    if ($model -ne $Model -and -not $AnyModel) { throw "$serial is a '$model', not $Model - the debloat list is for $Model (use -AnyModel -SkipDebloat to set it up anyway)" }
+    if ($model -ne $ExpectedModel -and -not $AnyModel) { throw "$serial is a '$model', not $ExpectedModel - the debloat list is for $ExpectedModel (use -AnyModel -SkipDebloat to set it up anyway)" }
 
     $stateDir = Join-Path $PSScriptRoot 'state'
     New-Item -ItemType Directory -Force $stateDir | Out-Null

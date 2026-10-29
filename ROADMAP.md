@@ -1,6 +1,23 @@
 # ZHP PMS — Development Roadmap
 
-Last updated: 2026-10-27
+Last updated: 2026-10-29
+
+---
+
+## 🔵 Purchase requests — departments ask, purchasing orders (PLANNED 2026-10-29, not started)
+
+**Why:** the restaurant's stock lives in the POS (recipes take ingredients off it at each sale, its food cost comes from its own purchase batches); the hotel's stock lives in the PMS (Stock page). A POS sale never lowers PMS stock — so restaurant ingredients bought through PMS Purchasing made the PMS stock only go up and the POS stock only go down. Owner's flow: the chef (and any department) checks stock, asks for what is needed, hotel purchasing orders it.
+
+**Owner's choices (2026-10-29):** every department can request; the restaurant requests from its own app (the POS); **receiving is done by purchasing in the PMS** (as today); **one approval only** — the PO's existing *Approve purchase orders*, the request itself needs none; a requester may ask for an item **not in the stock list as free text** (name + unit), added to stock when received if wanted.
+
+**Flow:**
+1. **Request.** Hotel departments: PMS → Stock page / a Requests page → *Request to buy* (department, items = PMS stock items or free text, quantity, needed by, note). Restaurant: POS → inventory → *Request to buy* (POS inventory items or free text) → sent to the PMS with the POS key (`authPos`, like `/api/pos/*`), each line carrying the POS item id, name, unit and its stock when asked.
+2. **Purchasing → Requests** (PMS): one list of every open request, tagged by department; Telegram alert to purchasing on a new one. *Make PO* from one or more requests (a request may be split over suppliers); lines keep a link to their request line.
+3. **PO as today** (submit → approve → receive, partial receipts). A PO line's target is one of: PMS product / PMS stock item (as today) / **POS inventory item** (new) / free text. Receiving a POS line does NOT touch PMS stock: the PMS sends the received quantity + real cost to the POS (`/api/hotel/*` with the hotel key, `pos_url` / `pos_hotel_key` from migration 094) → a POS purchase batch, so POS stock and average cost update. Not reachable → line marked "not sent to the POS" with *Send again* (like *Tell the POS*).
+4. **Status back to the requester:** Sent → Ordered (PO-…) → Partly received → Received / Declined (with reason); the POS asks the PMS for its requests' status.
+5. **Money** unchanged: Make bill → Payables (or Paid already), category Food / Drinks / …, **department from the request** so Costs by department is right.
+
+**To build:** PMS migration (purchase_requests + lines, PO line target for POS items + link to request line), Purchasing → Requests tab, Request to buy on Stock, POS-facing endpoints, POS-side request screen + status + `/api/hotel/purchase-batches` receiver. Guide chapters (purchasing, stock) both languages. Deploy PMS first, then POS.
 
 ---
 

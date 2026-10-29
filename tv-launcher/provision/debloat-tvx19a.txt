@@ -45,3 +45,4 @@ com.google.android.youtube.tvmusic
 # provision.ps1 skips setupwraith while it owns the saved Wi-Fi network (Android would delete it).
 com.google.android.tungsten.setupwraith
 com.google.android.tvlauncher
+com.google.android.apps.tv.launcherx   # Google TV home on the SHARP 2K Smart TV (Android 14, rooms 701-703)
