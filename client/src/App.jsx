@@ -63,6 +63,7 @@ import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
 
 import Stock from './pages/Stock';
+import PurchaseRequests from './pages/PurchaseRequests';
 import Expenses from './pages/Expenses';
 import Payables from './pages/Payables';
 import VendorPayouts from './pages/VendorPayouts';
@@ -384,6 +385,7 @@ export default function App() {
                   <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
                   <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />
+                  <Route path="/purchase-requests" element={<RequireMenu menuKey={['purchase_request', 'purchasing']}><RequireModule moduleName="back_office"><PurchaseRequests /></RequireModule></RequireMenu>} />
                   <Route path="/vendor-payouts"  element={<RequireMenu menuKey="vendors"><RequireModule moduleName="activities"><VendorPayouts /></RequireModule></RequireMenu>} />
                   <Route path="/payables"        element={<RequireMenu menuKey="payables"><RequireModule moduleName="accounting"><Payables /></RequireModule></RequireMenu>} />
                   <Route path="/expenses"        element={<RequireMenu menuKey="expenses"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />

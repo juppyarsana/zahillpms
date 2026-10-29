@@ -42,7 +42,10 @@ export default function Stock() {
           <div className="page-title">Stock</div>
           <div className="page-subtitle">What is in stock, what was used, and the stock opname — buying is on Purchasing</div>
         </div>
-        <div><Link className="btn btn-secondary" to="/guide/stock">📘 Guide</Link></div>
+        <div className="flex gap-2">
+          <Link className="btn btn-secondary" to="/guide/stock">📘 Guide</Link>
+          <Link className="btn btn-primary" to="/purchase-requests?new=1&low=1" title="Ask purchasing to buy — starts with the items that are low or out">🛒 Request to buy</Link>
+        </div>
       </div>
       <div className="tab-bar">
         {TABS.map(t => <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>)}

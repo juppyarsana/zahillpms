@@ -368,12 +368,13 @@ async function listPayments(propertyId, { supplier_id, from, to } = {}) {
 // ── A bill from a purchase order: what was received and not billed yet ──
 async function fromPurchaseOrder(propertyId, poId) {
   const { rows: [po] } = await db.query(
-    `SELECT po.id, po.po_number, po.status, po.is_direct, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category, s.default_department
+    `SELECT po.id, po.po_number, po.status, po.is_direct, po.supplier_id, s.name AS supplier_name, s.payment_terms_days, s.default_category,
+            COALESCE(po.department, s.default_department) AS default_department
      FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1 AND po.property_id = $2`, [poId, propertyId]);
   if (!po) return fail(404, 'Purchase order not found');
   if (po.is_direct) return fail(409, 'This was bought without a PO — its money is already recorded with it', 'DIRECT_PURCHASE');
   const [{ rows: items }, { rows: [billed] }] = await Promise.all([
-    db.query(`SELECT i.description, i.unit_cost, i.received_quantity, rm.unit_of_measure
+    db.query(`SELECT i.description, i.unit_cost, i.received_quantity, COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
               WHERE i.purchase_order_id = $1 AND i.received_quantity > 0 ORDER BY i.description`, [poId]),
     db.query('SELECT COALESCE(SUM(total), 0) AS amount FROM supplier_bills WHERE purchase_order_id = $1 AND NOT is_voided', [poId]),

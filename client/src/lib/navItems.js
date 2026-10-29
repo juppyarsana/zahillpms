@@ -56,6 +56,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
+      (can('purchase_request') || can('purchasing')) && hasModule('back_office') && { to: '/purchase-requests', icon: '🛒', label: 'Purchase requests' },
     ] },
     // Insights (owner's figures, one question per page): Summary · Forecast,
     // sub-groups Stays · Money, then Export / Print (every printable report).

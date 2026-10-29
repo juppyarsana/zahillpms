@@ -336,7 +336,19 @@ router.post('/purchase-orders/:id/receive', ownerOnly, async (req, res) => {
   try {
     const result = await svc.receivePurchaseOrder(req.propertyId, req.params.id, items, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
-    res.json(result.purchase_order);
+    res.json({ ...result.purchase_order, pos_sync: result.pos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /purchase-orders/:id/pos-send — send restaurant lines the POS has not
+// got yet (it was down, or not linked) again. Safe to repeat.
+router.post('/purchase-orders/:id/pos-send', ownerOnly, async (req, res) => {
+  try {
+    const { rows: [po] } = await db.query('SELECT id FROM purchase_orders WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+    res.json(await require('../services/posPurchases').sendToPos(req.propertyId, po.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

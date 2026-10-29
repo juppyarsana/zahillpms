@@ -154,6 +154,7 @@ app.use('/api/vendors', auth, moduleGuard('activities'), require('./middleware/r
 app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/expenses'));
 app.use('/api/stock', auth, moduleGuard('back_office'), require('./routes/stock'));
+app.use('/api/purchase-requests', auth, moduleGuard('back_office'), require('./routes/purchaseRequests'));
 // Accounting, step 1 (migration 101): chart of accounts, account mapping, daily journal.
 app.use('/api/accounting', auth, moduleGuard('accounting'), require('./routes/accounting'));
 app.use('/api/payables', auth, moduleGuard('accounting'), require('./routes/payables'));

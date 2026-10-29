@@ -32,6 +32,7 @@ export const GROUPS = [
     { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },
     { id: 'stock', icon: '🗃', title: { id: 'Stok: adjust, stock opname & pemakaian', en: 'Stock: adjust, stock opname & usage' } },
+    { id: 'purchase-requests', icon: '🛒', title: { id: 'Permintaan pembelian', en: 'Purchase requests' } },
   ] },
   { label: { id: 'Keuangan', en: 'Finance' }, chapters: [
     { id: 'costs', icon: '🏷', title: { id: 'Overview & Insights', en: 'Overview & Insights' } },

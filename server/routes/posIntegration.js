@@ -264,4 +264,42 @@ router.get('/branding', gate, async (req, res) => {
   }
 });
 
+// ── Purchase requests from the restaurant (migration 144) ──
+// The chef asks from the POS; hotel purchasing orders it in the PMS. Needs
+// Back Office on as well (Purchasing lives there).
+const prGate = [...gate, moduleGuard('back_office')];
+const purchaseRequests = require('../services/purchaseRequestService');
+
+// GET /api/pos/purchase-requests — the restaurant's requests: every open one
+// + those closed in the last 60 days, with each line's progress.
+router.get('/purchase-requests', prGate, async (req, res) => {
+  try { res.json(await purchaseRequests.list(req.propertyId, { show: 'all', source: 'pos', days: 60 })); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/pos/purchase-requests { client_ref, by, needed_by?, note?,
+//   lines: [{ pos_item_id?, description, unit, quantity, stock?, note? }] }
+// client_ref makes a retry safe (200 + replayed:true).
+router.post('/purchase-requests', prGate, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await purchaseRequests.create(req.propertyId, b, { name: b.by || 'Restaurant', source: 'pos' });
+    if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
+    res.status(r.replayed ? 200 : 201).json({ ...r.request, replayed: r.replayed });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/pos/purchase-requests/:id/cancel { by, reason? } — only one of
+// the restaurant's own, and only while nothing on it is ordered.
+router.post('/purchase-requests/:id/cancel', prGate, async (req, res) => {
+  try {
+    const r = await purchaseRequests.get(req.propertyId, req.params.id);
+    if (!r || r.source !== 'pos') return res.status(404).json({ error: 'Request not found' });
+    const out = await purchaseRequests.closeRequest(req.propertyId, r.id, 'cancelled',
+      { reason: req.body?.reason, name: req.body?.by || 'Restaurant' });
+    if (out.error) return res.status(out.status || 400).json({ error: out.error, code: out.code });
+    res.json(out.request);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

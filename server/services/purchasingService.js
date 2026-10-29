@@ -35,6 +35,16 @@ async function logEvent(client, poId, note, userId) {
   );
 }
 
+// 'PR-0003', … — the purchase requests these PO lines order, for the PO's log.
+async function requestNumbers(client, items) {
+  const ids = items.map(i => i.request_line_id).filter(Boolean);
+  if (!ids.length) return [];
+  const { rows } = await client.query(
+    `SELECT DISTINCT r.request_no FROM purchase_request_lines l JOIN purchase_requests r ON r.id = l.request_id
+     WHERE l.id = ANY($1::uuid[]) ORDER BY r.request_no`, [ids]);
+  return rows.map(r => `PR-${String(r.request_no).padStart(4, '0')}`);
+}
+
 async function nextPoNumber(client, propertyId) {
   const now = new Date();
   const prefix = `PO-${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}-`;
@@ -45,7 +55,78 @@ async function nextPoNumber(client, propertyId) {
   return prefix + String(parseInt(count) + 1).padStart(3, '0');
 }
 
-// items: [{ product_id? , raw_material_id?, quantity, unit_cost }]
+// One PO line, checked: a sellable product kept in stock, a stock item, a POS
+// inventory item (restaurant — received goods go to the POS, migration 144)
+// or free text (kept in no stock). request_line_id = the purchase request
+// line it orders. → { item } or { error }.
+async function resolveItem(client, propertyId, raw) {
+  const targets = [raw.product_id, raw.raw_material_id, raw.pos_item_id].filter(Boolean).length;
+  if (targets > 1) return { error: 'Each line item can only be one kind of item' };
+  const quantity = parseFloat(raw.quantity);
+  const unitCost = parseFloat(raw.unit_cost);
+  if (!Number.isFinite(quantity) || quantity <= 0) return { error: 'Each line item needs a positive quantity' };
+  if (!Number.isFinite(unitCost) || unitCost < 0) return { error: 'Each line item needs a non-negative unit cost' };
+  let requestLineId = null;
+  if (raw.request_line_id) {
+    const rl = await require('./purchaseRequestService').checkRequestLine(client, propertyId, raw.request_line_id);
+    if (!rl) return { error: 'A purchase request on this order is no longer open' };
+    requestLineId = rl.id;
+  }
+  const base = { product_id: null, raw_material_id: null, pos_item_id: null, unit: null, quantity, unit_cost: unitCost, request_line_id: requestLineId };
+
+  if (raw.product_id) {
+    if (!Number.isInteger(quantity)) return { error: 'Sellable product quantities must be whole numbers' };
+    const { rows: [product] } = await client.query(
+      'SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]);
+    if (!product) return { error: 'A referenced product was not found' };
+    if (!product.track_stock || product.per_night || product.open_price) return { error: `${product.name} is not kept in stock — only sales items with Track stock (Sales → Items) can be bought on a purchase order` };
+    return { item: { ...base, product_id: product.id, description: product.name } };
+  }
+  if (raw.raw_material_id) {
+    const { rows: [material] } = await client.query(
+      'SELECT id, name FROM raw_materials WHERE id = $1 AND property_id = $2', [raw.raw_material_id, propertyId]);
+    if (!material) return { error: 'A referenced raw material was not found' };
+    return { item: { ...base, raw_material_id: material.id, description: material.name } };
+  }
+  const description = String(raw.description || '').trim().slice(0, 255);
+  if (!description) return { error: 'Each line item needs a name' };
+  const unit = String(raw.unit || '').trim().slice(0, 20) || null;
+  if (raw.pos_item_id) return { item: { ...base, pos_item_id: String(raw.pos_item_id).slice(0, 64), description, unit } };
+  return { item: { ...base, description, unit } };
+}
+
+async function resolveItems(client, propertyId, items) {
+  const out = [];
+  for (const raw of items) {
+    const r = await resolveItem(client, propertyId, raw);
+    if (r.error) return r;
+    out.push(r.item);
+  }
+  return { items: out };
+}
+
+async function insertItems(client, poId, items) {
+  for (const item of items) {
+    await client.query(
+      `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, pos_item_id, unit, request_line_id, description, quantity, unit_cost)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [poId, item.product_id, item.raw_material_id, item.pos_item_id, item.unit, item.request_line_id, item.description, item.quantity, item.unit_cost]);
+  }
+}
+
+// The department a PO is for: chosen, else the one its purchase requests share.
+async function poDepartment(client, propertyId, chosen, items) {
+  const { DEPARTMENT_KEYS } = require('./costCategories');
+  if (DEPARTMENT_KEYS.includes(chosen)) return chosen;
+  const ids = items.map(i => i.request_line_id).filter(Boolean);
+  if (!ids.length) return null;
+  const { rows } = await client.query(
+    `SELECT DISTINCT r.department FROM purchase_request_lines l JOIN purchase_requests r ON r.id = l.request_id
+     WHERE l.id = ANY($1::uuid[]) AND r.property_id = $2`, [ids, propertyId]);
+  return rows.length === 1 ? rows[0].department : null;
+}
+
+// items: [{ product_id? | raw_material_id? | pos_item_id? (+ description, unit) | description (+ unit), quantity, unit_cost, request_line_id? }]
 async function createPurchaseOrder(propertyId, body, userId) {
   const { supplier_id, notes, items } = body;
   if (!supplier_id) return { error: 'supplier_id required' };
@@ -60,53 +141,23 @@ async function createPurchaseOrder(propertyId, body, userId) {
     );
     if (!supplier) { await client.query('ROLLBACK'); return { error: 'Supplier not found' }; }
 
-    const resolvedItems = [];
-    for (const raw of items) {
-      const hasProduct = !!raw.product_id;
-      const hasRawMaterial = !!raw.raw_material_id;
-      if (hasProduct === hasRawMaterial) { // both or neither set
-        await client.query('ROLLBACK');
-        return { error: 'Each line item must reference exactly one product or raw material' };
-      }
-      const quantity = parseFloat(raw.quantity);
-      const unitCost = parseFloat(raw.unit_cost);
-      if (!Number.isFinite(quantity) || quantity <= 0) { await client.query('ROLLBACK'); return { error: 'Each line item needs a positive quantity' }; }
-      if (!Number.isFinite(unitCost) || unitCost < 0) { await client.query('ROLLBACK'); return { error: 'Each line item needs a non-negative unit cost' }; }
-
-      if (hasProduct) {
-        if (!Number.isInteger(quantity)) { await client.query('ROLLBACK'); return { error: 'Sellable product quantities must be whole numbers' }; }
-        const { rows: [product] } = await client.query(
-          'SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]
-        );
-        if (!product) { await client.query('ROLLBACK'); return { error: 'A referenced product was not found' }; }
-        if (!product.track_stock || product.per_night || product.open_price) { await client.query('ROLLBACK'); return { error: `${product.name} is not kept in stock — only sales items with Track stock (Sales → Items) can be bought on a purchase order` }; }
-        resolvedItems.push({ product_id: product.id, raw_material_id: null, description: product.name, quantity, unit_cost: unitCost });
-      } else {
-        const { rows: [material] } = await client.query(
-          'SELECT id, name FROM raw_materials WHERE id = $1 AND property_id = $2', [raw.raw_material_id, propertyId]
-        );
-        if (!material) { await client.query('ROLLBACK'); return { error: 'A referenced raw material was not found' }; }
-        resolvedItems.push({ product_id: null, raw_material_id: material.id, description: material.name, quantity, unit_cost: unitCost });
-      }
-    }
+    const resolved = await resolveItems(client, propertyId, items);
+    if (resolved.error) { await client.query('ROLLBACK'); return { error: resolved.error }; }
+    const resolvedItems = resolved.items;
 
     const totalAmount = round2(resolvedItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0));
     const poNumber = await nextPoNumber(client, propertyId);
+    const department = await poDepartment(client, propertyId, body.department, resolvedItems);
 
     const { rows: [po] } = await client.query(
-      `INSERT INTO purchase_orders (property_id, supplier_id, po_number, status, total_amount, notes, requested_by)
-       VALUES ($1,$2,$3,'draft',$4,$5,$6) RETURNING *`,
-      [propertyId, supplier_id, poNumber, totalAmount, notes || null, userId || null]
+      `INSERT INTO purchase_orders (property_id, supplier_id, po_number, status, total_amount, notes, requested_by, department)
+       VALUES ($1,$2,$3,'draft',$4,$5,$6,$7) RETURNING *`,
+      [propertyId, supplier_id, poNumber, totalAmount, notes || null, userId || null, department]
     );
 
-    for (const item of resolvedItems) {
-      await client.query(
-        `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, description, quantity, unit_cost)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [po.id, item.product_id, item.raw_material_id, item.description, item.quantity, item.unit_cost]
-      );
-    }
-    await logEvent(client, po.id, 'Purchase order created', userId);
+    await insertItems(client, po.id, resolvedItems);
+    const reqNos = await requestNumbers(client, resolvedItems);
+    await logEvent(client, po.id, reqNos.length ? `Purchase order created from ${reqNos.join(', ')}` : 'Purchase order created', userId);
 
     await client.query('COMMIT');
     return { purchase_order: po };
@@ -133,39 +184,14 @@ async function updatePurchaseOrderItems(propertyId, poId, body) {
     if (!po) { await client.query('ROLLBACK'); return { error: 'Purchase order not found' }; }
     if (po.status !== 'draft') { await client.query('ROLLBACK'); return { error: 'Only a draft purchase order can be edited' }; }
 
-    const resolvedItems = [];
-    for (const raw of items) {
-      const hasProduct = !!raw.product_id;
-      const hasRawMaterial = !!raw.raw_material_id;
-      if (hasProduct === hasRawMaterial) { await client.query('ROLLBACK'); return { error: 'Each line item must reference exactly one product or raw material' }; }
-      const quantity = parseFloat(raw.quantity);
-      const unitCost = parseFloat(raw.unit_cost);
-      if (!Number.isFinite(quantity) || quantity <= 0) { await client.query('ROLLBACK'); return { error: 'Each line item needs a positive quantity' }; }
-      if (!Number.isFinite(unitCost) || unitCost < 0) { await client.query('ROLLBACK'); return { error: 'Each line item needs a non-negative unit cost' }; }
-
-      if (hasProduct) {
-        if (!Number.isInteger(quantity)) { await client.query('ROLLBACK'); return { error: 'Sellable product quantities must be whole numbers' }; }
-        const { rows: [product] } = await client.query('SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [raw.product_id, propertyId]);
-        if (!product) { await client.query('ROLLBACK'); return { error: 'A referenced product was not found' }; }
-        if (!product.track_stock || product.per_night || product.open_price) { await client.query('ROLLBACK'); return { error: `${product.name} is not kept in stock — only sales items with Track stock (Sales → Items) can be bought on a purchase order` }; }
-        resolvedItems.push({ product_id: product.id, raw_material_id: null, description: product.name, quantity, unit_cost: unitCost });
-      } else {
-        const { rows: [material] } = await client.query('SELECT id, name FROM raw_materials WHERE id = $1 AND property_id = $2', [raw.raw_material_id, propertyId]);
-        if (!material) { await client.query('ROLLBACK'); return { error: 'A referenced raw material was not found' }; }
-        resolvedItems.push({ product_id: null, raw_material_id: material.id, description: material.name, quantity, unit_cost: unitCost });
-      }
-    }
+    const resolved = await resolveItems(client, propertyId, items);
+    if (resolved.error) { await client.query('ROLLBACK'); return { error: resolved.error }; }
+    const resolvedItems = resolved.items;
 
     const totalAmount = round2(resolvedItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0));
 
     await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
-    for (const item of resolvedItems) {
-      await client.query(
-        `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, description, quantity, unit_cost)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [poId, item.product_id, item.raw_material_id, item.description, item.quantity, item.unit_cost]
-      );
-    }
+    await insertItems(client, poId, resolvedItems);
     const { rows: [updated] } = await client.query(
       `UPDATE purchase_orders SET total_amount = $1, notes = COALESCE($2, notes), updated_at = NOW()
        WHERE id = $3 RETURNING *`,
@@ -279,15 +305,20 @@ async function receivePurchaseOrder(propertyId, poId, items, userId) {
       let delta = Math.min(requestedQty, outstanding);
       if (item.product_id) delta = Math.floor(delta); // whole units only for sellable products
       if (delta <= 0) continue;
-      receivedNow.push({ description: item.description, delta });
+      receivedNow.push({ description: item.description, delta, where: item.pos_item_id ? ' (restaurant stock)' : '' });
 
       await client.query(
         'UPDATE purchase_order_items SET received_quantity = received_quantity + $1 WHERE id = $2',
         [delta, item.id]
       );
 
-      await addStock(client, propertyId, item, delta, parseFloat(item.unit_cost), poId, userId);
+      // A POS line goes to the restaurant's stock after the commit (sendToPos);
+      // a free-text line is kept in no stock.
+      if (item.product_id || item.raw_material_id) {
+        await addStock(client, propertyId, item, delta, parseFloat(item.unit_cost), poId, userId);
+      }
     }
+    await require('./purchaseRequestService').refreshAfterReceive(client, poId);
 
     const { rows: freshItems } = await client.query(
       'SELECT quantity, received_quantity FROM purchase_order_items WHERE purchase_order_id = $1', [poId]
@@ -300,13 +331,14 @@ async function receivePurchaseOrder(propertyId, poId, items, userId) {
     );
 
     if (receivedNow.length > 0) {
-      const summary = receivedNow.map(r => `${r.description} ×${r.delta}`).join(', ');
+      const summary = receivedNow.map(r => `${r.description} ×${r.delta}${r.where}`).join(', ');
       const note = fullyReceived ? `Received ${summary} — fully received` : `Received ${summary}`;
       await logEvent(client, poId, note, userId);
     }
 
     await client.query('COMMIT');
-    return { purchase_order: updated };
+    const pos = await require('./posPurchases').sendToPos(propertyId, poId);
+    return { purchase_order: updated, pos };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -325,9 +357,13 @@ async function getPurchaseOrder(propertyId, poId) {
   );
   if (!po) return null;
   const { rows: items } = await db.query(
-    `SELECT poi.*, rm.unit_of_measure
+    `SELECT poi.*, COALESCE(rm.unit_of_measure, poi.unit) AS unit_of_measure,
+            CASE WHEN poi.pos_item_id IS NOT NULL THEN 'pos' WHEN poi.product_id IS NULL AND poi.raw_material_id IS NULL THEN 'text' END AS line_kind,
+            'PR-' || lpad(pr.request_no::text, 4, '0') AS request_no_text, pr.id AS request_id, pr.department AS request_department
      FROM purchase_order_items poi
      LEFT JOIN raw_materials rm ON rm.id = poi.raw_material_id
+     LEFT JOIN purchase_request_lines prl ON prl.id = poi.request_line_id
+     LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
      WHERE poi.purchase_order_id = $1
      ORDER BY poi.description`,
     [poId]
@@ -353,6 +389,7 @@ async function listPurchaseOrders(propertyId, { status } = {}) {
 }
 
 module.exports = {
+  resolveItems,
   addStock,
   logEvent,
   nextPoNumber,

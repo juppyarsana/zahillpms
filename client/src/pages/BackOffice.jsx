@@ -224,6 +224,15 @@ function PurchaseOrdersTab() {
   }
   useEffect(() => { loadPos(); }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ?po=<id> (from Purchase requests) opens that purchase order.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const id = params.get('po');
+    if (!id) return;
+    refreshDetail(id);
+    params.delete('po'); setParams(params, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {});
     api.get('/api/purchasing/raw-materials').then(r => setMaterials(r.data.filter(m => m.is_active))).catch(() => {});
@@ -318,7 +327,11 @@ function PurchaseOrdersTab() {
           po={detail}
           onClose={() => setDetail(null)}
           onStatus={status => setStatus(detail, status)}
-          onReceived={() => { showToast('Received'); loadPos(); refreshDetail(detail.id); }}
+          onReceived={sync => {
+            showToast(sync?.failed ? `Received — but the restaurant system did not get it: ${sync.error}. Use "Send to the POS" on the PO.`
+              : sync?.sent ? 'Received — restaurant items sent to the POS stock' : 'Received', sync?.failed ? 'error' : 'success');
+            loadPos(); refreshDetail(detail.id);
+          }}
           onError={m => showToast(m, 'error')}
         />
       )}
@@ -459,6 +472,17 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
   const { can, hasModule } = useAuth();   // approving needs the approve_po permission (owners always)
   // Received goods → the supplier's bill in Finance → Payables (needs the chart: accounting module).
   const canBill = can('payables') && hasModule('accounting') && po.items.some(it => Number(it.received_quantity) > 0);
+  // Restaurant lines received here but not yet in the POS's stock (it was down / not linked).
+  const unsent = po.items.some(it => it.pos_item_id && Number(it.received_quantity) > Number(it.pos_sent_qty));
+  const [sending, setSending] = useState(false);
+  async function sendToPos() {
+    setSending(true);
+    try {
+      const r = await api.post(`/api/purchasing/purchase-orders/${po.id}/pos-send`);
+      onReceived(r.data);
+    } catch (err) { onError(err.response?.data?.error || 'Could not send'); }
+    setSending(false);
+  }
 
   const transitions = {
     draft: [['pending_approval', 'Submit for Approval'], ['cancelled', 'Cancel']],
@@ -494,7 +518,14 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
             <tbody>
               {po.items.map(it => (
                 <tr key={it.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                  <td style={{ padding: '6px 4px' }}>{it.description}{it.raw_material_id ? ` (${it.unit_of_measure})` : ''}</td>
+                  <td style={{ padding: '6px 4px' }}>
+                    {it.description}{it.unit_of_measure && !it.product_id ? ` (${it.unit_of_measure})` : ''}
+                    {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Goes to the restaurant's stock in the POS when received">Restaurant</span>}
+                    {it.line_kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Not kept in any stock">Not in stock</span>}
+                    {it.request_no_text && <Link to="/purchase-requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
+                    {it.line_kind === 'pos' && it.pos_send_error && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not sent to the POS: {it.pos_send_error}</div>}
+                    {it.line_kind === 'pos' && !it.pos_send_error && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
+                  </td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>{it.quantity}</td>
                   <td style={{ textAlign: 'right', padding: '6px 4px', color: Number(it.received_quantity) >= Number(it.quantity) ? '#16A34A' : '#6B7280' }}>{it.received_quantity}</td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>{fmtIDR(it.unit_cost)}</td>
@@ -521,13 +552,14 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
             <button key={status} className={`btn btn-sm ${status === 'cancelled' ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onStatus(status)}>{label}</button>
           ))}
           {po.status === 'approved' && <button className="btn btn-sm btn-primary" onClick={() => setReceiveOpen(true)}>Receive Items</button>}
+          {unsent && <button className="btn btn-sm btn-secondary" disabled={sending} onClick={sendToPos}>{sending ? 'Sending…' : 'Send to the POS'}</button>}
           {canBill && <Link className="btn btn-sm btn-secondary" to={`/payables?from_po=${po.id}`} title="Record the supplier's bill for what was received">Make bill</Link>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
 
       {receiveOpen && (
-        <ReceiveModal po={po} onClose={() => setReceiveOpen(false)} onDone={() => { setReceiveOpen(false); onReceived(); }} onError={onError} />
+        <ReceiveModal po={po} onClose={() => setReceiveOpen(false)} onDone={sync => { setReceiveOpen(false); onReceived(sync); }} onError={onError} />
       )}
     </div>
   );
@@ -545,8 +577,8 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
     if (items.length === 0) { onError('Enter a quantity to receive for at least one item'); return; }
     setSaving(true);
     try {
-      await api.post(`/api/purchasing/purchase-orders/${po.id}/receive`, { items });
-      onDone();
+      const r = await api.post(`/api/purchasing/purchase-orders/${po.id}/receive`, { items });
+      onDone(r.data?.pos_sync);
     } catch (err) {
       onError(err.response?.data?.error || 'Failed to receive items');
     } finally {
@@ -568,10 +600,13 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <div style={{ flex: 1, fontSize: 13 }}>
                 {it.description}
-                <div className="text-muted" style={{ fontSize: 11 }}>outstanding {Number(it.quantity) - Number(it.received_quantity)}{it.raw_material_id ? ` ${it.unit_of_measure}` : ''}</div>
+                <div className="text-muted" style={{ fontSize: 11 }}>
+                  outstanding {+(Number(it.quantity) - Number(it.received_quantity)).toFixed(3)}{it.unit_of_measure && !it.product_id ? ` ${it.unit_of_measure}` : ''}
+                  {it.line_kind === 'pos' ? ' · to the restaurant stock (POS)' : it.line_kind === 'text' ? ' · not kept in stock' : ''}
+                </div>
               </div>
               <input
-                className="form-input" style={{ width: 100 }} type="number" step={it.raw_material_id ? '0.001' : '1'} min="0"
+                className="form-input" style={{ width: 100 }} type="number" step={it.product_id ? '1' : '0.001'} min="0"
                 value={amounts[it.id] || ''} onChange={e => setAmounts(a => ({ ...a, [it.id]: e.target.value }))}
               />
             </div>

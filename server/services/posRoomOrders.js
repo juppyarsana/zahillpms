@@ -103,4 +103,4 @@ async function test(url, key) {
   return { ok: true, status: m.status, items: (m.menu || []).length };
 }
 
-module.exports = { PosError, config, linked, menu, placeOrder, ordersFor, test, tellPosVoid, tellPosVoidRef };
+module.exports = { PosError, config, linked, call, menu, placeOrder, ordersFor, test, tellPosVoid, tellPosVoidRef };

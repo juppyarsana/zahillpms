@@ -136,6 +136,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_purchase_request: {
+    type: 'alert',
+    label: 'Purchase requests',
+    when: 'When a department asks to buy',
+    description: 'A department (or the restaurant from its app) asks purchasing to buy something: the request number, who asked, by when, and each item with how much is left.',
+    defaultRoles: ['owner', 'manager'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_stock_opname: {
     type: 'alert',
     label: 'Stock opname finished',
