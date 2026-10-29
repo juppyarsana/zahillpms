@@ -4,6 +4,8 @@
 
 Stok bertambah saat **dibeli** (di Purchasing), berkurang saat **dijual**, dan lewat **Adjust** untuk hal lain. Klik barangnya untuk melihat riwayatnya: setiap perubahan, siapa, kapan, dan sisa setelahnya.
 
+Di bagian atas, pilih **Hotel stock** atau **Restaurant stock** (kalau aplikasi restoran sudah terhubung). Semua di bawah ini tentang stok hotel; stok restoran dijelaskan di bagian akhir.
+
 ## Adjust — satu barang, kejadian yang diketahui
 
 Tekan **Adjust** pada barangnya lalu pilih alasannya:
@@ -52,7 +54,15 @@ Perlu minimal satu stock opname yang sudah selesai sebagai awal.
 
 ## Nilai stok
 
-Tab **Stock value**: nilai stok yang ada, per kategori, tiap barang dengan harga rata-ratanya (harga belinya). Untuk pembukuan, accountant memakai nilai stock opname yang sudah selesai sebagai stok akhir.
+Tab **Stock value**: nilai stok yang ada, per kategori, tiap barang dengan harga rata-ratanya (harga belinya) — stok hotel dan restoran bersama, dengan satu total. Untuk pembukuan, accountant memakai nilai stock opname yang sudah selesai sebagai stok akhir.
+
+## Stok restoran
+
+Bahan dapur dan bar beserta perlengkapannya disimpan di **aplikasi restoran (POS)**: resepnya mengurangi stok setiap ada penjualan, dan **chef yang menghitung dan menyesuaikannya di sana** (Inventory → Stock Opname). Di sini hanya **ditampilkan**:
+
+- **Stock items** — setiap barang dengan sisanya (dalam kg / L), harga rata-rata dan nilainya. Klik barangnya untuk melihat **riwayatnya**: setiap penjualan (dengan nomor bill), pembelian, stock opname, bill yang diubah.
+- **Usage** — di antara dua stock opname chef: **by recipe** (yang seharusnya terpakai untuk menu yang terjual) dan **used** (awal + beli − akhir). **Selisihnya** adalah yang hilang saat dihitung — terbuang, porsi, resep yang salah. Tanyakan ke chef kalau ada angka merah yang besar.
+- Pembelian untuk restoran dilakukan di sini oleh purchasing (purchase request, PO, atau Bought without a PO dengan jenis *Restaurant (POS)*). Barangnya masuk ke stok POS dengan sendirinya — chef tidak pernah menambah pembelian di POS.
 
 ## Write-off di Telegram
 

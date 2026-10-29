@@ -11,6 +11,32 @@ const wrap = fn => (req, res) => fn(req, res).catch(err => res.status(500).json(
 const send = (res, r, ok = 200) => (r?.error ? res.status(r.status || 400).json({ error: r.error, code: r.code }) : res.status(ok).json(r));
 
 router.get('/items', wrap(async (req, res) => res.json(await svc.listItems(req.propertyId, { inactive: req.query.inactive === '1' }))));
+
+// The restaurant's stock, read from the POS (it is kept and counted there) —
+// so the hotel's and the restaurant's stock value are seen in one place.
+router.get('/restaurant', wrap(async (req, res) => {
+  const r2 = n => Math.round(n * 100) / 100;
+  try {
+    const pos = await require('../services/posPurchases').inventory(req.propertyId);
+    res.json({ linked: pos.linked, items: pos.items.map(i => ({
+      ...i, avg_cost: i.avg_cost ?? null, value: i.avg_cost != null ? r2(Math.max(0, i.stock) * i.avg_cost) : null })) });
+  } catch (err) {
+    res.json({ linked: true, items: [], error: `The restaurant app (POS) can't be reached: ${err.message}` });
+  }
+}));
+// Read-through to the POS's stock ledger: one item's history, its stock
+// opnames (the usual edges of a period) and usage (used vs by recipe).
+async function fromPos(req, res, path) {
+  const pos = require('../services/posRoomOrders');
+  const cfg = await pos.config(req.propertyId);
+  if (!cfg.url || !cfg.key) return res.status(409).json({ error: 'The restaurant app (POS) is not linked' });
+  try { res.json(await pos.call(cfg, 'GET', path)); }
+  catch (err) { res.status(err.status && err.status < 500 ? err.status : 502).json({ error: `The restaurant app (POS): ${err.message}` }); }
+}
+router.get('/restaurant/opnames', wrap((req, res) => fromPos(req, res, '/api/hotel/stock-opnames')));
+router.get('/restaurant/usage', wrap((req, res) => fromPos(req, res,
+  `/api/hotel/stock-usage?from=${encodeURIComponent(req.query.from || '')}&to=${encodeURIComponent(req.query.to || '')}`)));
+router.get('/restaurant/:id/history', wrap((req, res) => fromPos(req, res, `/api/hotel/inventory/${encodeURIComponent(req.params.id)}/history`)));
 router.post('/items', wrap(async (req, res) => send(res, await svc.saveStockItem(req.propertyId, req.body || {}), 201)));
 router.put('/items/:key', wrap(async (req, res) => {
   const k = svc.parseKey(req.params.key);

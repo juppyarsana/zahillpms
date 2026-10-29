@@ -4,12 +4,15 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import ReasonModal from './ReasonModal';
+import ItemPicker from './ItemPicker';
+import { BIG_UNIT, isBig, fmtQty, flipBig, toBase, UnitSwitch, perUnit } from '../lib/units';
 
 // Buy without a PO (migration 135) — Purchasing. Stock bought at the
 // market or a shop: one save adds the stock (average cost updated) and
 // records the money — paid already → Finance → Expenses, pay later → a
 // supplier bill in Finance → Payables. Voided here, never in Expenses /
-// Payables, so the stock always follows.
+// Payables, so the stock always follows. Restaurant goods (POS items) go to
+// the POS stock instead of the PMS's.
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 const fmtDay = d => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -19,7 +22,7 @@ const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 864000
 const STATUS = {
   paid: ['Paid', 'green'], owed: ['To pay', 'amber'], voided: ['Voided', 'red'],
 };
-const EMPTY_LINE = { kind: 'material', raw_material_id: '', product_id: '', quantity: '', amount: '' };
+const EMPTY_LINE = { kind: 'material', raw_material_id: '', product_id: '', pos_item_id: '', quantity: '', amount: '' };
 
 export function DirectPurchasesTab() {
   const [rows, setRows] = useState([]);
@@ -102,13 +105,14 @@ export function DirectPurchasesTab() {
           onClose={() => setBuying(false)}
           onSaved={r => {
             setBuying(false); load();
-            showToast(`Saved ${r.purchase.po_number} — stock updated, ${r.money.kind === 'bill' ? `bill ${r.money.bill_no_text} in Payables` : 'expense recorded in Expenses'}.`);
+            const pos = r.pos_sync ? (r.pos_sync.failed ? ' Restaurant items NOT sent to the POS yet — open it and press Send to the POS.' : ' Restaurant items added to the POS stock.') : '';
+            showToast(`Saved ${r.purchase.po_number} — stock updated, ${r.money.kind === 'bill' ? `bill ${r.money.bill_no_text} in Payables` : 'expense recorded in Expenses'}.${pos}`);
           }}
         />
       )}
       {open && (
         <DirectPurchaseDetail p={open} onClose={() => setOpen(null)}
-          onVoided={p => { setOpen(p); load(); showToast(`${p.po_number} voided — stock taken back out`); }} />
+          onVoided={(p, sent) => { setOpen(p); load(); showToast(sent ? `${p.po_number} — sent to the POS` : `${p.po_number} voided — stock taken back out`); }} />
       )}
     </div>
   );
@@ -146,8 +150,14 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
     if (s?.default_department) setDepartment(s.default_department);
   }
   const updateLine = (i, patch) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
-  const itemOf = l => l.kind === 'product' ? setup?.products.find(p => p.id === l.product_id) : setup?.materials.find(m => m.id === l.raw_material_id);
+  const posItems = setup?.pos?.items || [];
+  const itemOf = l => l.kind === 'product' ? setup?.products.find(p => p.id === l.product_id)
+    : l.kind === 'pos' ? posItems.find(x => x.id === l.pos_item_id)
+    : setup?.materials.find(m => m.id === l.raw_material_id);
+  const unitOf = l => (l.kind === 'material' ? itemOf(l)?.unit_of_measure : l.kind === 'pos' ? itemOf(l)?.unit : null);
+  const idOf = l => (l.kind === 'product' ? l.product_id : l.kind === 'pos' ? l.pos_item_id : l.raw_material_id);
   const total = lines.reduce((t, l) => t + (Number(l.amount) || 0), 0);
+  const showKind = !!setup && (setup.products.length > 0 || posItems.length > 0);
   const usualDue = supplier ? addDays(day || setup?.today || '2000-01-01', supplier.payment_terms_days || 0) : '';
   const closed = setup?.closed_through && day && day <= setup.closed_through;
 
@@ -155,12 +165,12 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
     setError('');
     const items = [];
     for (const l of lines) {
-      if (!(l.kind === 'product' ? l.product_id : l.raw_material_id)) { setError('Choose the item on every line'); return; }
-      if (!(Number(l.quantity) > 0)) { setError('Every line needs how many'); return; }
+      if (!idOf(l)) { setError('Choose the item on every line'); return; }
+      const quantity = +toBase(l, unitOf(l), 'quantity', null).quantity.toFixed(3);
+      if (!(quantity > 0)) { setError('Every line needs how many'); return; }
       if (!(Number(l.amount) > 0)) { setError('Every line needs the price paid'); return; }
-      items.push(l.kind === 'product'
-        ? { product_id: l.product_id, quantity: Number(l.quantity), amount: Number(l.amount) }
-        : { raw_material_id: l.raw_material_id, quantity: Number(l.quantity), amount: Number(l.amount) });
+      const key = l.kind === 'product' ? 'product_id' : l.kind === 'pos' ? 'pos_item_id' : 'raw_material_id';
+      items.push({ [key]: idOf(l), quantity, amount: Number(l.amount) });
     }
     setSaving(true);
     try {
@@ -227,49 +237,51 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
             <div className="table-wrap">
               <table style={{ minWidth: 760 }}>
                 <thead><tr>
-                  {setup.products.length > 0 && <th style={{ width: 140 }}>Kind</th>}
-                  <th>Item</th><th style={{ width: 130, textAlign: 'right' }}>How many</th>
+                  {showKind && <th style={{ width: 150 }}>Kind</th>}
+                  <th>Item</th><th style={{ width: 170, textAlign: 'right' }}>How many</th>
                   <th style={{ width: 160, textAlign: 'right' }}>Price paid (IDR)</th><th style={{ width: 170, textAlign: 'right' }}>Per unit</th><th style={{ width: 40 }}></th>
                 </tr></thead>
                 <tbody>
                   {lines.map((l, i) => {
                     const it = itemOf(l);
-                    const unit = l.kind === 'material' ? it?.unit_of_measure : null;
+                    const unit = unitOf(l);
                     const per = Number(l.quantity) > 0 && Number(l.amount) > 0 ? Number(l.amount) / Number(l.quantity) : null;
-                    const usual = it?.cost_per_unit != null ? Number(it.cost_per_unit) : null;
+                    const f = isBig(l) && BIG_UNIT[unit] ? BIG_UNIT[unit][1] : 1;
+                    const usual = it?.cost_per_unit != null ? Number(it.cost_per_unit) * f : null;
                     const pct = per && usual > 0 ? Math.round((per / usual - 1) * 100) : null;
                     return (
                       <tr key={i}>
-                        {setup.products.length > 0 && (
+                        {showKind && (
                           <td>
-                            <select className="form-select" value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
+                            <select className="form-select" value={l.kind} onChange={e => updateLine(i, { kind: e.target.value, product_id: '', raw_material_id: '', pos_item_id: '' })}>
                               <option value="material">Stock item</option>
-                              <option value="product">For resale</option>
+                              {setup.products.length > 0 && <option value="product">For resale</option>}
+                              {posItems.length > 0 && <option value="pos">Restaurant (POS)</option>}
                             </select>
                           </td>
                         )}
                         <td>
-                          {l.kind === 'product' ? (
-                            <select className="form-select" value={l.product_id} onChange={e => updateLine(i, { product_id: e.target.value })}>
-                              <option value="">Choose the item…</option>
-                              {setup.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
+                          {l.kind === 'pos' ? (
+                            <ItemPicker value={l.pos_item_id} onChange={v => updateLine(i, { pos_item_id: v })} placeholder="Type to find the restaurant item…"
+                              options={posItems.map(x => ({ value: x.id, label: x.name, hint: x.unit }))} />
+                          ) : l.kind === 'product' ? (
+                            <ItemPicker value={l.product_id} onChange={v => updateLine(i, { product_id: v })} placeholder="Type to find the item…"
+                              options={setup.products.map(p => ({ value: p.id, label: p.name }))} />
                           ) : (
-                            <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
-                              <option value="">{setup.materials.length ? 'Choose the stock item…' : 'No stock items yet — add them on Stock → Stock items'}</option>
-                              {setup.materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.unit_of_measure})</option>)}
-                            </select>
+                            <ItemPicker value={l.raw_material_id} onChange={v => updateLine(i, { raw_material_id: v })}
+                              placeholder={setup.materials.length ? 'Type to find the stock item…' : 'No stock items yet — add them on Stock → Stock items'}
+                              options={setup.materials.map(m => ({ value: m.id, label: m.name, hint: m.unit_of_measure }))} />
                           )}
                         </td>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input className="form-input" style={{ textAlign: 'right' }} type="number" min="0" step={l.kind === 'material' ? '0.001' : '1'} value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
-                            {unit && <span className="text-muted" style={{ fontSize: 12 }}>{unit}</span>}
+                            <input className="form-input" style={{ textAlign: 'right' }} type="number" min="0" step={l.kind === 'product' ? '1' : 'any'} value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
+                            <UnitSwitch unit={unit} line={l} onFlip={() => updateLine(i, flipBig(l, unit, 'quantity', null))} />
                           </div>
                         </td>
                         <td><input className="form-input" style={{ textAlign: 'right' }} type="number" min="0" value={l.amount} onChange={e => updateLine(i, { amount: e.target.value })} /></td>
                         <td style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap' }}>
-                          {per ? <div>{fmtIDR(per)}{unit ? ` / ${unit}` : ''}</div> : <span className="text-muted">—</span>}
+                          {per ? <div>{fmtIDR(per)} {unit ? perUnit(unit, l) : ''}</div> : <span className="text-muted">—</span>}
                           {usual > 0 && <div style={{ color: pct >= 20 ? 'var(--danger, #b91c1c)' : 'var(--text-muted)' }}>usual {fmtIDR(usual)}{pct != null && pct !== 0 ? ` (${pct > 0 ? '+' : ''}${pct}%)` : ''}</div>}
                         </td>
                         <td>{lines.length > 1 && <button className="btn btn-icon" title="Remove line" onClick={() => setLines(ls => ls.filter((_, x) => x !== i))}>✕</button>}</td>
@@ -331,6 +343,7 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
 export function DirectPurchaseDetail({ p, onClose, onVoided }) {
   const { can } = useAuth();
   const [voiding, setVoiding] = useState(false);
+  const [sending, setSending] = useState(false);
   const [s1, s2] = STATUS[p.status];
   return (
     <div className="modal-backdrop">
@@ -358,9 +371,13 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
               <tbody>
                 {p.items.map(it => (
                   <tr key={it.id}>
-                    <td>{it.description}</td>
-                    <td style={{ textAlign: 'right' }}>{qtyText(it.quantity)}{it.unit_of_measure ? ` ${it.unit_of_measure}` : ''}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtIDR(it.line_total / it.quantity)}</td>
+                    <td>{it.description}
+                      {it.pos_item_id && <span className="badge badge-blue" style={{ marginLeft: 6 }}>Restaurant</span>}
+                      {it.pos_item_id && (it.pos_send_error
+                        ? <div style={{ fontSize: 11, color: 'var(--danger, #b91c1c)' }}>Not sent to the POS: {it.pos_send_error}</div>
+                        : Number(it.pos_sent_qty) >= Number(it.quantity) ? <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div> : null)}</td>
+                    <td style={{ textAlign: 'right' }}>{it.product_id ? qtyText(it.quantity) : fmtQty(it.quantity, it.unit_of_measure)}</td>
+                    <td style={{ textAlign: 'right' }}>{BIG_UNIT[it.unit_of_measure] ? `${fmtIDR(it.line_total / it.quantity * BIG_UNIT[it.unit_of_measure][1])} / ${BIG_UNIT[it.unit_of_measure][0]}` : fmtIDR(it.line_total / it.quantity)}</td>
                     <td style={{ textAlign: 'right' }}>{fmtIDR(it.line_total)}</td>
                   </tr>
                 ))}
@@ -392,7 +409,18 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
           </div>
         </div>
         <div className="modal-footer">
-          {!p.voided_at && <button className="btn btn-danger" onClick={() => setVoiding(true)}>Void…</button>}
+          {!p.voided_at && p.items.some(it => it.pos_item_id && Number(it.pos_sent_qty) < Number(it.quantity)) && (
+            <button className="btn btn-secondary" disabled={sending} onClick={async () => {
+              setSending(true);
+              try {
+                const r = await api.post(`/api/purchasing/direct/${p.id}/pos-send`);
+                if (r.data.failed) window.alert(`Not sent: ${r.data.error}`);
+                onVoided((await api.get(`/api/purchasing/direct/${p.id}`)).data, true);
+              } catch (err) { window.alert(err.response?.data?.error || 'Could not send'); }
+              setSending(false);
+            }}>{sending ? 'Sending…' : 'Send to the POS'}</button>
+          )}
+          {!p.voided_at && !p.items.some(it => it.pos_item_id && Number(it.pos_sent_qty) > 0) && <button className="btn btn-danger" onClick={() => setVoiding(true)}>Void…</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>

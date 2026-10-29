@@ -31,10 +31,11 @@ async function config(propertyId) {
 // The tablet orders from the POS when the link is set and POS Integration is on.
 const linked = cfg => !!(cfg.moduleOn && cfg.url && cfg.key);
 
-async function call(cfg, method, path, body) {
+// opts.timeoutMs: a shorter wait for lookups a screen should not hang on.
+async function call(cfg, method, path, body, { timeoutMs = TIMEOUT_MS } = {}) {
   if (!cfg.url || !cfg.key) throw new PosError('The POS link is not set up', 503, 'NOT_LINKED');
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res;
   try {
     res = await fetch(cfg.url + path, {

@@ -1,6 +1,6 @@
 # Permintaan pembelian
 
-Departemen meminta barang yang dibutuhkan; **purchasing** yang memesan. Satu daftar untuk semua: **[Operations → Purchase requests](/purchase-requests)**.
+Departemen meminta barang yang dibutuhkan; **purchasing** yang memesan. Ini tab pertama di **[Operations → Purchasing → Requests](/purchasing?tab=requests)** — siklus belanja dibaca dari kiri ke kanan: Requests → Purchase Orders → terima barang. Kepala departemen yang hanya punya izin *Purchase requests* melihat menu **Purchase requests**, yang membuka daftar yang sama.
 
 - Untuk **meminta**, perlu izin **Purchase requests**.
 - Untuk **memesan**, menolak atau menutup permintaan, perlu izin **Purchasing**. Owner punya keduanya.
@@ -20,10 +20,12 @@ Bahan dapur disimpan di **aplikasi restoran (POS)**, karena resepnya mengurangi 
 
 ## Memesan (purchasing)
 
-1. Centang barang yang akan dibeli. Boleh dari beberapa permintaan jika supplier-nya sama.
+1. **To order** berisi semua barang yang belum dipesan dari semua permintaan terbuka (**All requests** menampilkan per permintaan). Centang barang yang akan dibeli. Boleh dari beberapa permintaan jika supplier-nya sama.
 2. **Make purchase order** → pilih supplier, cek jumlah, dan isi harga.
    - Untuk barang yang diketik (tidak ada di daftar), pilih beli apa adanya (tidak masuk stok), atau masukkan ke salah satu barang stok.
-3. **PO draft** dibuat di **[Purchasing](/purchasing)**. Ajukan dan setujui seperti biasa. Nomor PO terlihat di permintaan.
+3. **PO draft** dibuat di tab **[Purchase Orders](/purchasing?tab=purchase_orders)**. Ajukan dan setujui seperti biasa. Nomor PO terlihat di permintaan.
+
+**Approve lewat Telegram.** Saat PO diajukan, semua yang mencentang *Approve purchase orders* di **[Settings → Notifications](/settings/reports)** (hanya chat pribadi) menerimanya di Telegram: supplier, setiap barang dengan harganya, dan totalnya. Harga yang jauh di atas biaya biasanya ditandai ⚠️. PO yang panjang dikirim dalam beberapa pesan, dan tombol **✅ Approve / ↩️ Send back** ada di bawah total pada pesan terakhir. Yang pertama menekan yang memutuskan. Tombol di chat yang lain hilang, dengan keterangan siapa yang memutuskan. *Send back* mengembalikan PO ke draft: buka di **Purchase Orders** → **✏ Edit** (jumlah, harga, supplier, tambah atau hapus baris), lalu **Submit for Approval** lagi. PO di PMS menunjukkan "by … on Telegram".
 
 Satu barang boleh masuk lebih dari satu PO (dibagi ke beberapa supplier). Permintaan menunjukkan berapa yang belum dipesan.
 

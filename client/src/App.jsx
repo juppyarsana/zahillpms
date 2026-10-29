@@ -63,7 +63,6 @@ import Reports from './pages/Reports';
 import BackOffice from './pages/BackOffice';
 
 import Stock from './pages/Stock';
-import PurchaseRequests from './pages/PurchaseRequests';
 import Expenses from './pages/Expenses';
 import Payables from './pages/Payables';
 import VendorPayouts from './pages/VendorPayouts';
@@ -268,9 +267,12 @@ function Home() {
 }
 
 // An old address that moved: same query string, new path.
-function KeepQuery({ to }) {
+function KeepQuery({ to, tab }) {
   const { search } = useLocation();
-  return <Navigate to={`${to}${search}`} replace />;
+  const q = new URLSearchParams(search);
+  if (tab) q.set('tab', tab);
+  const s = q.toString();
+  return <Navigate to={`${to}${s ? `?${s}` : ''}`} replace />;
 }
 
 // The Reports library: anyone with at least one report (lib/reportLibrary.js).
@@ -382,10 +384,10 @@ export default function App() {
                   <Route path="/reports"          element={<RequireReports><ReportsLibrary /></RequireReports>} />
                   <Route path="/insights/summary" element={<RequireMenu menuKey="reports"><RequireModule moduleName="financial"><Reports /></RequireModule></RequireMenu>} />
                   <Route path="/reports/revenue"  element={<KeepQuery to="/insights/summary" />} />
-                  <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
+                  <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase', 'purchase_request']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
                   <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />
-                  <Route path="/purchase-requests" element={<RequireMenu menuKey={['purchase_request', 'purchasing']}><RequireModule moduleName="back_office"><PurchaseRequests /></RequireModule></RequireMenu>} />
+                  <Route path="/purchase-requests" element={<KeepQuery to="/purchasing" tab="requests" />} />
                   <Route path="/vendor-payouts"  element={<RequireMenu menuKey="vendors"><RequireModule moduleName="activities"><VendorPayouts /></RequireModule></RequireMenu>} />
                   <Route path="/payables"        element={<RequireMenu menuKey="payables"><RequireModule moduleName="accounting"><Payables /></RequireModule></RequireMenu>} />
                   <Route path="/expenses"        element={<RequireMenu menuKey="expenses"><RequireModule moduleName="back_office"><Expenses /></RequireModule></RequireMenu>} />

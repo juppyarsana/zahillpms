@@ -19,10 +19,10 @@ const { todayWITA } = require('./roomChargeService');
 const num = v => parseFloat(v) || 0;
 const NOT_LINKED = 'The POS link is not set up (Property Details → POS Integration → Room tablet orders)';
 
-async function inventory(propertyId) {
+async function inventory(propertyId, opts) {
   const cfg = await config(propertyId);
   if (!cfg.url || !cfg.key) return { linked: false, items: [] };
-  const r = await call(cfg, 'GET', '/api/hotel/inventory');
+  const r = await call(cfg, 'GET', '/api/hotel/inventory', undefined, opts);
   return { linked: true, items: Array.isArray(r?.items) ? r.items : [] };
 }
 
@@ -45,6 +45,7 @@ async function send(propertyId, poId) {
      JOIN purchase_orders po ON po.id = i.purchase_order_id
      LEFT JOIN suppliers s ON s.id = po.supplier_id
      WHERE i.purchase_order_id = $1 AND po.property_id = $2
+       AND po.voided_at IS NULL
        AND i.pos_item_id IS NOT NULL AND i.received_quantity > i.pos_sent_qty`, [poId, propertyId]);
   if (!lines.length) return { sent: 0, failed: 0, error: null };
   let cfg;

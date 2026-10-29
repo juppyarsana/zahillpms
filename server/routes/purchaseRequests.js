@@ -19,7 +19,8 @@ router.get('/setup', canAsk, async (req, res) => {
     const items = await stock.listItems(req.propertyId);
     res.json({
       departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
-      items: items.map(i => ({ key: i.key, name: i.name, unit: i.unit, on_hand: i.on_hand, low: i.low, out: i.out, category_label: i.category_label })),
+      items: items.map(i => ({ key: i.key, name: i.name, unit: i.unit, on_hand: i.on_hand, low: i.low, out: i.out, category_label: i.category_label,
+        ...(isPurchasing(req) ? { avg_cost: i.avg_cost } : {}) })),   // the price suggested on a PO
       can_order: isPurchasing(req),
     });
   } catch (err) { res.status(500).json({ error: err.message }); }

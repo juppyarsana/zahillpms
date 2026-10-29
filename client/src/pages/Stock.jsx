@@ -1,12 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { COST_CATEGORIES } from '../lib/costLists';
+import { useAuth } from '../context/AuthContext';
+import { BIG_UNIT, fmtQty } from '../lib/units';
 
 // Operations → Stock (migration 136): everything kept in stock — stock items
 // and Sales items with Track stock — with Adjust (one item, a known event),
 // Stock opname (every item counted on one day), Usage between two opnames and
 // Stock value. Buying is on Purchasing.
+//
+// Two stocks, chosen at the top: Hotel stock (kept here) and Restaurant stock
+// (kept and counted by the chef in the POS, read here through the hotel link:
+// its items, each item's history and usage — used vs by recipe — from the
+// POS's stock ledger). Stock value adds both up.
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
 const signedIDR = n => `${n < 0 ? '−' : n > 0 ? '+' : ''}${fmtIDR(Math.abs(n))}`;
@@ -26,34 +33,56 @@ async function download(url, filename) {
   const a = document.createElement('a'); a.href = blobUrl; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
 }
 
-const TABS = [
-  { key: 'items', label: 'Stock items' },
-  { key: 'opname', label: 'Stock opname' },
-  { key: 'usage', label: 'Usage' },
-  { key: 'value', label: 'Stock value' },
-];
+const TABS = {
+  hotel: [
+    { key: 'items', label: 'Stock items' },
+    { key: 'opname', label: 'Stock opname' },
+    { key: 'usage', label: 'Usage' },
+    { key: 'value', label: 'Stock value' },
+  ],
+  restaurant: [
+    { key: 'items', label: 'Stock items' },
+    { key: 'usage', label: 'Usage' },
+    { key: 'value', label: 'Stock value' },
+  ],
+};
 
 export default function Stock() {
-  const [tab, setTab] = useState('items');
+  const { hasModule } = useAuth();
+  const withPos = hasModule('pos_integration');
+  const [params, setParams] = useSearchParams();
+  const stock = withPos && params.get('stock') === 'restaurant' ? 'restaurant' : 'hotel';
+  const tab = TABS[stock].some(t => t.key === params.get('tab')) ? params.get('tab') : 'items';
+  const go = (st, tb) => setParams(p => { const n = new URLSearchParams(p); n.set('stock', st); n.set('tab', tb); return n; }, { replace: true });
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Stock</div>
-          <div className="page-subtitle">What is in stock, what was used, and the stock opname — buying is on Purchasing</div>
+          <div className="page-subtitle">{stock === 'restaurant'
+            ? 'The restaurant\'s stock — kept and counted by the chef in the POS, shown here'
+            : 'What is in stock, what was used, and the stock opname — buying is on Purchasing'}</div>
         </div>
         <div className="flex gap-2">
           <Link className="btn btn-secondary" to="/guide/stock">📘 Guide</Link>
-          <Link className="btn btn-primary" to="/purchase-requests?new=1&low=1" title="Ask purchasing to buy — starts with the items that are low or out">🛒 Request to buy</Link>
+          <Link className="btn btn-primary" to="/purchasing?tab=requests&new=1&low=1" title="Ask purchasing to buy — starts with the items that are low or out">🛒 Request to buy</Link>
         </div>
       </div>
+      {withPos && (
+        <div className="seg" style={{ marginBottom: 12 }}>
+          <button type="button" className={stock === 'hotel' ? 'active' : ''} onClick={() => go('hotel', tab === 'usage' || tab === 'value' ? tab : 'items')}>Hotel stock</button>
+          <button type="button" className={stock === 'restaurant' ? 'active' : ''} onClick={() => go('restaurant', tab === 'usage' || tab === 'value' ? tab : 'items')}>Restaurant stock</button>
+        </div>
+      )}
       <div className="tab-bar">
-        {TABS.map(t => <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>)}
+        {TABS[stock].map(t => <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => go(stock, t.key)}>{t.label}</button>)}
       </div>
-      {tab === 'items' && <ItemsTab />}
-      {tab === 'opname' && <OpnameTab />}
-      {tab === 'usage' && <UsageTab />}
-      {tab === 'value' && <ValueTab />}
+      {stock === 'hotel' && tab === 'items' && <ItemsTab />}
+      {stock === 'hotel' && tab === 'opname' && <OpnameTab />}
+      {stock === 'hotel' && tab === 'usage' && <UsageTab />}
+      {stock === 'restaurant' && tab === 'items' && <RestaurantTab />}
+      {stock === 'restaurant' && tab === 'usage' && <RestaurantUsageTab />}
+      {tab === 'value' && <ValueTab withPos={withPos} />}
     </div>
   );
 }
@@ -508,10 +537,190 @@ function UsageTab() {
   );
 }
 
+// ───────────────────────────── Restaurant (POS) ─────────────────────────────
+
+const POS_KIND = { ingredient: 'Ingredient', packaging: 'Packaging & supplies' };
+const posCost = i => (BIG_UNIT[i.unit] ? `${fmtIDR(i.avg_cost * BIG_UNIT[i.unit][1])} / ${BIG_UNIT[i.unit][0]}` : `${fmtIDR(i.avg_cost)} / ${i.unit || 'unit'}`);
+
+function useRestaurantStock(on = true) {
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!on) return;
+    api.get('/api/stock/restaurant').then(r => setPos(r.data)).catch(err => setPos({ linked: true, items: [], error: err.response?.data?.error || 'Could not read the restaurant stock' }));
+  }, [on]);
+  return pos;
+}
+
+function RestaurantTab() {
+  const pos = useRestaurantStock();
+  const [history, setHistory] = useState(null);
+  const [search, setSearch] = useState('');
+  const [kind, setKind] = useState('all');
+  const [lowOnly, setLowOnly] = useState(false);
+  if (!pos) return <div className="text-muted">Loading…</div>;
+  if (!pos.linked) return <div className="alert alert-warn"><div>The restaurant app (POS) is not linked — Property Details → POS Integration → Room tablet orders.</div></div>;
+  const q = search.trim().toLowerCase();
+  const shown = pos.items.filter(i => (kind === 'all' || i.category === kind) && (!lowOnly || i.low) && (!q || i.name.toLowerCase().includes(q)));
+  const total = pos.items.reduce((t, i) => t + (i.value || 0), 0);
+  const low = pos.items.filter(i => i.low).length;
+  return (
+    <div>
+      {pos.error && <div className="alert alert-error"><div>{pos.error}</div></div>}
+      <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
+        <div className="stat-card"><div className="stat-label">Value on hand</div><div className="stat-value">{fmtIDR(total)}</div></div>
+        <div className="stat-card"><div className="stat-label">Items</div><div className="stat-value">{pos.items.length}</div></div>
+        <div className="stat-card"><div className="stat-label">Low</div><div className="stat-value">{low}</div></div>
+      </div>
+      <div className="page-toolbar">
+        <input className="form-input" style={{ maxWidth: 260 }} placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="seg">
+          {[['all', 'All'], ['ingredient', 'Ingredients'], ['packaging', 'Packaging & supplies']].map(([k, l]) =>
+            <button key={k} className={kind === k ? 'active' : ''} onClick={() => setKind(k)}>{l}</button>)}
+        </div>
+        <label className="flex gap-1" style={{ alignItems: 'center', fontSize: 13 }}><input type="checkbox" checked={lowOnly} onChange={e => setLowOnly(e.target.checked)} /> Low only</label>
+      </div>
+      <div className="card">
+        <div className="table-wrap">
+          <table style={{ minWidth: 640 }}>
+            <thead><tr><th>Item</th><th>Kind</th><th style={{ textAlign: 'right' }}>On hand</th><th style={{ textAlign: 'right' }}>Average cost</th><th style={{ textAlign: 'right' }}>Value</th></tr></thead>
+            <tbody>{shown.map(i => (
+              <tr key={i.id} style={{ cursor: 'pointer' }} onClick={() => setHistory(i)}>
+                <td>{i.name}{i.low && <span className="badge badge-red" style={{ marginLeft: 6 }}>Low</span>}{i.stock < 0 && <span className="badge badge-red" style={{ marginLeft: 6 }}>Below 0</span>}</td>
+                <td className="text-muted" style={{ fontSize: 12 }}>{POS_KIND[i.category] || i.category}</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} title={`${i.stock} ${i.unit}`}>{fmtQty(i.stock, i.unit)}</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{i.avg_cost != null ? posCost(i) : '—'}</td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{i.value != null ? fmtIDR(i.value) : '—'}</td>
+              </tr>))}
+              {!shown.length && <tr><td colSpan={5} className="text-muted">Nothing to show.</td></tr>}</tbody>
+          </table>
+        </div>
+      </div>
+      {history && <RestaurantHistoryModal item={history} onClose={() => setHistory(null)} />}
+      <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
+        Tap an item for its history. Read from the restaurant app (POS), where the chef counts and adjusts it (its stock opname) and its recipes take it off at each sale.
+        To buy for the restaurant: a purchase request, a purchase order or Purchasing → Bought without a PO — received goods go into the POS stock by themselves.
+      </p>
+    </div>
+  );
+}
+
+function RestaurantHistoryModal({ item, onClose }) {
+  const [h, setH] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get(`/api/stock/restaurant/${item.id}/history`).then(r => setH(r.data))
+      .catch(err => { setError(err.response?.data?.error || 'Could not load the history'); setH({ lines: [] }); });
+  }, [item.id]);
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 780, width: '100%' }}>
+        <div className="modal-header"><div><div className="modal-title">{item.name}</div><div className="text-muted" style={{ fontSize: 12 }}>Restaurant · {POS_KIND[item.category] || item.category} · {fmtQty(item.stock, item.unit)} in stock{item.value != null ? ` · ${fmtIDR(item.value)}` : ''}</div></div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error"><div>{error}</div></div>}
+          {!h ? <div className="text-muted">Loading…</div> : (
+            <div className="table-wrap">
+              <table style={{ fontSize: 13, minWidth: 620 }}>
+                <thead><tr><th>When</th><th>What</th><th style={{ textAlign: 'right' }}>Change</th><th style={{ textAlign: 'right' }}>After</th><th>Note</th></tr></thead>
+                <tbody>
+                  {h.lines.map(l => (
+                    <tr key={l.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmtDateTime(l.at)}</td>
+                      <td>{l.reason_label}{l.what ? <span className="text-muted"> · {l.what}</span> : null}{l.by ? <div className="text-muted" style={{ fontSize: 11 }}>{l.by}</div> : null}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: l.change < 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>{l.change > 0 ? '+' : ''}{fmtQty(l.change, item.unit)}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: l.after < 0 ? 'var(--danger-text)' : undefined }}>{fmtQty(l.after, item.unit)}</td>
+                      <td className="text-muted" style={{ maxWidth: 220 }}>{l.note || ''}</td>
+                    </tr>
+                  ))}
+                  {h.lines.length === 0 && !error && <tr><td colSpan={5} className="text-muted" style={{ textAlign: 'center', padding: 16 }}>No movements yet</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Kept by the POS since its stock history began. Changes are made in the POS (stock opname) — purchases arrive from the hotel's purchase orders.</p>
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+const HISTORY_START = '2000-01-01T00:00:00Z';
+
+function RestaurantUsageTab() {
+  const [opnames, setOpnames] = useState(null);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [u, setU] = useState(null);
+  const [error, setError] = useState('');
+  const [kind, setKind] = useState('all');
+  useEffect(() => {
+    api.get('/api/stock/restaurant/opnames').then(r => {
+      setOpnames(r.data);
+      if (r.data.length >= 2) { setFrom(r.data[1].created_at); setTo(r.data[0].created_at); }
+      else if (r.data.length === 1) setFrom(r.data[0].created_at);
+      else setFrom(HISTORY_START);
+    }).catch(err => { setOpnames([]); setFrom(HISTORY_START); setError(err.response?.data?.error || ''); });
+  }, []);
+  useEffect(() => {
+    if (!from) return;
+    setError('');
+    api.get('/api/stock/restaurant/usage', { params: { from, to: to || undefined } }).then(r => setU(r.data))
+      .catch(err => { setU(null); setError(err.response?.data?.error || 'Could not load'); });
+  }, [from, to]);
+  const label = o => `${fmtDay(o.date)} · stock opname${o.by ? ` (${o.by})` : ''}`;
+  const later = (opnames || []).filter(o => from && o.created_at > from);
+  const rows = (u?.items || []).filter(i => kind === 'all' || i.category === kind);
+  const sum = k => rows.reduce((t, i) => t + i[k], 0);
+  return (
+    <div>
+      <div className="page-toolbar">
+        <label style={{ fontSize: 13 }}>From <select className="form-select" style={{ width: 'auto', display: 'inline-block' }} value={from} onChange={e => { setFrom(e.target.value); setTo(''); }}>
+          <option value={HISTORY_START}>When the stock history began</option>
+          {(opnames || []).map(o => <option key={o.id} value={o.created_at}>{label(o)}</option>)}</select></label>
+        <label style={{ fontSize: 13 }}>to <select className="form-select" style={{ width: 'auto', display: 'inline-block' }} value={to} onChange={e => setTo(e.target.value)}>
+          <option value="">Now</option>{later.map(o => <option key={o.id} value={o.created_at}>{label(o)}</option>)}</select></label>
+        <div className="seg">
+          {[['all', 'All'], ['ingredient', 'Ingredients'], ['packaging', 'Packaging & supplies']].map(([k, l]) =>
+            <button key={k} type="button" className={kind === k ? 'active' : ''} onClick={() => setKind(k)}>{l}</button>)}
+        </div>
+      </div>
+      {error && <div className="alert alert-error"><div>{error}</div></div>}
+      {u && (<>
+        <p className="text-muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
+          <b>By recipe</b> = what the dishes sold should have used. <b>Used</b> = opening + bought − closing. The <b>difference</b> is what the stock opname found missing (red) or extra — waste, portions, a recipe that is wrong.
+          It only shows once a stock opname is inside the period; until then used = by recipe. Values at today's average cost.
+        </p>
+        <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
+          <div className="stat-card"><div className="stat-label">Used</div><div className="stat-value">{fmtIDR(sum('used_value'))}</div></div>
+          <div className="stat-card"><div className="stat-label">By recipe</div><div className="stat-value">{fmtIDR(sum('by_recipe_value'))}</div></div>
+          <div className="stat-card"><div className="stat-label">Difference</div><div className="stat-value" style={{ color: sum('difference_value') > 0.5 ? 'var(--danger-text)' : undefined }}>{signedIDR(sum('difference_value'))}</div></div>
+        </div>
+        <div className="card">
+          <div className="table-wrap">
+            <table style={{ minWidth: 900, fontSize: 13 }}>
+              <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Opening</th><th style={{ textAlign: 'right' }}>Bought</th><th style={{ textAlign: 'right' }}>By recipe</th><th style={{ textAlign: 'right' }}>Used</th><th style={{ textAlign: 'right' }}>Difference</th><th style={{ textAlign: 'right' }}>Closing</th><th style={{ textAlign: 'right' }}>Used value</th></tr></thead>
+              <tbody>{rows.map(r => (
+                <tr key={r.id}>
+                  <td><div style={{ fontWeight: 600 }}>{r.name}</div><div className="text-muted" style={{ fontSize: 11 }}>{POS_KIND[r.category] || r.category}</div></td>
+                  {['opening', 'bought', 'by_recipe', 'used'].map(k => <td key={k} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r[k] ? fmtQty(r[k], r.unit) : <span className="text-muted">—</span>}</td>)}
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: r.difference > 0 ? 'var(--danger-text)' : undefined }}>{r.difference ? `${r.difference > 0 ? '+' : ''}${fmtQty(r.difference, r.unit)}` : <span className="text-muted">—</span>}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: r.closing < 0 ? 'var(--danger-text)' : undefined }}>{fmtQty(r.closing, r.unit)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(r.used_value)}</td>
+                </tr>))}
+                {!rows.length && <tr><td colSpan={8} className="text-muted">Nothing in this period.</td></tr>}</tbody>
+            </table>
+          </div>
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 // ───────────────────────────── Stock value ─────────────────────────────
 
-function ValueTab() {
+function ValueTab({ withPos }) {
   const [items, setItems] = useState([]);
+  const pos = useRestaurantStock(withPos);
   useEffect(() => { api.get('/api/stock/items').then(r => setItems(r.data)).catch(() => {}); }, []);
   const cats = [];
   for (const i of items) {
@@ -520,27 +729,40 @@ function ValueTab() {
     c.items++; c.value += i.value || 0; if (i.avg_cost == null && i.on_hand > 0) c.uncosted++;
   }
   cats.sort((a, b) => b.value - a.value);
-  const total = cats.reduce((t, c) => t + c.value, 0);
+  const hotel = cats.reduce((t, c) => t + c.value, 0);
+  const posCats = [];
+  for (const i of (pos?.linked ? pos.items : [])) {
+    const label = `Restaurant — ${POS_KIND[i.category] || i.category}`;
+    let c = posCats.find(x => x.label === label);
+    if (!c) posCats.push(c = { label, items: 0, value: 0, pos: true });
+    c.items++; c.value += i.value || 0;
+  }
+  const restaurant = posCats.reduce((t, c) => t + c.value, 0);
+  const total = hotel + restaurant;
+  const rows = [...cats, ...posCats];
   const uncosted = items.filter(i => i.avg_cost == null && i.on_hand > 0);
   return (
     <div>
       <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
         <div className="stat-card"><div className="stat-label">Value on hand</div><div className="stat-value">{fmtIDR(total)}</div></div>
-        <div className="stat-card"><div className="stat-label">Items</div><div className="stat-value">{items.length}</div></div>
+        {posCats.length > 0 && <div className="stat-card"><div className="stat-label">Hotel (PMS)</div><div className="stat-value">{fmtIDR(hotel)}</div></div>}
+        {posCats.length > 0 && <div className="stat-card"><div className="stat-label">Restaurant (POS)</div><div className="stat-value">{fmtIDR(restaurant)}</div></div>}
+        {!posCats.length && <div className="stat-card"><div className="stat-label">Items</div><div className="stat-value">{items.length}</div></div>}
       </div>
+      {pos?.error && <div className="alert alert-error"><div>{pos.error} — the total shows the hotel's stock only.</div></div>}
       {uncosted.length > 0 && <div className="alert alert-warn"><div>{uncosted.length} item(s) in stock have no cost yet and are left out of the value: {uncosted.map(i => i.name).join(', ')}. Their cost is set by the next purchase.</div></div>}
       <div className="card">
         <div className="table-wrap">
           <table>
             <thead><tr><th>Category</th><th style={{ textAlign: 'right' }}>Items</th><th style={{ textAlign: 'right' }}>Value</th><th style={{ textAlign: 'right' }}>Share</th></tr></thead>
-            <tbody>{cats.map(c => (
+            <tbody>{rows.map(c => (
               <tr key={c.label}><td style={{ fontWeight: 600 }}>{c.label}</td><td style={{ textAlign: 'right' }}>{c.items}</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(c.value)}</td><td style={{ textAlign: 'right' }}>{total ? Math.round(c.value / total * 100) : 0}%</td></tr>))}</tbody>
             <tfoot><tr><td style={{ fontWeight: 700 }}>Total</td><td></td><td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtIDR(total)}</td><td></td></tr></tfoot>
           </table>
         </div>
       </div>
-      <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Each item at its average cost (what the stock on hand cost to buy). For the books: use the value of a finished stock opname as the closing stock.</p>
+      <p className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>Each item at its average cost (what the stock on hand cost to buy){posCats.length ? ' — the restaurant\'s as the POS has it right now' : ''}. For the books: use the value of a finished stock opname as the closing stock.</p>
     </div>
   );
 }

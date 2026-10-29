@@ -41,7 +41,8 @@ async function connectUrls(propertyId, linkToken) {
 }
 
 // Bot tokens with something to wait for (own bot, else platform bot): a
-// pending Connect link, or an open complimentary approval request.
+// pending Connect link, an open complimentary approval request, or a purchase
+// order waiting for approval on Telegram.
 async function tokensWithPendingLinks() {
   const { rows } = await db.query(
     `SELECT DISTINCT ps.telegram_bot_token AS token
@@ -52,7 +53,13 @@ async function tokensWithPendingLinks() {
      SELECT DISTINCT ps.telegram_bot_token AS token
      FROM complimentary_requests cr
      LEFT JOIN property_settings ps ON ps.property_id = cr.property_id
-     WHERE cr.status = 'pending' AND cr.expires_at > NOW()`
+     WHERE cr.status = 'pending' AND cr.expires_at > NOW()
+     UNION
+     SELECT DISTINCT ps.telegram_bot_token AS token
+     FROM purchase_order_approval_messages m
+     JOIN purchase_orders po ON po.id = m.purchase_order_id AND po.status = 'pending_approval'
+     LEFT JOIN property_settings ps ON ps.property_id = m.property_id
+     WHERE m.is_open`
   );
   return [...new Set(rows.map(r => r.token || process.env.TELEGRAM_BOT_TOKEN).filter(Boolean))];
 }
@@ -98,7 +105,10 @@ async function handleStart(botToken, linkToken, chat) {
 
 async function processUpdate(botToken, u) {
   if (u.callback_query) {
-    // Lazy: complimentaryService requires this file (ensurePolling).
+    // Lazy: both services require this file (ensurePolling).
+    if (String(u.callback_query.data || '').startsWith('po:')) {
+      return require('./poApproval').handleButton(botToken, u.callback_query);
+    }
     return require('./complimentaryService').handleButton(botToken, u.callback_query);
   }
   const msg = u.message;

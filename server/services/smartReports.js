@@ -172,6 +172,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  approve_purchase_order: {
+    type: 'alert',
+    label: 'Approve purchase orders',
+    when: 'When a PO is submitted for approval',
+    description: 'A purchase order waiting for approval: supplier, every item with its price (a price well above the usual cost is marked), the total, and Approve / Send back buttons. A long PO comes in several messages, the buttons under the total. The first person to press decides; the others see who did. Personal chats only.',
+    defaultRoles: ['owner'],
+    channels: ['telegram'],
+    paid: false,
+  },
   daily_close: {
     type: 'scheduled',
     label: 'Daily Close',

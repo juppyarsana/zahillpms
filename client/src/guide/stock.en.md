@@ -4,6 +4,8 @@
 
 Stock goes up when it is **bought** (on Purchasing), down when it is **sold**, and with **Adjust** for anything else. Click an item to see its history: every change, who and when, and what was left after it.
 
+At the top, choose **Hotel stock** or **Restaurant stock** (when the restaurant app is linked). Everything below is about the hotel's stock; the restaurant's is described at the end.
+
 ## Adjust — one item, something you know happened
 
 Press **Adjust** on the item and choose why:
@@ -52,7 +54,15 @@ It needs at least one finished stock opname to start from.
 
 ## Stock value
 
-**Stock value** tab: what the stock on hand is worth, by category, each item at its average cost (what it cost to buy). For the books, the accountant uses the value of a finished stock opname as the closing stock.
+**Stock value** tab: what the stock on hand is worth, by category, each item at its average cost (what it cost to buy) — the hotel's and the restaurant's together, with one total. For the books, the accountant uses the value of a finished stock opname as the closing stock.
+
+## Restaurant stock
+
+The kitchen and bar ingredients and their supplies are kept in the **restaurant app (POS)**: its recipes take them off at each sale, and the **chef counts and adjusts them there** (Inventory → Stock Opname). Here they are shown **read-only**:
+
+- **Stock items** — every item with what is left (in kg / L), its average cost and value. Click one for its **history**: each sale (with the bill number), purchase, stock opname, edited bill.
+- **Usage** — between two of the chef's stock opnames: **by recipe** (what the dishes sold should have used) and **used** (opening + bought − closing). The **difference** is what the count found missing — waste, portions, a recipe that is wrong. Ask the chef about big red ones.
+- Buying for the restaurant is done here, by purchasing (a purchase request, a PO, or Bought without a PO with kind *Restaurant (POS)*). The goods go into the POS stock by themselves — the chef never adds purchases in the POS.
 
 ## Write-offs on Telegram
 

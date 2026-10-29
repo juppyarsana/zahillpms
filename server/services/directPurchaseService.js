@@ -19,7 +19,14 @@
 // exceptions — a big purchase, a price well above the item's average cost, a
 // purchase dated well in the past or on a closed accounting day — and voids.
 // Every purchase is counted in the Daily Close (dailyClose.directPurchases).
+//
+// Restaurant goods (a POS inventory item, `pos_item_id`) are not PMS stock:
+// after the save they are sent to the POS as a purchase batch, exactly like a
+// received PO line (posPurchases.sendToPos — retry-safe, "Send to the POS"
+// when it was down). Such a purchase can't be voided once the POS has the
+// goods: the POS stock is corrected there (stock opname).
 const db = require('../db');
+const posPurchases = require('./posPurchases');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 const { addStock, logEvent, nextPoNumber } = require('./purchasingService');
@@ -72,8 +79,10 @@ async function setup(propertyId) {
     db.query(`SELECT id, label FROM payment_methods WHERE property_id = $1 AND is_active AND id NOT LIKE 'ota%'
               ORDER BY sort_order, label`, [propertyId]),
   ]);
+  let pos = { linked: false, items: [] };
+  try { pos = await posPurchases.inventory(propertyId); } catch (err) { pos = { linked: true, items: [], error: err.message }; }
   return {
-    suppliers, materials, products, payment_methods: methods,
+    suppliers, materials, products, payment_methods: methods, pos,
     categories: COST_CATEGORIES.map(([key, label, , department]) => ({ key, label, department })),
     departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
     today: todayWITA(), closed_through: await closedThrough(propertyId),
@@ -114,14 +123,24 @@ async function clean(client, propertyId, body) {
   if (!raw.length) return fail(400, 'Add at least one item');
   if (raw.length > MAX_LINES) return fail(400, `At most ${MAX_LINES} lines`);
   const items = [];
+  let posItems = null;
   for (const l of raw) {
-    if (!!l.product_id === !!l.raw_material_id) return fail(400, 'Choose the item on every line');
+    if ([l.product_id, l.raw_material_id, l.pos_item_id].filter(Boolean).length !== 1) return fail(400, 'Choose the item on every line');
     const qty = Number(l.quantity);
     const amount = Number(l.amount);
     if (!Number.isFinite(qty) || qty <= 0 || qty >= 1e7) return fail(400, 'Every line needs how many');
     if (!Number.isFinite(amount) || amount <= 0 || amount >= 1e12) return fail(400, 'Every line needs the price paid');
     if (Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6) return fail(400, 'At most 2 decimals');
-    if (l.product_id) {
+    if (l.pos_item_id) {
+      if (!posItems) {
+        try { posItems = (await posPurchases.inventory(propertyId)).items; }
+        catch (err) { return fail(502, `The restaurant app (POS) can't be reached: ${err.message}`); }
+      }
+      const it = posItems.find(x => x.id === String(l.pos_item_id));
+      if (!it) return fail(400, 'A restaurant item was not found in the POS');
+      if (Math.abs(qty * 1000 - Math.round(qty * 1000)) > 1e-6) return fail(400, 'At most 3 decimals in how many');
+      items.push({ product_id: null, raw_material_id: null, pos_item_id: it.id, description: it.name, unit: it.unit || null, quantity: qty, amount: r2(amount) });
+    } else if (l.product_id) {
       if (!Number.isInteger(qty)) return fail(400, 'Sales items are counted in whole units');
       const { rows: [p] } = await client.query(
         'SELECT id, name, track_stock, per_night, open_price FROM products WHERE id = $1 AND property_id = $2', [l.product_id, propertyId]);
@@ -186,9 +205,10 @@ async function create(propertyId, body, user) {
     for (const it of v.items) {
       const unitCost = it.amount / it.quantity;
       await client.query(
-        `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, description, quantity, unit_cost, received_quantity, line_total)
-         VALUES ($1, $2, $3, $4, $5, $6, $5, $7)`,
-        [po.id, it.product_id, it.raw_material_id, it.description, it.quantity, r2(unitCost), it.amount]);
+        `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, pos_item_id, unit, description, quantity, unit_cost, received_quantity, line_total)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $9)`,
+        [po.id, it.product_id, it.raw_material_id, it.pos_item_id || null, it.pos_item_id ? it.unit : null, it.description, it.quantity, r2(unitCost), it.amount]);
+      if (it.pos_item_id) continue;   // sent to the POS after the commit
       const { oldAvg } = await addStock(client, propertyId, it, it.quantity, unitCost, po.id, user.id);
       if (oldAvg > 0) priceJumps.push({ ...it, unit_cost: unitCost, usual: oldAvg, pct: Math.round((unitCost / oldAvg - 1) * 100) });
     }
@@ -215,7 +235,8 @@ async function create(propertyId, body, user) {
       await logEvent(client, po.id, `Bought without a PO — to pay later, bill ${b.bill_no_text} in Payables`, user.id);
     }
     await client.query('COMMIT');
-    result = { purchase: await get(propertyId, po.id), money };
+    const posSync = v.items.some(i => i.pos_item_id) ? await posPurchases.sendToPos(propertyId, po.id) : null;
+    result = { purchase: await get(propertyId, po.id), money, pos_sync: posSync };
 
     // What the alert looks at — worked out now, sent after the commit.
     const s = await alertSettings(propertyId);
@@ -287,10 +308,15 @@ async function voidPurchase(propertyId, poId, reason, user) {
     }
 
     const { rows: items } = await client.query('SELECT * FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
+    const atPos = items.filter(it => it.pos_item_id && num(it.pos_sent_qty) > 0);
+    if (atPos.length) {
+      await client.query('ROLLBACK');
+      return fail(409, `${atPos.map(it => it.description).join(', ')} ${atPos.length > 1 ? 'are' : 'is'} already in the restaurant's stock (POS) — a purchase with restaurant goods can't be voided. Correct the POS stock with a stock opname there.`, 'AT_POS');
+    }
     const note = `${po.po_number} voided: ${reason}`.slice(0, 500);
     for (const it of items) {
       const qty = num(it.received_quantity);
-      if (qty <= 0) continue;
+      if (qty <= 0 || it.pos_item_id) continue;
       const cost = it.line_total != null ? num(it.line_total) / num(it.quantity) : num(it.unit_cost);
       const table = it.product_id ? 'products' : 'raw_materials';
       const id = it.product_id || it.raw_material_id;
@@ -359,7 +385,7 @@ const LIST_COLS = `po.id, po.po_number, to_char(po.purchased_on, 'YYYY-MM-DD') A
   sb.total AS bill_total, COALESCE((SELECT SUM(a.amount) FROM supplier_payment_allocations a
     JOIN supplier_payments p ON p.id = a.payment_id AND NOT p.is_voided WHERE a.bill_id = sb.id), 0) AS bill_paid,
   (SELECT string_agg(i.description || ' ' || trim(trailing '.' from trim(trailing '0' from i.quantity::text))
-     || COALESCE(' ' || rm.unit_of_measure, ''), ', ' ORDER BY i.description)
+     || COALESCE(' ' || COALESCE(rm.unit_of_measure, i.unit), ''), ', ' ORDER BY i.description)
    FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id WHERE i.purchase_order_id = po.id) AS items_text`;
 const LIST_FROM = `FROM purchase_orders po
   LEFT JOIN suppliers s ON s.id = po.supplier_id
@@ -398,7 +424,8 @@ async function get(propertyId, poId) {
   if (!r) return null;
   const [{ rows: items }, { rows: events }] = await Promise.all([
     db.query(`SELECT i.id, i.description, i.quantity, i.unit_cost, COALESCE(i.line_total, i.quantity * i.unit_cost) AS line_total,
-                     i.product_id, i.raw_material_id, rm.unit_of_measure
+                     i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.pos_send_error,
+                     COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
               WHERE i.purchase_order_id = $1 ORDER BY i.description`, [poId]),
     db.query(`SELECT e.id, e.note, e.created_at, u.name AS created_by_name FROM purchase_order_events e

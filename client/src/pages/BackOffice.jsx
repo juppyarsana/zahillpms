@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import PurchaseRequests from './PurchaseRequests';
 import api from '../services/api';
 import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
 import ReasonModal from '../components/ReasonModal';
+import ItemPicker from '../components/ItemPicker';
 import { DirectPurchasesTab, DirectPurchaseDetail } from '../components/DirectPurchases';
+import { BIG_UNIT, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit } from '../lib/units';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(str) {
@@ -52,6 +55,7 @@ const EMPTY_EXPENSE = { category: 'utilities', department: 'engineering', amount
 // In the order of the work: buying, then the supplier list. The stock itself
 // (items, adjust, stock opname, usage, value) is its own page, pages/Stock.jsx.
 const TABS = [
+  { key: 'requests', label: 'Requests' },
   { key: 'purchase_orders', label: 'Purchase Orders' },
   { key: 'direct', label: 'Bought without a PO' },
   { key: 'suppliers', label: 'Suppliers' },
@@ -59,32 +63,47 @@ const TABS = [
 
 export default function BackOffice() {
   const { can } = useAuth();
-  // `direct_purchase` alone (e.g. the accountant) = only Buy without a PO.
+  const [params, setParams] = useSearchParams();
+  // The buying cycle, left to right: a department asks (Requests) → purchasing
+  // orders (Purchase Orders) or buys on the spot (Bought without a PO).
+  // `purchasing` sees every tab; `direct_purchase` alone (e.g. the accountant)
+  // only Buy without a PO; `purchase_request` alone (a department head) only
+  // Requests — to ask and follow what they asked for.
   const full = can('purchasing');
-  const tabs = full ? TABS : TABS.filter(t => t.key === 'direct');
-  const [tab, setTab] = useState(full ? 'purchase_orders' : 'direct');
+  const tabs = full ? TABS : TABS.filter(t =>
+    (t.key === 'direct' && can('direct_purchase')) || (t.key === 'requests' && can('purchase_request')));
+  const asked = params.get('tab');
+  const tab = tabs.some(t => t.key === asked) ? asked
+    : params.get('po') && full ? 'purchase_orders' : tabs[0]?.key;
+  const setTab = key => setParams({ tab: key }, { replace: true });
+  const onlyRequests = tabs.length === 1 && tab === 'requests';
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Purchasing</div>
-          <div className="page-subtitle">{full ? 'Purchase orders, stock bought without a PO, and suppliers — the stock itself is on Stock' : 'Stock bought without a purchase order'}</div>
+          <div className="page-title">{onlyRequests ? 'Purchase requests' : 'Purchasing'}</div>
+          <div className="page-subtitle">{onlyRequests ? 'Ask purchasing for what your department needs, and follow it until it arrives'
+            : full ? 'Requests from the departments, purchase orders, stock bought without a PO, and suppliers — the stock itself is on Stock'
+            : 'Stock bought without a purchase order'}</div>
         </div>
       </div>
 
-      <div className="tab-bar">
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            className={`tab-bar-item${tab === t.key ? ' active' : ''}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {tabs.length > 1 && (
+        <div className="tab-bar">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              className={`tab-bar-item${tab === t.key ? ' active' : ''}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
+      {tab === 'requests' && <PurchaseRequests embedded />}
       {tab === 'suppliers' && <SuppliersTab />}
       {tab === 'purchase_orders' && <PurchaseOrdersTab />}
       {tab === 'direct' && <DirectPurchasesTab />}
@@ -230,7 +249,7 @@ function PurchaseOrdersTab() {
     const id = params.get('po');
     if (!id) return;
     refreshDetail(id);
-    params.delete('po'); setParams(params, { replace: true });
+    params.delete('po'); params.set('tab', 'purchase_orders'); setParams(params, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -251,6 +270,19 @@ function PurchaseOrdersTab() {
   function refreshDetail(id) {
     api.get(`/api/purchasing/purchase-orders/${id}`).then(r => setDetail(r.data)).catch(() => {});
   }
+  // A PO waiting for approval can be approved / sent back on Telegram — keep
+  // its open window (and the list) up to date while it waits.
+  const waitingId = detail?.status === 'pending_approval' ? detail.id : null;
+  useEffect(() => {
+    if (!waitingId) return;
+    const t = setInterval(() => {
+      api.get(`/api/purchasing/purchase-orders/${waitingId}`).then(r => {
+        setDetail(d => (d?.id === waitingId ? r.data : d));
+        if (r.data.status !== 'pending_approval') loadPos();
+      }).catch(() => {});
+    }, 8000);
+    return () => clearInterval(t);
+  }, [waitingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function setStatus(po, status) {
     try {
@@ -319,12 +351,14 @@ function PurchaseOrdersTab() {
 
       {directDetail && (
         <DirectPurchaseDetail p={directDetail} onClose={() => setDirectDetail(null)}
-          onVoided={p => { setDirectDetail(p); loadPos(); showToast(`${p.po_number} voided — stock taken back out`); }} />
+          onVoided={(p, sent) => { setDirectDetail(p); loadPos(); showToast(sent ? `${p.po_number} — sent to the POS` : `${p.po_number} voided — stock taken back out`); }} />
       )}
 
       {detail && (
         <PODetailModal
           po={detail}
+          suppliers={suppliers} products={products} materials={materials}
+          onEdited={() => { showToast('Purchase order saved'); loadPos(); refreshDetail(detail.id); }}
           onClose={() => setDetail(null)}
           onStatus={status => setStatus(detail, status)}
           onReceived={sync => {
@@ -359,8 +393,8 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
     if (!supplierId) { setFormError('Pick a supplier'); return; }
     const items = [];
     for (const l of lines) {
-      const qty = parseFloat(l.quantity);
-      const cost = parseFloat(l.unit_cost);
+      const unit = l.kind === 'material' ? materials.find(x => x.id === l.raw_material_id)?.unit_of_measure : null;
+      const { quantity: qty, unit_cost: cost } = toBase(l, unit);
       if (!qty || qty <= 0) { setFormError('Every line needs a positive quantity'); return; }
       if (!Number.isFinite(cost) || cost < 0) { setFormError('Every line needs a unit cost'); return; }
       if (l.kind === 'product') {
@@ -424,24 +458,22 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
                       </td>
                       <td>
                         {l.kind === 'product' ? (
-                          <select className="form-select" value={l.product_id} onChange={e => updateLine(i, { product_id: e.target.value })}>
-                            <option value="">{products.length ? 'Choose the item…' : 'No Sales item has Track stock on'}</option>
-                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                          <ItemPicker value={l.product_id} onChange={v => updateLine(i, { product_id: v })}
+                            placeholder={products.length ? 'Type to find the item…' : 'No Sales item has Track stock on'}
+                            options={products.map(p => ({ value: p.id, label: p.name }))} />
                         ) : (
-                          <select className="form-select" value={l.raw_material_id} onChange={e => updateLine(i, { raw_material_id: e.target.value })}>
-                            <option value="">{materials.length ? 'Choose the stock item…' : 'No stock items yet — add them in Stock items'}</option>
-                            {materials.map(x => <option key={x.id} value={x.id}>{x.name} ({x.unit_of_measure})</option>)}
-                          </select>
+                          <ItemPicker value={l.raw_material_id} onChange={v => updateLine(i, { raw_material_id: v })}
+                            placeholder={materials.length ? 'Type to find the stock item…' : 'No stock items yet — add them in Stock items'}
+                            options={materials.map(x => ({ value: x.id, label: x.name, hint: x.unit_of_measure }))} />
                         )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                           <input className="form-input" style={{ textAlign: 'right' }} type="number" step={l.kind === 'material' ? '0.001' : '1'} value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
-                          {m && <span className="text-muted" style={{ fontSize: 12 }}>{m.unit_of_measure}</span>}
+                          {m && <UnitSwitch unit={m.unit_of_measure} line={l} onFlip={() => updateLine(i, flipBig(l, m.unit_of_measure))} />}
                         </div>
                       </td>
-                      <td><input className="form-input" style={{ textAlign: 'right' }} type="number" placeholder={m ? `per ${m.unit_of_measure}` : 'per unit'} value={l.unit_cost} onChange={e => updateLine(i, { unit_cost: e.target.value })} /></td>
+                      <td><input className="form-input" style={{ textAlign: 'right' }} type="number" placeholder={m ? perUnit(m.unit_of_measure, l) : 'per unit'} value={l.unit_cost} onChange={e => updateLine(i, { unit_cost: e.target.value })} /></td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{lineTotal ? fmtIDR(lineTotal) : <span className="text-muted">—</span>}</td>
                       <td>{lines.length > 1 && <button className="btn btn-icon" title="Remove line" onClick={() => removeLine(i)}>✕</button>}</td>
                     </tr>
@@ -467,8 +499,9 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
   );
 }
 
-function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
+function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, onReceived, onEdited, onError }) {
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const { can, hasModule } = useAuth();   // approving needs the approve_po permission (owners always)
   // Received goods → the supplier's bill in Finance → Payables (needs the chart: accounting module).
   const canBill = can('payables') && hasModule('accounting') && po.items.some(it => Number(it.received_quantity) > 0);
@@ -505,6 +538,10 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
         <div className="modal-body">
           <div className="flex gap-2" style={{ marginBottom: 12, alignItems: 'center' }}>
             <span className={`badge badge-${PO_STATUS_BADGE[po.status]}`}>{PO_STATUS_LABELS[po.status]}</span>
+            {['approved', 'received'].includes(po.status) && po.approved_by_name && (
+              <span className="text-muted" style={{ fontSize: 12 }}>by {po.approved_by_name}{po.approved_via === 'telegram' ? ' on Telegram' : ''}</span>)}
+            {po.status === 'pending_approval' && po.telegram_approvers?.length > 0 && (
+              <span className="text-muted" style={{ fontSize: 12 }} title="They can approve it from the Telegram message">Waiting on Telegram: {po.telegram_approvers.join(', ')}</span>)}
             {po.notes && <span className="text-muted" style={{ fontSize: 13 }}>{po.notes}</span>}
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
@@ -522,13 +559,19 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
                     {it.description}{it.unit_of_measure && !it.product_id ? ` (${it.unit_of_measure})` : ''}
                     {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Goes to the restaurant's stock in the POS when received">Restaurant</span>}
                     {it.line_kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Not kept in any stock">Not in stock</span>}
-                    {it.request_no_text && <Link to="/purchase-requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
+                    {it.request_no_text && <Link to="/purchasing?tab=requests&view=requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
                     {it.line_kind === 'pos' && it.pos_send_error && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not sent to the POS: {it.pos_send_error}</div>}
                     {it.line_kind === 'pos' && !it.pos_send_error && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
                   </td>
-                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>{it.quantity}</td>
-                  <td style={{ textAlign: 'right', padding: '6px 4px', color: Number(it.received_quantity) >= Number(it.quantity) ? '#16A34A' : '#6B7280' }}>{it.received_quantity}</td>
-                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>{fmtIDR(it.unit_cost)}</td>
+                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>{it.product_id ? it.quantity : fmtQty(it.quantity, it.unit_of_measure)}</td>
+                  <td style={{ textAlign: 'right', padding: '6px 4px', color: Number(it.received_quantity) >= Number(it.quantity) ? '#16A34A' : '#6B7280' }}>{it.product_id ? it.received_quantity : fmtQty(it.received_quantity, it.unit_of_measure)}</td>
+                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>
+                    {perUnitIDR(it.unit_cost, it.product_id ? null : it.unit_of_measure)}
+                    {it.price_jump != null && (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', whiteSpace: 'nowrap' }} title="Compared with the item's average cost">
+                        ⚠ {Math.round(it.price_jump * 100)}% above usual {perUnitIDR(it.usual_cost, it.product_id ? null : it.unit_of_measure)}
+                      </div>)}
+                  </td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>{fmtIDR(it.quantity * it.unit_cost)}</td>
                 </tr>
               ))}
@@ -548,6 +591,7 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
           </div>
         </div>
         <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
+          {po.status === 'draft' && <button className="btn btn-sm btn-secondary" onClick={() => setEditOpen(true)}>✏ Edit</button>}
           {transitions.map(([status, label]) => (
             <button key={status} className={`btn btn-sm ${status === 'cancelled' ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onStatus(status)}>{label}</button>
           ))}
@@ -558,6 +602,10 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
         </div>
       </div>
 
+      {editOpen && (
+        <EditPOModal po={po} suppliers={suppliers} products={products} materials={materials}
+          onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); onEdited(); }} onError={onError} />
+      )}
       {receiveOpen && (
         <ReceiveModal po={po} onClose={() => setReceiveOpen(false)} onDone={sync => { setReceiveOpen(false); onReceived(sync); }} onError={onError} />
       )}
@@ -565,14 +613,171 @@ function PODetailModal({ po, onClose, onStatus, onReceived, onError }) {
   );
 }
 
+// Rp per unit, per kg / L for items kept in g / ml.
+function perUnitIDR(cost, unit) {
+  const big = BIG_UNIT[unit];
+  return big ? `${fmtIDR(Math.round(cost * big[1]))}/${big[0]}` : fmtIDR(Math.round(cost));
+}
+
+// A draft PO (new, or sent back from approval) — quantities, prices, supplier,
+// lines added or taken off, note. Lines from a purchase request keep their link.
+function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onError }) {
+  const lineOf = it => {
+    const unit = it.product_id ? null : it.unit_of_measure;
+    return {
+      key: it.id, kind: it.raw_material_id ? 'material' : it.product_id ? 'product' : it.pos_item_id ? 'pos' : 'text',
+      raw_material_id: it.raw_material_id || '', product_id: it.product_id || '', pos_item_id: it.pos_item_id || null,
+      description: it.description, unit: it.unit || null, request_line_id: it.request_line_id || null,
+      request_no_text: it.request_no_text, usual_cost: it.usual_cost, existing: true,
+      ...(BIG_UNIT[unit] ? fromBase(unit, it.quantity, it.unit_cost) : { big: false, quantity: String(Number(it.quantity)), unit_cost: String(Number(it.unit_cost)) }),
+    };
+  };
+  const [supplierId, setSupplierId] = useState(po.supplier_id || '');
+  const [notes, setNotes] = useState(po.notes || '');
+  const [lines, setLines] = useState(() => po.items.map(lineOf));
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const upd = (key, patch) => setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)));
+  const unitOf = l => (l.kind === 'material' ? (materials.find(m => m.id === l.raw_material_id)?.unit_of_measure || l.unit) : l.kind === 'pos' ? l.unit : null);
+  const usualOf = l => (l.existing ? l.usual_cost
+    : l.kind === 'material' ? Number(materials.find(m => m.id === l.raw_material_id)?.cost_per_unit) || null
+    : l.kind === 'product' ? Number(products.find(p => p.id === l.product_id)?.cost_per_unit) || null : null);
+  const total = lines.reduce((t, l) => t + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0), 0);
+
+  async function save() {
+    setFormError('');
+    if (!supplierId) return setFormError('Pick a supplier');
+    if (!lines.length) return setFormError('A purchase order needs at least one line');
+    const items = [];
+    for (const l of lines) {
+      const { quantity, unit_cost } = toBase(l, unitOf(l));
+      if (!(quantity > 0)) return setFormError(`How many ${l.description || 'of each item'}?`);
+      if (!Number.isFinite(unit_cost) || unit_cost < 0) return setFormError(`Type the price of ${l.description || 'each item'}`);
+      const base = { quantity, unit_cost, request_line_id: l.request_line_id || undefined };
+      if (l.kind === 'material') { if (!l.raw_material_id) return setFormError('Choose the stock item on every line'); items.push({ ...base, raw_material_id: l.raw_material_id }); }
+      else if (l.kind === 'product') { if (!l.product_id) return setFormError('Choose the item on every "For resale" line'); items.push({ ...base, product_id: l.product_id }); }
+      else items.push({ ...base, pos_item_id: l.pos_item_id || undefined, description: l.description, unit: l.unit });
+    }
+    setSaving(true);
+    try {
+      await api.put(`/api/purchasing/purchase-orders/${po.id}`, { supplier_id: supplierId, notes, items });
+      onSaved();
+    } catch (err) {
+      setFormError(err.response?.data?.error || 'Could not save');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 980, width: '100%' }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Edit {po.po_number}</div>
+            <div className="text-muted" style={{ fontSize: 12 }}>A draft can be changed freely — submit it for approval again when it's right.</div>
+          </div>
+          <button className="btn btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {formError && <div className="alert alert-error">{formError}</div>}
+          <div className="form-group">
+            <label className="form-label">Supplier *</label>
+            <select className="form-select" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+              <option value="">Select supplier…</option>
+              {suppliers.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+            </select>
+          </div>
+          <div className="table-wrap">
+            <table style={{ minWidth: 760 }}>
+              <thead><tr>
+                <th>Item</th><th style={{ width: 150, textAlign: 'right' }}>Qty</th>
+                <th style={{ width: 190, textAlign: 'right' }}>Price per unit (IDR)</th><th style={{ width: 130, textAlign: 'right' }}>Line total</th><th style={{ width: 40 }}></th>
+              </tr></thead>
+              <tbody>
+                {lines.map(l => {
+                  const unit = unitOf(l);
+                  const lineTotal = (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0);
+                  const usual = usualOf(l);
+                  const perBase = toBase(l, unit).unit_cost;
+                  const jump = usual > 0 && perBase > usual * 1.2 ? perBase / usual - 1 : null;
+                  return (
+                    <tr key={l.key}>
+                      <td>
+                        {l.existing ? (
+                          <div>
+                            {l.description}
+                            {l.kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Restaurant</span>}
+                            {l.kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Not in stock</span>}
+                            {l.request_no_text && <span className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{l.request_no_text}</span>}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <select className="form-select" style={{ width: 130 }} value={l.kind} onChange={e => upd(l.key, { kind: e.target.value, product_id: '', raw_material_id: '' })}>
+                              <option value="material">Stock item</option>
+                              <option value="product">For resale</option>
+                            </select>
+                            {l.kind === 'product' ? (
+                              <ItemPicker style={{ flex: 1 }} value={l.product_id} onChange={v => upd(l.key, { product_id: v, description: products.find(p => p.id === v)?.name })}
+                                placeholder="Type to find the item…" options={products.map(p => ({ value: p.id, label: p.name }))} />
+                            ) : (
+                              <ItemPicker style={{ flex: 1 }} value={l.raw_material_id} onChange={v => upd(l.key, { raw_material_id: v, description: materials.find(m => m.id === v)?.name })}
+                                placeholder="Type to find the stock item…" options={materials.map(m => ({ value: m.id, label: m.name, hint: m.unit_of_measure }))} />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input className="form-input" style={{ textAlign: 'right' }} type="number" step="any" value={l.quantity} onChange={e => upd(l.key, { quantity: e.target.value })} />
+                          {unit && <UnitSwitch unit={unit} line={l} onFlip={() => upd(l.key, flipBig(l, unit))} />}
+                        </div>
+                      </td>
+                      <td>
+                        <input className="form-input" style={{ textAlign: 'right' }} type="number" step="any" placeholder={unit ? perUnit(unit, l) : 'per unit'} value={l.unit_cost} onChange={e => upd(l.key, { unit_cost: e.target.value })} />
+                        {usual > 0 && (
+                          <div style={{ fontSize: 11, textAlign: 'right', marginTop: 2, color: jump ? 'var(--danger-text)' : 'var(--text-muted)' }}>
+                            {jump ? `⚠ ${Math.round(jump * 100)}% above ` : ''}usual {perUnitIDR(usual, unit)}
+                          </div>)}
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{lineTotal ? fmtIDR(lineTotal) : <span className="text-muted">—</span>}</td>
+                      <td><button className="btn btn-icon" title="Take this line off the PO" onClick={() => setLines(ls => ls.filter(x => x.key !== l.key))}>✕</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn btn-sm btn-secondary" style={{ marginTop: 8 }}
+            onClick={() => setLines(ls => [...ls, { key: `new-${Date.now()}`, kind: 'material', raw_material_id: '', product_id: '', quantity: '', unit_cost: '' }])}>+ Add line</button>
+          {lines.some(l => l.request_line_id) && (
+            <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
+              Taking a line from a purchase request off this PO puts it back on the request's <b>To order</b> list.
+            </div>)}
+          <div style={{ fontWeight: 700, marginTop: 12, textAlign: 'right' }}>Total: {fmtIDR(total)}</div>
+          <div className="form-group" style={{ marginTop: 10 }}>
+            <label className="form-label">Notes</label>
+            <textarea className="form-textarea" value={notes} onChange={e => setNotes(e.target.value)} placeholder="optional" />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReceiveModal({ po, onClose, onDone, onError }) {
   const outstanding = po.items.filter(it => Number(it.received_quantity) < Number(it.quantity));
-  const [amounts, setAmounts] = useState(() => Object.fromEntries(outstanding.map(it => [it.id, String(Number(it.quantity) - Number(it.received_quantity))])));
+  // Lines kept in g / ml are received in kg / L (switchable).
+  const unitOf = it => (it.product_id ? null : it.unit_of_measure);
+  const [amounts, setAmounts] = useState(() => Object.fromEntries(outstanding.map(it => [it.id, fromBase(unitOf(it), Number(it.quantity) - Number(it.received_quantity))])));
   const [saving, setSaving] = useState(false);
 
   async function submit() {
     const items = Object.entries(amounts)
-      .map(([item_id, v]) => ({ item_id, receive_quantity: parseFloat(v) }))
+      .map(([item_id, v]) => ({ item_id, receive_quantity: toBase(v, unitOf(po.items.find(it => it.id === item_id)), 'quantity', null).quantity }))
       .filter(i => i.receive_quantity > 0);
     if (items.length === 0) { onError('Enter a quantity to receive for at least one item'); return; }
     setSaving(true);
@@ -601,14 +806,15 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
               <div style={{ flex: 1, fontSize: 13 }}>
                 {it.description}
                 <div className="text-muted" style={{ fontSize: 11 }}>
-                  outstanding {+(Number(it.quantity) - Number(it.received_quantity)).toFixed(3)}{it.unit_of_measure && !it.product_id ? ` ${it.unit_of_measure}` : ''}
+                  outstanding {fmtQty(Number(it.quantity) - Number(it.received_quantity), unitOf(it))}
                   {it.line_kind === 'pos' ? ' · to the restaurant stock (POS)' : it.line_kind === 'text' ? ' · not kept in stock' : ''}
                 </div>
               </div>
               <input
-                className="form-input" style={{ width: 100 }} type="number" step={it.product_id ? '1' : '0.001'} min="0"
-                value={amounts[it.id] || ''} onChange={e => setAmounts(a => ({ ...a, [it.id]: e.target.value }))}
+                className="form-input" style={{ width: 100 }} type="number" step={it.product_id ? '1' : 'any'} min="0"
+                value={amounts[it.id]?.quantity ?? ''} onChange={e => setAmounts(a => ({ ...a, [it.id]: { ...a[it.id], quantity: e.target.value } }))}
               />
+              <UnitSwitch unit={unitOf(it)} line={amounts[it.id] || {}} onFlip={() => setAmounts(a => ({ ...a, [it.id]: { ...a[it.id], ...flipBig(a[it.id], unitOf(it), 'quantity', null) } }))} />
             </div>
           ))}
         </div>

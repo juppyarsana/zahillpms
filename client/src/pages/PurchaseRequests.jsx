@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import ItemPicker from '../components/ItemPicker';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import ReasonModal from '../components/ReasonModal';
+import { BIG_UNIT, isBig, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit } from '../lib/units';
 
 // Operations → Purchase requests (migration 144): a department asks for what
 // it needs, purchasing orders it on a normal PO. The restaurant asks from its
@@ -10,7 +12,8 @@ import ReasonModal from '../components/ReasonModal';
 // Progress is read from the PO lines that order each request line.
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
-const q = (n, unit) => `${+Number(n || 0).toFixed(3)}${unit ? ' ' + unit : ''}`;
+const q = fmtQty;
+const q_ = fmtQty;
 const fmtDay = d => d ? new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
 const fmtDateTime = s => s ? new Date(s).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
@@ -20,31 +23,38 @@ const PROGRESS_BADGE = {
 };
 const KIND_TAG = { pos: ['orange', 'Restaurant'], text: ['gray', 'Not in stock list'] };
 
-export default function PurchaseRequests() {
+// Shown as Purchasing → Requests (embedded) — the first step of buying.
+export default function PurchaseRequests({ embedded = false }) {
   const { can } = useAuth();
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [setup, setSetup] = useState(null);
   const [show, setShow] = useState('open');
   const [dept, setDept] = useState('');
+  const [search, setSearch] = useState('');
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [newOpen, setNewOpen] = useState(null);       // null | { lowOnly }
-  const [selected, setSelected] = useState({});       // request line id → true
-  const [makePo, setMakePo] = useState(false);
+  const [selected, setSelected] = useState({});       // request line id → true (To order view)
+  const [makePo, setMakePo] = useState(null);         // the lines to order
   const [closing, setClosing] = useState(null);       // { req, kind }
+  const [openId, setOpenId] = useState(null);         // the request shown in its window
   const [pos, setPos] = useState(null);               // { linked, items } — loaded when needed
 
   const canOrder = !!setup?.can_order;
   const canAsk = can('purchase_request') || can('purchasing');
+  // Two views: Requests (one row each, opened in a window) and To order —
+  // purchasing's work list, every line still to order from all open requests.
+  const view = canOrder && params.get('view') !== 'requests' ? 'order' : 'requests';
+  const setView = v => setParams(p => { const n = new URLSearchParams(p); n.set('view', v); return n; }, { replace: true });
+  const listShow = view === 'order' ? 'open' : show;
 
   function load() {
-    api.get('/api/purchase-requests', { params: { show, department: dept || undefined } })
+    api.get('/api/purchase-requests', { params: { show: listShow, department: dept || undefined } })
       .then(r => setList(r.data)).catch(err => setError(err.response?.data?.error || 'Could not load the requests'));
   }
   useEffect(() => { api.get('/api/purchase-requests/setup').then(r => setSetup(r.data)).catch(() => {}); }, []);
-  useEffect(load, [show, dept]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, [listShow, dept]); // eslint-disable-line react-hooks/exhaustive-deps
   // ?new=1[&low=1] — from Stock → Request to buy.
   useEffect(() => {
     if (params.get('new')) {
@@ -56,19 +66,33 @@ export default function PurchaseRequests() {
     if (pos) return;
     api.get('/api/purchase-requests/pos-items').then(r => setPos(r.data)).catch(() => setPos({ linked: false, items: [] }));
   }
-  function flash(msg, type = 'success') { setToast({ msg, type }); setTimeout(() => setToast(null), 5000); }
+  function flash(msg, type = 'success') { setToast({ msg, type }); setTimeout(() => setToast(null), 6000); }
+  function startPo(lines) { if (lines.some(p => p.kind === 'text' || p.kind === 'pos')) loadPos(); setMakePo(lines); }
 
-  const picked = useMemo(() => {
+  const q = search.trim().toLowerCase();
+  const matchReq = r => !q || [r.request_no_text, r.requested_by_name, r.department_label, r.note, ...r.lines.map(l => l.description)]
+    .some(t => String(t || '').toLowerCase().includes(q));
+  const requests = (list || []).filter(matchReq);
+  const toOrder = useMemo(() => {
     const out = [];
-    for (const r of list || []) for (const l of r.lines) if (selected[l.id]) out.push({ ...l, request: r });
-    return out;
-  }, [list, selected]);
+    for (const r of list || []) {
+      if (r.status !== 'open') continue;
+      for (const l of r.lines) if (l.left_to_order > 0) out.push({ ...l, request: r });
+    }
+    return out.sort((a, b) => String(a.request.needed_by || '9999').localeCompare(String(b.request.needed_by || '9999'))
+      || a.request.request_no - b.request.request_no);
+  }, [list]);
+  const toOrderShown = toOrder.filter(l => !q || [l.description, l.request.request_no_text, l.request.department_label, l.note]
+    .some(t => String(t || '').toLowerCase().includes(q)));
+  const picked = toOrder.filter(l => selected[l.id]);
+  const allShownPicked = toOrderShown.length > 0 && toOrderShown.every(l => selected[l.id]);
+  const shownReq = (list || []).find(r => r.id === openId);
 
   return (
     <div>
-      <div className="page-header">
+      <div className={embedded ? 'tab-intro' : 'page-header'}>
         <div>
-          <div className="page-title">Purchase requests</div>
+          {!embedded && <div className="page-title">Purchase requests</div>}
           <div className="page-subtitle">Departments ask for what they need — purchasing orders it on a purchase order</div>
         </div>
         <div className="flex gap-2">
@@ -77,46 +101,110 @@ export default function PurchaseRequests() {
         </div>
       </div>
 
-      <div className="page-toolbar">
-        <div className="seg">
-          {[['open', 'Open'], ['closed', 'Closed'], ['all', 'All']].map(([k, l]) =>
-            <button key={k} className={show === k ? 'active' : ''} onClick={() => setShow(k)}>{l}</button>)}
+      {canOrder && (
+        <div className="seg" style={{ marginBottom: 12 }}>
+          <button className={view === 'order' ? 'active' : ''} onClick={() => setView('order')}>To order{toOrder.length > 0 ? ` · ${toOrder.length}` : ''}</button>
+          <button className={view === 'requests' ? 'active' : ''} onClick={() => setView('requests')}>All requests</button>
         </div>
+      )}
+
+      <div className="page-toolbar">
+        {view === 'requests' && (
+          <div className="seg">
+            {[['open', 'Open'], ['closed', 'Closed'], ['all', 'All']].map(([k, l]) =>
+              <button key={k} className={show === k ? 'active' : ''} onClick={() => setShow(k)}>{l}</button>)}
+          </div>
+        )}
         <select className="form-select" style={{ width: 200 }} value={dept} onChange={e => setDept(e.target.value)}>
           <option value="">All departments</option>
           {(setup?.departments || []).map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
         </select>
+        <input className="form-input" style={{ maxWidth: 260 }} placeholder={view === 'order' ? 'Search items…' : 'Search requests or items…'} value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
       {error && <div className="alert alert-error"><div>{error}</div></div>}
       {toast && <div className={`alert ${toast.type === 'error' ? 'alert-error' : 'alert-success'}`}><div>{toast.msg}</div></div>}
 
-      {list && list.length === 0 && <div className="card text-muted" style={{ padding: 24, textAlign: 'center' }}>
-        {show === 'open' ? 'No open requests.' : 'No requests.'}</div>}
-      {(list || []).map(r => (
-        <RequestCard key={r.id} r={r} canOrder={canOrder} selected={selected}
-          onToggle={(id, on) => setSelected(s => ({ ...s, [id]: on }))}
-          onClose={kind => setClosing({ req: r, kind })} />
-      ))}
+      {view === 'requests' && list && (
+        requests.length === 0
+          ? <div className="card text-muted" style={{ padding: 24, textAlign: 'center' }}>{q ? 'Nothing matches.' : show === 'open' ? 'No open requests.' : 'No requests.'}</div>
+          : <div className="card" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <table style={{ minWidth: 760 }}>
+                <thead><tr><th>Request</th><th>Department</th><th>Asked by</th><th>Needed by</th><th>Items</th><th>Progress</th></tr></thead>
+                <tbody>{requests.map(r => {
+                  const late = r.status === 'open' && r.needed_by && String(r.needed_by).slice(0, 10) < today();
+                  return (
+                    <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setOpenId(r.id)}>
+                      <td style={{ whiteSpace: 'nowrap' }}><b>{r.request_no_text}</b>{r.source === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Restaurant app</span>}</td>
+                      <td>{r.department_label}</td>
+                      <td style={{ fontSize: 13 }}>{r.requested_by_name}<div className="text-muted" style={{ fontSize: 11 }}>{fmtDateTime(r.created_at)}</div></td>
+                      <td style={{ whiteSpace: 'nowrap', ...(late ? { color: 'var(--danger-text)', fontWeight: 600 } : {}) }}>{r.needed_by ? fmtDay(r.needed_by) : <span className="text-muted">—</span>}</td>
+                      <td style={{ fontSize: 13, maxWidth: 320 }}><b>{r.lines.length}</b> <span className="text-muted">· {r.lines.slice(0, 3).map(l => l.description).join(', ')}{r.lines.length > 3 ? '…' : ''}</span></td>
+                      <td><span className={`badge badge-${PROGRESS_BADGE[r.progress]}`}>{r.progress_label}</span></td>
+                    </tr>);
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+      )}
 
-      {canOrder && picked.length > 0 && (
-        <div className="card" style={{ position: 'sticky', bottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+      {view === 'order' && list && (
+        toOrderShown.length === 0
+          ? <div className="card text-muted" style={{ padding: 24, textAlign: 'center' }}>{q ? 'Nothing matches.' : 'Nothing waiting to be ordered.'}</div>
+          : <div className="card" style={{ padding: 0 }}>
+            <div className="table-wrap">
+              <table style={{ minWidth: 820 }}>
+                <thead><tr>
+                  <th style={{ width: 32 }}><input type="checkbox" checked={allShownPicked} title="Tick all shown"
+                    onChange={e => setSelected(s => { const n = { ...s }; for (const l of toOrderShown) n[l.id] = e.target.checked; return n; })} /></th>
+                  <th>Item</th><th style={{ textAlign: 'right' }}>To order</th><th>Department</th><th>Request</th><th>Needed by</th>
+                </tr></thead>
+                <tbody>{toOrderShown.map(l => {
+                  const r = l.request;
+                  const late = r.needed_by && String(r.needed_by).slice(0, 10) < today();
+                  return (
+                    <tr key={l.id} style={{ cursor: 'pointer', background: selected[l.id] ? 'var(--green-light, #f5ecef)' : undefined }}
+                      onClick={() => setSelected(s => ({ ...s, [l.id]: !s[l.id] }))}>
+                      <td><input type="checkbox" checked={!!selected[l.id]} readOnly /></td>
+                      <td>{l.description}
+                        {KIND_TAG[l.kind] && <span className={`badge badge-${KIND_TAG[l.kind][0]}`} style={{ marginLeft: 6 }}>{KIND_TAG[l.kind][1]}</span>}
+                        {l.note && <div className="text-muted" style={{ fontSize: 11 }}>{l.note}</div>}</td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{q_(l.left_to_order, l.unit)}
+                        {l.ordered_qty > 0 && <div className="text-muted" style={{ fontSize: 11 }}>of {q_(l.quantity, l.unit)}</div>}</td>
+                      <td>{r.department_label}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}><button className="btn btn-sm btn-secondary" onClick={e => { e.stopPropagation(); setOpenId(r.id); }}>{r.request_no_text}</button></td>
+                      <td style={{ whiteSpace: 'nowrap', ...(late ? { color: 'var(--danger-text)', fontWeight: 600 } : {}) }}>{r.needed_by ? fmtDay(r.needed_by) : <span className="text-muted">—</span>}</td>
+                    </tr>);
+                })}</tbody>
+              </table>
+            </div>
+          </div>
+      )}
+
+      {view === 'order' && picked.length > 0 && (
+        <div className="card" style={{ position: 'sticky', bottom: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', boxShadow: '0 6px 20px rgba(0,0,0,.12)', marginTop: 12 }}>
           <div style={{ flex: 1 }}><b>{picked.length}</b> item{picked.length === 1 ? '' : 's'} selected
             {new Set(picked.map(p => p.request.id)).size > 1 && <span className="text-muted"> · from {new Set(picked.map(p => p.request.id)).size} requests</span>}</div>
           <button className="btn btn-secondary" onClick={() => setSelected({})}>Clear</button>
-          <button className="btn btn-primary" onClick={() => { if (picked.some(p => p.kind === 'text')) loadPos(); setMakePo(true); }}>Make purchase order</button>
+          <button className="btn btn-primary" onClick={() => startPo(picked)}>Make purchase order</button>
         </div>
       )}
 
+      {shownReq && !makePo && (
+        <RequestModal r={shownReq} canOrder={canOrder} onDismiss={() => setOpenId(null)}
+          onClose={kind => setClosing({ req: shownReq, kind })}
+          onMakePo={lines => startPo(lines)} />
+      )}
       {newOpen && setup && (
         <NewRequestModal setup={setup} lowOnly={newOpen.lowOnly} pos={pos} loadPos={loadPos}
           onClose={() => setNewOpen(null)}
           onDone={r => { setNewOpen(null); flash(`${r.request_no_text} sent to purchasing`); setShow('open'); load(); }} />
       )}
       {makePo && (
-        <MakePoModal lines={picked} items={setup?.items || []} pos={pos}
-          onClose={() => setMakePo(false)}
-          onDone={po => { setMakePo(false); setSelected({}); load(); flash(<>Purchase order <Link to={`/purchasing?po=${po.id}`}><b>{po.po_number}</b></Link> made as a draft — submit it for approval in Purchasing.</>); }} />
+        <MakePoModal lines={makePo} items={setup?.items || []} pos={pos}
+          onClose={() => setMakePo(null)}
+          onDone={po => { setMakePo(null); setSelected({}); setOpenId(null); load(); flash(<>Purchase order <Link to={`/purchasing?po=${po.id}`}><b>{po.po_number}</b></Link> made as a draft — submit it for approval in Purchasing.</>); }} />
       )}
       {closing && (
         <ReasonModal
@@ -138,73 +226,89 @@ export default function PurchaseRequests() {
   );
 }
 
-function RequestCard({ r, canOrder, selected, onToggle, onClose }) {
+// One request in a window: its lines (asked, left when asked, the POs
+// ordering each, received) and what can be done with it.
+function RequestModal({ r, canOrder, onDismiss, onClose, onMakePo }) {
   const { user } = useAuth();
+  const [selected, setSelected] = useState({});
   const open = r.status === 'open';
   const late = open && r.needed_by && String(r.needed_by).slice(0, 10) < today();
   const nothingOrdered = r.lines.every(l => l.ordered_qty === 0);
   const mine = user?.id && r.requested_by === user.id;
   const selectable = l => canOrder && open && l.left_to_order > 0;
+  const orderable = r.lines.filter(selectable);
+  const picked = orderable.filter(l => selected[l.id]);
   return (
-    <div className="card" style={{ marginBottom: 12 }}>
-      <div className="flex" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>
-            {r.request_no_text} · {r.department_label}
-            <span className={`badge badge-${PROGRESS_BADGE[r.progress]}`} style={{ marginLeft: 8 }}>{r.progress_label}</span>
-            {r.source === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Restaurant app</span>}
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 900, width: '100%' }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">
+              {r.request_no_text} · {r.department_label}
+              <span className={`badge badge-${PROGRESS_BADGE[r.progress]}`} style={{ marginLeft: 8 }}>{r.progress_label}</span>
+              {r.source === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Restaurant app</span>}
+            </div>
+            <div className="text-muted" style={{ fontSize: 12 }}>
+              {r.requested_by_name} · {fmtDateTime(r.created_at)} · {r.lines.length} item{r.lines.length === 1 ? '' : 's'}
+              {r.needed_by && <span style={late ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}> · needed by {fmtDay(r.needed_by)}</span>}
+            </div>
           </div>
-          <div className="text-muted" style={{ fontSize: 12 }}>
-            {r.requested_by_name} · {fmtDateTime(r.created_at)}
-            {r.needed_by && <span style={late ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}> · needed by {fmtDay(r.needed_by)}</span>}
-          </div>
-          {r.note && <div style={{ fontSize: 13, marginTop: 4 }}>📝 {r.note}</div>}
-          {r.close_reason && <div style={{ fontSize: 12, marginTop: 4 }} className="text-muted">{r.progress_label}{r.closed_by_name ? ` by ${r.closed_by_name}` : ''}: {r.close_reason}</div>}
+          <button className="btn btn-icon" onClick={onDismiss}>✕</button>
         </div>
-        {open && (
-          <div className="flex gap-2">
-            {nothingOrdered && (canOrder || mine) && <button className="btn btn-sm btn-secondary" onClick={() => onClose('cancelled')}>Cancel</button>}
-            {canOrder && nothingOrdered && <button className="btn btn-sm btn-secondary" onClick={() => onClose('declined')}>Decline</button>}
-            {canOrder && !nothingOrdered && <button className="btn btn-sm btn-secondary" onClick={() => onClose('done')} title="Done although not everything was bought">Close</button>}
+        <div className="modal-body">
+          {r.note && <div className="card-note" style={{ marginBottom: 10, fontSize: 13 }}>📝 {r.note}</div>}
+          {r.close_reason && <div className="alert alert-warn" style={{ marginBottom: 10 }}><div>{r.progress_label}{r.closed_by_name ? ` by ${r.closed_by_name}` : ''}: {r.close_reason}</div></div>}
+          <div className="table-wrap" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+            <table style={{ minWidth: 640 }}>
+              <thead><tr>
+                {canOrder && open && <th style={{ width: 32 }}>{orderable.length > 0 && <input type="checkbox" title="Tick all"
+                  checked={orderable.every(l => selected[l.id])}
+                  onChange={e => setSelected(Object.fromEntries(orderable.map(l => [l.id, e.target.checked])))} />}</th>}
+                <th>Item</th><th style={{ textAlign: 'right' }}>Asked</th><th style={{ textAlign: 'right' }}>Left when asked</th>
+                <th>Ordered</th><th style={{ textAlign: 'right' }}>Received</th>
+              </tr></thead>
+              <tbody>
+                {r.lines.map(l => (
+                  <tr key={l.id}>
+                    {canOrder && open && <td>{selectable(l) && <input type="checkbox" checked={!!selected[l.id]} onChange={e => setSelected(s => ({ ...s, [l.id]: e.target.checked }))} />}</td>}
+                    <td>
+                      {l.description}
+                      {KIND_TAG[l.kind] && <span className={`badge badge-${KIND_TAG[l.kind][0]}`} style={{ marginLeft: 6 }}>{KIND_TAG[l.kind][1]}</span>}
+                      {l.note && <div className="text-muted" style={{ fontSize: 11 }}>{l.note}</div>}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{q_(l.quantity, l.unit)}</td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }} className="text-muted">{l.stock_when_asked != null ? q_(l.stock_when_asked, l.unit) : '—'}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {l.orders.length === 0 ? <span className="text-muted">—</span> : l.orders.map(o => (
+                        <div key={o.po_id + o.quantity}>
+                          {canOrder ? <Link to={`/purchasing?po=${o.po_id}`}>{o.po_number}</Link> : o.po_number} · {q_(o.quantity, l.unit)}
+                        </div>))}
+                      {open && l.ordered_qty > 0 && l.left_to_order > 0 && <div className="text-muted">{q_(l.left_to_order, l.unit)} not ordered yet</div>}
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: l.received_qty >= l.quantity ? '#16A34A' : undefined }}>{l.received_qty > 0 ? q_(l.received_qty, l.unit) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
-      <div className="table-wrap">
-        <table style={{ minWidth: 560 }}>
-          <thead><tr>
-            {canOrder && open && <th style={{ width: 28 }}></th>}
-            <th>Item</th><th style={{ textAlign: 'right' }}>Asked</th><th style={{ textAlign: 'right' }}>Left when asked</th>
-            <th>Ordered</th><th style={{ textAlign: 'right' }}>Received</th>
-          </tr></thead>
-          <tbody>
-            {r.lines.map(l => (
-              <tr key={l.id}>
-                {canOrder && open && <td>{selectable(l) && <input type="checkbox" checked={!!selected[l.id]} onChange={e => onToggle(l.id, e.target.checked)} />}</td>}
-                <td>
-                  {l.description}
-                  {KIND_TAG[l.kind] && <span className={`badge badge-${KIND_TAG[l.kind][0]}`} style={{ marginLeft: 6 }}>{KIND_TAG[l.kind][1]}</span>}
-                  {l.note && <div className="text-muted" style={{ fontSize: 11 }}>{l.note}</div>}
-                </td>
-                <td style={{ textAlign: 'right' }}>{q(l.quantity, l.unit)}</td>
-                <td style={{ textAlign: 'right' }} className="text-muted">{l.stock_when_asked != null ? q(l.stock_when_asked, l.unit) : '—'}</td>
-                <td style={{ fontSize: 12 }}>
-                  {l.orders.length === 0 ? <span className="text-muted">—</span> : l.orders.map(o => (
-                    <div key={o.po_id + o.quantity}>
-                      {canOrder ? <Link to={`/purchasing?po=${o.po_id}`}>{o.po_number}</Link> : o.po_number} · {q(o.quantity, l.unit)}
-                    </div>))}
-                  {open && l.ordered_qty > 0 && l.left_to_order > 0 && <div className="text-muted">{q(l.left_to_order, l.unit)} not ordered yet</div>}
-                </td>
-                <td style={{ textAlign: 'right', color: l.received_qty >= l.quantity ? '#16A34A' : undefined }}>{l.received_qty > 0 ? q(l.received_qty, l.unit) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        </div>
+        <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
+          {open && nothingOrdered && (canOrder || mine) && <button className="btn btn-secondary" onClick={() => onClose('cancelled')}>Cancel request</button>}
+          {open && canOrder && nothingOrdered && <button className="btn btn-secondary" onClick={() => onClose('declined')}>Decline</button>}
+          {open && canOrder && !nothingOrdered && <button className="btn btn-secondary" onClick={() => onClose('done')} title="Done although not everything was bought">Close request</button>}
+          <div style={{ flex: 1 }} />
+          {canOrder && open && orderable.length > 0 && (
+            <button className="btn btn-primary" disabled={!picked.length} onClick={() => onMakePo(picked.map(l => ({ ...l, request: r })))}>
+              {picked.length ? `Make purchase order (${picked.length})` : 'Tick items to order'}
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={onDismiss}>Done</button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── New request ──
 const blankLine = () => ({ ref: '', description: '', unit: '', quantity: '', note: '' });
 
 function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
@@ -235,9 +339,9 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
     const out = [];
     for (const l of lines) {
       if (!l.ref && !l.description.trim() && !l.quantity) continue;
-      const qty = Number(l.quantity);
-      if (!(qty > 0)) return setError('Every item needs a quantity');
       const [src, id] = l.ref.split('|');
+      const qty = toBase(l, itemOf(l)?.unit, 'quantity', null).quantity;
+      if (!(qty > 0)) return setError('Every item needs a quantity');
       if (src === 'pms') out.push({ item_key: id, quantity: qty, note: l.note });
       else if (src === 'pos') { const it = posBy.get(id); out.push({ pos_item_id: id, description: it?.name, unit: it?.unit, quantity: qty, note: l.note }); }
       else if (src === 'text') {
@@ -273,23 +377,21 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
             The kitchen's ingredients are kept in the restaurant app — the chef can also ask from there (Inventory → Request to buy).</div>}
           <div className="table-wrap">
             <table style={{ minWidth: 600 }}>
-              <thead><tr><th>Item</th><th style={{ width: 110 }}>How many</th><th style={{ width: 160 }}>Note</th><th style={{ width: 30 }}></th></tr></thead>
+              <thead><tr><th>Item</th><th style={{ width: 170 }}>How many</th><th style={{ width: 160 }}>Note</th><th style={{ width: 30 }}></th></tr></thead>
               <tbody>
                 {lines.map((l, i) => {
                   const it = itemOf(l);
                   return (
                     <tr key={i}>
                       <td>
-                        <select className="form-select" value={l.ref} onChange={e => set(i, { ref: e.target.value })}>
-                          <option value="">Choose an item…</option>
-                          <optgroup label="Stock (PMS)">
-                            {setup.items.map(x => <option key={x.key} value={`pms|${x.key}`}>{x.name} — {q(x.on_hand, x.unit)} left{x.out ? ' (out)' : x.low ? ' (low)' : ''}</option>)}
-                          </optgroup>
-                          {showPos && <optgroup label="Restaurant (POS)">
-                            {pos.items.map(x => <option key={x.id} value={`pos|${x.id}`}>{x.name} — {q(x.stock, x.unit)} left{x.low ? ' (low)' : ''}</option>)}
-                          </optgroup>}
-                          <option value="text|">Something else — type it</option>
-                        </select>
+                        <ItemPicker value={l.ref} onChange={v => set(i, { ref: v })} placeholder="Type to find an item…"
+                          options={[
+                            ...setup.items.map(x => ({ value: `pms|${x.key}`, label: x.name, group: 'Stock (PMS)',
+                              hint: `${q(x.on_hand, x.unit)} left${x.out ? ' · out' : x.low ? ' · low' : ''}`, tone: x.out || x.low ? 'danger' : undefined })),
+                            ...(showPos ? pos.items.map(x => ({ value: `pos|${x.id}`, label: x.name, group: 'Restaurant (POS)',
+                              hint: `${q(x.stock, x.unit)} left${x.low ? ' · low' : ''}`, tone: x.low ? 'danger' : undefined })) : []),
+                            { value: 'text|', label: 'Something else — type it', group: 'Other' },
+                          ]} />
                         {l.ref === 'text|' && (
                           <div className="flex gap-2" style={{ marginTop: 4 }}>
                             <input className="form-input" placeholder="What (e.g. pump seal 2 inch)" value={l.description} onChange={e => set(i, { description: e.target.value })} />
@@ -298,7 +400,10 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
                         )}
                         {it && <div className="text-muted" style={{ fontSize: 11 }}>{q(it.stock, it.unit)} left now{it.low ? ' · low' : ''}</div>}
                       </td>
-                      <td><input className="form-input" type="number" min="0" step="0.001" placeholder={it?.unit || l.unit || ''} value={l.quantity} onChange={e => set(i, { quantity: e.target.value })} /></td>
+                      <td><div className="flex gap-1" style={{ alignItems: 'center' }}>
+                        <input className="form-input" type="number" min="0" step="any" placeholder={it ? '' : l.unit || ''} value={l.quantity} onChange={e => set(i, { quantity: e.target.value })} />
+                        {it && <UnitSwitch unit={it.unit} line={l} onFlip={() => set(i, flipBig(l, it.unit, 'quantity', null))} />}
+                      </div></td>
                       <td><input className="form-input" value={l.note} onChange={e => set(i, { note: e.target.value })} placeholder="brand, size…" /></td>
                       <td>{lines.length > 1 && <button className="btn btn-icon" onClick={() => setLines(ls => ls.filter((_, k) => k !== i))}>✕</button>}</td>
                     </tr>
@@ -323,8 +428,21 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
   const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [notes, setNotes] = useState(() => [...new Set(lines.map(l => l.request.request_no_text))].join(', '));
+  // A line asked for in g / ml is ordered in kg / L (switchable); free text keeps its own unit.
+  const rowUnit = r => (r.line.kind === 'text' ? null : r.line.unit);
+  // The price starts at the item's average cost (what it cost so far); the
+  // restaurant's from the POS once its list has loaded.
+  const avgOf = l => (l.kind === 'pos' ? pos?.items?.find(x => x.id === l.pos_item_id)?.avg_cost
+    : l.item_key ? items.find(x => x.key === l.item_key)?.avg_cost : null);
+  const startPrice = l => { const a = avgOf(l); return a > 0 ? +a.toFixed(4) : ''; };
   const [rows, setRows] = useState(() => lines.map(l => ({
-    line: l, target: l.kind === 'text' ? 'text|' : '', quantity: String(l.left_to_order), unit_cost: '' })));
+    line: l, target: l.kind === 'text' ? 'text|' : '',
+    ...fromBase(l.kind === 'text' ? null : l.unit, l.left_to_order, startPrice(l)) })));
+  useEffect(() => {
+    if (!pos?.items?.length) return;
+    setRows(rs => rs.map(r => (r.line.kind === 'pos' && r.unit_cost === '' && startPrice(r.line) !== ''
+      ? { ...r, unit_cost: String(+(startPrice(r.line) * (isBig(r) && BIG_UNIT[r.line.unit] ? BIG_UNIT[r.line.unit][1] : 1)).toFixed(2)) } : r)));
+  }, [pos]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => { api.get('/api/purchasing/suppliers').then(r => setSuppliers(r.data.filter(s => s.is_active))).catch(() => {}); }, []);
@@ -338,7 +456,7 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
     const out = [];
     for (const r of rows) {
       const l = r.line;
-      const quantity = Number(r.quantity), unit_cost = Number(r.unit_cost);
+      const { quantity, unit_cost } = toBase(r, rowUnit(r));
       if (!(quantity > 0)) return setError(`How many of ${l.description}?`);
       if (!(unit_cost >= 0) || r.unit_cost === '') return setError(`The price of ${l.description}`);
       const base = { quantity, unit_cost, request_line_id: l.id };
@@ -378,7 +496,7 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
           </div>
           <div className="table-wrap">
             <table style={{ minWidth: 680 }}>
-              <thead><tr><th>Item</th><th>Request</th><th style={{ width: 110 }}>Order</th><th style={{ width: 140 }}>Price per unit</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
+              <thead><tr><th>Item</th><th>Request</th><th style={{ width: 170 }}>Order</th><th style={{ width: 140 }}>Price</th><th style={{ textAlign: 'right' }}>Total</th></tr></thead>
               <tbody>
                 {rows.map((r, i) => {
                   const l = r.line;
@@ -400,9 +518,15 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
                         )}
                       </td>
                       <td className="text-muted" style={{ fontSize: 12 }}>{l.request.request_no_text}<br />{l.request.department_label}</td>
-                      <td><input className="form-input" type="number" min="0" step={l.product_id ? '1' : '0.001'} value={r.quantity} onChange={e => set(i, { quantity: e.target.value })} />
+                      <td><div className="flex gap-1" style={{ alignItems: 'center' }}>
+                          <input className="form-input" type="number" min="0" step={l.product_id ? '1' : 'any'} value={r.quantity} onChange={e => set(i, { quantity: e.target.value })} />
+                          <UnitSwitch unit={rowUnit(r)} line={r} onFlip={() => set(i, flipBig(r, rowUnit(r)))} />
+                        </div>
                         <div className="text-muted" style={{ fontSize: 11 }}>asked {q(l.left_to_order, l.unit)}</div></td>
-                      <td><input className="form-input" type="number" min="0" value={r.unit_cost} placeholder={l.unit ? `per ${l.unit}` : 'per unit'} onChange={e => set(i, { unit_cost: e.target.value })} /></td>
+                      <td><input className="form-input" type="number" min="0" value={r.unit_cost} placeholder={perUnit(rowUnit(r), r)} onChange={e => set(i, { unit_cost: e.target.value })} />
+                        {(() => { const a = avgOf(l); if (!(a > 0)) return r.unit_cost !== '' ? <div className="text-muted" style={{ fontSize: 11 }}>{perUnit(rowUnit(r), r)}</div> : null;
+                          const f = isBig(r) && BIG_UNIT[rowUnit(r)] ? BIG_UNIT[rowUnit(r)][1] : 1;
+                          return <div className="text-muted" style={{ fontSize: 11 }}>average {fmtIDR(a * f)} {perUnit(rowUnit(r), r)}</div>; })()}</td>
                       <td style={{ textAlign: 'right' }}>{fmtIDR((Number(r.quantity) || 0) * (Number(r.unit_cost) || 0))}</td>
                     </tr>
                   );

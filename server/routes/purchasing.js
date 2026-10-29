@@ -308,7 +308,7 @@ router.post('/purchase-orders', ownerOnly, async (req, res) => {
 
 router.put('/purchase-orders/:id', ownerOnly, async (req, res) => {
   try {
-    const result = await svc.updatePurchaseOrderItems(req.propertyId, req.params.id, req.body);
+    const result = await svc.updatePurchaseOrderItems(req.propertyId, req.params.id, req.body, req.user.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.json(result.purchase_order);
   } catch (err) {
@@ -381,6 +381,15 @@ router.post('/direct', directGate, async (req, res) => {
     const r = await direct.create(req.propertyId, req.body || {}, req.user);
     if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
     res.status(201).json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Restaurant goods the POS didn't get at the time (it was down) — send again. Safe to repeat.
+router.post('/direct/:id/pos-send', directGate, async (req, res) => {
+  try {
+    const { rows: [po] } = await db.query('SELECT id FROM purchase_orders WHERE id = $1 AND property_id = $2 AND is_direct', [req.params.id, req.propertyId]);
+    if (!po) return res.status(404).json({ error: 'Purchase not found' });
+    res.json(await require('../services/posPurchases').sendToPos(req.propertyId, po.id));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -169,9 +169,58 @@ async function createPurchaseOrder(propertyId, body, userId) {
   }
 }
 
+// What each line's item usually costs (per its own unit): a stock item's or a
+// Sales item's weighted-average cost, a restaurant item's average in the POS.
+// Adds usual_cost (null when unknown) and price_jump (the share above it, when
+// the line's price is more than 20% higher). Never throws — a POS that can't be
+// reached leaves its lines without a usual cost.
+const PRICE_JUMP = 0.2;
+// The POS's average costs, per property, for a minute: a PO window waiting for
+// approval refreshes every few seconds and must not ask the POS each time; the
+// POS gets 2 s to answer (it may be on another server) — slower = no warning.
+const POS_COST_TTL_MS = 60 * 1000;
+const POS_COST_TIMEOUT_MS = 2000;
+const posCostCache = new Map(); // propertyId → { at, costs: Map(pos item id → avg cost) }
+async function posAverageCosts(propertyId) {
+  const hit = posCostCache.get(propertyId);
+  if (hit && Date.now() - hit.at < POS_COST_TTL_MS) return hit.costs;
+  try {
+    const inv = await require('./posPurchases').inventory(propertyId, { timeoutMs: POS_COST_TIMEOUT_MS });
+    const costs = new Map(inv.items.map(i => [i.id, i.avg_cost]));
+    posCostCache.set(propertyId, { at: Date.now(), costs });
+    return costs;
+  } catch (err) {
+    console.error('[PO usual cost] POS:', err.message);
+    // Not answering: try again in a minute, not on every refresh.
+    posCostCache.set(propertyId, { at: Date.now(), costs: hit?.costs || new Map() });
+    return hit?.costs || new Map();
+  }
+}
+async function withUsualCosts(propertyId, items) {
+  const ids = kind => [...new Set(items.map(i => i[kind]).filter(Boolean))];
+  const usual = new Map();
+  const rm = ids('raw_material_id'), pr = ids('product_id'), pos = ids('pos_item_id');
+  if (rm.length) (await db.query('SELECT id, cost_per_unit FROM raw_materials WHERE id = ANY($1::uuid[]) AND property_id = $2', [rm, propertyId]))
+    .rows.forEach(r => usual.set(`rm:${r.id}`, r.cost_per_unit));
+  if (pr.length) (await db.query('SELECT id, cost_per_unit FROM products WHERE id = ANY($1::uuid[]) AND property_id = $2', [pr, propertyId]))
+    .rows.forEach(r => usual.set(`p:${r.id}`, r.cost_per_unit));
+  if (pos.length) (await posAverageCosts(propertyId)).forEach((cost, id) => usual.set(`pos:${id}`, cost));
+  return items.map(it => {
+    const key = it.raw_material_id ? `rm:${it.raw_material_id}` : it.product_id ? `p:${it.product_id}` : it.pos_item_id ? `pos:${it.pos_item_id}` : null;
+    const u = key && usual.get(key) != null ? Number(usual.get(key)) : null;
+    const per = Number(it.unit_cost);
+    const jump = u > 0 && per > u * (1 + PRICE_JUMP) ? per / u - 1 : null;
+    return { ...it, usual_cost: u, price_jump: jump };
+  });
+}
+
+// "3 pcs × Rp 350" — for the PO's edit log.
+const lineText = i => `${Number(i.quantity)}${i.unit ? ' ' + i.unit : ''} × Rp ${Math.round(Number(i.unit_cost)).toLocaleString('id-ID')}`;
+const lineKey = i => i.raw_material_id || i.product_id || i.pos_item_id || `t:${i.description}`;
+
 // Replaces the full item set — draft only, so an approved/received PO's
 // items can't shift under an already-issued or already-fulfilled order.
-async function updatePurchaseOrderItems(propertyId, poId, body) {
+async function updatePurchaseOrderItems(propertyId, poId, body, userId) {
   const { items, notes } = body;
   if (!Array.isArray(items) || items.length === 0) return { error: 'At least one line item is required' };
 
@@ -179,10 +228,20 @@ async function updatePurchaseOrderItems(propertyId, poId, body) {
   try {
     await client.query('BEGIN');
     const { rows: [po] } = await client.query(
-      'SELECT * FROM purchase_orders WHERE id = $1 AND property_id = $2 FOR UPDATE', [poId, propertyId]
+      `SELECT po.*, s.name AS supplier_name FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id
+       WHERE po.id = $1 AND po.property_id = $2 FOR UPDATE OF po`, [poId, propertyId]
     );
     if (!po) { await client.query('ROLLBACK'); return { error: 'Purchase order not found' }; }
     if (po.status !== 'draft') { await client.query('ROLLBACK'); return { error: 'Only a draft purchase order can be edited' }; }
+    if (po.is_direct) { await client.query('ROLLBACK'); return { error: 'Bought without a PO — void it instead' }; }
+
+    // Supplier: optional, may change while the PO is a draft.
+    let supplier = { id: po.supplier_id, name: po.supplier_name };
+    if (body.supplier_id && body.supplier_id !== po.supplier_id) {
+      const { rows: [sup] } = await client.query('SELECT id, name FROM suppliers WHERE id = $1 AND property_id = $2', [body.supplier_id, propertyId]);
+      if (!sup) { await client.query('ROLLBACK'); return { error: 'Supplier not found' }; }
+      supplier = sup;
+    }
 
     const resolved = await resolveItems(client, propertyId, items);
     if (resolved.error) { await client.query('ROLLBACK'); return { error: resolved.error }; }
@@ -190,13 +249,34 @@ async function updatePurchaseOrderItems(propertyId, poId, body) {
 
     const totalAmount = round2(resolvedItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0));
 
+    // What changed, for the PO's activity log.
+    const { rows: oldItems } = await client.query('SELECT * FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
+    const oldBy = new Map(oldItems.map(i => [lineKey(i), i]));
+    const newKeys = new Set(resolvedItems.map(lineKey));
+    const changes = [];
+    if (supplier.id !== po.supplier_id) changes.push(`supplier ${po.supplier_name || '—'} → ${supplier.name}`);
+    for (const n of resolvedItems) {
+      const o = oldBy.get(lineKey(n));
+      if (!o) changes.push(`added ${n.description} ${lineText(n)}`);
+      else if (Number(o.quantity) !== Number(n.quantity) || Number(o.unit_cost) !== Number(n.unit_cost)) {
+        changes.push(`${n.description} ${lineText({ ...o, unit: n.unit })} → ${lineText(n)}`);
+      }
+    }
+    for (const o of oldItems) if (!newKeys.has(lineKey(o))) changes.push(`removed ${o.description}`);
+    const newNotes = notes === undefined ? po.notes : (String(notes || '').trim() || null);
+    if ((newNotes || '') !== (po.notes || '')) changes.push('note changed');
+    if (round2(Number(po.total_amount)) !== totalAmount) {
+      changes.push(`total Rp ${Math.round(po.total_amount).toLocaleString('id-ID')} → Rp ${Math.round(totalAmount).toLocaleString('id-ID')}`);
+    }
+
     await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
     await insertItems(client, poId, resolvedItems);
     const { rows: [updated] } = await client.query(
-      `UPDATE purchase_orders SET total_amount = $1, notes = COALESCE($2, notes), updated_at = NOW()
+      `UPDATE purchase_orders SET total_amount = $1, notes = $2, supplier_id = $4, updated_at = NOW()
        WHERE id = $3 RETURNING *`,
-      [totalAmount, notes, poId]
+      [totalAmount, newNotes, poId, supplier.id]
     );
+    if (changes.length) await logEvent(client, poId, `Edited: ${changes.join('; ')}`, userId);
     await client.query('COMMIT');
     return { purchase_order: updated };
   } catch (err) {
@@ -207,8 +287,13 @@ async function updatePurchaseOrderItems(propertyId, poId, body) {
   }
 }
 
-async function setPurchaseOrderStatus(propertyId, poId, newStatus, userId) {
+// opts.byName / opts.via: an approval or send-back pressed on Telegram (no PMS
+// user — services/poApproval.js). After the commit, a PO that went to
+// pending_approval is sent to the Telegram approvers, and one that left it has
+// the buttons taken off their messages.
+async function setPurchaseOrderStatus(propertyId, poId, newStatus, userId, opts = {}) {
   const client = await db.pool.connect();
+  let before, byName;
   try {
     await client.query('BEGIN');
     const { rows: [po] } = await client.query(
@@ -222,14 +307,24 @@ async function setPurchaseOrderStatus(propertyId, poId, newStatus, userId) {
       return { error: `Cannot move a ${po.status} purchase order to ${newStatus}` };
     }
 
+    before = po.status;
+    byName = opts.byName || (userId ? (await client.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0]?.name : null);
+    const via = opts.via || 'pms';
     const { rows: [updated] } = await client.query(
       `UPDATE purchase_orders SET status = $1, updated_at = NOW(),
-         approved_by = CASE WHEN $4 THEN $2 ELSE approved_by END
+         approved_by = CASE WHEN $4 THEN $2 ELSE approved_by END,
+         approved_by_name = CASE WHEN $4 THEN $5 ELSE approved_by_name END,
+         approved_via = CASE WHEN $4 THEN $6 ELSE approved_via END,
+         approved_at = CASE WHEN $4 THEN NOW() ELSE approved_at END
        WHERE id = $3 RETURNING *`,
-      [newStatus, userId || null, poId, newStatus === 'approved']
+      [newStatus, userId || null, poId, newStatus === 'approved', byName || null, via]
     );
-    await logEvent(client, poId, STATUS_EVENT_NOTES[newStatus] || `Status changed to ${newStatus}`, userId);
+    const note = STATUS_EVENT_NOTES[newStatus] || `Status changed to ${newStatus}`;
+    await logEvent(client, poId, via === 'telegram' ? `${note} on Telegram by ${byName}` : note, userId);
     await client.query('COMMIT');
+    const approval = require('./poApproval');
+    if (newStatus === 'pending_approval') approval.sendForApproval(propertyId, poId, userId);
+    else if (before === 'pending_approval') approval.closeMessages(poId, approval.leftNote(newStatus, byName, via));
     return { purchase_order: updated };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -375,7 +470,11 @@ async function getPurchaseOrder(propertyId, poId) {
      ORDER BY poe.created_at ASC`,
     [poId]
   );
-  return { ...po, items, events };
+  // Approvers whose Telegram message for this submission is still open.
+  const { rows: tg } = po.status === 'pending_approval'
+    ? await db.query('SELECT DISTINCT recipient_name FROM purchase_order_approval_messages WHERE purchase_order_id = $1 AND is_open ORDER BY 1', [poId])
+    : { rows: [] };
+  return { ...po, items: await withUsualCosts(propertyId, items), events, telegram_approvers: tg.map(r => r.recipient_name) };
 }
 
 async function listPurchaseOrders(propertyId, { status } = {}) {
@@ -398,5 +497,6 @@ module.exports = {
   setPurchaseOrderStatus,
   receivePurchaseOrder,
   getPurchaseOrder,
+  withUsualCosts,
   listPurchaseOrders,
 };
