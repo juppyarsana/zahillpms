@@ -21,10 +21,39 @@ function SidebarLink({ to, end, icon, label, badge }) {
 export function chunks(items) {
   const out = [];
   for (const item of items) {
-    if (!out.length || item.sub || item.divider) out.push({ sub: item.sub || null, divider: !!item.divider, items: [] });
+    if (!out.length || item.sub || item.divider) out.push({ sub: item.sub || null, subIcon: item.subIcon || null, divider: !!item.divider, items: [] });
     out[out.length - 1].items.push(item);
   }
   return out;
+}
+
+// A sub-group inside a group (Insights → Stays, Money): a row like a page
+// link that opens / closes its pages. Starts open only when the page you are
+// on is inside it; then remembered on this device. Closed, it shows how many
+// pages it holds and stands out when you are on one of them.
+function SidebarSub({ label, icon, items }) {
+  const location = useLocation();
+  const here = items.some(i => (i.end ? location.pathname === i.to : location.pathname.startsWith(i.to)));
+  const storageKey = `sidebar-sub-${label}`;
+  const [open, setOpen] = useState(() => {
+    try { const v = localStorage.getItem(storageKey); return v ? v === 'open' : here; } catch { return here; }
+  });
+  function toggle() {
+    setOpen(o => { try { localStorage.setItem(storageKey, !o ? 'open' : 'closed'); } catch { /* private window */ } return !o; });
+  }
+  return (
+    <div className="sidebar-subgroup">
+      <button className={`sidebar-link sidebar-subtoggle${!open && here ? ' here' : ''}`} onClick={toggle} aria-expanded={open}>
+        <span className="sidebar-link-icon">{icon || '•'}</span>
+        <span className="sidebar-link-label">{label}</span>
+        {!open && <span className="sidebar-group-count">{items.length}</span>}
+        <svg className={`sidebar-group-chevron${open ? ' open' : ''}`} width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && <div className="sidebar-subitems">{items.map(item => <SidebarLink key={item.to} {...item} />)}</div>}
+    </div>
+  );
 }
 
 // A collapsible group (Front Desk, Services, …): the whole header row
@@ -59,12 +88,8 @@ function SidebarSection({ id, label, items, defaultOpen = true }) {
           {chunks(items).map((c, i) => (
             <Fragment key={i}>
               {c.divider && <div className="sidebar-subdivider" />}
-              {c.sub ? (
-                <div className="sidebar-subgroup">
-                  <div className="sidebar-subhead">{c.sub}</div>
-                  <div className="sidebar-subitems">{c.items.map(item => <SidebarLink key={item.to} {...item} />)}</div>
-                </div>
-              ) : c.items.map(item => <SidebarLink key={item.to} {...item} />)}
+              {c.sub ? <SidebarSub label={c.sub} icon={c.subIcon} items={c.items} />
+                : c.items.map(item => <SidebarLink key={item.to} {...item} />)}
             </Fragment>
           ))}
         </div>

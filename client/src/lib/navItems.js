@@ -15,7 +15,7 @@ function withSubs(subs) {
   const out = [];
   for (const [label, items, opts = {}] of subs) {
     const shown = items.filter(Boolean);
-    if (shown.length) out.push({ ...shown[0], ...(label ? { sub: label } : {}), ...(opts.divider ? { divider: true } : {}) }, ...shown.slice(1));
+    if (shown.length) out.push({ ...shown[0], ...(label ? { sub: label, subIcon: opts.icon } : {}), ...(opts.divider ? { divider: true } : {}) }, ...shown.slice(1));
   }
   return out;
 }
@@ -73,12 +73,12 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
         can('reports') && res && { to: '/insights/bookings', icon: '🧾', label: 'Bookings' },
         can('reports') && res && { to: '/insights/rooms', icon: '🛏', label: 'Rooms' },
         can('reports') && res && { to: '/insights/guests', icon: '🌏', label: 'Guests' },
-      ]],
+      ], { icon: '🏨' }],
       ['Money', [
         can('reports') && hasModule('financial') && { to: '/revenue', icon: '💹', label: 'Revenue' },
         can('costs') && hasCosts && { to: '/costs', icon: '🏷', label: 'Costs' },
         can('profit') && hasModule('accounting') && { to: '/profit', icon: '⚖', label: 'Profit' },
-      ]],
+      ], { icon: '💰' }],
       [null, [reportsFor(can, hasModule).length > 0 && { to: '/reports', end: true, icon: '🖨', label: 'Export / Print' }], { divider: true }],
     ]) },
     { id: 'finance', label: 'Finance', items: [
