@@ -11,10 +11,6 @@ import { reportsFor } from './reportLibrary';
 // Sub-groups inside one menu group: the first visible item of each carries
 // the small heading (`sub`), or a line above it (`divider`); a sub-group with
 // nothing visible disappears with its heading.
-// Pages kept but not shown in the menu for now — set to true to bring them back.
-const SHOW_EXPENSES = false;
-const SHOW_LOYALTY = false;
-
 function withSubs(subs) {
   const out = [];
   for (const [label, items, opts = {}] of subs) {
@@ -90,8 +86,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       can('receivables') && hasModule('financial') && { to: '/agents', icon: '🧾', label: 'Receivables' },   // agents, companies, OTAs (owner or the accountant)
       can('payables') && hasModule('accounting') && { to: '/payables', icon: '📥', label: 'Payables' },   // supplier bills, what the hotel owes
       can('vendors') && hasModule('activities') && { to: '/vendor-payouts', icon: '🚐', label: 'Vendor payouts' },   // tour / transport vendors (migration 140)
-      // Hidden from the menu for now (owner, 2026-10-30) — the page still works and Buy without a PO still records into it.
-      SHOW_EXPENSES && can('expenses') && hasModule('back_office') && { to: '/expenses', icon: '💸', label: 'Expenses' },
+      can('expenses') && hasModule('back_office') && { to: '/expenses', icon: '💸', label: 'Expenses' },
       can('accounting') && hasModule('accounting') && { to: '/accounting', icon: '📒', label: 'Accounting' },
     ] },
   ].map(g => ({ ...g, items: g.items.filter(Boolean) })).filter(g => g.items.length);
@@ -102,8 +97,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
       isOwner && { to: '/settings/sources', icon: '💳', label: 'Sources & Payments', hint: 'Where bookings come from and how guests pay' },
       isOwner && { to: '/settings/communications', icon: '✉️', label: 'Email & Messages', hint: 'Guest emails, email account, WhatsApp texts' },
       isOwner && { to: '/settings/reports', icon: '📬', label: 'Notifications', hint: 'Telegram alerts and scheduled reports — who gets what' },
-      // Hidden from Settings for now (owner, 2026-10-30) — the page still works.
-      SHOW_LOYALTY && can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty', hint: 'Guest tiers and their benefits' },
+      can('loyalty') && hasModule('guest_crm') && { to: '/loyalty', icon: '⭐', label: 'Loyalty', hint: 'Guest tiers and their benefits' },
     ] },
     { id: 'rooms-rates', label: 'Rooms & Rates', items: [
       can('units') && { to: '/units', icon: '🏕', label: 'Units', hint: 'Room types, rooms, rates and capacity' },
