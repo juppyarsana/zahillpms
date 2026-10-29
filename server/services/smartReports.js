@@ -238,6 +238,23 @@ function reportAllowed(key, { channel, moduleEnabled }) {
   return { ok: true };
 }
 
+// How Settings → Notifications groups them, in this order. A report not
+// listed here falls into "Other" — add a new one to its group.
+const REPORT_GROUPS = [
+  { id: 'front_desk', icon: '🛎', label: 'Front desk & bookings',
+    keys: ['alert_new_booking', 'alert_channel_manager', 'alert_guest_requests', 'alert_room_check'] },
+  { id: 'rooms', icon: '🧹', label: 'Housekeeping & rooms',
+    keys: ['alert_housekeeping', 'alert_room_clean', 'alert_room_tablet'] },
+  { id: 'restaurant', icon: '🍽', label: 'Restaurant & events',
+    keys: ['alert_restaurant_session', 'alert_restaurant_complimentary', 'alert_restaurant_request', 'alert_event'] },
+  { id: 'purchasing', icon: '📦', label: 'Purchasing & stock',
+    keys: ['alert_purchase_request', 'alert_direct_purchase', 'alert_stock_opname', 'alert_stock_writeoff'] },
+  { id: 'approvals', icon: '✅', label: 'Approvals & owner control',
+    keys: ['approve_complimentary', 'approve_purchase_order', 'alert_owner_control'] },
+  { id: 'scheduled', icon: '📊', label: 'Scheduled reports',
+    keys: ['morning_brief', 'tomorrow_preview', 'daily_close', 'weekly_owner', 'monthly_report'] },
+];
+
 function defaultReportsFor(role, { channel, moduleEnabled }) {
   return Object.entries(REPORTS)
     .filter(([key, r]) => r.defaultRoles.includes(role) && reportAllowed(key, { channel, moduleEnabled }).ok)
@@ -604,4 +621,4 @@ async function runReportAllProperties(reportKey) {
   }
 }
 
-module.exports = { REPORTS, ROLES, reportAllowed, defaultReportsFor, isModuleEnabled, sendReport, sendEvent, renderPreview, runReportAllProperties };
+module.exports = { REPORTS, REPORT_GROUPS, ROLES, reportAllowed, defaultReportsFor, isModuleEnabled, sendReport, sendEvent, renderPreview, runReportAllProperties };

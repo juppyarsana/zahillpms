@@ -240,6 +240,8 @@ export default function SettingsReports() {
   const [preview, setPreview] = useState(null);    // { report, telegram, email }
   const [previewTab, setPreviewTab] = useState('telegram');
   const [previewLoading, setPreviewLoading] = useState(null);
+  const [openGroup, setOpenGroup] = useState(null);   // catalog group shown open
+  const [openRec, setOpenRec] = useState({});         // recipient id → tick boxes shown
 
   function reload() {
     return api.get('/api/smart-reports/recipients').then(r => setRecipients(r.data)).catch(() => {});
@@ -262,6 +264,8 @@ export default function SettingsReports() {
   }, [waiting]);
 
   const reports = catalog?.reports || [];
+  // Groups that have something in them (catalog order = group order).
+  const groups = (catalog?.groups || []).map(g => ({ ...g, reports: reports.filter(r => r.group === g.id) })).filter(g => g.reports.length);
   const reportLabel = key => reports.find(r => r.key === key)?.label || key;
   // Why a report can't be ticked for a recipient (null = it can).
   function blockedReason(rep, channel) {
@@ -361,46 +365,63 @@ export default function SettingsReports() {
       </div>
 
       <div className="card mb-3">
-        <div className="card-title">Instant alerts <span style={{ ...muted, fontWeight: 400 }}>· Telegram</span></div>
-        {reports.filter(r => r.type === 'alert').map(r => (
-          <div key={r.key} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ fontWeight: 600 }}>
-              {r.label}
-              {r.paid && !catalog?.module_enabled && <span className="badge badge-amber" style={{ marginLeft: 8 }}>🔒 Smart Reports add-on</span>}
-            </div>
-            <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
-            {r.key === 'alert_direct_purchase' && <DirectPurchaseAlertSettings />}
-            {r.key === 'alert_stock_writeoff' && <WriteoffAlertSettings />}
-          </div>
-        ))}
-      </div>
-
-      <div className="card mb-3">
-        <div className="flex-between" style={{ gap: 12 }}>
-          <div className="card-title" style={{ marginBottom: 0 }}>Scheduled reports <span style={{ ...muted, fontWeight: 400 }}>· Telegram or email</span></div>
-          {catalog && !catalog.module_enabled && <span className="badge badge-amber">🔒 Smart Reports add-on</span>}
+        <div className="card-title">What can be sent</div>
+        <div style={{ ...muted, marginBottom: 8 }}>
+          Instant alerts go by Telegram the moment something happens; scheduled reports by Telegram or email at a set time (Bali time, WITA).
+          Open a group to read what each one says — who gets what is chosen per person under <b>Recipients</b>.
         </div>
-        {catalog && !catalog.module_enabled && (
-          <p style={{ ...muted, margin: '8px 0 0' }}>
-            Part of the Smart Reports add-on — preview what your team would get below, and ask your platform provider to switch it on.
-          </p>
-        )}
-        {reports.filter(r => r.type === 'scheduled').map(r => (
-          <div key={r.key} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-            <div className="flex-between" style={{ gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{r.label} <span style={{ ...muted, fontWeight: 400 }}>· {r.when}</span></div>
-                <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
-              </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => openPreview(r.key)} disabled={previewLoading === r.key}>
-                {previewLoading === r.key ? 'Loading…' : 'Preview'}
+        {groups.map(g => {
+          const open = openGroup === g.id;
+          const used = g.reports.filter(rep => recipients.some(r => r.is_active && r.reports.includes(rep.key))).length;
+          return (
+            <div key={g.id} style={{ borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setOpenGroup(open ? null : g.id)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px', background: 'none', border: 0, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit' }}>
+                <span style={{ fontSize: 18 }}>{g.icon}</span>
+                <span style={{ fontWeight: 600, flex: 1 }}>{g.label}</span>
+                {g.id === 'scheduled' && catalog && !catalog.module_enabled && <span className="badge badge-amber">🔒 Smart Reports add-on</span>}
+                <span style={muted}>{g.reports.length} · {used} in use</span>
+                <span style={{ ...muted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
               </button>
+              {open && (
+                <div style={{ padding: '0 0 10px 30px' }}>
+                  {g.id === 'scheduled' && catalog && !catalog.module_enabled && (
+                    <p style={{ ...muted, margin: '0 0 6px' }}>
+                      Part of the Smart Reports add-on — preview what your team would get, and ask your platform provider to switch it on.
+                    </p>
+                  )}
+                  {g.reports.map(r => {
+                    const who = recipients.filter(x => x.reports.includes(r.key)).map(x => x.name);
+                    return (
+                      <div key={r.key} style={{ padding: '8px 0', borderTop: '1px dashed var(--border)' }}>
+                        <div className="flex-between" style={{ gap: 12, alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>
+                              {r.label}
+                              <span style={{ ...muted, fontWeight: 400 }}> · {r.type === 'scheduled' ? r.when : 'Telegram, instant'}</span>
+                              {r.paid && !catalog?.module_enabled && r.type !== 'scheduled' && <span className="badge badge-amber" style={{ marginLeft: 8 }}>🔒 Smart Reports add-on</span>}
+                            </div>
+                            <div style={{ ...muted, marginTop: 2 }}>{r.description}</div>
+                            <div style={{ fontSize: 12, marginTop: 4, color: who.length ? 'var(--text)' : 'var(--text-muted)' }}>
+                              {who.length ? `Sent to: ${who.join(', ')}` : 'Nobody gets this yet'}
+                            </div>
+                          </div>
+                          {r.type === 'scheduled' && (
+                            <button className="btn btn-secondary btn-sm" onClick={() => openPreview(r.key)} disabled={previewLoading === r.key}>
+                              {previewLoading === r.key ? 'Loading…' : 'Preview'}
+                            </button>
+                          )}
+                        </div>
+                        {r.key === 'alert_direct_purchase' && <DirectPurchaseAlertSettings />}
+                        {r.key === 'alert_stock_writeoff' && <WriteoffAlertSettings />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-        <p style={{ ...muted, marginTop: 10, marginBottom: 0 }}>
-          All reports are sent in English, on Bali time (WITA).
-        </p>
+          );
+        })}
       </div>
 
       <BotCard
@@ -533,27 +554,72 @@ export default function SettingsReports() {
                 Can't show a Connect link yet — add your hotel's Telegram bot first (Telegram bot card above).
               </div>
             )}
-            <div className="flex" style={{ flexWrap: 'wrap', gap: 14, marginTop: 8 }}>
-              {/* Alerts are Telegram only, so an email recipient doesn't see them. */}
-              {reports.filter(rep => rep.channels.includes(r.channel)).map(rep => {
-                const ticked = r.reports.includes(rep.key);
-                const blocked = blockedReason(rep, r.channel);
-                return (
-                  <span key={rep.key} className="flex items-center" style={{ gap: 8, fontSize: 13, opacity: blocked && !ticked ? 0.55 : 1 }} title={blocked || ''}>
-                    <label className="flex items-center" style={{ gap: 6, cursor: blocked && !ticked ? 'not-allowed' : 'pointer' }}>
-                      {/* A report ticked before the add-on was switched off can still be unticked. */}
-                      <input type="checkbox" checked={ticked} disabled={!!blocked && !ticked} onChange={() => toggleReport(r, rep.key)} />
-                      {rep.label}{rep.paid && !catalog?.module_enabled ? ' 🔒' : ''}
-                    </label>
-                    <button className="btn btn-secondary btn-sm" style={{ padding: '2px 8px', fontSize: 12 }}
-                      onClick={() => sendTest(r, rep.key)} disabled={testing === r.id || !r.address || !!blocked}
-                      title={!r.address ? 'Connect first' : blocked || ''}>
-                      {testing === r.id ? 'Sending…' : 'Send test'}
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
+            {(() => {
+              // Alerts are Telegram only, so an email recipient doesn't see them.
+              const mine = groups.map(g => ({ ...g, reports: g.reports.filter(rep => rep.channels.includes(r.channel)) })).filter(g => g.reports.length);
+              const all = mine.flatMap(g => g.reports);
+              const tickedList = all.filter(rep => r.reports.includes(rep.key));
+              const open = !!openRec[r.id];
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setOpenRec(o => ({ ...o, [r.id]: !open }))}>
+                    {open ? 'Done' : 'Choose what they get'} · {tickedList.length} of {all.length} ▾
+                  </button>
+                  {!open && (
+                    <div className="flex" style={{ flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {mine.map(g => {
+                        const n = g.reports.filter(rep => r.reports.includes(rep.key)).length;
+                        return n ? (
+                          <span key={g.id} className="badge badge-gray" title={g.reports.filter(rep => r.reports.includes(rep.key)).map(rep => rep.label).join(', ')}>
+                            {g.icon} {g.label} · {n}
+                          </span>
+                        ) : null;
+                      })}
+                      {!tickedList.length && <span style={muted}>Nothing ticked — they get nothing.</span>}
+                    </div>
+                  )}
+                  {open && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10, marginTop: 10 }}>
+                      {mine.map(g => {
+                        const ids = g.reports.filter(rep => !blockedReason(rep, r.channel)).map(rep => rep.key);
+                        const allOn = ids.length > 0 && ids.every(k => r.reports.includes(k));
+                        return (
+                          <div key={g.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                            <div className="flex-between" style={{ marginBottom: 4 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{g.icon} {g.label}</div>
+                              {ids.length > 1 && (
+                                <button style={{ ...linkBtn, color: 'var(--green-dark)' }}
+                                  onClick={() => update(r, { reports: allOn ? r.reports.filter(k => !ids.includes(k)) : [...new Set([...r.reports, ...ids])] })}>
+                                  {allOn ? 'None' : 'All'}
+                                </button>
+                              )}
+                            </div>
+                            {g.reports.map(rep => {
+                              const ticked = r.reports.includes(rep.key);
+                              const blocked = blockedReason(rep, r.channel);
+                              return (
+                                <div key={rep.key} className="flex items-center" style={{ gap: 8, fontSize: 13, padding: '3px 0', opacity: blocked && !ticked ? 0.55 : 1 }} title={blocked || rep.description}>
+                                  <label className="flex items-center" style={{ gap: 6, flex: 1, cursor: blocked && !ticked ? 'not-allowed' : 'pointer' }}>
+                                    {/* A report ticked before the add-on was switched off can still be unticked. */}
+                                    <input type="checkbox" checked={ticked} disabled={!!blocked && !ticked} onChange={() => toggleReport(r, rep.key)} />
+                                    {rep.label}{rep.paid && !catalog?.module_enabled ? ' 🔒' : ''}
+                                  </label>
+                                  <button style={{ ...linkBtn, color: 'var(--text-muted)', textDecoration: 'underline' }}
+                                    onClick={() => sendTest(r, rep.key)} disabled={testing === r.id || !r.address || !!blocked}
+                                    title={!r.address ? 'Connect first' : blocked || 'Send a test now'}>
+                                    {testing === r.id ? '…' : 'test'}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {rowMsg[r.id] && (
               <div style={{ fontSize: 12, marginTop: 6, color: rowMsg[r.id].ok ? 'var(--color-success, #16a34a)' : 'var(--danger, #dc2626)' }}>
                 {rowMsg[r.id].text}

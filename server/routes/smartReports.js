@@ -72,10 +72,16 @@ router.get('/catalog', async (req, res) => {
   res.json({
     telegram_bot: await telegram.getBotUsername(await telegram.botTokenFor(req.propertyId)),
     module_enabled: await svc.isModuleEnabled(req.propertyId),
-    reports: Object.entries(svc.REPORTS).map(([key, r]) => ({
-      key, type: r.type, label: r.label, when: r.when, description: r.description,
-      default_roles: r.defaultRoles, channels: r.channels, paid: r.paid,
-    })),
+    // In the groups' order, each with its group (Settings → Notifications).
+    reports: [
+      ...svc.REPORT_GROUPS.flatMap(g => g.keys.filter(k => svc.REPORTS[k]).map(k => [k, g.id])),
+      ...Object.keys(svc.REPORTS).filter(k => !svc.REPORT_GROUPS.some(g => g.keys.includes(k))).map(k => [k, 'other']),
+    ].map(([key, group]) => {
+      const r = svc.REPORTS[key];
+      return { key, group, type: r.type, label: r.label, when: r.when, description: r.description,
+        default_roles: r.defaultRoles, channels: r.channels, paid: r.paid };
+    }),
+    groups: [...svc.REPORT_GROUPS.map(({ id, icon, label }) => ({ id, icon, label })), { id: 'other', icon: '•', label: 'Other' }],
     roles: svc.ROLES,
   });
 });
