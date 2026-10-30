@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -94,6 +94,8 @@ function GuestRow({ r, list, action, canOpen, onCheckin, onCheckout, onRegCard }
   );
 }
 
+const LISTS_EVERY_MS = 60_000;
+
 export default function Today() {
   const navigate = useNavigate();
   const { can, hasModule } = useAuth();
@@ -117,14 +119,28 @@ export default function Today() {
   const canDesk = can('checkin_full');
   const canRes = can('reservations') && hasModule('reservations');
   const canLists = can('guest_lists') || canDesk || can('reservations');
+  // Plain values: hasModule itself is a new function whenever the login context
+  // changes, which would run load again when the module list arrives.
+  const hasDesk = hasModule('front_desk');
+  const hasOps = hasModule('operations');
+  const loadSeq = useRef(0);
+  const loading = useRef(false);
+  const listsAt = useRef(0);
 
-  const load = useCallback(async () => {
+  // The lists work out every room's balance, so a background refresh takes them
+  // once a minute; the board and alerts keep the 15-second pace. An action
+  // (no `background`) always reloads everything at once.
+  const load = useCallback(async ({ background = false } = {}) => {
+    if (background && loading.current) return;
+    const withLists = !background || Date.now() - listsAt.current >= LISTS_EVERY_MS;
+    const seq = ++loadSeq.current;
+    loading.current = true;
     try {
       const reqs = [
         isToday ? api.get('/api/dashboard/summary').then(r => r.data) : Promise.resolve(null),
-        canLists ? api.get('/api/bookings/guest-lists', { params: { date } }).then(r => r.data) : Promise.resolve(null),
+        withLists && canLists ? api.get('/api/bookings/guest-lists', { params: { date } }).then(r => r.data) : Promise.resolve(null),
       ];
-      reqs.push(isToday && canDesk && hasModule('front_desk')
+      reqs.push(withLists && isToday && canDesk && hasDesk
         ? Promise.all([
           api.get('/api/bookings/today/arrivals'), api.get('/api/bookings/today/departures'), api.get('/api/bookings/in-house'),
         ]).then(([a, d, h]) => {
@@ -135,15 +151,19 @@ export default function Today() {
         })
         : Promise.resolve(null));
       // Do Not Disturb is an open guest_request task — the board shows it on the tile.
-      reqs.push(isToday && hasModule('operations')
-        ? api.get('/api/tasks').then(r => r.data.filter(t => t.type === 'guest_request' && t.status !== 'done')).catch(() => [])
+      reqs.push(isToday && hasOps
+        ? api.get('/api/tasks', { params: { type: 'guest_request' } }).then(r => r.data.filter(t => t.status !== 'done')).catch(() => [])
         : Promise.resolve([]));
       const [s, l, m, gr] = await Promise.all(reqs);
-      setSummary(s); setLists(l); setActions(m || new Map()); setGuestRequests(gr); setError('');
+      if (seq !== loadSeq.current) return; // the date changed or an action reloaded meanwhile
+      setSummary(s); setGuestRequests(gr); setError('');
+      if (withLists) { setLists(l); setActions(m || new Map()); listsAt.current = Date.now(); }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load');
+      if (seq === loadSeq.current) setError(err.response?.data?.error || 'Failed to load');
+    } finally {
+      if (seq === loadSeq.current) loading.current = false;
     }
-  }, [date, isToday, canDesk, canLists, hasModule]);
+  }, [date, isToday, canDesk, canLists, hasDesk, hasOps]);
 
   const { startCheckin, startCheckout, windows } = useCheckInOut({ onChanged: load });
 
@@ -168,8 +188,8 @@ export default function Today() {
     load();
     if (!isToday) return undefined;
     // Same pace as the Dashboard: the board follows housekeeping and the tablets.
-    const id = setInterval(() => { if (!document.hidden) load(); }, 15_000);
-    const onVisible = () => { if (!document.hidden) load(); };
+    const id = setInterval(() => { if (!document.hidden) load({ background: true }); }, 15_000);
+    const onVisible = () => { if (!document.hidden) load({ background: true }); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [load, isToday]);
