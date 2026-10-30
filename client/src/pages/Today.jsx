@@ -141,12 +141,12 @@ export default function Today() {
         withLists && canLists ? api.get('/api/bookings/guest-lists', { params: { date } }).then(r => r.data) : Promise.resolve(null),
       ];
       reqs.push(withLists && isToday && canDesk && hasDesk
-        ? Promise.all([
-          api.get('/api/bookings/today/arrivals'), api.get('/api/bookings/today/departures'), api.get('/api/bookings/in-house'),
-        ]).then(([a, d, h]) => {
+        ? Promise.all([ // in-house already holds everyone due out today
+          api.get('/api/bookings/today/arrivals'), api.get('/api/bookings/in-house'),
+        ]).then(([a, h]) => {
           const m = new Map();
           for (const row of a.data) m.set(row.id, { kind: 'in', row });
-          for (const row of [...h.data, ...d.data]) m.set(row.id, { kind: 'out', row });
+          for (const row of h.data) m.set(row.id, { kind: 'out', row });
           return m;
         })
         : Promise.resolve(null));

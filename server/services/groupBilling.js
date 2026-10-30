@@ -43,8 +43,9 @@ async function listPayments(groupId, propertyId, client = db) {
 
 // The whole bill: per room its group part and own part (projected for the
 // whole stay), the group's total, payments and balance. null when the group
-// isn't found or isn't billed as a whole.
-async function groupBill(groupId, propertyId) {
+// isn't found or isn't billed as a whole. `proforma` lets a caller working
+// through many rooms share the estimates it already has.
+async function groupBill(groupId, propertyId, { proforma = computeProforma } = {}) {
   const { rows: [g] } = await db.query(
     'SELECT id, group_billing, billing_mode, group_deposit_amount FROM reservation_groups WHERE id = $1 AND property_id = $2',
     [groupId, propertyId]);
@@ -53,7 +54,7 @@ async function groupBill(groupId, propertyId) {
     `SELECT b.id FROM bookings b JOIN units u ON u.id = b.unit_id
      WHERE b.reservation_group_id = $1 AND b.property_id = $2 AND b.status NOT IN ('cancelled', 'no_show')
      ORDER BY u.name`, [groupId, propertyId]);
-  const estimates = await Promise.all(rooms.map(r => computeProforma(r.id, propertyId)));
+  const estimates = await Promise.all(rooms.map(r => proforma(r.id, propertyId)));
   const perRoom = estimates.filter(Boolean).map(e => ({
     booking_id: e.booking.id, unit_name: e.booking.unit_name, guest_name: e.booking.guest_name,
     group_total: e.group?.group_total || 0, own_total: e.group?.own_total || 0, own_balance: e.balance_due,

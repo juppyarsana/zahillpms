@@ -87,9 +87,10 @@ function newBookingAlert({ title, guest, rooms, checkIn, checkOut, guests, total
 // whole stay, 0 for a stay billed to its agent, extras only for an OTA) to
 // checked-in booking rows, for the Check-in / out and Quick Check-in lists.
 async function withGuestBalance(rows, propertyId) {
-  const { guestBalance } = require('../services/checkoutBalance');
+  const { guestBalance, balanceMemo } = require('../services/checkoutBalance');
+  const memo = balanceMemo();
   for (const r of rows) {
-    const g = await guestBalance(r.id, propertyId);
+    const g = await guestBalance(r.id, propertyId, { memo });
     r.guest_balance_due = g ? g.owed : null;
     // a room of a group billed as a whole (migration 097): what the group still owes
     r.group_owed = g?.group ? g.group.group_owed : null;

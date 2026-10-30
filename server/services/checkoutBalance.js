@@ -14,9 +14,23 @@ const { computeProforma, round2 } = require('./folioService');
 const { CITY_LEDGER } = require('./agentBillingService');
 const { otaCollects } = require('./otaCollect');
 
+// For a list of rooms: each room's estimate and each group's bill worked out once.
+// Without it a room of a group billed as a whole re-estimates every room of its
+// group, so a group of 20 costs 400 estimates. Lives for one request only.
+function balanceMemo() {
+  const estimates = new Map();
+  const bills = new Map();
+  const once = (map, key, make) => { if (!map.has(key)) map.set(key, make()); return map.get(key); };
+  const proforma = (id, propertyId) => once(estimates, id, () => computeProforma(id, propertyId));
+  return {
+    proforma,
+    bill: (groupId, propertyId) => once(bills, groupId, () => require('./groupBilling').groupBill(groupId, propertyId, { proforma })),
+  };
+}
+
 // billToAgent: the checkout choice when sent (BookingDetail); undefined = the
 // default (a city-ledger agent is billed).
-async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
+async function guestBalance(bookingId, propertyId, { billToAgent, memo } = {}) {
   const { rows: [b] } = await db.query(
     `SELECT b.id, b.source, b.folio_status, b.payment_collect, COALESCE(bs.is_ota, false) AS is_ota,
             ag.name AS agent_name, ag.payment_status AS agent_payment_status, ag.agent_type
@@ -32,7 +46,7 @@ async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   if (alreadyBilled || (cityLedger && billToAgent !== false)) {
     return { owed: 0, agent_billed: true, agent_name: b.agent_name || null, ota: false };
   }
-  const pf = await computeProforma(bookingId, propertyId);
+  const pf = await (memo ? memo.proforma(bookingId, propertyId) : computeProforma(bookingId, propertyId));
   if (!pf) return null;
   // Who collects (migration 121, set by the channel manager) wins over the source.
   const ota = otaCollects(b);
@@ -49,10 +63,10 @@ async function guestBalance(bookingId, propertyId, { billToAgent } = {}) {
   // asked of this guest (`group_owed`).
   let group = null;
   if (pf.group) {
-    const bill = await require('./groupBilling').groupBill(pf.group.group_id, propertyId);
+    const bill = await (memo ? memo.bill(pf.group.group_id, propertyId) : require('./groupBilling').groupBill(pf.group.group_id, propertyId));
     if (bill) group = { group_id: bill.group_id, group_owed: bill.balance_due >= 1 ? bill.balance_due : 0, billing_mode: bill.billing_mode };
   }
   return { owed: owed >= 1 ? owed : 0, agent_billed: false, agent_name: b.agent_name || null, ota, group };
 }
 
-module.exports = { guestBalance };
+module.exports = { guestBalance, balanceMemo };
