@@ -53,6 +53,22 @@ The hotel owner asked to see easily which department costs the most. That grew i
 
 **Related, waiting:** the accountant's answers on the **standard chart of accounts** (draft `C:\Users\dj03p\Documents\COA Standar PMS (usulan).xlsx`: 322 accounts, code `GGG-DD-NNN`, same NNN = same cost in every department, Zahill's 256 VHP accounts mapped; 13 questions). The earlier `Pemetaan COA PMS-VHP.xlsx` / `COA mapping PMS-VHP.xlsx` used wrong codes — don't send. Also open: backfilling activities on past stays (owner checking whether the money is already in the PMS).
 
+**Accountant's answers received 2026-10-30** — file `C:\Users\dj03p\Documents\COA Standar PMS (jawaban akuntan).xlsx` (same workbook as the draft; answers in *Pertanyaan untuk akuntan* col D, plus notes in column *Akuntan* of *Akun standar* and *Transaksi PMS → akun*). Not built yet — waiting for the owner to say go and for the follow-up questions below.
+- **Q1–2 agreed:** code `GGG-DD-NNN`, same NNN = same cost in every department → unblocks salaries on Costs (department from the DD segment).
+- **Q3 F&B by inventory method** (purchase → inventory 130, monthly usage → cost of sales 500) so COGS matches revenue — needs a monthly COGS posting from the opname / usage figures (PMS stock + POS stock).
+- **Q4 revenue stays net** as the PMS does now, but discounts must stay visible → a discount report, no change to the books.
+- **Q5 split restaurant revenue** by meal period + food / beverage (410-21-001…104) — from POS session data, POS + PMS change.
+- **Q6 service charge split: L&B 3%, HRD 2%** (draft said 7% / 3% — wrong; *Akun standar* rows 250-00-002/003 corrected by the accountant). Monthly journal today; automatic by the PMS welcome. Make the rates a per-property setting. OPEN: 3% / 2% of the service charge, or points out of the 10%?
+- **Q7** standard accruals list (230-00-001…099) is enough.
+- **Q8 VHP 702-71-014 "A&G Other Expenses" (Rp 389 jt to Sep) = bank interest** → map it to **900-90-001 Interest Expense** (below GOP, non-operating), make 900-90-001 a normal (not optional) account. VHP's GOP is understated by that amount. OPEN: is loan principal recorded (needs a bank loan liability account)?
+- **Q9 HRD shown under A&G** on the P&L (accounts 711 / 712 stay separate) — `plLayout` display only.
+- **Q10 budgets wanted** — new feature: budget per account per month, actual vs budget (+ %) on the P&L.
+- **Q11 opening balances may follow the PMS standard chart** (not tied to the VHP sheet). OPEN: confirm cut-off 1 Oct 2026, send VHP balances at 30 Sep 2026 + last year's TB.
+- **Q12 agreed** (A/R + A/P Clearance dropped, retained earnings merged into one).
+- **Q13 "Setuju", but the row notes change it:** **KSU Manik Mas (110-10-008) no longer used** — drop (check 30 Sep balance = 0); **card settlement per bank, not per card type** (replace 120-10-011…016 Visa / MC / Debit / AMEX / Mandiri EDC / CIMB EDC with one *EDC Settlement – <bank>* per bank); **QRIS posts into the same bank's EDC account** (no separate 120-10-002 for Zahill; e.g. QRIS BCA → EDC BCA) for easier bank reconciliation. Payment methods "EDC <bank>" / "QRIS <bank>" both map to that account. OPEN: which EDC / QRIS providers and banks Zahill has.
+- **Other notes:** 110-00-001 Cash — General Cashier not needed (Zahill only uses petty cash; FO / outlet takings hand in to petty cash or bank); 230-00-011 Petty Cash to Replenish (from VHP 230-00-038 *A/E – Petty Cash*) — accountant asked what it is; explained as petty cash spent but not yet topped up. OPEN: keep or drop.
+- **Follow-up questions sent to the accountant 2026-10-30:** (1) EDC / QRIS providers + banks, (2) 3% / 2% basis, (3) cut-off 1 Oct + 30 Sep balances + last year's TB, (4) loan principal, (5) Petty Cash to Replenish.
+
 ---
 
 ## 🟢 Vendor share — tours / transport paid to a third party (BUILT 2026-10-27 on `dev`, migration 140 — Finance → Vendor payouts; write-up in CLAUDE.md "Vendor payouts")
