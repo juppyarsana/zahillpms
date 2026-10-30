@@ -503,8 +503,12 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
     // Extra beds (per-night extras, migration 074) the room has: tonight for
     // arriving / staying guests, last night for those leaving.
     const { rows: beds } = await db.query(`
-      SELECT a.booking_id, a.service_date::text AS night, a.description, SUM(a.quantity)::int AS qty
+      SELECT a.booking_id, a.service_date::text AS night, a.description, SUM(a.quantity)::int AS qty,
+             -- people sleeping in them: the breakfasts per night FO set (a double
+             -- = 2, a double for one = 1), else units × the item's breakfasts per unit
+             SUM(COALESCE(NULLIF(a.breakfasts, 0), a.quantity * COALESCE(p.meal_pax, 1)))::int AS people
       FROM booking_addons a JOIN bookings b ON b.id = a.booking_id
+      LEFT JOIN products p ON p.id = a.product_id
       WHERE a.property_id = $1 AND a.status = 'active'
         AND a.service_date IN ($2::date, $2::date - 1)
         AND a.service_date >= b.check_in_date AND a.service_date < b.check_out_date
@@ -532,6 +536,7 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
       const mine = beds.filter(x => x.booking_id === r.id && x.night === night);
       r.extra_beds = mine.reduce((s, x) => s + x.qty, 0);
       r.extra_beds_text = mine.map(x => `${x.qty} × ${x.description}`).join(', ');
+      r.extra_bed_pax = mine.reduce((s, x) => s + x.people, 0);
       if (r.list === 'arrival' && date === today && ['pending', 'deposit_paid', 'confirmed'].includes(r.status)
           && (r.check_out_date < date || (r.check_out_date === date && r.check_in_date < prevNight))) neverArrived.push(r);
       // (a one-night stay due in last night and leaving today is still a late
@@ -540,9 +545,11 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
       else if (r.list === 'departure') lists.departures.push(r);
       else lists.in_house.push(r);
     }
-    const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
+    // Guests in the rooms, incl. those sleeping in extra beds (a double = 2)
+    const pax = list => list.reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0) + (r.extra_bed_pax || 0), 0);
     const kidsOf = list => list.reduce((s, r) => s + (r.children || 0), 0);
     const bedsOf = list => list.reduce((s, r) => s + (r.extra_beds || 0), 0);
+    const bedPaxOf = list => list.reduce((s, r) => s + (r.extra_bed_pax || 0), 0);
     const mealPax = (list, flag) => list.filter(r => r[flag]).reduce((s, r) => s + (parseInt(r.num_guests, 10) || 0), 0);
     // + breakfasts that come with an extra bed (the night before)
     const extra = await extraBreakfasts(propertyId, date);
@@ -553,9 +560,9 @@ async function loadGuestLists(propertyId, requestedDate, { balances = true } = {
       ...lists,
       never_arrived: neverArrived,
       summary: {
-        arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals), extra_beds: bedsOf(lists.arrivals) },
-        in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house), extra_beds: bedsOf(lists.in_house) },
-        departures: { rooms: lists.departures.length, pax: pax(lists.departures), extra_beds: bedsOf(lists.departures) },
+        arrivals: { rooms: lists.arrivals.length, pax: pax(lists.arrivals), extra_beds: bedsOf(lists.arrivals), extra_bed_pax: bedPaxOf(lists.arrivals) },
+        in_house: { rooms: lists.in_house.length, pax: pax(lists.in_house), extra_beds: bedsOf(lists.in_house), extra_bed_pax: bedPaxOf(lists.in_house) },
+        departures: { rooms: lists.departures.length, pax: pax(lists.departures), extra_beds: bedsOf(lists.departures), extra_bed_pax: bedPaxOf(lists.departures) },
         breakfast_pax: mealPax(rows.filter(r => r.breakfast_here), 'includes_breakfast') + extraBreakfastPax,
         // + children whose breakfast the hotel covers (migration 114), counted apart
         breakfast_kids: rows.filter(r => r.breakfast_here).reduce((t, r) => t + kidsBreakfast(r), 0),

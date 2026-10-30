@@ -10,8 +10,8 @@ const BOTTOM = 790;
 // Column layout (total width 495pt).
 const COLS = [
   { key: 'room',     label: 'Room',     x: 50,  w: 42 },
-  { key: 'guest',    label: 'Guest',    x: 94,  w: 108 },
-  { key: 'pax',      label: 'Pax',      x: 204, w: 22, align: 'right' },
+  { key: 'guest',    label: 'Guest',    x: 94,  w: 90 },
+  { key: 'pax',      label: 'Pax',      x: 186, w: 42, align: 'right' },
   { key: 'stay',     label: 'Stay',     x: 232, w: 78 },
   { key: 'plan',     label: 'Plan',     x: 312, w: 26 },
   { key: 'status',   label: 'Status',   x: 340, w: 62 },
@@ -47,7 +47,11 @@ function cells(list, r, isToday) {
     room: [r.unit_name, r.unit_type].filter(Boolean).join('\n'),
     guest: [r.guest_name, [r.nationality, r.source_label, r.reservation_group_id && 'Group'].filter(Boolean).join(' · '),
       (r.other_guests || []).length ? `+ ${r.other_guests.map(g => g.name).join(', ')}` : null].filter(Boolean).join('\n'),
-    pax: String(r.num_guests ?? '') + (r.extra_beds > 0 ? `+${r.extra_beds}` : '') + (r.children > 0 ? ` +${r.children}ch` : ''),
+    // People in the room: guests + those sleeping in extra beds (a double
+    // extra bed = 2), so it matches the POS breakfast count.
+    pax: [String((parseInt(r.num_guests, 10) || 0) + (r.extra_bed_pax || 0)),
+      r.extra_bed_pax > 0 ? `incl. ${r.extra_bed_pax} bed` : null,
+      r.children > 0 ? `+${r.children} child` : null].filter(Boolean).join('\n'),
     // Standard PDF Helvetica has no arrow glyph — a dash renders everywhere.
     stay: `${fmtShort(r.check_in_date)} – ${fmtShort(r.check_out_date)}\n${r.nights} night${r.nights === 1 ? '' : 's'}`,
     plan: r.rate_plan_code || '—',
@@ -74,7 +78,7 @@ function drawSection(doc, y, { title, list, rows, summary, empty, isToday }) {
   if (y > BOTTOM - 60) { doc.addPage(); y = 50; }
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text(title, LEFT, y);
   doc.font('Helvetica').fontSize(9).fillColor('#555')
-    .text(`${summary.rooms} room${summary.rooms === 1 ? '' : 's'} · ${summary.pax} guest${summary.pax === 1 ? '' : 's'}${summary.extra_beds ? ` + ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'}` : ''}`, 300, y + 1, { width: RIGHT - 300, align: 'right' });
+    .text(`${summary.rooms} room${summary.rooms === 1 ? '' : 's'} · ${summary.pax} guest${summary.pax === 1 ? '' : 's'}${summary.extra_bed_pax ? ` (incl. ${summary.extra_bed_pax} in ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'})` : ''}`, 300, y + 1, { width: RIGHT - 300, align: 'right' });
   doc.fillColor('#000');
   y += 18;
 

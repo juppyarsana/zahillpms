@@ -206,7 +206,7 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
         <div className="card-title" style={{ marginBottom: 0 }}>{icon} {title}</div>
         <div className="flex gap-2" style={{ alignItems: 'center' }}>
           <span className="text-muted" style={{ fontSize: 13 }}>
-            {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}{summary.extra_beds ? ` + ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'}` : ''}
+            {summary.rooms} room{summary.rooms === 1 ? '' : 's'} · {summary.pax} guest{summary.pax === 1 ? '' : 's'}{summary.extra_bed_pax ? ` (incl. ${summary.extra_bed_pax} in ${summary.extra_beds} extra bed${summary.extra_beds === 1 ? '' : 's'})` : ''}
           </span>
           {action}
         </div>
@@ -229,8 +229,8 @@ function ListSection({ title, icon, rows, summary, empty, extra = [], onOpen, ac
                   <td><RoomCell r={r} /></td>
                   <td><GuestCell r={r} /></td>
                   <td>
-                    {r.num_guests}
-                    {r.extra_beds > 0 && <div className="text-muted" title={r.extra_beds_text} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>+ {r.extra_beds} extra bed</div>}
+                    {(parseInt(r.num_guests, 10) || 0) + (r.extra_bed_pax || 0)}
+                    {r.extra_bed_pax > 0 && <div className="text-muted" title={r.extra_beds_text} style={{ fontSize: 11, whiteSpace: 'nowrap' }}>incl. {r.extra_bed_pax} on extra bed</div>}
                     {r.children > 0 && <div className="text-muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>+ {r.children} child{r.children > 1 ? 'ren' : ''}{r.kids_free_breakfast ? ' · breakfast free' : ''}</div>}
                   </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{stayText(r)}</td>
