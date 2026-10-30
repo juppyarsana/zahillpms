@@ -25,7 +25,7 @@ Each night shows its occupancy and, under it, the price we send per room type in
 | Maroon date | 70% full or more |
 | Amber price | A manual price typed by someone |
 
-Use the switch at the top right to see another meal plan. These are the prices we send. An OTA's own discounts aren't included, so a guest may see a lower price on the OTA.
+Hover over a price (or tap it on a phone) to see why it is that price and how it differs from the night before. Use the switch at the top right to see another meal plan. These are the prices we send. An OTA's own discounts aren't included, so a guest may see a lower price on the OTA.
 
 ## Changing a price
 

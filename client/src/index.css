@@ -558,6 +558,15 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
 
 /* ── Tables ── */
 .table-wrap { overflow-x: auto; }
+
+/* OTA dashboard: the calendar's room type column and Slow dates on a phone */
+.ota-name-col { min-width: 170px; white-space: nowrap; }
+.ota-slow-list { display: none; }
+@media (max-width: 768px) {
+  .ota-name-col { min-width: 88px; max-width: 88px; width: 88px; white-space: normal; line-height: 1.25; }
+  .ota-slow-table { display: none; }
+  .ota-slow-list { display: block; }
+}
 table { width: 100%; border-collapse: collapse; }
 th { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }

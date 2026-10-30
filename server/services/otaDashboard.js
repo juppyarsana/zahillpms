@@ -176,6 +176,7 @@ async function buildNights(propertyId) {
       date: r.date, dow: DOW[dowOf(r.date)], day: Number(r.date.slice(8)), label: short(r.date), days,
       pct: r.occupancy, sold: r.sold, sellable: r.sellable, free: r.free, target, slow, manual,
       holiday: r.holiday, picked_up: pickedBy.get(r.date) || 0, prices, free_by_type,
+      ladder_sold: desired.soldByNight.get(r.date) ?? null,   // the count the ladder uses (the whole hotel)
     };
   });
   return { today, nights, links, rules };
@@ -255,6 +256,11 @@ async function loadOtas(propertyId) {
 async function buildDashboard(propertyId) {
   const { today, nights, links, rules } = await buildNights(propertyId);
   const [since, otas, sync] = await Promise.all([loadSince(propertyId), loadOtas(propertyId), channelSync.status(propertyId)]);
+  // Each ladder, so a price can say why it is what it is and where it goes next.
+  const { rows: ladderRows } = await db.query(
+    'SELECT rate_plan_id, room_type_id, sold_up_to, price FROM channel_price_ladders WHERE property_id = $1 ORDER BY sold_up_to', [propertyId]);
+  const ladders = {};
+  for (const l of ladderRows) ((ladders[l.rate_plan_id] ||= {})[l.room_type_id] ||= []).push({ up_to: l.sold_up_to, price: Number(l.price) });
   const firstPlan = links.planList[0]?.id;
   const list = nights.filter(n => n.slow || n.manual).map(n => {
     const row = Object.values(n.prices[firstPlan] || {});
@@ -266,7 +272,7 @@ async function buildDashboard(propertyId) {
     };
   });
   return {
-    today, linked: links.types.length > 0, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
+    today, linked: links.types.length > 0, ladders, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
     rules, nights, slow_dates: list, slow_total: nights.filter(n => n.slow).length,
     slow_soon: nights.filter(n => n.slow && n.days <= 7).length,
     since, otas,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -36,6 +36,94 @@ function Legend({ color, children }) {
   return <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: color }} />{children}</span>;
 }
 
+// Why a price is what it is, in plain words (hover, or tap on a phone).
+function priceReasons(n, prev, c, steps) {
+  const rows = [];
+  let source;
+  if (c.manual) {
+    source = { label: 'Manual price', bg: MANUAL, fg: '#451A03' };
+    if (c.base != null && c.base !== c.price) rows.push(['Without it', idr(c.base)]);
+    rows.push(['Stays until', 'Someone removes it']);
+  } else if (c.tier != null) {
+    source = { label: 'Price ladder', bg: '#F3E3E6', fg: '#5C1A2E' };
+    rows.push(['Rooms sold', n.ladder_sold]);
+    rows.push(['Ladder tier', `Sold up to ${c.tier}`]);
+    const next = (steps || []).find(s => s.up_to > c.tier);
+    rows.push(next ? ['Next price', `${idr(next.price)} at ${c.tier} sold`] : ['Next price', 'Top of the ladder']);
+  } else {
+    source = { label: 'Normal price', bg: '#F1F2F4', fg: '#4B5058' };
+    rows.push(['Comes from', 'Room rate + meal plan']);
+  }
+  if (prev && prev.c && prev.c.price !== c.price) {
+    const diff = c.price - prev.c.price;
+    const sold = prev.c.tier != null ? ` (${prev.n.ladder_sold} sold)` : '';
+    rows.push([`vs ${prev.n.label}`, `${diff > 0 ? '+' : '−'}${idr(Math.abs(diff))}${sold}`]);
+  }
+  return { source, rows };
+}
+
+function PriceTip({ tip, data, plan }) {
+  const n = data.nights[tip.i];
+  const c = n.prices[plan]?.[tip.type];
+  if (!c) return null;
+  const prev = tip.i > 0 ? { n: data.nights[tip.i - 1], c: data.nights[tip.i - 1].prices[plan]?.[tip.type] } : null;
+  const type = data.room_types.find(t => t.id === tip.type);
+  const { source, rows } = priceReasons(n, prev, c, data.ladders?.[plan]?.[tip.type]);
+  const width = Math.min(300, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(tip.x + 14, window.innerWidth - width - 8));
+  const place = tip.y > window.innerHeight - 280 ? { bottom: window.innerHeight - tip.y + 14 } : { top: tip.y + 14 };
+  return (
+    <div role="tooltip" style={{ position: 'fixed', left, ...place, width, zIndex: 150, pointerEvents: 'none', background: '#fff', border: '1px solid var(--border-strong)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '12px 14px' }}>
+      <div className="text-muted" style={{ fontSize: 12, fontWeight: 600 }}>{type?.name} · {n.label}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, margin: '2px 0 8px' }}>
+        <span style={{ fontSize: 18, fontWeight: 700 }}>{idr(c.price)}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, whiteSpace: 'nowrap', background: source.bg, color: source.fg }}>{source.label}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 5, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 13 }}>
+        {rows.map(([k, v]) => (
+          <Fragment key={k}>
+            <span className="text-muted" style={{ whiteSpace: 'nowrap' }}>{k}</span>
+            <span style={{ fontWeight: 600, textAlign: 'right' }}>{v}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OccupancyBar({ d }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ position: 'relative', flex: '1 1 80px', height: 8, background: '#EEE7DE', borderRadius: 99 }}>
+        <div style={{ height: 8, borderRadius: 99, background: 'var(--green-dark)', width: `${Math.min(100, d.pct)}%` }} />
+        <div title="Occupancy target" style={{ position: 'absolute', top: -3, width: 2, height: 14, background: '#1A1A1A', left: `${d.target}%` }} />
+      </div>
+      <span style={{ fontWeight: 600, fontSize: 13, minWidth: 34, textAlign: 'right' }}>{d.pct}%</span>
+    </div>
+  );
+}
+
+function SlowActions({ d, onPick, onRemove }) {
+  if (!d.manual) return <button type="button" className="btn btn-primary btn-sm" onClick={() => onPick(d.date)}>Change price</button>;
+  return (
+    <>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPick(d.date)} style={{ marginRight: 6 }}>Change</button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onRemove(d)}>Remove manual price</button>
+    </>
+  );
+}
+
+function SlowNotes({ d }) {
+  return (
+    <>
+      {d.manual && <div style={{ fontSize: 12, fontWeight: 500, color: '#92400E' }}>{d.slow ? 'Manual price, ladder off' : 'On track, manual price still on'}</div>}
+      {d.holiday && <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{d.holiday}</div>}
+    </>
+  );
+}
+
+const daysToGo = d => (d.days === 0 ? 'Tonight' : `${d.days} day${d.days === 1 ? '' : 's'}`);
+
 function NightHead({ n, onPick }) {
   const bg = n.slow ? SLOW : n.pct >= 70 ? HIGH : ON_TRACK;
   const fg = n.slow || n.pct >= 70 ? '#fff' : '#14532D';
@@ -61,6 +149,7 @@ export default function OtaDashboard() {
   const [filter, setFilter] = useState('all');
   const [picked, setPicked] = useState(null);
   const [window_, setWindow] = useState(null);   // 'prices' | 'ladder' | 'rules'
+  const [tip, setTip] = useState(null);          // the price being hovered: { i, type, x, y }
   const [notice, setNotice] = useState('');
 
   const load = useCallback(() => api.get('/api/ota-dashboard')
@@ -72,6 +161,17 @@ export default function OtaDashboard() {
     const t = setInterval(load, 2 * 60 * 1000);
     return () => clearInterval(t);
   }, [load]);
+
+  // A touch screen has no hover: a tap opens the box, so it also has to close on
+  // a tap elsewhere or a scroll, or it stays floating away from its price.
+  useEffect(() => {
+    if (!tip) return undefined;
+    const close = () => setTip(null);
+    const outside = e => { if (!e.target.closest?.('[data-price]')) close(); };
+    window.addEventListener('scroll', close, true);
+    document.addEventListener('click', outside);
+    return () => { window.removeEventListener('scroll', close, true); document.removeEventListener('click', outside); };
+  }, [tip]);
 
   const rows = useMemo(() => {
     const test = FILTERS.find(f => f[0] === filter)[2];
@@ -156,18 +256,22 @@ export default function OtaDashboard() {
           <table style={{ borderCollapse: 'separate', borderSpacing: '2px 0' }}>
             <thead>
               <tr>
-                <th style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff', minWidth: 170 }} />
+                <th className="ota-name-col" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff' }} />
                 {data.nights.map(n => <th key={n.date} style={{ padding: '0 0 6px' }}><NightHead n={n} onPick={setPicked} /></th>)}
               </tr>
             </thead>
             <tbody>
               {data.room_types.map(t => (
                 <tr key={t.id}>
-                  <th scope="row" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff', color: 'var(--text)', fontSize: 13, fontWeight: 600, textAlign: 'left', textTransform: 'none', letterSpacing: 'normal', whiteSpace: 'nowrap', padding: '9px 10px 9px 0' }}>{t.name}</th>
-                  {data.nights.map(n => {
+                  <th scope="row" className="ota-name-col" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff', color: 'var(--text)', fontSize: 13, fontWeight: 600, textAlign: 'left', textTransform: 'none', letterSpacing: 'normal', padding: '9px 10px 9px 0' }}>{t.name}</th>
+                  {data.nights.map((n, i) => {
                     const c = n.prices[plan]?.[t.id];
                     return (
-                      <td key={n.date} title={c ? idr(c.price) : undefined} style={{ textAlign: 'center', fontSize: 13, padding: '9px 0',
+                      <td key={n.date} data-price
+                        onPointerEnter={c ? e => { if (e.pointerType === 'mouse') setTip({ i, type: t.id, x: e.clientX, y: e.clientY }); } : undefined}
+                        onPointerLeave={e => { if (e.pointerType === 'mouse') setTip(null); }}
+                        onClick={c ? e => setTip(s => (s && s.i === i && s.type === t.id ? null : { i, type: t.id, x: e.clientX, y: e.clientY })) : undefined}
+                        style={{ textAlign: 'center', fontSize: 13, padding: '9px 0', cursor: c ? 'help' : undefined,
                         background: c?.manual ? MANUAL : n.slow ? '#FEF6F6' : 'transparent', color: c?.manual ? '#451A03' : 'inherit', fontWeight: c?.manual ? 700 : 400 }}>
                         {c ? cellPrice(c.price) : '—'}
                       </td>
@@ -183,8 +287,9 @@ export default function OtaDashboard() {
           <Legend color={ON_TRACK}>On track</Legend>
           <Legend color={HIGH}>70% or more</Legend>
           <Legend color={MANUAL}>Manual price</Legend>
-          <span>Service and tax included. An OTA's own discounts aren't included.</span>
+          <span>Service and tax included. An OTA's own discounts aren't included. Hover over or tap a price to see why.</span>
         </div>
+        {tip && <PriceTip tip={tip} data={data} plan={plan} />}
       </section>
 
       <section className="card" aria-labelledby="ota-slow" style={{ padding: 18, marginBottom: 18 }}>
@@ -202,7 +307,7 @@ export default function OtaDashboard() {
         </div>
         {!rows.length && <div className="text-muted" style={{ padding: '14px 0' }}>No slow dates here.</div>}
         {rows.length > 0 && (
-          <div className="table-wrap">
+          <div className="table-wrap ota-slow-table">
             <table className="table">
               <thead><tr><th>Date</th><th>Days to go</th><th style={{ minWidth: 190 }}>Occupancy</th><th style={{ textAlign: 'right' }}>Rooms left</th><th style={{ textAlign: 'right' }}>Booked, last 7 days</th><th style={{ textAlign: 'right' }}>Lowest OTA price</th><th style={{ textAlign: 'right' }}>Suggested</th><th /></tr></thead>
               <tbody>
@@ -210,30 +315,16 @@ export default function OtaDashboard() {
                   <tr key={d.date} style={d.manual ? { background: '#FFFBEB' } : undefined}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                       {d.label}
-                      {d.manual && <div style={{ fontSize: 12, fontWeight: 500, color: '#92400E' }}>{d.slow ? 'Manual price, ladder off' : 'On track, manual price still on'}</div>}
-                      {d.holiday && <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{d.holiday}</div>}
+                      <SlowNotes d={d} />
                     </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{d.days === 0 ? 'Tonight' : `${d.days} day${d.days === 1 ? '' : 's'}`}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ position: 'relative', flex: '1 1 80px', height: 8, background: '#EEE7DE', borderRadius: 99 }}>
-                          <div style={{ height: 8, borderRadius: 99, background: 'var(--green-dark)', width: `${Math.min(100, d.pct)}%` }} />
-                          <div title="Occupancy target" style={{ position: 'absolute', top: -3, width: 2, height: 14, background: '#1A1A1A', left: `${d.target}%` }} />
-                        </div>
-                        <span style={{ fontWeight: 600, fontSize: 13, minWidth: 34, textAlign: 'right' }}>{d.pct}%</span>
-                      </div>
-                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{daysToGo(d)}</td>
+                    <td><OccupancyBar d={d} /></td>
                     <td style={{ textAlign: 'right' }}>{d.free}</td>
                     <td style={{ textAlign: 'right' }}>{d.picked_up ? `+${d.picked_up}` : '0'}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{d.lowest_price != null ? idr(d.lowest_price) : '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 600, color: '#92400E' }}>{d.cut && !d.manual ? `−${d.cut}%` : ''}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {d.manual
-                        ? <>
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPicked(d.date)} style={{ marginRight: 6 }}>Change</button>
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeManual(d)}>Remove manual price</button>
-                          </>
-                        : <button type="button" className="btn btn-primary btn-sm" onClick={() => setPicked(d.date)}>Change price</button>}
+                      <SlowActions d={d} onPick={setPicked} onRemove={removeManual} />
                     </td>
                   </tr>
                 ))}
@@ -241,10 +332,31 @@ export default function OtaDashboard() {
             </table>
           </div>
         )}
+        {rows.length > 0 && (
+          <div className="ota-slow-list">
+            {rows.map(d => (
+              <div key={d.date} style={{ padding: '12px 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontWeight: 600 }}>
+                  <span>{d.label}</span>
+                  <span className="text-muted" style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>{daysToGo(d)}</span>
+                </div>
+                <SlowNotes d={d} />
+                <div style={{ margin: '8px 0 6px' }}><OccupancyBar d={d} /></div>
+                <div className="text-muted" style={{ fontSize: 13 }}>
+                  {d.free} room{d.free === 1 ? '' : 's'} left · {d.picked_up ? `+${d.picked_up}` : '0'} booked in 7 days{d.lowest_price != null ? ` · from ${idr(d.lowest_price)}` : ''}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#92400E' }}>{d.cut && !d.manual ? `Suggested −${d.cut}%` : ''}</span>
+                  <span style={{ whiteSpace: 'nowrap' }}><SlowActions d={d} onPick={setPicked} onRemove={removeManual} /></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'stretch' }}>
-        <section className="card" aria-labelledby="ota-perf" style={{ flex: '999 1 620px', minWidth: 0, padding: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <section className="card" aria-labelledby="ota-perf" style={{ minWidth: 0, padding: 18 }}>
           <h2 id="ota-perf" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>How each OTA is doing</h2>
           <div className="text-muted" style={{ fontSize: 13, margin: '2px 0 10px' }}>Reservations made in the last 30 days, compared with the 30 days before.</div>
           {!data.otas.length && <div className="text-muted">No OTA reservations in the last 60 days.</div>}
@@ -272,19 +384,21 @@ export default function OtaDashboard() {
           )}
         </section>
 
-        <section className="card" aria-labelledby="ota-since" style={{ flex: '1 1 280px', minWidth: 0, padding: 18 }}>
+        <section className="card" aria-labelledby="ota-since" style={{ minWidth: 0, padding: 18 }}>
           <h2 id="ota-since" style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700 }}>Since yesterday</h2>
           {!data.since.items.length && <div className="text-muted">Nothing new from the OTAs.</div>}
-          {data.since.items.map(e => (
-            <div key={e.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 14, fontWeight: 600 }}>
-                <span>{e.ota}</span><span style={{ color: KIND[e.kind].color }}>{KIND[e.kind].label}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))', columnGap: 24 }}>
+            {data.since.items.map(e => (
+              <div key={e.id} style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 14, fontWeight: 600 }}>
+                  <span>{e.ota}</span><span style={{ color: KIND[e.kind].color }}>{KIND[e.kind].label}</span>
+                </div>
+                <div className="text-muted" style={{ fontSize: 13, marginTop: 2 }}>
+                  {e.rooms} room{e.rooms === 1 ? '' : 's'}{e.arrival ? ` · ${shortDate(e.arrival)}${e.departure ? ` – ${shortDate(e.departure)}` : ''}` : ''}{e.amount ? ` · ${juta(e.amount)}` : ''}
+                </div>
               </div>
-              <div className="text-muted" style={{ fontSize: 13, marginTop: 2 }}>
-                {e.rooms} room{e.rooms === 1 ? '' : 's'}{e.arrival ? ` · ${shortDate(e.arrival)}${e.departure ? ` – ${shortDate(e.departure)}` : ''}` : ''}{e.amount ? ` · ${juta(e.amount)}` : ''}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </section>
       </div>
 

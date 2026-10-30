@@ -74,7 +74,8 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
   const tiers = new Map();      // `r|external|night` → the ladder tier sent ("sold up to")
   const base = new Map();       // `r|external|night` → the price under a typed OTA price
   const manuals = new Set();    // `r|external|night` sent at a typed OTA price
-  if (!rtLinks.length) return { values, tiers, base, manuals, from, to };
+  const soldByNight = new Map();   // night → rooms sold in the whole hotel (counted when a ladder is in use)
+  if (!rtLinks.length) return { values, tiers, base, manuals, soldByNight, from, to };
   const typeIds = rtLinks.map(l => l.room_type_id);
 
   const [{ rows: units }, { rows: stays }] = await Promise.all([
@@ -154,6 +155,7 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
     }
     for (const night of nights) {
       const sold = soldRooms.get(night)?.size || 0;
+      soldByNight.set(night, sold);
       for (const [ext, list] of ladders) {
         const t = tierFor(list, sold);
         values.set(`r|${ext}|${night}`, t.price);
@@ -182,7 +184,7 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
       tiers.delete(key);
     }
   }
-  return { values, tiers, base, manuals, from, to };
+  return { values, tiers, base, manuals, soldByNight, from, to };
 }
 
 // Consecutive nights with the same value → one range.

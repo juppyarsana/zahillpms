@@ -25,7 +25,7 @@ Setiap malam menunjukkan okupansi, dan di bawahnya harga yang kita kirim per tip
 | Tanggal marun | Terisi 70% atau lebih |
 | Harga kuning | Harga manual yang diketik seseorang |
 
-Pakai tombol di kanan atas untuk melihat meal plan lain. Ini harga yang kita kirim. Diskon dari OTA sendiri tidak termasuk, jadi tamu bisa melihat harga yang lebih rendah di OTA.
+Arahkan kursor ke harga (atau tekan di HP) untuk melihat alasan harganya dan bedanya dengan malam sebelumnya. Pakai tombol di kanan atas untuk melihat meal plan lain. Ini harga yang kita kirim. Diskon dari OTA sendiri tidak termasuk, jadi tamu bisa melihat harga yang lebih rendah di OTA.
 
 ## Mengubah harga
 
