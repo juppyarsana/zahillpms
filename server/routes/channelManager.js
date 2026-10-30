@@ -12,8 +12,16 @@ const channelHealth = require('../services/channelHealth');
 const channelWebhook = require('../services/channelWebhook');
 const ratePrices = require('../services/channelRatePrices');
 const ladders = require('../services/channelPriceLadders');
+const otaPriceLog = require('../services/otaPriceLog');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 
-router.use(requireRole('owner'));
+// OTA prices and ladders are also open to the sales team (`ota_dashboard`,
+// migration 146); everything else here stays with the owner.
+const salesOrOwner = requireOwnerOrMenu('ota_dashboard');
+const ownerOnly = requireRole('owner');
+router.use((req, res, next) => (/^\/(prices|ladders)(\/|$)/.test(req.path) ? salesOrOwner : ownerOnly)(req, res, next));
+
+const logDay = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
 
 function send(res, err) {
   if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
@@ -34,14 +42,23 @@ router.get('/prices', async (req, res) => {
 // POST /api/channel-manager/prices { lines: [{ room_type_id, rate_plan_id, date_from, date_to, price }] }
 // All lines in one go — they reach Channex in one call.
 router.post('/prices', async (req, res) => {
-  try { res.status(201).json(await ratePrices.save(req.propertyId, req.user.id, req.body?.lines)); }
-  catch (err) { send(res, err); }
+  try {
+    const lines = req.body?.lines;
+    const result = await ratePrices.save(req.propertyId, req.user.id, lines);
+    const days = lines.flatMap(l => [l.date_from, l.date_to]).sort();
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'prices',
+      summary: `OTA prices: ${result.saved} line${result.saved === 1 ? '' : 's'}, ${logDay(days[0])} – ${logDay(days[days.length - 1])}` });
+    res.status(201).json(result);
+  } catch (err) { send(res, err); }
 });
 
 // DELETE /api/channel-manager/prices { ids }
 router.delete('/prices', async (req, res) => {
-  try { res.json(await ratePrices.remove(req.propertyId, req.body?.ids)); }
-  catch (err) { send(res, err); }
+  try {
+    const result = await ratePrices.remove(req.propertyId, req.body?.ids);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'prices_removed', summary: `OTA prices: ${result.removed} line${result.removed === 1 ? '' : 's'} removed` });
+    res.json(result);
+  } catch (err) { send(res, err); }
 });
 
 // OTA price ladders (migration 137): a price per room type per tier of rooms
@@ -53,14 +70,20 @@ router.get('/ladders', async (req, res) => {
 
 // PUT /api/channel-manager/ladders/:ratePlanId { tiers: [16, 20, …], prices: { <room_type_id>: [price per tier] } }
 router.put('/ladders/:ratePlanId', async (req, res) => {
-  try { res.json(await ladders.save(req.propertyId, req.user.id, req.params.ratePlanId, req.body)); }
-  catch (err) { send(res, err); }
+  try {
+    const result = await ladders.save(req.propertyId, req.user.id, req.params.ratePlanId, req.body);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder', summary: `OTA price ladder saved: ${result.room_types} room types, ${result.tiers} tiers` });
+    res.json(result);
+  } catch (err) { send(res, err); }
 });
 
 // DELETE /api/channel-manager/ladders/:ratePlanId
 router.delete('/ladders/:ratePlanId', async (req, res) => {
-  try { res.json(await ladders.remove(req.propertyId, req.params.ratePlanId)); }
-  catch (err) { send(res, err); }
+  try {
+    const result = await ladders.remove(req.propertyId, req.params.ratePlanId);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder_removed', summary: 'OTA price ladder removed' });
+    res.json(result);
+  } catch (err) { send(res, err); }
 });
 
 // GET /api/channel-manager/setup

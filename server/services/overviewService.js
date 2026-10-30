@@ -162,6 +162,13 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
       text: `${fmtDay(h.date)}${night ? ` · ${night.sold} of ${night.sellable} rooms booked (${night.occupancy}%)` : ''} — check the prices`,
       to: '/pricing' });
   }
+  if (on.has('channel_manager')) {
+    const slow = await require('./otaDashboard').slowCount(propertyId).catch(() => 0);
+    if (slow) {
+      needs.push({ kind: 'slow_dates', title: `${slow} slow date${slow === 1 ? '' : 's'} in the next 30 days`,
+        text: 'Below the occupancy target — see the prices on the OTA dashboard', to: '/ota-dashboard' });
+    }
+  }
 
   // ── Yesterday vs the same weekday a week before ──
   const sell = parseInt(u.sellable, 10) || 0;

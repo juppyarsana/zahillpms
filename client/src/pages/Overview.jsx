@@ -22,7 +22,7 @@ const weekday = ymd => { const [y, m, d] = ymd.split('-').map(Number); return ne
 const NEED_KEY = {
   complimentary: 'reservations', po: ['purchasing', 'approve_po'], ota: 'reservations', overdue_stay: 'reservations',
   never_arrived: 'guest_lists', agent_overdue: 'receivables', bills_overdue: 'payables', cost_jump: 'costs',
-  night_audit: 'night_audit', holiday: 'pricing',
+  night_audit: 'night_audit', holiday: 'pricing', slow_dates: 'ota_dashboard',
 };
 
 // ▲ 12% / ▼ 3 pts against the comparison day.

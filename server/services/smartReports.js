@@ -101,6 +101,15 @@ const REPORTS = {
     channels: ['telegram'],
     paid: false,
   },
+  alert_ota_price: {
+    type: 'alert',
+    label: 'OTA price changed',
+    when: 'Instantly',
+    description: 'Someone other than the owner changed an OTA price or a price ladder: which date, which room types, the new price and who did it.',
+    defaultRoles: ['owner'],
+    channels: ['telegram'],
+    paid: false,
+  },
   alert_channel_manager: {
     type: 'alert',
     label: 'Channel manager problems',
@@ -242,7 +251,7 @@ function reportAllowed(key, { channel, moduleEnabled }) {
 // listed here falls into "Other" — add a new one to its group.
 const REPORT_GROUPS = [
   { id: 'front_desk', icon: '🛎', label: 'Front desk & bookings',
-    keys: ['alert_new_booking', 'alert_channel_manager', 'alert_guest_requests', 'alert_room_check'] },
+    keys: ['alert_new_booking', 'alert_channel_manager', 'alert_ota_price', 'alert_guest_requests', 'alert_room_check'] },
   { id: 'rooms', icon: '🧹', label: 'Housekeeping & rooms',
     keys: ['alert_housekeeping', 'alert_room_clean', 'alert_room_tablet'] },
   { id: 'restaurant', icon: '🍽', label: 'Restaurant & events',

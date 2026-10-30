@@ -20,7 +20,7 @@ function withSubs(subs) {
   return out;
 }
 
-export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
+export function buildNav({ user, can, hasModule, otaBadge = 0, otaSlow = 0 }) {
   const isOwner = user?.role === 'owner';
   const res = hasModule('reservations');
   const hasCosts = hasModule('back_office') || hasModule('accounting');   // where costs are entered
@@ -49,6 +49,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0 }) {
     ] },
     // Sales: prices and the meeting room — selling rooms and events ahead.
     { id: 'sales', label: 'Sales', items: [
+      can('ota_dashboard') && hasModule('channel_manager') && { to: '/ota-dashboard', icon: '📉', label: 'OTA dashboard', badge: otaSlow },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
       can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
     ] },

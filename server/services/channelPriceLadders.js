@@ -82,6 +82,8 @@ async function save(propertyId, userId, ratePlanId, body) {
     if (i && t <= tiers[i - 1]) throw bad(`Tier ${i + 1}: "sold up to" must be higher than the tier above (${tiers[i - 1]})`);
   });
 
+  const { rows: mins } = await db.query('SELECT room_type_id, price FROM channel_min_prices WHERE property_id = $1', [propertyId]);
+  const minimums = new Map(mins.map(m => [m.room_type_id, Number(m.price)]));
   const out = [];
   const prices = body?.prices || {};
   for (const rt of plan.room_types) {
@@ -93,6 +95,8 @@ async function save(propertyId, userId, ratePlanId, body) {
       if (v === null) throw bad(`${rt.name}: fill in every tier, or leave the whole column empty`);
       if (!Number.isFinite(v) || v <= 0) throw bad(`${rt.name}, sold up to ${t}: type a price above 0`);
       if (v >= 1e12) throw bad(`${rt.name}, sold up to ${t}: price too high`);
+      const min = minimums.get(rt.id);
+      if (min != null && v < min) throw bad(`${rt.name}, sold up to ${t}: below the minimum of Rp ${Math.round(min).toLocaleString('id-ID')}`, 'BELOW_MIN');
       if (Math.round(v * 100) !== Math.round(v * 100 * 1e6) / 1e6) throw bad(`${rt.name}, sold up to ${t}: at most 2 decimals`);
       out.push({ room_type_id: rt.id, up_to: t, price: Math.round(v * 100) / 100 });
     });

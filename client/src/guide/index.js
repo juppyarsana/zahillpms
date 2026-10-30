@@ -28,6 +28,9 @@ export const GROUPS = [
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
     { id: 'ota-payments', icon: '🏦', title: { id: 'Pembayaran dari OTA', en: 'Payments from the OTAs' } },
   ] },
+  { label: { id: 'Sales', en: 'Sales' }, chapters: [
+    { id: 'ota-dashboard', icon: '📉', title: { id: 'OTA dashboard: tanggal sepi & harga', en: 'OTA dashboard: slow dates & prices' } },
+  ] },
   { label: { id: 'Operasional', en: 'Operations' }, chapters: [
     { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },

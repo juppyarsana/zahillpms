@@ -64,6 +64,7 @@ export const MENU_DEFS = [
   { key: 'approve_po',       label: 'Approve purchase orders', group: 'Operations' },
   // Only the Buy without a PO window of Purchasing (e.g. the accountant).
   { key: 'direct_purchase',  label: 'Buy without a PO (stock bought at the market / a shop)', group: 'Operations' },
+  { key: 'ota_dashboard',    label: 'OTA dashboard (see slow dates, change OTA prices and ladders)', group: 'Sales' },
   { key: 'pricing',          label: 'Pricing',              group: 'Sales'   },
   { key: 'allotments',       label: 'Allotments (without a channel manager)',             group: 'Settings'   },
   // Users and Sources & Payments are owner-only (no tick box, migration 128).

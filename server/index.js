@@ -161,6 +161,7 @@ app.use('/api/payables', auth, moduleGuard('accounting'), require('./routes/paya
 app.use('/api/yield', auth, moduleGuard('yield_management'), requireRole('owner'), require('./routes/yield'));
 app.use('/api/channel-manager', auth, moduleGuard('channel_manager'), require('./routes/channelManager'));
 app.use('/api/ota-inbox', auth, moduleGuard('channel_manager'), require('./routes/otaInbox'));
+app.use('/api/ota-dashboard', auth, moduleGuard('channel_manager'), require('./middleware/requireOwnerOrMenu')('ota_dashboard'), require('./routes/otaDashboard'));
 // Reports & Alerts: free instant Telegram alerts for every property; the
 // scheduled reports are the paid `smart_reports` module, checked per report
 // inside the route file.

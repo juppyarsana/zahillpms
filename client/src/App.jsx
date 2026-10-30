@@ -46,6 +46,8 @@ import Sales from './pages/Sales';
 import Activities from './pages/Activities';
 import UnitSettings from './pages/UnitSettings';
 import Pricing from './pages/Pricing';
+import OtaDashboard from './pages/OtaDashboard';
+import useOtaSlowCount from './hooks/useOtaSlowCount';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
 import SettingsProperty from './pages/SettingsProperty';
@@ -110,7 +112,8 @@ function BottomNav() {
   // Grouped "More" drawer — the same groups as the desktop sidebar
   // (lib/navItems.js), then Guide and Settings (the Settings page).
   const { badge: otaBadge } = useOtaInbox();
-  const navDef = buildNav({ user, can, hasModule, otaBadge });
+  const otaSlow = useOtaSlowCount();
+  const navDef = buildNav({ user, can, hasModule, otaBadge, otaSlow });
   const moreGroups = [
     navDef.overview && { label: 'Owner', items: [navDef.overview] },
     ...navDef.groups,
@@ -260,6 +263,7 @@ function RequireModule({ moduleName, children }) {
 function Home() {
   const { can, hasModule, user } = useAuth();
   if (can('overview')) return <Navigate to="/overview" replace />;
+  if (can('ota_dashboard') && hasModule('channel_manager')) return <Navigate to="/ota-dashboard" replace />;
   if ((can('checkin_full') || can('guest_lists') || can('dashboard')) && hasModule('reservations')) return <Navigate to="/today" replace />;
   const first = firstAllowedPath(user);
   if (first === '/') return <div className="text-muted" style={{ padding: 40 }}>Nothing to show here yet — ask the owner which pages your role can open.</div>;
@@ -362,6 +366,7 @@ export default function App() {
                   <Route path="/sales"            element={<RequireMenu menuKey="sales"><RequireModule moduleName="sales"><Sales /></RequireModule></RequireMenu>} />
                   <Route path="/activities"       element={<RequireMenu menuKey="activities"><RequireModule moduleName="activities"><Activities /></RequireModule></RequireMenu>} />
                   <Route path="/units"            element={<RequireMenu menuKey="units"><UnitSettings /></RequireMenu>} />
+                  <Route path="/ota-dashboard"    element={<RequireMenu menuKey="ota_dashboard"><RequireModule moduleName="channel_manager"><OtaDashboard /></RequireModule></RequireMenu>} />
                   <Route path="/pricing"          element={<RequireMenu menuKey="pricing"><RequireModule moduleName="reservations"><Pricing /></RequireModule></RequireMenu>} />
                   <Route path="/users"            element={<RequireOwner><Users /></RequireOwner>} />
                   <Route path="/settings"         element={<SettingsHub />} />

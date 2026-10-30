@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import { propertyLogo } from '../lib/pwaBrand';
 import { useOtaInbox } from './OtaInbox';
+import useOtaSlowCount from '../hooks/useOtaSlowCount';
 
 function SidebarLink({ to, end, icon, label, badge }) {
   return (
@@ -103,7 +104,8 @@ export default function Sidebar() {
   const { branding } = useSettings();
   const location = useLocation();
   const { badge: otaBadge } = useOtaInbox();
-  const nav = buildNav({ user, can, hasModule, otaBadge });
+  const otaSlow = useOtaSlowCount();
+  const nav = buildNav({ user, can, hasModule, otaBadge, otaSlow });
   // Settings is one link to the Settings page (pages/SettingsHub.jsx) — it is
   // visited rarely and used to take most of the sidebar when expanded.
   const inSettings = location.pathname === '/settings' || nav.settingsPaths.some(p => location.pathname.startsWith(p));

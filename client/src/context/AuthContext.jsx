@@ -36,6 +36,7 @@ const ORDERED_PATHS = [
   { key: 'guest_board',   path: '/settings/board' },
   { key: 'loyalty',       path: '/loyalty' },
   { key: 'allotments',    path: '/allotment' },
+  { key: 'ota_dashboard', path: '/ota-dashboard' },
   { key: 'pricing',       path: '/pricing' },
   { key: 'units',         path: '/units' },
   { key: 'room_tablets',  path: '/settings/room-tablets' },

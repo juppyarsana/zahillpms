@@ -55,9 +55,9 @@ async function logSend(propertyId, entry) {
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
 // The values the channel manager should have now, keyed `kind|external|night`.
-async function desiredValues(propertyId) {
+async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
   const { rows: [{ today }] } = await db.query(`SELECT to_char(${TODAY_WITA_SQL}, 'YYYY-MM-DD') AS today`);
-  const from = today, to = addDays(today, SYNC_DAYS);   // `to` = the morning after the last night
+  const from = today, to = addDays(today, days);   // `to` = the morning after the last night
   const nights = [];
   for (let d = from; d < to; d = addDays(d, 1)) nights.push(d);
 
@@ -72,7 +72,9 @@ async function desiredValues(propertyId) {
   ]);
   const values = new Map();
   const tiers = new Map();      // `r|external|night` → the ladder tier sent ("sold up to")
-  if (!rtLinks.length) return { values, tiers, from, to };
+  const base = new Map();       // `r|external|night` → the price under a typed OTA price
+  const manuals = new Set();    // `r|external|night` sent at a typed OTA price
+  if (!rtLinks.length) return { values, tiers, base, manuals, from, to };
   const typeIds = rtLinks.map(l => l.room_type_id);
 
   const [{ rows: units }, { rows: stays }] = await Promise.all([
@@ -173,11 +175,14 @@ async function desiredValues(propertyId) {
       ORDER BY o.created_at, o.id`, [propertyId, from, to, PROVIDER]);
   for (const o of overrides) {
     for (let d = o.d1; d <= o.d2; d = addDays(d, 1)) {
-      values.set(`r|${o.external_rate_plan_id}|${d}`, Number(o.price));
-      tiers.delete(`r|${o.external_rate_plan_id}|${d}`);
+      const key = `r|${o.external_rate_plan_id}|${d}`;
+      if (!manuals.has(key)) base.set(key, values.get(key));
+      manuals.add(key);
+      values.set(key, Number(o.price));
+      tiers.delete(key);
     }
   }
-  return { values, tiers, from, to };
+  return { values, tiers, base, manuals, from, to };
 }
 
 // Consecutive nights with the same value → one range.

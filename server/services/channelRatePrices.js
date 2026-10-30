@@ -60,6 +60,8 @@ async function save(propertyId, userId, lines) {
   const { rows: [{ today }] } = await db.query(`SELECT to_char(${TODAY_WITA_SQL}, 'YYYY-MM-DD') AS today`);
   const last = addDays(today, MAX_DAYS_AHEAD);
   const allowed = new Set((await options(propertyId)).map(o => `${o.room_type_id}|${o.rate_plan_id}`));
+  const { rows: mins } = await db.query('SELECT room_type_id, price FROM channel_min_prices WHERE property_id = $1', [propertyId]);
+  const minimums = new Map(mins.map(m => [m.room_type_id, Number(m.price)]));
 
   const clean = lines.map((l, i) => {
     const n = `Line ${i + 1}: `;
@@ -72,6 +74,8 @@ async function save(propertyId, userId, lines) {
     if (!Number.isFinite(price) || price <= 0) throw bad(n + 'type a price above 0');
     if (Math.round(price * 100) !== Math.round(price * 100 * 1e6) / 1e6) throw bad(n + 'at most 2 decimals');
     if (price >= 1e12) throw bad(n + 'price too high');
+    const min = minimums.get(l.room_type_id);
+    if (min != null && price < min) throw bad(n + `below the minimum of Rp ${Math.round(min).toLocaleString('id-ID')} for this room type`, 'BELOW_MIN');
     return { room_type_id: l.room_type_id, rate_plan_id: l.rate_plan_id, date_from: l.date_from, date_to: l.date_to, price: Math.round(price * 100) / 100 };
   });
 
@@ -104,4 +108,35 @@ async function remove(propertyId, ids) {
   return { removed: rowCount };
 }
 
-module.exports = { options, list, save, remove };
+// Take one night out of every line covering it (OTA dashboard → Remove manual
+// price): a longer line is cut in two, keeping its own price, batch and age so
+// the "last saved wins" order doesn't change on the other nights.
+async function removeForNight(propertyId, night) {
+  if (!validYmd(night)) throw bad('Pick a date');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT * FROM channel_rate_prices WHERE property_id = $1 AND date_from <= $2::date AND date_to >= $2::date FOR UPDATE`,
+      [propertyId, night]);
+    for (const r of rows) {
+      await client.query('DELETE FROM channel_rate_prices WHERE id = $1', [r.id]);
+      const insert = (from, to) => client.query(
+        `INSERT INTO channel_rate_prices (property_id, room_type_id, rate_plan_id, date_from, date_to, price, batch_id, created_by, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [propertyId, r.room_type_id, r.rate_plan_id, from, to, r.price, r.batch_id, r.created_by, r.created_at]);
+      const d1 = String(r.date_from).slice(0, 10), d2 = String(r.date_to).slice(0, 10);
+      if (d1 < night) await insert(d1, addDays(night, -1));
+      if (d2 > night) await insert(addDays(night, 1), d2);
+    }
+    await client.query('COMMIT');
+    return rows.length;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { options, list, save, remove, removeForNight };
