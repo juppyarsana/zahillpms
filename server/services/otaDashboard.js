@@ -189,18 +189,24 @@ async function loadSince(propertyId) {
             to_char(r.arrival, 'YYYY-MM-DD') AS arrival, to_char(r.departure, 'YYYY-MM-DD') AS departure,
             COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(COALESCE(r.raw->'attributes', r.raw)->'rooms') = 'array'
                                              THEN COALESCE(r.raw->'attributes', r.raw)->'rooms' END), 1) AS rooms,
-            COALESCE(r.raw->'attributes', r.raw)->>'amount' AS amount
+            COALESCE(r.raw->'attributes', r.raw)->>'amount' AS amount,
+            r.departure < (NOW() AT TIME ZONE 'Asia/Makassar')::date AS stay_over,
+            EXISTS (SELECT 1 FROM bookings b WHERE b.id = ANY(r.booking_ids) AND b.created_at < r.received_at - INTERVAL '10 minutes') AS had_it
        FROM channel_revisions r
       WHERE r.property_id = $1 AND r.result IN ('applied', 'attention')
         AND r.received_at >= (((NOW() AT TIME ZONE 'Asia/Makassar')::date - 1)::timestamp AT TIME ZONE 'Asia/Makassar')
       ORDER BY r.received_at DESC LIMIT 50`, [propertyId]);
-  const items = rows.map(r => ({
+  // An OTA resends old bookings when it is connected. A stay already over, or one
+  // matched to a booking we already had, is not a sale made since yesterday.
+  const resent = r => r.result === 'applied' && !['cancelled', 'modified'].includes(r.revision_status) && (r.stay_over || r.had_it);
+  const items = rows.filter(r => !resent(r)).map(r => ({
     id: r.id, ota: r.ota_name, received_at: r.received_at, rooms: Number(r.rooms) || 1, amount: Number(r.amount) || 0,
     arrival: r.arrival, departure: r.departure,
     kind: r.result !== 'applied' ? 'attention' : r.revision_status === 'cancelled' ? 'cancelled' : r.revision_status === 'modified' ? 'changed' : 'new',
   }));
   const sum = (kind, k) => items.filter(i => i.kind === kind).reduce((s, i) => s + i[k], 0);
   return {
+    resent: rows.length - items.length,
     booked: { rooms: sum('new', 'rooms'), amount: sum('new', 'amount'), reservations: items.filter(i => i.kind === 'new').length },
     cancelled: { rooms: sum('cancelled', 'rooms'), amount: sum('cancelled', 'amount'), reservations: items.filter(i => i.kind === 'cancelled').length },
     items: items.slice(0, 12),
@@ -219,7 +225,7 @@ async function loadOtas(propertyId) {
                 b.check_in_date - (b.created_at AT TIME ZONE 'Asia/Makassar')::date AS lead,
                 (b.created_at >= NOW() - INTERVAL '30 days') AS cur
            FROM bookings b
-           JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id AND bs.is_ota
+           JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id AND (bs.is_ota OR bs.source_type = 'ota')
           WHERE b.property_id = $1 AND b.created_at >= NOW() - INTERVAL '60 days'
        )
        SELECT label,

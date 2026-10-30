@@ -62,3 +62,7 @@ Ini aturan tetap, bukan prediksi:
 ## How each OTA is doing
 
 Reservasi yang dibuat dalam 30 hari terakhir dibanding 30 hari sebelumnya. **Commission** hanya tampil untuk OTA yang mengirimnya lewat channel manager; yang lain tertulis **Not sent**.
+
+## Since yesterday
+
+Booking yang masuk atau berubah sejak kemarin pukul 00.00. Saat OTA dihubungkan, OTA sering mengirim ulang booking lama. Tamu yang sudah check-out dan booking yang sudah ada di PMS tidak dihitung sebagai baru; jumlahnya tertulis di bawah daftar.

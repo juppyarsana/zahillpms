@@ -62,3 +62,7 @@ It is a fixed rule, not a prediction:
 ## How each OTA is doing
 
 Reservations made in the last 30 days compared with the 30 days before. **Commission** only shows for OTAs that send it through the channel manager; the others read **Not sent**.
+
+## Since yesterday
+
+Bookings that came in or changed since yesterday at 00:00. When an OTA is connected it often sends its old bookings again. Stays already over and bookings already in the PMS don't count as new; how many were left out is written under the list.

@@ -21,7 +21,8 @@ const ago = d => {
   if (min < 1440) return `${Math.round(min / 60)} h ago`;
   return `${Math.round(min / 1440)} d ago`;
 };
-const shortDate = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+// The year shows when it isn't this year: "8 Sep 2027" must not read like a stay already over.
+const shortDate = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC', ...(d.slice(0, 4) === String(new Date().getFullYear()) ? {} : { year: 'numeric' }) });
 
 const SLOW = '#B91C1C', HIGH = '#5C1A2E', ON_TRACK = '#CFE3D4', MANUAL = '#FCD34D';
 const KIND = {
@@ -399,6 +400,7 @@ export default function OtaDashboard() {
               </div>
             ))}
           </div>
+          {data.since.resent > 0 && <div className="text-muted" style={{ fontSize: 13, marginTop: 10 }}>Not counted: {data.since.resent} older booking{data.since.resent === 1 ? '' : 's'} the OTAs sent again.</div>}
         </section>
       </div>
 
