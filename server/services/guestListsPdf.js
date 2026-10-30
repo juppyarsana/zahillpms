@@ -50,7 +50,7 @@ function cells(list, r, isToday) {
     // People in the room: guests + those sleeping in extra beds (a double
     // extra bed = 2), so it matches the POS breakfast count.
     pax: [String((parseInt(r.num_guests, 10) || 0) + (r.extra_bed_pax || 0)),
-      r.extra_bed_pax > 0 ? `incl. ${r.extra_bed_pax} bed` : null,
+      r.extra_bed_pax > 0 ? `incl. ${r.extra_bed_pax} on extra bed` : null,
       r.children > 0 ? `+${r.children} child` : null].filter(Boolean).join('\n'),
     // Standard PDF Helvetica has no arrow glyph — a dash renders everywhere.
     stay: `${fmtShort(r.check_in_date)} – ${fmtShort(r.check_out_date)}\n${r.nights} night${r.nights === 1 ? '' : 's'}`,
