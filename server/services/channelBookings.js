@@ -272,6 +272,10 @@ async function createFromRevision(client, propertyId, r, L) {
   if (same.length) {
     return { result: 'attention', message: `Part of this ${r.ota} booking is already in the PMS (${same.map(s => `room ${s.b.unit}`).join(', ')}) and part is not — check it and enter the rest by hand` };
   }
+  if (r.status === 'modified') {
+    const moved = await movedStay(client, propertyId, r);
+    if (moved) return moved;
+  }
 
   // Room type, meal plan and a free room for every room — or nothing.
   const defaultPlan = await ratePlanService.getDefaultRatePlan(propertyId);
@@ -365,6 +369,97 @@ async function closeGroupIfEmpty(client, groupId) {
     "SELECT count(*)::int AS n FROM bookings WHERE reservation_group_id = $1 AND status NOT IN ('cancelled', 'no_show')", [groupId]);
   if (n === 0) await client.query("UPDATE reservation_groups SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [groupId]);
   else await require('../routes/bookings').syncGroupSpan(client, groupId);
+}
+
+// Bookings not linked to the channel manager that may be this reservation: its
+// code in their notes on any dates, else a guest name word with the arrival
+// within `days` days of the reservation's.
+async function unlinkedStays(client, propertyId, r, days) {
+  const code = String(r.code || '').trim();
+  const usableCode = code.length >= 4 ? code : '';
+  const dates = [r.arrival, ...r.rooms.map(x => x.ci)].filter(Boolean).sort();
+  const { rows } = await client.query(`
+    SELECT b.id, b.reservation_group_id, b.internal_notes, b.special_requests, u.name AS unit, g.name AS guest
+      FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+     WHERE b.property_id = $1 AND b.status NOT IN ('cancelled', 'no_show')
+       AND NOT EXISTS (SELECT 1 FROM channel_booking_rooms cr WHERE cr.booking_id = b.id)
+       AND (b.check_in_date BETWEEN $2::date - $4::int AND $3::date + $4::int
+            OR ($5 <> '' AND strpos(COALESCE(b.internal_notes, '') || ' ' || COALESCE(b.special_requests, ''), $5) > 0))
+     ORDER BY u.name`, [propertyId, dates[0] || null, dates[dates.length - 1] || null, days, usableCode]);
+  const byCode = usableCode ? rows.filter(b => `${b.internal_notes || ''} ${b.special_requests || ''}`.includes(usableCode)) : [];
+  const mine = new Set([...words(r.customer.name)].filter(w => w.length > 2));
+  const byName = byCode.length ? [] : rows.filter(b => [...words(b.guest)].some(w => w.length > 2 && mine.has(w)));
+  return { byCode, byName };
+}
+
+// A change for a reservation the channel manager never sent before, with no
+// stay on the new dates: the old stay may be in the PMS on the old dates, and
+// booking the new ones would hold two rooms for one guest. FO decides.
+async function movedStay(client, propertyId, r) {
+  const { byCode, byName } = await unlinkedStays(client, propertyId, r, 60);
+  const found = byCode.length ? byCode : byName;
+  if (!found.length) return null;
+  const looksLike = found.map(b => `room ${b.unit} (${b.guest})`).join(', ');
+  const to = r.rooms[0] ? ` to ${span(r.rooms[0].ci, r.rooms[0].co)}` : '';
+  for (const b of found) {
+    await client.query(
+      `UPDATE bookings SET to_check = COALESCE(to_check, '[]'::jsonb) || $2::jsonb, to_check_done_at = NULL, to_check_done_by = NULL WHERE id = $1`,
+      [b.id, JSON.stringify([`Changed on ${r.ota}${to} (reservation ${r.code})? Matched to this booking by ${byCode.length ? 'reservation code' : 'name only'} — check, and change it by hand if it is the same stay`])]);
+    await note(client, b.id, `${r.ota} changed reservation ${r.code} (${r.customer.name})${to}; matched to this booking by ${byCode.length ? 'reservation code' : 'name only'}, so nothing was changed automatically.`);
+  }
+  return {
+    result: 'attention', bookingIds: found.map(b => b.id),
+    message: `Changed on ${r.ota} (${r.code})${to}. It looks like ${looksLike}. Nothing was booked or changed, and no room is held for the new dates — change it by hand, or enter a new booking if it is a different guest`,
+  };
+}
+
+// A cancellation for a reservation the channel manager never sent before: the
+// stay may still be in the PMS, typed by hand or imported. Its code in the notes
+// is proof enough to cancel; a guest name arriving the same day only points at it.
+async function cancelUnlinked(client, propertyId, r) {
+  const { byCode, byName } = await unlinkedStays(client, propertyId, r, 0);
+
+  const groups = [...new Set(byCode.map(b => b.reservation_group_id).filter(Boolean))];
+  // Remembered, so a later revision of this reservation isn't booked automatically.
+  const { rows: [cb] } = await client.query(
+    `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, reservation_group_id, last_revision_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [propertyId, PROVIDER, r.bookingId, r.ota, r.code, r.status, r.collect, groups.length === 1 ? groups[0] : null, r.revisionId]);
+
+  const addPoints = (id, points) => client.query(
+    `UPDATE bookings SET to_check = COALESCE(to_check, '[]'::jsonb) || $2::jsonb, to_check_done_at = NULL, to_check_done_by = NULL WHERE id = $1`,
+    [id, JSON.stringify(points)]);
+
+  if (byCode.length) {
+    const problems = [], changes = [];
+    for (const { id } of byCode) {
+      const b = await loadBooking(client, id);
+      if (await cancelBooking(client, b, r, problems)) changes.push(`room ${b.unit_name} cancelled`);
+    }
+    for (const g of groups) await closeGroupIfEmpty(client, g);
+    if (problems.length) for (const { id } of byCode) await addPoints(id, problems.map(p => `${r.ota}: ${p}`));
+    return {
+      result: problems.length ? 'attention' : 'applied',
+      message: [...changes, ...problems].join(' · '),
+      bookingIds: byCode.map(b => b.id), channelBookingId: cb.id,
+      alert: { title: `Booking cancelled on ${r.ota}`, text: [r.code, ...changes, ...problems.map(p => `⚠️ ${p}`)] },
+    };
+  }
+  if (byName.length) {
+    const looksLike = byName.map(b => `room ${b.unit} (${b.guest})`).join(', ');
+    for (const b of byName) {
+      await addPoints(b.id, [`Cancelled on ${r.ota} (reservation ${r.code})? The channel manager's cancellation matches this guest and arrival by name only — check, and cancel by hand if it is the same stay`]);
+      await note(client, b.id, `${r.ota} cancelled reservation ${r.code} (${r.customer.name}); matched to this booking by name only, so it was not cancelled automatically.`);
+    }
+    return {
+      result: 'attention', bookingIds: byName.map(b => b.id), channelBookingId: cb.id,
+      message: `Cancelled on ${r.ota} (${r.code}). It looks like ${looksLike}, but the name is the only match, so it was not cancelled — check, and cancel it by hand if it is the same stay`,
+    };
+  }
+  return {
+    result: 'attention', channelBookingId: cb.id,
+    message: `Cancelled on ${r.ota} (${r.code}). No matching booking found in the PMS — if this stay was typed in by hand, find it and cancel it`,
+  };
 }
 
 async function loadBooking(client, id) {
@@ -560,7 +655,7 @@ async function processRevision(client, propertyId, r) {
   const { rows: [cb] } = await client.query(
     'SELECT * FROM channel_bookings WHERE property_id = $1 AND provider = $2 AND external_booking_id = $3', [propertyId, PROVIDER, r.bookingId]);
   if (!cb) {
-    if (r.status === 'cancelled') return { result: 'ignored', message: `Cancelled on ${r.ota} before it reached the PMS — nothing to do` };
+    if (r.status === 'cancelled') return cancelUnlinked(client, propertyId, r);
     const made = await createFromRevision(client, propertyId, r, L);
     if (made.result === 'attention') {
       // Remember the reservation, so its later changes aren't booked automatically either.

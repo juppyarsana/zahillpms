@@ -967,6 +967,12 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 > Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
 
+- **OTA cancellation of a booking not linked to the channel manager (no migration) — released to `main` 2026-10-31, not deployed yet.** Found on production: Agoda 2062558273 (hermawan hermawan, arriving 6 Jan 2027) was typed by hand or imported, its first revision was the cancellation, and it was saved `ignored` with no alert, so the booking stayed Confirmed. Now `channelBookings.cancelUnlinked`: reservation code (4+ characters) in the booking's notes, any dates → cancelled; only a shared name word and the same arrival → not cancelled, `attention` + To check point; nothing found → `attention`. The reservation is remembered in `channel_bookings`, so a later revision is not booked automatically. 22 checks on the local database with Telegram and Channex stubbed (test rows removed); not sent through Channex staging. Same day, `movedStay`: a `modified` revision with no cb and no same-dates match used to book a second room for a stay already in the PMS on the old dates. Now, with the code in the notes (any dates) or a name word and an arrival within 60 days, it books nothing, changes nothing and raises `attention` + To check (no room is held for the new dates until FO acts); no candidate → booked as before.
+
+### ▶ Guest TV rollout paused 2026-10-31
+
+Every TV's address and state, the to-do list and the Google TV setup steps: `tv-launcher/TV_ROOMS.md`. Next: the Google TV setup on 702, 703, 704 (owner to say go), then 304.
+
 ### ▶ Handoff 2026-10-31 (end of day)
 
 **State of git:** `dev` = this docs commit; `main` = 881557a (one docs commit behind, code identical), and production runs 881557a.

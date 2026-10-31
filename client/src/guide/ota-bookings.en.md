@@ -31,6 +31,8 @@ A *Guest pays at the hotel* booking stays **Pending** until the guest pays, like
 
 - **Changed** (dates, room type, guests, price): the booking is changed to match. If its room isn't free on the new dates, the PMS moves it to another free room of the type. Edit History says what changed.
 - **Cancelled**: the booking is cancelled. If money was received on it, the To check list says so — refund it or keep it by the OTA's cancellation terms.
+- **Cancelled, for a booking typed in by hand or from the old system**: if the OTA reservation number is in the booking's notes, the PMS cancels it. If only the guest's name and arrival date match, it is **not** cancelled: a *needs you* item and a To check point name the booking, so you check it and cancel it yourself. With no match you also get a *needs you* item.
+- **Changed, for a booking typed in by hand or from the old system**: if the new dates don't match it but the OTA reservation number is in its notes, or the guest's name matches an arrival within 60 days, the PMS changes nothing and books nothing. A *needs you* item and a To check point name the booking. No room is held for the new dates until you change the booking by hand.
 
 ## Bookings already in the PMS
 

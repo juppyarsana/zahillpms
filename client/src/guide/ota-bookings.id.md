@@ -31,6 +31,8 @@ Booking *Guest pays at the hotel* tetap **Pending** sampai tamu membayar, sepert
 
 - **Diubah** (tanggal, tipe kamar, jumlah tamu, harga): booking ikut diubah. Kalau kamarnya tidak kosong di tanggal baru, PMS memindahkan ke kamar kosong lain dengan tipe yang sama. Edit History mencatat perubahannya.
 - **Dibatalkan**: booking dibatalkan. Kalau sudah ada uang masuk, daftar To check memberi tahu — kembalikan atau simpan sesuai aturan pembatalan OTA.
+- **Dibatalkan, untuk booking yang diketik manual atau dari sistem lama**: kalau nomor reservasi OTA ada di catatan booking, PMS membatalkannya. Kalau hanya nama tamu dan tanggal datang yang cocok, booking **tidak** dibatalkan: item *needs you* dan poin To check menyebut booking-nya, jadi Anda cek dan batalkan sendiri. Kalau tidak ada yang cocok, Anda juga mendapat item *needs you*.
+- **Diubah, untuk booking yang diketik manual atau dari sistem lama**: kalau tanggal barunya tidak cocok, tetapi nomor reservasi OTA ada di catatan booking atau nama tamu cocok dengan kedatangan dalam 60 hari, PMS tidak mengubah apa pun dan tidak membuat booking. Item *needs you* dan poin To check menyebut booking-nya. Belum ada kamar yang ditahan untuk tanggal baru sampai Anda mengubah booking secara manual.
 
 ## Booking yang sudah ada di PMS
 
