@@ -79,6 +79,31 @@ async function getItem(propertyId, key, q = db) {
   return r ? shapeItem(r) : null;
 }
 
+// Food and drinks in stock at a moment, valued at today's average cost, for the
+// month-end cost of sales (costOfSales.js). `at` = ISO time; quantities are
+// today's with every later movement undone. Compared inside the database.
+async function fnbValueAt(propertyId, at) {
+  const [items, { rows: later }, { rows: [count] }] = await Promise.all([
+    listItems(propertyId, { inactive: true }),
+    db.query(
+      `SELECT 'rm:' || raw_material_id AS key, SUM(change_qty) AS q FROM raw_material_movements WHERE property_id = $1 AND created_at >= $2 GROUP BY 1
+       UNION ALL
+       SELECT 'p:' || product_id, SUM(change_qty) FROM stock_movements WHERE property_id = $1 AND created_at >= $2 GROUP BY 1`, [propertyId, at]),
+    db.query(`SELECT to_char(MAX(count_date), 'YYYY-MM-DD') AS d FROM stock_opnames WHERE property_id = $1 AND status = 'finished'`, [propertyId]),
+  ]);
+  const after = new Map(later.map(r => [r.key, num(r.q)]));
+  const out = { food: 0, drinks: 0, items: 0, uncosted: 0, last_count: count?.d || null };
+  for (const i of items) {
+    if (i.category !== 'food' && i.category !== 'drinks') continue;
+    const qty = Math.max(0, i.on_hand - (after.get(i.key) || 0));
+    if (!qty) continue;
+    out.items++;
+    if (i.avg_cost == null) { out.uncosted++; continue; }
+    out[i.category] = r2(out[i.category] + qty * i.avg_cost);
+  }
+  return out;
+}
+
 // ── Stock items (raw_materials) — the Sales items are edited in Sales → Items ──
 async function saveStockItem(propertyId, body, id = null) {
   const name = String(body.name || '').trim().slice(0, 255);
@@ -452,6 +477,7 @@ async function usage(propertyId, fromId, toId = null) {
 }
 
 module.exports = {
+  fnbValueAt,
   REASON_LABEL, WRITEOFF_DEFAULT, parseKey, listItems, getItem, saveStockItem, history, adjust,
   writeoffSettings, saveWriteoffSettings, listOpnames, getOpname, startOpname, saveCounts, cancelOpname, finishOpname, usage, opnameNo,
 };

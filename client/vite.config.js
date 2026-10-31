@@ -20,6 +20,8 @@ export default defineConfig({
       workbox: {
         clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // The whole app is one JS file (no code splitting yet); without this the build fails above 2 MiB.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
             // SSE/EventSource endpoints (e.g. /api/calls/staff/stream) must never

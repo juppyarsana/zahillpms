@@ -14,6 +14,7 @@
 //   GET  /entries  POST /entries  GET /entries/:id
 //   POST /entries/:id/void { reason }  /entries/:id/reverse { date, memo? }
 //   GET|PUT /opening            { balances: [{ account_id, amount }] } opening balances
+//   GET|POST /cost-of-sales  PUT /cost-of-sales/settings  food & drink by the inventory method
 //   GET  /trial-balance?from=&to= (+ /xlsx)   GET /balance-sheet?date= (+ /xlsx, /pdf)
 // Owner, or the `accounting` permission (an accountant's login).
 const router = require('express').Router();
@@ -164,6 +165,12 @@ const reply = (res, r, okStatus = 200) => (r.error ? res.status(r.status || 400)
 const wrap = fn => async (req, res) => {
   try { await fn(req, res); } catch (err) { res.status(500).json({ error: err.message }); }
 };
+
+// Food & drink by the inventory method (migration 148)
+const costOfSales = require('../services/costOfSales');
+router.get('/cost-of-sales', wrap(async (req, res) => reply(res, await costOfSales.view(req.propertyId, req.query.month, todayWITA()))));
+router.post('/cost-of-sales', wrap(async (req, res) => reply(res, await costOfSales.post(req.propertyId, userOf(req), req.body || {}, todayWITA()), 201)));
+router.put('/cost-of-sales/settings', wrap(async (req, res) => reply(res, await costOfSales.saveMethod(req.propertyId, req.body || {}))));
 
 router.get('/service-split', wrap(async (req, res) => res.json(await accounting.serviceSplit(req.propertyId))));
 router.put('/service-split', wrap(async (req, res) => reply(res, await accounting.saveServiceSplit(req.propertyId, req.body, userOf(req)))));

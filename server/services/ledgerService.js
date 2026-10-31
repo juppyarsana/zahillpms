@@ -113,4 +113,4 @@ async function balanceSheet(propertyId, date) {
   };
 }
 
-module.exports = { trialBalance, balanceSheet, addDays };
+module.exports = { trialBalance, balanceSheet, addDays, ledgerPosts };

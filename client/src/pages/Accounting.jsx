@@ -7,6 +7,7 @@ import api from '../services/api';
 import { propertyToday } from '../lib/propertyTime';
 import { useAuth } from '../context/AuthContext';
 import { EntriesTab, BalanceSheetTab, TrialBalanceTab } from './accounting/LedgerTabs';
+import CostOfSalesTab from './accounting/CostOfSalesTab';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const amt = n => (n ? Math.round(Number(n)).toLocaleString('id-ID') : '');
@@ -27,6 +28,7 @@ const KINDS = { asset: 'Asset', liability: 'Liability', equity: 'Equity', revenu
 const TABS = [
   { key: 'journal', label: 'Daily journal' },
   { key: 'entries', label: 'Journal entries' },
+  { key: 'cogs', label: 'Cost of sales' },
   { key: 'pl', label: 'Profit & Loss' },
   { key: 'bs', label: 'Balance sheet' },
   { key: 'tb', label: 'Trial balance' },
@@ -49,7 +51,7 @@ export default function Accounting() {
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
-      {tab === 'journal' ? <JournalTab /> : tab === 'entries' ? <EntriesTab /> : tab === 'pl' ? <PlTab />
+      {tab === 'journal' ? <JournalTab /> : tab === 'entries' ? <EntriesTab /> : tab === 'cogs' ? <CostOfSalesTab /> : tab === 'pl' ? <PlTab />
         : tab === 'bs' ? <BalanceSheetTab /> : tab === 'tb' ? <TrialBalanceTab /> : <AccountsTab />}
     </div>
   );

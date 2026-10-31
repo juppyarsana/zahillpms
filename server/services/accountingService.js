@@ -34,6 +34,9 @@ const MAP_KEYS = [
   ['commission.ota', 'Commission kept back by OTAs / agents from their payouts', 'Guests & agents', '602-11-019'],
   ['pos.takings', 'Restaurant bills paid at the restaurant (from the POS sessions)', 'Money received', '110-20-002'],
   ['payables.supplier', 'Supplier bills not paid yet (Payables)', 'Suppliers', '210-00-001'],
+  // Food & drink by the inventory method (migration 148, costOfSales.js)
+  ['inventory.food', 'Food bought, kept as stock until used', 'Food & drink stock', '130-00-001'],
+  ['inventory.drinks', 'Drinks bought, kept as stock until used', 'Food & drink stock', '130-00-002'],
   // Vendor share of tours / transport (migration 140)
   ['vendor.share', "Vendor's part of activities — taken off revenue", 'Tour & transport vendors', '430-31-098'],
   ['vendor.cost', "Vendor's part of activities — booked as a cost", 'Tour & transport vendors', '530-31-001'],

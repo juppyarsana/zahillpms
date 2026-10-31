@@ -470,10 +470,16 @@ async function collectPosts(propertyId, from, to) {
     post(c.day, 'commission', 'commission.payable', -num(c.amount), ref, c.agent);
   }
 
+  // Food and drinks bought go to inventory from this day (migration 148, costOfSales.js).
+  const { rows: [glSet] } = await db.query(`SELECT ${ymd('fnb_inventory_from')} AS d FROM gl_settings WHERE property_id = $1`, [propertyId]);
+  const inventoryFrom = glSet?.d || null;
+  const costKey = (day, category, department) => (inventoryFrom && day >= inventoryFrom && (category === 'food' || category === 'drinks')
+    ? `inventory.${category}` : `expense.${category}.${department}`);
+
   // ── Expenses ──
   for (const e of expenses) {
     const memo = [e.description, e.reference].filter(Boolean).join(' · ');
-    post(e.day, 'expenses', `expense.${e.category}.${e.department}`, num(e.amount), '', memo);
+    post(e.day, 'expenses', costKey(e.day, e.category, e.department), num(e.amount), '', memo);
     post(e.day, 'expenses', `pay.${e.payment_method || 'other'}`, -num(e.amount), '', memo);
   }
 
@@ -481,7 +487,7 @@ async function collectPosts(propertyId, from, to) {
   for (const b of billLines) {
     const ref = `BILL-${String(b.bill_no).padStart(4, '0')}`;
     const memo = [b.supplier, b.supplier_ref].filter(Boolean).join(' · ');
-    post(b.day, 'bills', `expense.${b.category}.${b.department}`, num(b.total), ref, memo);
+    post(b.day, 'bills', costKey(b.day, b.category, b.department), num(b.total), ref, memo);
     post(b.day, 'bills', 'payables.supplier', -num(b.total), ref, memo);
   }
   for (const p of billPayments) {

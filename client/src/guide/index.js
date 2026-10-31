@@ -43,6 +43,7 @@ export const GROUPS = [
     { id: 'payables', icon: '📥', title: { id: 'Hutang ke supplier (Payables)', en: 'Payables — supplier bills' } },
     { id: 'vendor-payouts', icon: '🚐', title: { id: 'Bayar vendor tur & transport', en: 'Vendor payouts — tours & transport' } },
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
+    { id: 'cost-of-sales', icon: '🍽', title: { id: 'Cost of sales: makanan & minuman lewat persediaan', en: 'Cost of sales: food & drink through inventory' } },
     { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },
   ] },
   { label: { id: 'Pengaturan', en: 'Settings' }, chapters: [
