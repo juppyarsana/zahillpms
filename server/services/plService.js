@@ -137,7 +137,19 @@ async function buildPl(propertyId, month, today) {
   push('heading', 'h.fixed', 'Fixed charges');
   const fixed = lineTotal('fixed');
   push('line', 'fixed', 'Rent, insurance, PBB, depreciation', fixed, 'total', { accounts: accountsOn('fixed') });
-  push('grand', 'net', 'Net profit (before income tax)', add(gop, fixed, -1));
+  // Bank interest etc. sit below GOP (accountant, 2026-10-30): shown only when used.
+  const nonop = lineTotal('nonop');
+  if (shown('nonop', nonop)) {
+    push('heading', 'h.nonop', 'Non-operating');
+    push('line', 'nonop', 'Bank interest, exchange differences', nonop, 'total', { accounts: accountsOn('nonop') });
+  }
+  const net = add(add(gop, fixed, -1), nonop, -1);
+  push('grand', 'net', 'Net profit (before income tax)', net);
+  const tax = lineTotal('tax');
+  if (shown('tax', tax)) {
+    push('line', 'tax', 'Corporate income tax', tax, 'total', { accounts: accountsOn('tax') });
+    push('grand', 'net_after', 'Net profit after income tax', add(net, tax, -1));
+  }
 
   // % of the line's base: total revenue, or the department's own revenue for
   // its expenses and profit (the USALI convention).

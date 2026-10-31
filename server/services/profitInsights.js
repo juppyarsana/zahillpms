@@ -47,6 +47,7 @@ function figures(pl) {
     running_total: v('t.und'),
     gop: v('gop'),
     fixed: line('fixed', 'Rent, insurance, property tax, depreciation'),
+    nonop: line('nonop', 'Bank interest, exchange differences'),
     net: v('net'),
   };
 }
@@ -86,7 +87,7 @@ async function buildProfit(propertyId, month, { today = todayWITA() } = {}) {
   // The cost lines that moved most on the month before (up first) — the
   // "why" under the four numbers.
   const costLines = f => [...f.departments.map(d => [`dept.${d.key}`, `${d.label} costs`, d.costs]),
-    ...f.running.map(l => [l.key, l.label, l.amount]), ['fixed', 'Fixed charges', f.fixed.amount]];
+    ...f.running.map(l => [l.key, l.label, l.amount]), ['fixed', 'Fixed charges', f.fixed.amount], ['nonop', 'Bank interest', f.nonop.amount]];
   const movers = before ? costLines(now).map(([key, label, amount]) => {
     const was = costLines(before).find(x => x[0] === key)[2];
     return { key, label, amount, before: was, change: r2(amount - was) };

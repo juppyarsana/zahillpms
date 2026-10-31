@@ -2,7 +2,7 @@
 // or expense account shows on. A USALI-style statement cut down to a small
 // hotel: departments (Rooms, F&B, Other operated) with their own revenue and
 // costs → departmental profit → undistributed expenses → gross operating
-// profit (GOP) → fixed charges → net profit. Each account carries its line
+// profit (GOP) → fixed charges → non-operating → net profit. Each account carries its line
 // (gl_accounts.pl_line), so the accountant moves an account without code.
 
 const REVENUE_LINES = [
@@ -26,6 +26,8 @@ const EXPENSE_LINES = [
   ['und.maint', 'Property operation & maintenance'],
   ['und.utilities', 'Utilities'],
   ['fixed', 'Fixed charges (rent, insurance, property tax, depreciation)'],
+  ['nonop', 'Non-operating (bank interest, exchange differences)'],
+  ['tax', 'Corporate income tax'],
 ];
 const UNDISTRIBUTED = EXPENSE_LINES.filter(([k]) => k.startsWith('und.'));
 

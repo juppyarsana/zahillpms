@@ -67,6 +67,7 @@ The hotel owner asked to see easily which department costs the most. That grew i
 - **Q12 agreed** (A/R + A/P Clearance dropped, retained earnings merged into one).
 - **Q13 "Setuju", but the row notes change it** (banks confirmed 2026-10-30: **BCA, BNI, Mandiri, CIMB Niaga** — EDC + QRIS — and **BPD Bali — QRIS only** → five settlement accounts *EDC/QRIS Settlement – BCA / BNI / Mandiri / CIMB Niaga / BPD Bali*, 120-10-011…015, replacing the per-card-type ones; payment methods *EDC <bank>* / *QRIS <bank>* map to their bank's account; check with FO which of BCA / BNI / Mandiri / CIMB actually have QRIS too, only the method list depends on it): **KSU Manik Mas (110-10-008) no longer used** — drop (check 30 Sep balance = 0); **card settlement per bank, not per card type** (replace 120-10-011…016 Visa / MC / Debit / AMEX / Mandiri EDC / CIMB EDC with one *EDC Settlement – <bank>* per bank); **QRIS posts into the same bank's EDC account** (no separate 120-10-002 for Zahill; e.g. QRIS BCA → EDC BCA) for easier bank reconciliation. Payment methods "EDC <bank>" / "QRIS <bank>" both map to that account. (Banks: see above.)
 - **Other notes:** 110-00-001 Cash — General Cashier not needed (Zahill only uses petty cash; FO / outlet takings hand in to petty cash or bank); 230-00-011 Petty Cash to Replenish (from VHP 230-00-038 *A/E – Petty Cash*) — accountant asked what it is; explained as petty cash spent but not yet topped up. **Keep (accountant, 2026-10-30).**
+- **Built 2026-11-01 on `dev` (migration 147):** the standard chart (Q1, Q2, Q7, Q12), Zahill's accounts file (Q13), interest below GOP (Q8), HRD under A&G (Q9), the service charge split (Q6). Details: CLAUDE.md → "Accounting — standard chart". **Still to build:** F&B by inventory method (Q3), discount report (Q4), restaurant revenue by meal period (Q5, POS too), budgets (Q10), A/R by agent type, salaries on the Costs page. Q11 (opening balances) waits for VHP's October closing.
 - **Follow-up questions sent 2026-10-30 — all answered the same day** (see the lines above). Cut-off decided: **1 Nov 2026** (owner, 2026-10-30; reply sent to the accountant). Still to hear: the date VHP's October closing is done, the loan statement at 31 Oct, last year's TB.
 
 ---
@@ -110,7 +111,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **OTA price ladder (migration 137, 2026-10-23, on `dev`):** sales' OTA prices follow rooms sold in the whole hotel. Pricing → My rules → 📈 OTA price ladder: per meal plan (Breakfast Non Refund / Breakfast Refundable) a grid of "sold up to" tiers × room types, pasted from Excel; the channel manager sends the price of the tier the next room falls in, re-counted on every booking / cancellation (~20 s). A fixed OTA price still wins on its nights. Details: CLAUDE.md → "OTA price ladder".
 **App colour + tab icon (migration 138, 2026-10-23, on `dev`):** each property has its own staff-app colour (Superadmin → Branding) and its own tab / home-screen icon (its logo, or its first letter) — no more Zahill maroon and lotus for every hotel. Details: CLAUDE.md → "Per-property app colour + tab icon".
 **OTA dashboard (migration 146, 2026-10-31, deployed to production; production at `main` 881557a):** Sales → OTA dashboard: next 30 nights with the prices we send, slow dates against occupancy targets, a suggested price with the reasons, minimum prices, a log and alert for price changes. Next: automatic pricing in steps (suggest → automatic within limits → more factors), competitor prices with a rate shopper. Details: CLAUDE.md → "OTA dashboard".
-Next migration number: **147**.
+Next migration number: **148**.
 
 ### Channex re-certification run sheet (2026-10-21)
 
@@ -2189,7 +2190,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 147
+## Next migration number: 148
 
 ---
 

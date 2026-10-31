@@ -60,6 +60,6 @@ Tidak ada yang dihapus: tagihan dan pembayaran yang di-void tetap tampil dengan 
 
 ## Di pembukuan
 
-- Tagihan: biaya tercatat pada **bill date** (di Laba Rugi dan Reports → Costs bulan itu), hutang di **2150 Accounts payable — suppliers**. Akun tiap kategori diatur sekali di **Accounting → Accounts** (sama seperti Expenses).
-- Pembayaran: 2150 berkurang, uang keluar dari kas / bank pada **date paid**.
-- Akun 2150 di neraca = total hutang di tab Suppliers.
+- Tagihan: biaya tercatat pada **bill date** (di Laba Rugi dan Reports → Costs bulan itu), hutang di **210-00-001 A/P Suppliers**. Akun tiap kategori diatur sekali di **Accounting → Accounts** (sama seperti Expenses).
+- Pembayaran: 210-00-001 berkurang, uang keluar dari kas / bank pada **date paid**.
+- Akun 210-00-001 di neraca = total hutang di tab Suppliers.

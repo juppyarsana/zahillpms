@@ -60,6 +60,6 @@ Nothing is deleted: voided bills and payments stay listed with who voided them a
 
 ## In the books
 
-- A bill: the cost on the **bill date** (on the Profit & Loss and on Reports → Costs that month), owed under **2150 Accounts payable — suppliers**. Which account each category goes to is set once in **Accounting → Accounts** (the same as Expenses).
-- A payment: 2150 goes down, the money leaves cash / bank on the **date paid**.
-- The balance sheet's 2150 = what the Suppliers tab shows as owed.
+- A bill: the cost on the **bill date** (on the Profit & Loss and on Reports → Costs that month), owed under **210-00-001 A/P Suppliers**. Which account each category goes to is set once in **Accounting → Accounts** (the same as Expenses).
+- A payment: 210-00-001 goes down, the money leaves cash / bank on the **date paid**.
+- The balance sheet's 210-00-001 = what the Suppliers tab shows as owed.

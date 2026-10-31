@@ -36,7 +36,7 @@ router.get('/setup', async (req, res) => {
       accounts: m.accounts,
       types: accounting.TYPES,
       pl_lines: Object.entries(require('../services/plLayout').LINE_LABEL).map(([key, label]) => ({ key, label })),
-      items: m.keys.map(k => ({ key: k.key, label: k.label, group: k.group, account_id: k.account_id, is_default: k.is_default })),
+      items: m.keys.map(k => ({ key: k.key, label: k.label, group: k.group, account_id: k.account_id, is_default: k.is_default, by_department: k.by_department })),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -165,6 +165,8 @@ const wrap = fn => async (req, res) => {
   try { await fn(req, res); } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
+router.get('/service-split', wrap(async (req, res) => res.json(await accounting.serviceSplit(req.propertyId))));
+router.put('/service-split', wrap(async (req, res) => reply(res, await accounting.saveServiceSplit(req.propertyId, req.body, userOf(req)))));
 router.get('/settings', wrap(async (req, res) => res.json(await gl.settings(req.propertyId))));
 router.put('/settings', wrap(async (req, res) => reply(res, await gl.setBooksStart(req.propertyId, userOf(req), String(req.body?.books_start || ''), todayWITA()))));
 

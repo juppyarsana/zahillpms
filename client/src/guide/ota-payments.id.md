@@ -41,14 +41,14 @@ Setelah menarik (withdraw) uang dari extranet OTA:
 Hasilnya:
 
 - **Money received** (Daily Close, Cashier Closing, Reports) hanya menghitung uang yang masuk ke bank.
-- Komisi masuk ke biaya **5120 Rooms — OTA commission** di jurnal dan **Profit & Loss**.
+- Komisi masuk ke biaya **602-11-019 FO Commission — OTA** di jurnal dan **Profit & Loss**.
 - Sisa kartu virtual yang tidak ter-charge: **Record payout** dengan *Amount received* **0** dan komisi = sisanya.
 
 Payout salah catat: minta owner / akuntan untuk **Void** (dengan alasan) — stay-nya kembali terbuka, lalu catat ulang.
 
 ## Akuntan: tagihan komisi (tamu bayar di hotel)
 
-Untuk booking yang tamunya bayar di hotel, OTA mengirim tagihan komisi (mis. Booking.com tiap bulan). Catat di **Finance → Expenses** dengan kategori **OTA Commission**. Masuk ke biaya yang sama (**5120 Rooms — OTA commission**) di Profit & Loss.
+Untuk booking yang tamunya bayar di hotel, OTA mengirim tagihan komisi (mis. Booking.com tiap bulan). Catat di **Finance → Expenses** dengan kategori **OTA Commission**. Masuk ke biaya yang sama (**602-11-019 FO Commission — OTA**) di Profit & Loss.
 
 ## Laporan
 

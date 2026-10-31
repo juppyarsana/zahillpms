@@ -41,14 +41,14 @@ After withdrawing the money on the OTA's extranet:
 What follows:
 
 - **Money received** (Daily Close, Cashier Closing, Reports) counts only the money that reached the bank.
-- The commission goes to the cost **5120 Rooms — OTA commission** in the journal and on the **Profit & Loss**.
+- The commission goes to the cost **602-11-019 FO Commission — OTA** in the journal and on the **Profit & Loss**.
 - What a virtual card didn't cover: **Record payout** with *Amount received* **0** and the commission = the rest.
 
 A payout recorded by mistake: ask the owner / accountant to **Void** it (with a reason) — its stays are open again — then record it again.
 
 ## Accountant: commission bills (guest paid at the hotel)
 
-For bookings the guest paid at the hotel, the OTA sends a commission bill (e.g. Booking.com monthly). Record it in **Finance → Expenses** with the category **OTA Commission**. It goes to the same cost (**5120 Rooms — OTA commission**) on the Profit & Loss.
+For bookings the guest paid at the hotel, the OTA sends a commission bill (e.g. Booking.com monthly). Record it in **Finance → Expenses** with the category **OTA Commission**. It goes to the same cost (**602-11-019 FO Commission — OTA**) on the Profit & Loss.
 
 ## Reports
 

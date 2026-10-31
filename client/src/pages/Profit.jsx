@@ -179,6 +179,7 @@ export default function Profit() {
               <Minus label="Running the hotel" amount={n.running_total} parts={n.running} />
               <Total label="Gross operating profit" amount={n.gop} of={n.revenue} />
               <Minus label="Fixed charges" amount={n.fixed.amount} parts={[n.fixed]} />
+              {Math.abs(n.nonop?.amount || 0) >= 0.5 && <Minus label="Bank interest & other non-operating" amount={n.nonop.amount} parts={[n.nonop]} />}
               <Total label="Net profit (before income tax)" amount={n.net} of={n.revenue} strong />
             </div>
             <p className="text-muted" style={{ fontSize: 12, margin: '14px 0 0', lineHeight: 1.5 }}>

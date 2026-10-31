@@ -585,13 +585,31 @@ function AccountsTab() {
   const [modal, setModal] = useState(null);     // { mode: 'add' | 'edit', id? }
   const [form, setForm] = useState(EMPTY_ACCOUNT);
   const [formError, setFormError] = useState('');
+  const [search, setSearch] = useState('');
+  const [showOff, setShowOff] = useState(false);
+  const [split, setSplit] = useState(null);     // { lb_pct, hrd_pct } of the service charge
+  const [splitSaved, setSplitSaved] = useState(false);
 
   function load() {
     return api.get('/api/accounting/setup')
       .then(r => { setSetup(r.data); setError(''); })
       .catch(err => setError(err.response?.data?.error || 'Failed to load'));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get('/api/accounting/service-split').then(r => setSplit(r.data)).catch(() => {});
+  }, []);
+
+  async function saveSplit() {
+    setError('');
+    try {
+      const { data } = await api.put('/api/accounting/service-split', split);
+      setSplit(data);
+      setSplitSaved(true); setTimeout(() => setSplitSaved(false), 2500);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save');
+    }
+  }
 
   const groups = useMemo(() => {
     const out = [];
@@ -603,6 +621,8 @@ function AccountsTab() {
     return out;
   }, [setup]);
   const active = (setup?.accounts || []).filter(a => a.is_active);
+  const q = search.trim().toLowerCase();
+  const listed = (setup?.accounts || []).filter(a => (showOff || a.is_active) && (!q || `${a.code} ${a.name}`.toLowerCase().includes(q)));
   const dirty = Object.keys(changes).length > 0;
 
   async function saveMap() {
@@ -668,7 +688,9 @@ function AccountsTab() {
               const value = changes[it.key] !== undefined ? changes[it.key] : (it.account_id || '');
               return (
                 <div key={it.key} className="flex-between" style={{ gap: 12, padding: '5px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 13, flex: '1 1 260px' }}>{it.label}</div>
+                  <div style={{ fontSize: 13, flex: '1 1 260px' }}>{it.label}
+                    {it.by_department && <div className="text-muted" style={{ fontSize: 11 }}>Goes to the account of the cost's department, unless you choose one here</div>}
+                  </div>
                   <select className="form-select" style={{ flex: '0 1 340px', minWidth: 220 }} value={value}
                     onChange={e => setChanges(c => ({ ...c, [it.key]: e.target.value }))}>
                     {!value && <option value="">— choose an account —</option>}
@@ -681,10 +703,35 @@ function AccountsTab() {
         ))}
       </div>
 
+      {split && (
+        <div className="card mt-3">
+          <div className="card-title" style={{ marginBottom: 4 }}>Service charge split</div>
+          <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            The part of the service charge that doesn't go to staff, as a % of the service charge. With a 10% charge, 3 points = 30%. Applies to days not closed yet.
+          </div>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="form-group" style={{ margin: 0, width: 170 }}><label className="form-label">Loss & Breakage %</label>
+              <input className="form-input" type="number" min="0" max="100" value={split.lb_pct} onChange={e => setSplit(s => ({ ...s, lb_pct: e.target.value }))} /></div>
+            <div className="form-group" style={{ margin: 0, width: 170 }}><label className="form-label">HR Development %</label>
+              <input className="form-input" type="number" min="0" max="100" value={split.hrd_pct} onChange={e => setSplit(s => ({ ...s, hrd_pct: e.target.value }))} /></div>
+            <div style={{ fontSize: 13, paddingBottom: 8 }}>Staff: {Math.round((100 - (parseFloat(split.lb_pct) || 0) - (parseFloat(split.hrd_pct) || 0)) * 100) / 100}%</div>
+            <button className="btn btn-primary btn-sm" style={{ marginBottom: 6 }} onClick={saveSplit}>Save</button>
+            {splitSaved && <span className="text-muted" style={{ fontSize: 12, paddingBottom: 8 }}>✓ Saved</span>}
+          </div>
+        </div>
+      )}
+
       <div className="card mt-3">
         <div className="flex-between" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           <div className="card-title" style={{ margin: 0 }}>Chart of accounts</div>
           <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add account</button>
+        </div>
+        <div className="flex gap-2" style={{ flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+          <input className="form-input" style={{ flex: '1 1 220px', maxWidth: 320 }} placeholder="Search code or name" value={search} onChange={e => setSearch(e.target.value)} />
+          <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} /> Show accounts not in use
+          </label>
+          <span className="text-muted" style={{ fontSize: 12 }}>{listed.length} of {setup.accounts.length}</span>
         </div>
         <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -692,7 +739,7 @@ function AccountsTab() {
               <tr><th style={TH}>Code</th><th style={TH}>Name</th><th style={TH}>Kind</th><th style={TH}>On the P&L</th><th style={TH}></th></tr>
             </thead>
             <tbody>
-              {setup.accounts.map(a => (
+              {listed.map(a => (
                 <tr key={a.id} style={a.is_active ? undefined : { opacity: 0.5 }}>
                   <td style={{ ...TD, fontWeight: 600, whiteSpace: 'nowrap' }}>{a.code}</td>
                   <td style={TD}>{a.name}{!a.is_active && ' (not used)'}</td>
@@ -718,9 +765,9 @@ function AccountsTab() {
             <div className="modal-body">
               {formError && <div className="alert alert-error"><div>{formError}</div></div>}
               <div className="form-group"><label className="form-label">Code *</label>
-                <input className="form-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. 1125" /></div>
+                <input className="form-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. 110-10-002" /></div>
               <div className="form-group"><label className="form-label">Name *</label>
-                <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Bank BCA" /></div>
+                <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Bank BCA 1234567890" /></div>
               <div className="form-group"><label className="form-label">Kind *</label>
                 <select className="form-select" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value, pl_line: '' }))}>
                   {setup.types.map(t => <option key={t} value={t}>{KINDS[t] || t}</option>)}

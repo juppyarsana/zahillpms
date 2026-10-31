@@ -5,18 +5,18 @@
 // CHECK constraints of expenses / supplier_bills (migration 130).
 // [key, label, standard account, usual department]
 const COST_CATEGORIES = [
-  ['food', 'Food', '5220', 'fnb'],
-  ['drinks', 'Drinks', '5230', 'fnb'],
-  ['guest_supplies', 'Guest supplies & amenities', '5130', 'housekeeping'],
-  ['laundry', 'Laundry', '6220', 'housekeeping'],
-  ['utilities', 'Utilities (electricity, water, internet, gas)', '6210', 'engineering'],
-  ['maintenance', 'Maintenance & repairs', '6230', 'engineering'],
-  ['supplies', 'Supplies (cleaning, office…)', '6250', 'admin'],
-  ['marketing', 'Marketing', '6260', 'sales'],
-  ['staff', 'Staff', '6240', 'admin'],
-  ['admin_fees', 'Admin & bank fees', '6270', 'admin'],
-  ['ota_commission', 'OTA commission', '5120', 'front_office'],
-  ['other', 'Other', '6290', 'admin'],
+  ['food', 'Food', '500-21-001', 'fnb'],
+  ['drinks', 'Drinks', '500-21-002', 'fnb'],
+  ['guest_supplies', 'Guest supplies & amenities', '602-12-002', 'housekeeping'],
+  ['laundry', 'Laundry', '602-12-005', 'housekeeping'],
+  ['utilities', 'Utilities (electricity, water, internet, gas)', '751-75-001', 'engineering'],
+  ['maintenance', 'Maintenance & repairs', '732-74-037', 'engineering'],
+  ['supplies', 'Supplies (cleaning, office…)', '602-12-003', 'admin'],
+  ['marketing', 'Marketing', '722-73-031', 'sales'],
+  ['staff', 'Staff', '712-72-029', 'admin'],
+  ['admin_fees', 'Admin & bank fees', '702-71-021', 'admin'],
+  ['ota_commission', 'OTA commission', '602-11-019', 'front_office'],
+  ['other', 'Other', '702-71-099', 'admin'],
 ];
 // Departments a cost is for (migration 131) — a management tag for
 // "which department costs the most"; the category still decides the account.

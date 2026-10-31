@@ -34,7 +34,7 @@
 // is posted as "Corrections to closed days" in the next day that is closed.
 const db = require('../db');
 const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
-const { loadMapping, EXTRA_CATEGORIES } = require('./accountingService');
+const { loadMapping, EXTRA_CATEGORIES, serviceSplit } = require('./accountingService');
 const { OWED_SQL: VENDOR_OWED_SQL } = require('./vendorPayoutService');
 
 const TZ = `'Asia/Makassar'`;
@@ -251,11 +251,11 @@ async function collectPosts(propertyId, from, to) {
       LEFT JOIN agents ag ON ag.id = ac.agent_id
       WHERE ac.property_id = $3 AND ac.amount <> 0 AND ${dayOf('ac.computed_at')} BETWEEN $1::date AND $2::date`, P),
     db.query(`
-      SELECT e.category, e.amount, e.payment_method, e.description, e.reference, ${ymd('e.incurred_on')} AS day
+      SELECT e.category, e.department, e.amount, e.payment_method, e.description, e.reference, ${ymd('e.incurred_on')} AS day
       FROM expenses e
       WHERE e.property_id = $3 AND e.is_voided = false AND e.incurred_on BETWEEN $1::date AND $2::date`, P),
     db.query(`
-      SELECT ${ymd('b.bill_date')} AS day, b.bill_no, b.supplier_ref, s.name AS supplier, b.category, b.total, b.notes
+      SELECT ${ymd('b.bill_date')} AS day, b.bill_no, b.supplier_ref, s.name AS supplier, b.category, b.department, b.total, b.notes
       FROM supplier_bills b JOIN suppliers s ON s.id = b.supplier_id
       WHERE b.property_id = $3 AND b.is_voided = false AND b.bill_date BETWEEN $1::date AND $2::date
       ORDER BY b.bill_no`, P),
@@ -473,7 +473,7 @@ async function collectPosts(propertyId, from, to) {
   // ── Expenses ──
   for (const e of expenses) {
     const memo = [e.description, e.reference].filter(Boolean).join(' · ');
-    post(e.day, 'expenses', `expense.${e.category}`, num(e.amount), '', memo);
+    post(e.day, 'expenses', `expense.${e.category}.${e.department}`, num(e.amount), '', memo);
     post(e.day, 'expenses', `pay.${e.payment_method || 'other'}`, -num(e.amount), '', memo);
   }
 
@@ -481,7 +481,7 @@ async function collectPosts(propertyId, from, to) {
   for (const b of billLines) {
     const ref = `BILL-${String(b.bill_no).padStart(4, '0')}`;
     const memo = [b.supplier, b.supplier_ref].filter(Boolean).join(' · ');
-    post(b.day, 'bills', `expense.${b.category}`, num(b.total), ref, memo);
+    post(b.day, 'bills', `expense.${b.category}.${b.department}`, num(b.total), ref, memo);
     post(b.day, 'bills', 'payables.supplier', -num(b.total), ref, memo);
   }
   for (const p of billPayments) {
@@ -512,6 +512,18 @@ async function collectPosts(propertyId, from, to) {
   for (const l of manual) {
     post(l.day, l.kind === 'opening' ? 'opening' : 'manual', `acct.${l.account_id}`, num(l.debit) - num(l.credit),
       entryNo(l.entry_no), l.memo || l.entry_memo);
+  }
+
+  // The Loss & Breakage and HR Development parts of the service charge go to
+  // their own accounts; the rest (and any rounding) stays for staff.
+  const split = await serviceSplit(propertyId);
+  if (split.lb_pct || split.hrd_pct) {
+    for (const p of posts.filter(x => x.key === 'tax.service')) {
+      const lb = round2(p.amount * split.lb_pct / 100), hrd = round2(p.amount * split.hrd_pct / 100);
+      p.amount = round2(p.amount - lb - hrd);
+      post(p.date, p.entry, 'tax.service.lb', lb, p.ref, p.memo);
+      post(p.date, p.entry, 'tax.service.hrd', hrd, p.ref, p.memo);
+    }
   }
 
   return { posts, mapping };
@@ -682,8 +694,11 @@ async function pendingCorrections(propertyId, q = db) {
   const { rows } = await q.query(
     `SELECT ${ymd('business_date')} AS date, postings FROM gl_closed_days WHERE property_id = $1 ORDER BY business_date`, [propertyId]);
   const kept = new Map();   // day | entry | key | ref → amount already in the books for that day
+  // The department on a cost and the split of the service charge don't change
+  // what the guest paid or the hotel spent: no correction (days closed before
+  // migration 147 have neither in the key).
   const bump = (map, day, entry, key, ref, amount) => {
-    const k = [day, entry, key, ref || ''].join(SEP);
+    const k = [day, entry, key.replace(/^(expense\.[^.]+|tax\.service)\..*$/, '$1'), ref || ''].join(SEP);
     map.set(k, (map.get(k) || 0) + amount);
   };
   const closedDates = new Set();

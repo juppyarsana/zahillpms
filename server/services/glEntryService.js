@@ -16,8 +16,8 @@ const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 864000
 const monthEnd = day => new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7), 0)).toISOString().slice(0, 10);
 const entryNo = n => `JE-${String(n).padStart(4, '0')}`;
 const BALANCE_SHEET = ['asset', 'liability', 'equity'];
-const OPENING_EQUITY = '3190';
-const PMS_KEYS = ['ledger.guest', 'ledger.deposits', 'ledger.agent', 'tax.service', 'tax.pb1', 'commission.payable'];
+const OPENING_EQUITY = '310-00-003';
+const PMS_KEYS = ['ledger.guest', 'ledger.deposits', 'ledger.agent', 'tax.service', 'tax.service.lb', 'tax.service.hrd', 'tax.pb1', 'commission.payable'];
 const fail = (error, status = 400) => ({ error, status });
 
 async function settings(propertyId, q = db) {
@@ -271,14 +271,15 @@ async function openingView(propertyId) {
     closed_through: st.closed_through,
     editable: !!st.books_start && !(st.closed_through && st.books_start <= st.closed_through),
     entry: entry ? { id: entry.id, entry_no: entryNo(entry.entry_no), date: entry.date, created_at: entry.created_at } : null,
+    // Accounts not in use only show when they carry a figure (the chart has 300+).
     accounts: accounts.map(a => ({
       ...a, pms_before: pms.get(a.id) || 0, pms_owned: pmsOwned.has(a.id), amount: saved.get(a.id) || 0,
-    })),
+    })).filter(a => a.is_active || a.pms_before || a.amount),
   };
 }
 
 // balances: [{ account_id, amount }] — amount signed: + debit balance, − credit
-// balance. The difference goes to Opening balance equity (3190). Replaces the
+// balance. The difference goes to Opening Balance Equity (310-00-003). Replaces the
 // opening balances saved before (the old entry is voided, kept).
 async function saveOpening(propertyId, userId, balances) {
   if (!Array.isArray(balances)) return fail('Nothing to save');
