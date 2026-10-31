@@ -187,6 +187,40 @@ async function list(propertyId, { show = 'open', source, department, days } = {}
   return withLines(rows);
 }
 
+// What is already asked for and has not come in yet, per item ('rm:<id>',
+// 'p:<id>', 'pos:<id>'): { qty, refs }. Left on POs that are not cancelled (made
+// from a request or not), plus what open requests ask for beyond their POs.
+async function onOrder(propertyId) {
+  const KEY = t => `CASE WHEN ${t}.raw_material_id IS NOT NULL THEN 'rm:' || ${t}.raw_material_id
+                         WHEN ${t}.product_id IS NOT NULL THEN 'p:' || ${t}.product_id
+                         WHEN ${t}.pos_item_id IS NOT NULL THEN 'pos:' || ${t}.pos_item_id END`;
+  const [{ rows: po }, { rows: req }] = await Promise.all([
+    db.query(`
+      SELECT ${KEY('i')} AS key, po.po_number AS ref, SUM(i.quantity - i.received_quantity) AS qty
+      FROM purchase_order_items i JOIN purchase_orders po ON po.id = i.purchase_order_id
+      WHERE po.property_id = $1 AND po.status <> 'cancelled' AND i.quantity > i.received_quantity
+      GROUP BY 1, 2`, [propertyId]),
+    db.query(`
+      SELECT ${KEY('l')} AS key, r.request_no, l.quantity - COALESCE(SUM(i.quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS qty
+      FROM purchase_request_lines l
+      JOIN purchase_requests r ON r.id = l.request_id
+      LEFT JOIN purchase_order_items i ON i.request_line_id = l.id
+      LEFT JOIN purchase_orders po ON po.id = i.purchase_order_id
+      WHERE r.property_id = $1 AND r.status = 'open'
+      GROUP BY l.id, r.request_no`, [propertyId]),
+  ]);
+  const out = {};
+  const add = (key, qty, ref) => {
+    if (!key || !(qty > 0)) return;
+    const e = out[key] || (out[key] = { qty: 0, refs: [] });
+    e.qty = r3(e.qty + qty);
+    if (!e.refs.includes(ref)) e.refs.push(ref);
+  };
+  for (const r of req) add(r.key, num(r.qty), requestNo(r.request_no));
+  for (const p of po) add(p.key, num(p.qty), p.ref);
+  return out;
+}
+
 // Cancel (the requester, or purchasing), decline (purchasing, with a reason),
 // close (purchasing: done although something was not bought — reason).
 async function closeRequest(propertyId, id, kind, { reason, userId, name }) {
@@ -260,4 +294,4 @@ async function alertNew(propertyId, r) {
   await telegram.sendAlert(propertyId, 'alert_purchase_request', msg, { html: true });
 }
 
-module.exports = { requestNo, create, get, list, closeRequest, refreshAfterReceive, checkRequestLine, PROGRESS_LABEL };
+module.exports = { requestNo, create, get, list, onOrder, closeRequest, refreshAfterReceive, checkRequestLine, PROGRESS_LABEL };

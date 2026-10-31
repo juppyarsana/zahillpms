@@ -16,11 +16,13 @@ const send = (res, r, ok = 200) => (r.error ? res.status(r.status || 400).json({
 
 router.get('/setup', canAsk, async (req, res) => {
   try {
-    const items = await stock.listItems(req.propertyId);
+    const [items, onOrder] = await Promise.all([stock.listItems(req.propertyId), svc.onOrder(req.propertyId)]);
     res.json({
       departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
       items: items.map(i => ({ key: i.key, name: i.name, unit: i.unit, on_hand: i.on_hand, low: i.low, out: i.out, category_label: i.category_label,
+        on_order: onOrder[i.key] || null,
         ...(isPurchasing(req) ? { avg_cost: i.avg_cost } : {}) })),   // the price suggested on a PO
+      on_order: onOrder,   // includes the restaurant's items ('pos:<id>')
       can_order: isPurchasing(req),
     });
   } catch (err) { res.status(500).json({ error: err.message }); }

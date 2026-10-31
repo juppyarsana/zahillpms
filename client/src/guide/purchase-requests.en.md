@@ -7,7 +7,7 @@ A department asks for what it needs; **purchasing** orders it. It is the first t
 
 ## Asking (any department)
 
-1. **+ New request**, or **🛒 Request to buy** on the Stock page (it starts with every item that is low or out).
+1. **+ New request**, or **🛒 Request to buy** on the Stock page (it starts with every item that is low or out, except those already asked for and not in yet; the window names them at the top, and you can still add one if you need more).
 2. Choose your **department**, and the date you need it by if there is one.
 3. Add the items. Pick them from the stock list (it shows how much is left), or choose **Something else — type it** for anything not in the list (a spare part, a tool).
 4. **Send to purchasing**. Purchasing gets a Telegram message.

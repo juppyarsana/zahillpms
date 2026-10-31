@@ -277,6 +277,15 @@ router.get('/purchase-requests', prGate, async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/pos/purchase-requests/on-order — the restaurant's items already asked
+// for and not in yet: { <pos item id>: { qty, refs } }
+router.get('/purchase-requests/on-order', prGate, async (req, res) => {
+  try {
+    const all = await purchaseRequests.onOrder(req.propertyId);
+    res.json(Object.fromEntries(Object.entries(all).filter(([k]) => k.startsWith('pos:')).map(([k, v]) => [k.slice(4), v])));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/pos/purchase-requests { client_ref, by, needed_by?, note?,
 //   lines: [{ pos_item_id?, description, unit, quantity, stock?, note? }] }
 // client_ref makes a retry safe (200 + replayed:true).

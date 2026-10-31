@@ -7,7 +7,7 @@ Departemen meminta barang yang dibutuhkan; **purchasing** yang memesan. Ini tab 
 
 ## Meminta (semua departemen)
 
-1. **+ New request**, atau **🛒 Request to buy** di halaman Stock (langsung berisi semua barang yang menipis atau habis).
+1. **+ New request**, atau **🛒 Request to buy** di halaman Stock (langsung berisi semua barang yang menipis atau habis, kecuali yang sudah diminta dan belum datang; barang itu disebut di bagian atas jendela dan masih bisa ditambahkan kalau perlu lebih).
 2. Pilih **departemen**, dan tanggal dibutuhkan jika ada.
 3. Tambah barang. Pilih dari daftar stok (terlihat sisanya), atau pilih **Something else — type it** untuk barang yang tidak ada di daftar (spare part, alat).
 4. **Send to purchasing**. Purchasing mendapat pesan Telegram.

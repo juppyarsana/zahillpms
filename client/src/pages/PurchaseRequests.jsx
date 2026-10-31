@@ -52,8 +52,9 @@ export default function PurchaseRequests({ embedded = false }) {
   function load() {
     api.get('/api/purchase-requests', { params: { show: listShow, department: dept || undefined } })
       .then(r => setList(r.data)).catch(err => setError(err.response?.data?.error || 'Could not load the requests'));
+    // Stock left and what is already on order change with every request and PO.
+    api.get('/api/purchase-requests/setup').then(r => setSetup(r.data)).catch(() => {});
   }
-  useEffect(() => { api.get('/api/purchase-requests/setup').then(r => setSetup(r.data)).catch(() => {}); }, []);
   useEffect(load, [listShow, dept]); // eslint-disable-line react-hooks/exhaustive-deps
   // ?new=1[&low=1] — from Stock → Request to buy.
   useEffect(() => {
@@ -316,9 +317,11 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
   const [neededBy, setNeededBy] = useState('');
   const [note, setNote] = useState('');
   const [lines, setLines] = useState(() => {
-    const low = setup.items.filter(i => i.low || i.out);
+    // Low items not already asked for; those are shown apart, not ordered twice.
+    const low = setup.items.filter(i => (i.low || i.out) && !i.on_order);
     return lowOnly && low.length ? low.map(i => ({ ...blankLine(), ref: `pms|${i.key}` })) : [blankLine()];
   });
+  const [leftOut] = useState(() => (lowOnly ? setup.items.filter(i => (i.low || i.out) && i.on_order) : []));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const pmsBy = useMemo(() => new Map(setup.items.map(i => [i.key, i])), [setup]);
@@ -328,8 +331,8 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
   const set = (i, patch) => setLines(ls => ls.map((l, k) => (k === i ? { ...l, ...patch } : l)));
   function itemOf(l) {
     const [src, id] = l.ref.split('|');
-    if (src === 'pms') { const it = pmsBy.get(id); return it && { name: it.name, unit: it.unit, stock: it.on_hand, low: it.low || it.out }; }
-    if (src === 'pos') { const it = posBy.get(id); return it && { name: it.name, unit: it.unit, stock: it.stock, low: it.low }; }
+    if (src === 'pms') { const it = pmsBy.get(id); return it && { name: it.name, unit: it.unit, stock: it.on_hand, low: it.low || it.out, onOrder: it.on_order }; }
+    if (src === 'pos') { const it = posBy.get(id); return it && { name: it.name, unit: it.unit, stock: it.stock, low: it.low, onOrder: setup.on_order?.[`pos:${id}`] }; }
     return null;
   }
 
@@ -375,6 +378,8 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
           </div>
           {department === 'fnb' && <div className="text-muted" style={{ fontSize: 12, marginBottom: 8 }}>
             The kitchen's ingredients are kept in the restaurant app — the chef can also ask from there (Inventory → Request to buy).</div>}
+          {leftOut.length > 0 && <div className="alert alert-warn" style={{ marginBottom: 12 }}><div>
+            Low but already asked for, so not added: {leftOut.map(i => `${i.name} (${q(i.on_order.qty, i.unit)}, ${i.on_order.refs.join(', ')})`).join(' · ')}. Add one below only if you need more.</div></div>}
           <div className="table-wrap">
             <table style={{ minWidth: 600 }}>
               <thead><tr><th>Item</th><th style={{ width: 190 }}>How many</th><th style={{ width: 240 }}>Note</th><th style={{ width: 30 }}></th></tr></thead>
@@ -387,9 +392,9 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
                         <ItemPicker value={l.ref} onChange={v => set(i, { ref: v })} placeholder="Type to find an item…"
                           options={[
                             ...setup.items.map(x => ({ value: `pms|${x.key}`, label: x.name, group: 'Stock (PMS)',
-                              hint: `${q(x.on_hand, x.unit)} left${x.out ? ' · out' : x.low ? ' · low' : ''}`, tone: x.out || x.low ? 'danger' : undefined })),
-                            ...(showPos ? pos.items.map(x => ({ value: `pos|${x.id}`, label: x.name, group: 'Restaurant (POS)',
-                              hint: `${q(x.stock, x.unit)} left${x.low ? ' · low' : ''}`, tone: x.low ? 'danger' : undefined })) : []),
+                              hint: `${q(x.on_hand, x.unit)} left${x.out ? ' · out' : x.low ? ' · low' : ''}${x.on_order ? ` · ${q(x.on_order.qty, x.unit)} on order` : ''}`, tone: x.out || x.low ? 'danger' : undefined })),
+                            ...(showPos ? pos.items.map(x => { const oo = setup.on_order?.[`pos:${x.id}`]; return { value: `pos|${x.id}`, label: x.name, group: 'Restaurant (POS)',
+                              hint: `${q(x.stock, x.unit)} left${x.low ? ' · low' : ''}${oo ? ` · ${q(oo.qty, x.unit)} on order` : ''}`, tone: x.low ? 'danger' : undefined }; }) : []),
                             { value: 'text|', label: 'Something else — type it', group: 'Other' },
                           ]} />
                         {l.ref === 'text|' && (
@@ -399,6 +404,7 @@ function NewRequestModal({ setup, lowOnly, pos, loadPos, onClose, onDone }) {
                           </div>
                         )}
                         {it && <div className="text-muted" style={{ fontSize: 11 }}>{q(it.stock, it.unit)} left now{it.low ? ' · low' : ''}</div>}
+                        {it?.onOrder && <div style={{ fontSize: 11, color: 'var(--amber, #B45309)' }}>Already asked for: {q(it.onOrder.qty, it.unit)} ({it.onOrder.refs.join(', ')})</div>}
                       </td>
                       <td><div className="flex gap-1" style={{ alignItems: 'center' }}>
                         <input className="form-input" type="number" min="0" step="any" placeholder={it ? '' : l.unit || ''} value={l.quantity} onChange={e => set(i, { quantity: e.target.value })} />
