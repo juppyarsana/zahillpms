@@ -39,7 +39,6 @@ jp.co.sharp.av.android.emanual               # on-screen manual
 com.google.android.backdrop                  # Google ambient screensaver; Zahill TV has its own
 com.google.android.syncadapters.calendar
 com.google.android.play.games
-com.google.android.youtube.tvmusic
 
 # --- Stock home and its first-run wizard: LAST, once com.zahill.tv is installed and is Home ---
 # provision.ps1 skips setupwraith while it owns the saved Wi-Fi network (Android would delete it).

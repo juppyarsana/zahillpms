@@ -57,7 +57,13 @@ cd C:\Users\dj03p\Documents\zahillpms\tv-launcher\provision
 lists the TVs that failed — fix those and run again (safe to repeat).
 
 **Good to know**
-- Only the AQUOS-TVX19A — on another model the script stops before changing anything.
+- Made for the AQUOS-TVX19A — on another model the script stops before changing anything.
+- AQUOS-TVX22A (Android 14, Google TV; first: Room 304, 2026-10-31): add
+  `-AnyModel -List debloat-tvx22a.txt`, which disables the Google TV launcher (otherwise Home keeps
+  opening it) and the setup wizard (its recovery screen otherwise takes over Home in a loop on some
+  of these TVs, e.g. 305, 306). Inputs / Live TV not yet tried on this model.
+- At power-on the TVX19A opens Live TV by itself. `BootReceiver` takes the screen back: it asks to be
+  first in the boot broadcast (36 s of Live TV otherwise, under 1 s with it; since app 0.2.4).
 - Back to the stock home: `.\restore.ps1 -Tv <tv ip>` (add `-Uninstall` to remove the app too).
 - A guest signed into Netflix / YouTube stays signed in after check-out (not handled yet, Phase 4) —
   sign the apps out when the room is turned over.

@@ -1,0 +1,9 @@
+# Packages disabled on the Sharp AQUOS-TVX22A (Android 14, Google TV): -AnyModel -List debloat-tvx22a.txt
+# The TVX19A list has not been tried on this model.
+#
+# Order matters. Setup wizard first: on some of these TVs its RecoveryActivity is a Home app, and with
+# the launcher off it restarts itself several times a second and Zahill TV never gets the screen
+# (Android refuses to disable that one screen from adb). provision.ps1 skips it while it owns saved Wi-Fi.
+com.google.android.tungsten.setupwraith
+# Stock launcher: its Home has priority 2, so it beats Zahill TV even as the HOME role holder.
+com.google.android.apps.tv.launcherx

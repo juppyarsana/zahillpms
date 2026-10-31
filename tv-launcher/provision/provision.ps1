@@ -147,7 +147,8 @@ function Provision-One([string]$Ip, [string]$RoomId) {
     }
     Run $serial @('shell', 'input keyevent KEYCODE_HOME') | Out-Null
     Start-Sleep -Seconds 4
-    $top = Run $serial @('shell', 'dumpsys activity activities | grep -m1 mResumedActivity')
+    # Android 11 calls it mResumedActivity, Android 14 topResumedActivity.
+    $top = Run $serial @('shell', "dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity'")
     if ($top -notmatch [regex]::Escape("$Pkg/")) { throw "Home did not open Zahill TV: $top" }
     Save-State
     Write-Host "Room ${RoomId}: done. Zahill TV is Home, the screensaver is set, the TV is named '$name'." -ForegroundColor Green

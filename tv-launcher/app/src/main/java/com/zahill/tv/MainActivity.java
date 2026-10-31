@@ -524,6 +524,9 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- Watch row
 
+    // Read by BootReceiver: once a guest is using Home, stop bringing it to the front.
+    static volatile boolean guestPressedKey;
+
     static final class App {
         String pkg, label;
         ComponentName component;
@@ -582,7 +585,11 @@ public class MainActivity extends Activity {
             ImageView img = new ImageView(this);
             img.setImageDrawable(app.art);
             if (app.isBanner) {
-                img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                // A banner is 16:9 and the tile can be far wider (fewer apps on this TV = wider
+                // tiles), so show all of it and fill the sides with the banner's own background.
+                img.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                int edge = bannerEdgeColor(app.art);
+                if (edge != 0) bg.setColor(edge);
                 card.addView(img, new FrameLayout.LayoutParams(-1, -1));
             } else {
                 img.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -602,6 +609,18 @@ public class MainActivity extends Activity {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)));
         watchCards.add(card);
         return card;
+    }
+
+    // The colour at the banner's left edge, or 0 when it is see-through there.
+    private static int bannerEdgeColor(Drawable art) {
+        android.graphics.Rect bounds = art.copyBounds();
+        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(32, 18, android.graphics.Bitmap.Config.ARGB_8888);
+        art.setBounds(0, 0, 32, 18);
+        art.draw(new android.graphics.Canvas(bmp));
+        art.setBounds(bounds);
+        int color = bmp.getPixel(0, 9);
+        bmp.recycle();
+        return android.graphics.Color.alpha(color) < 200 ? 0 : color;
     }
 
     private View castTile() {
@@ -1291,6 +1310,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        guestPressedKey = true;
         int code = e.getKeyCode();
         // Hold OK 3 s: the settings (Room ID / token) — for staff, not obvious to guests.
         if (isOk(code)) {

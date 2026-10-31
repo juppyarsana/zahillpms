@@ -60,11 +60,15 @@
             android:label="@string/settings_name"
             android:theme="@style/Settings" />
 
-        <!-- Takes the screen back from Live TV after the TV boots (see BootReceiver). -->
+        <!-- Takes the screen back from Live TV after the TV boots (see BootReceiver). The boot
+             broadcast reaches apps one by one (36 s on the TVX19A), so ask to be first, and also
+             take the earlier locked-boot one. -->
         <receiver
             android:name=".BootReceiver"
+            android:directBootAware="true"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>

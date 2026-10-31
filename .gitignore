@@ -73,3 +73,4 @@ tv-launcher/*.jks
 tv-launcher/*.keystore
 tv-launcher/provision/state/
 tv-launcher/provision/rooms.csv
+tv-launcher/provision/apks/
