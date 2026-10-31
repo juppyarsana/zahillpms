@@ -134,6 +134,19 @@ async function freeUnit(client, propertyId, roomTypeId, ci, co, { taken = [], ex
 // OTA e-mail relays reach the guest only through the OTA — kept off the profile.
 const RELAY = /(guest\.booking\.com|agoda-messaging|agoda\.com|expediapartnercentral|expedia\.com|airbnb\.com|traveloka\.com|tiket\.com|trip\.com|ctrip\.com)$/i;
 const words = s => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1));
+// Names shared by too many guests to say anything about who this is.
+const COMMON_NAME_WORDS = new Set(['made', 'putu', 'wayan', 'gede', 'kadek', 'komang', 'nyoman', 'ketut', 'luh', 'ida', 'bagus', 'ayu',
+  'gusti', 'agung', 'anak', 'ngurah', 'desak', 'dewa', 'dewi', 'siti', 'nur', 'muhammad', 'mohammad', 'mohamad', 'ahmad', 'mrs', 'miss']);
+const longWords = s => [...words(s)].filter(w => w.length > 2);
+// Good enough to treat two names as one guest: the same words, or two shared
+// words, not counting the common ones. "Made Sudarsa" is not "Made Wirawan".
+function sameName(a, b) {
+  const A = longWords(a), B = longWords(b);
+  if (A.length >= 2 && A.length === B.length && A.every(w => B.includes(w))) return true;
+  const X = A.filter(w => !COMMON_NAME_WORDS.has(w)), Y = B.filter(w => !COMMON_NAME_WORDS.has(w));
+  const shared = X.filter(w => Y.includes(w)).length;
+  return shared >= 2 || (shared > 0 && shared === X.length && shared === Y.length);
+}
 function nationalityOf(country) {
   if (!country || !/^[A-Z]{2}$/i.test(country)) return null;
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(country.toUpperCase()) || null; } catch { return null; }
@@ -209,7 +222,6 @@ function collectPoint(r) {
 // its notes) or the guest's name. [{ room, b }] for the rooms matched.
 async function existingStays(client, propertyId, r, rooms, L) {
   const found = [];
-  const mine = new Set([...words(r.customer.name)].filter(w => w.length > 2));
   const code = String(r.code || '').trim();
   for (const room of rooms) {
     const type = L.roomType(room.roomType);
@@ -224,7 +236,7 @@ async function existingStays(client, propertyId, r, rooms, L) {
          AND NOT (b.id = ANY($5::uuid[]))
        ORDER BY u.name`, [propertyId, type.room_type_id, room.ci, room.co, found.map(f => f.b.id)]);
     const byCode = code.length >= 4 && rows.find(b => `${b.internal_notes || ''} ${b.special_requests || ''}`.includes(code));
-    const byName = rows.find(b => [...words(b.guest)].some(w => w.length > 2 && mine.has(w)));
+    const byName = rows.find(b => sameName(b.guest, r.customer.name));
     const b = byCode || byName;
     if (b) found.push({ room, b, how: byCode ? 'reservation code' : 'guest name' });
   }
@@ -271,10 +283,6 @@ async function createFromRevision(client, propertyId, r, L) {
   if (same.length === rooms.length) return linkExisting(client, propertyId, r, rooms, same);
   if (same.length) {
     return { result: 'attention', message: `Part of this ${r.ota} booking is already in the PMS (${same.map(s => `room ${s.b.unit}`).join(', ')}) and part is not — check it and enter the rest by hand` };
-  }
-  if (r.status === 'modified') {
-    const moved = await movedStay(client, propertyId, r);
-    if (moved) return moved;
   }
 
   // Room type, meal plan and a free room for every room — or nothing.
@@ -387,30 +395,72 @@ async function unlinkedStays(client, propertyId, r, days) {
             OR ($5 <> '' AND strpos(COALESCE(b.internal_notes, '') || ' ' || COALESCE(b.special_requests, ''), $5) > 0))
      ORDER BY u.name`, [propertyId, dates[0] || null, dates[dates.length - 1] || null, days, usableCode]);
   const byCode = usableCode ? rows.filter(b => `${b.internal_notes || ''} ${b.special_requests || ''}`.includes(usableCode)) : [];
-  const mine = new Set([...words(r.customer.name)].filter(w => w.length > 2));
-  const byName = byCode.length ? [] : rows.filter(b => [...words(b.guest)].some(w => w.length > 2 && mine.has(w)));
+  const mine = longWords(r.customer.name).filter(w => days === 0 || !COMMON_NAME_WORDS.has(w));
+  const byName = byCode.length ? [] : rows.filter(b => longWords(b.guest).some(w => mine.includes(w)));
   return { byCode, byName };
 }
 
-// A change for a reservation the channel manager never sent before, with no
-// stay on the new dates: the old stay may be in the PMS on the old dates, and
-// booking the new ones would hold two rooms for one guest. FO decides.
-async function movedStay(client, propertyId, r) {
-  const { byCode, byName } = await unlinkedStays(client, propertyId, r, 60);
-  const found = byCode.length ? byCode : byName;
-  if (!found.length) return null;
-  const looksLike = found.map(b => `room ${b.unit} (${b.guest})`).join(', ');
-  const to = r.rooms[0] ? ` to ${span(r.rooms[0].ci, r.rooms[0].co)}` : '';
-  for (const b of found) {
-    await client.query(
-      `UPDATE bookings SET to_check = COALESCE(to_check, '[]'::jsonb) || $2::jsonb, to_check_done_at = NULL, to_check_done_by = NULL WHERE id = $1`,
-      [b.id, JSON.stringify([`Changed on ${r.ota}${to} (reservation ${r.code})? Matched to this booking by ${byCode.length ? 'reservation code' : 'name only'} — check, and change it by hand if it is the same stay`])]);
-    await note(client, b.id, `${r.ota} changed reservation ${r.code} (${r.customer.name})${to}; matched to this booking by ${byCode.length ? 'reservation code' : 'name only'}, so nothing was changed automatically.`);
+// A reservation the channel manager never sent before. It may be in the PMS
+// already, on other dates or under a similar name, so its dates must be held
+// either way: with the code in its notes the booking itself moves; on a name
+// alone they are booked as well and FO cancels the other if it is the same stay.
+async function placeUnlinked(client, propertyId, r, L) {
+  const rooms = r.rooms.filter(x => !x.cancelled);
+  if ((await existingStays(client, propertyId, r, rooms, L)).length) return createFromRevision(client, propertyId, r, L);
+  const changed = r.status === 'modified';
+  const { byCode, byName } = await unlinkedStays(client, propertyId, r, changed ? 60 : 0);
+  if (rooms.length && byCode.length === rooms.length) return moveByCode(client, propertyId, r, byCode, rooms, L);
+
+  const earlier = byCode.length ? byCode : byName;
+  const made = await createFromRevision(client, propertyId, r, L);
+  if (!earlier.length || made.result === 'ignored') return made;
+
+  const looksLike = earlier.map(b => `room ${b.unit} (${b.guest})`).join(', ');
+  const to = rooms[0] ? ` ${changed ? 'to' : 'for'} ${span(rooms[0].ci, rooms[0].co)}` : '';
+  const verb = changed ? 'Changed' : 'Booked';
+  const booked = made.result === 'applied' && !!made.channelBookingId;
+  for (const b of earlier) {
+    await pointAt(client, b.id, `${verb} on ${r.ota}${to} (reservation ${r.code})? ${booked ? 'Those dates were booked separately. ' : ''}If this is the same stay, ${booked ? 'cancel this booking' : 'change this booking by hand'}`);
+    await note(client, b.id, `${verb} on ${r.ota}: reservation ${r.code} (${r.customer.name})${to}. This booking may be the same stay, so it was flagged and left as it is.`);
   }
+  if (!booked) {
+    return { ...made, result: 'attention', bookingIds: earlier.map(b => b.id), message: `${made.message}. It may be the same stay as ${looksLike}` };
+  }
+  for (const id of made.bookingIds) await pointAt(client, id, `May be the same stay as ${looksLike}, which is still booked — cancel that one if so`);
+  const message = `${verb} on ${r.ota} (${r.code})${to}: ${made.message}, so those dates are held. It may be the same stay as ${looksLike}, which is still booked and also holds its room — cancel it if so`;
   return {
-    result: 'attention', bookingIds: found.map(b => b.id),
-    message: `Changed on ${r.ota} (${r.code})${to}. It looks like ${looksLike}. Nothing was booked or changed, and no room is held for the new dates — change it by hand, or enter a new booking if it is a different guest`,
+    ...made, result: 'attention', message, bookingIds: [...made.bookingIds, ...earlier.map(b => b.id)],
+    alert: { title: `${changed ? 'Booking changed on' : 'New booking on'} ${r.ota} — possible duplicate`, text: [r.code, message] },
   };
+}
+
+// The reservation's code is in these bookings' notes: link them and change them.
+async function moveByCode(client, propertyId, r, stays, rooms, L) {
+  const groups = [...new Set(stays.map(b => b.reservation_group_id).filter(Boolean))];
+  const { rows: [cb] } = await client.query(
+    `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, reservation_group_id, last_revision_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [propertyId, PROVIDER, r.bookingId, r.ota, r.code, r.status, r.collect, groups.length === 1 ? groups[0] : null, r.revisionId]);
+  const left = [];
+  for (const s of stays) left.push(await loadBooking(client, s.id));
+  for (const room of rooms) {
+    const typeId = L.roomType(room.roomType)?.room_type_id;
+    const i = Math.max(left.findIndex(b => b.unit_room_type_id === typeId), 0);
+    const [b] = left.splice(i, 1);
+    await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, b.id]);
+    await client.query('UPDATE bookings SET payment_collect = COALESCE(payment_collect, $2) WHERE id = $1', [b.id, bookingCollect(r)]);
+    await recomputeBookingStatus(client, b.id);
+    await pointAt(client, b.id, `${r.ota} ${r.code} came through the channel manager and was matched to this booking by reservation code; its changes now apply here`);
+    await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by reservation code.`);
+  }
+  const out = await applyChange(client, propertyId, r, cb, L);
+  return { ...out, channelBookingId: cb.id, bookingIds: out.bookingIds || stays.map(b => b.id) };
+}
+
+function pointAt(client, bookingId, text) {
+  return client.query(
+    `UPDATE bookings SET to_check = COALESCE(to_check, '[]'::jsonb) || $2::jsonb, to_check_done_at = NULL, to_check_done_by = NULL WHERE id = $1`,
+    [bookingId, JSON.stringify([text])]);
 }
 
 // A cancellation for a reservation the channel manager never sent before: the
@@ -656,8 +706,8 @@ async function processRevision(client, propertyId, r) {
     'SELECT * FROM channel_bookings WHERE property_id = $1 AND provider = $2 AND external_booking_id = $3', [propertyId, PROVIDER, r.bookingId]);
   if (!cb) {
     if (r.status === 'cancelled') return cancelUnlinked(client, propertyId, r);
-    const made = await createFromRevision(client, propertyId, r, L);
-    if (made.result === 'attention') {
+    const made = await placeUnlinked(client, propertyId, r, L);
+    if (made.result === 'attention' && !made.channelBookingId) {
       // Remember the reservation, so its later changes aren't booked automatically either.
       const { rows: [row] } = await client.query(
         `INSERT INTO channel_bookings (property_id, provider, external_booking_id, ota_name, ota_code, status, payment_collect, last_revision_id)
