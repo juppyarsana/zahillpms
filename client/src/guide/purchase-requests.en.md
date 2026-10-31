@@ -18,6 +18,8 @@ Your request then shows how far it has got: **Waiting** → **Ordered** → **Pa
 
 The kitchen's ingredients are kept in the **restaurant app (POS)**, because its recipes take them off at each sale. The chef asks from there: **Inventory → Request to buy**. The request arrives here tagged **Restaurant app**, and the chef follows it in the POS.
 
+Every request from the POS says **for Kitchen or Resto**, so both can ask for the same item (mint, for example). On the purchase order and when receiving, each line is marked **For Kitchen** or **For Resto**, so the goods are easy to split when they arrive. The POS keeps one stock figure per item.
+
 ## Ordering (purchasing)
 
 1. **To order** lists every item still to order, from all open requests (**All requests** shows each request whole). Tick the items to buy. You can tick items from several requests if they come from one supplier.

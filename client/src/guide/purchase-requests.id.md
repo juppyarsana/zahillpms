@@ -18,6 +18,8 @@ Permintaan Anda lalu menunjukkan sampai di mana: **Waiting** → **Ordered** →
 
 Bahan dapur disimpan di **aplikasi restoran (POS)**, karena resepnya mengurangi stok di setiap penjualan. Chef meminta dari sana: **Inventory → Request to buy**. Permintaannya masuk ke sini dengan tanda **Restaurant app**, dan chef memantaunya di POS.
 
+Setiap permintaan dari POS memilih **untuk Kitchen atau Resto**, jadi barang yang sama bisa diminta oleh keduanya (misalnya daun mint). Di purchase order dan saat menerima barang, tiap baris bertanda **For Kitchen** atau **For Resto**, supaya mudah dibagi saat barang datang. Stok di POS tetap satu angka untuk satu barang.
+
 ## Memesan (purchasing)
 
 1. **To order** berisi semua barang yang belum dipesan dari semua permintaan terbuka (**All requests** menampilkan per permintaan). Centang barang yang akan dibeli. Boleh dari beberapa permintaan jika supplier-nya sama.

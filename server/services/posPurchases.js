@@ -6,7 +6,7 @@
 // PMS (Payables / Make bill) — the POS records no expense for it.
 //
 //   POS GET  /api/hotel/inventory          its items: id, name, unit, stock, low
-//   POS POST /api/hotel/purchase-batches   { ref, po_number, supplier, received_on, by,
+//   POS POST /api/hotel/purchase-batches   { ref, po_number, supplier, received_on, by, section,
 //                                            items: [{ inventory_id, qty, total_cost }] }
 //
 // Same hotel key and address as room tablet orders (posRoomOrders.js). `ref`
@@ -40,10 +40,12 @@ async function sendToPos(propertyId, poId) {
 async function send(propertyId, poId) {
   const { rows: lines } = await db.query(
     `SELECT i.id, i.description, i.pos_item_id, i.unit_cost, i.received_quantity, i.pos_sent_qty,
-            po.po_number, COALESCE(s.name, po.bought_from) AS supplier
+            po.po_number, COALESCE(s.name, po.bought_from) AS supplier, pr.section
      FROM purchase_order_items i
      JOIN purchase_orders po ON po.id = i.purchase_order_id
      LEFT JOIN suppliers s ON s.id = po.supplier_id
+     LEFT JOIN purchase_request_lines prl ON prl.id = i.request_line_id
+     LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
      WHERE i.purchase_order_id = $1 AND po.property_id = $2
        AND po.voided_at IS NULL
        AND i.pos_item_id IS NOT NULL AND i.received_quantity > i.pos_sent_qty`, [poId, propertyId]);
@@ -59,7 +61,7 @@ async function send(propertyId, poId) {
       try {
         await call(cfg, 'POST', '/api/hotel/purchase-batches', {
           ref: `${l.id}:${num(l.received_quantity)}`, po_number: l.po_number, supplier: l.supplier,
-          received_on: todayWITA(), by: 'Hotel purchasing',
+          received_on: todayWITA(), by: 'Hotel purchasing', section: l.section,
           items: [{ inventory_id: l.pos_item_id, qty, total_cost: Math.round(qty * num(l.unit_cost) * 100) / 100 }],
         });
       } catch (err) { error = err.message; }

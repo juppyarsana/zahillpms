@@ -559,6 +559,7 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
                     {it.description}{it.unit_of_measure && !it.product_id ? ` (${it.unit_of_measure})` : ''}
                     {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Goes to the restaurant's stock in the POS when received">Restaurant</span>}
                     {it.line_kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Not kept in any stock">Not in stock</span>}
+                    {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }} title="Asked for by this part of the restaurant">For {it.request_section}</span>}
                     {it.request_no_text && <Link to="/purchasing?tab=requests&view=requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
                     {it.line_kind === 'pos' && it.pos_send_error && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not sent to the POS: {it.pos_send_error}</div>}
                     {it.line_kind === 'pos' && !it.pos_send_error && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
@@ -628,7 +629,7 @@ function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onE
       key: it.id, kind: it.raw_material_id ? 'material' : it.product_id ? 'product' : it.pos_item_id ? 'pos' : 'text',
       raw_material_id: it.raw_material_id || '', product_id: it.product_id || '', pos_item_id: it.pos_item_id || null,
       description: it.description, unit: it.unit || null, request_line_id: it.request_line_id || null,
-      request_no_text: it.request_no_text, usual_cost: it.usual_cost, existing: true,
+      request_no_text: it.request_no_text, request_section: it.request_section, usual_cost: it.usual_cost, existing: true,
       ...(BIG_UNIT[unit] ? fromBase(unit, it.quantity, it.unit_cost) : { big: false, quantity: String(Number(it.quantity)), unit_cost: String(Number(it.unit_cost)) }),
     };
   };
@@ -708,6 +709,7 @@ function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onE
                             {l.description}
                             {l.kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }}>Restaurant</span>}
                             {l.kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Not in stock</span>}
+                            {l.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }}>For {l.request_section}</span>}
                             {l.request_no_text && <span className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{l.request_no_text}</span>}
                           </div>
                         ) : (
@@ -805,6 +807,7 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <div style={{ flex: 1, fontSize: 13 }}>
                 {it.description}
+                {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }}>For {it.request_section}</span>}
                 <div className="text-muted" style={{ fontSize: 11 }}>
                   outstanding {fmtQty(Number(it.quantity) - Number(it.received_quantity), unitOf(it))}
                   {it.line_kind === 'pos' ? ' · to the restaurant stock (POS)' : it.line_kind === 'text' ? ' · not kept in stock' : ''}

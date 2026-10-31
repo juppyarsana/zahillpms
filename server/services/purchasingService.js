@@ -454,7 +454,8 @@ async function getPurchaseOrder(propertyId, poId) {
   const { rows: items } = await db.query(
     `SELECT poi.*, COALESCE(rm.unit_of_measure, poi.unit) AS unit_of_measure,
             CASE WHEN poi.pos_item_id IS NOT NULL THEN 'pos' WHEN poi.product_id IS NULL AND poi.raw_material_id IS NULL THEN 'text' END AS line_kind,
-            'PR-' || lpad(pr.request_no::text, 4, '0') AS request_no_text, pr.id AS request_id, pr.department AS request_department
+            'PR-' || lpad(pr.request_no::text, 4, '0') AS request_no_text, pr.id AS request_id, pr.department AS request_department,
+            CASE pr.section WHEN 'kitchen' THEN 'Kitchen' WHEN 'resto' THEN 'Resto' END AS request_section
      FROM purchase_order_items poi
      LEFT JOIN raw_materials rm ON rm.id = poi.raw_material_id
      LEFT JOIN purchase_request_lines prl ON prl.id = poi.request_line_id

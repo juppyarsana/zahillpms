@@ -26,6 +26,7 @@ const PROGRESS_LABEL = {
   waiting: 'Waiting', partly_ordered: 'Partly ordered', ordered: 'Ordered', partly_received: 'Partly received',
   received: 'Received', closed: 'Closed', declined: 'Declined', cancelled: 'Cancelled',
 };
+const SECTION_LABEL = { kitchen: 'Kitchen', resto: 'Resto' };
 
 // lines: [{ item_key? | pos_item_id?, description, unit, quantity, note, stock? }]
 async function parseLines(client, propertyId, lines, { source }) {
@@ -61,6 +62,8 @@ async function create(propertyId, body, actor) {
   const department = source === 'pos' ? 'fnb' : body.department;
   if (!DEPARTMENT_KEYS.includes(department)) return fail(400, 'Choose the department');
   if (body.needed_by && !isDate(body.needed_by)) return fail(400, 'Needed by must be a date');
+  if (body.section && !SECTION_LABEL[body.section]) return fail(400, 'Choose Kitchen or Resto');
+  const section = source === 'pos' ? body.section || null : null;
   const clientRef = body.client_ref ? clip(body.client_ref, 80) : null;
 
   const client = await db.pool.connect();
@@ -77,10 +80,10 @@ async function create(propertyId, body, actor) {
     const { rows: [{ n }] } = await client.query(
       'SELECT COALESCE(MAX(request_no), 0) + 1 AS n FROM purchase_requests WHERE property_id = $1', [propertyId]);
     const { rows: [pr] } = await client.query(
-      `INSERT INTO purchase_requests (property_id, request_no, department, source, needed_by, note, requested_by, requested_by_name, client_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      `INSERT INTO purchase_requests (property_id, request_no, department, source, needed_by, note, requested_by, requested_by_name, client_ref, section)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [propertyId, n, department, source, body.needed_by || null, clip(body.note, 1000) || null,
-       actor.userId || null, clip(actor.name, 120) || null, clientRef]);
+       actor.userId || null, clip(actor.name, 120) || null, clientRef, section]);
     for (const l of parsed.lines) {
       await client.query(
         `INSERT INTO purchase_request_lines (request_id, raw_material_id, product_id, pos_item_id, description, unit, quantity, stock_when_asked, note, sort_order)
@@ -151,7 +154,8 @@ function shape(r, lines) {
   else progress = 'waiting';
   return {
     id: r.id, request_no: r.request_no, request_no_text: requestNo(r.request_no),
-    department: r.department, department_label: DEPARTMENT_LABEL[r.department] || r.department,
+    department: r.department, section: r.section, section_label: SECTION_LABEL[r.section] || null,
+    department_label: [DEPARTMENT_LABEL[r.department] || r.department, SECTION_LABEL[r.section]].filter(Boolean).join(' · '),
     source: r.source, source_label: r.source === 'pos' ? 'Restaurant (POS)' : 'PMS',
     needed_by: r.needed_by, note: r.note, status: r.status, progress, progress_label: PROGRESS_LABEL[progress],
     requested_by: r.requested_by, requested_by_name: r.user_name || r.requested_by_name || '—',
@@ -188,36 +192,40 @@ async function list(propertyId, { show = 'open', source, department, days } = {}
 }
 
 // What is already asked for and has not come in yet, per item ('rm:<id>',
-// 'p:<id>', 'pos:<id>'): { qty, refs }. Left on POs that are not cancelled (made
-// from a request or not), plus what open requests ask for beyond their POs.
+// 'p:<id>', 'pos:<id>'): { qty, refs, by: { kitchen, resto, none } }. Left on POs
+// that are not cancelled (made from a request or not), plus what open requests
+// ask for beyond their POs. `by` = who it is for; none = not said.
 async function onOrder(propertyId) {
   const KEY = t => `CASE WHEN ${t}.raw_material_id IS NOT NULL THEN 'rm:' || ${t}.raw_material_id
                          WHEN ${t}.product_id IS NOT NULL THEN 'p:' || ${t}.product_id
                          WHEN ${t}.pos_item_id IS NOT NULL THEN 'pos:' || ${t}.pos_item_id END`;
   const [{ rows: po }, { rows: req }] = await Promise.all([
     db.query(`
-      SELECT ${KEY('i')} AS key, po.po_number AS ref, SUM(i.quantity - i.received_quantity) AS qty
+      SELECT ${KEY('i')} AS key, po.po_number AS ref, pr.section, SUM(i.quantity - i.received_quantity) AS qty
       FROM purchase_order_items i JOIN purchase_orders po ON po.id = i.purchase_order_id
+      LEFT JOIN purchase_request_lines prl ON prl.id = i.request_line_id
+      LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
       WHERE po.property_id = $1 AND po.status <> 'cancelled' AND i.quantity > i.received_quantity
-      GROUP BY 1, 2`, [propertyId]),
+      GROUP BY 1, 2, 3`, [propertyId]),
     db.query(`
-      SELECT ${KEY('l')} AS key, r.request_no, l.quantity - COALESCE(SUM(i.quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS qty
+      SELECT ${KEY('l')} AS key, r.request_no, r.section, l.quantity - COALESCE(SUM(i.quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS qty
       FROM purchase_request_lines l
       JOIN purchase_requests r ON r.id = l.request_id
       LEFT JOIN purchase_order_items i ON i.request_line_id = l.id
       LEFT JOIN purchase_orders po ON po.id = i.purchase_order_id
       WHERE r.property_id = $1 AND r.status = 'open'
-      GROUP BY l.id, r.request_no`, [propertyId]),
+      GROUP BY l.id, r.request_no, r.section`, [propertyId]),
   ]);
   const out = {};
-  const add = (key, qty, ref) => {
+  const add = (key, qty, ref, section) => {
     if (!key || !(qty > 0)) return;
-    const e = out[key] || (out[key] = { qty: 0, refs: [] });
+    const e = out[key] || (out[key] = { qty: 0, refs: [], by: { kitchen: 0, resto: 0, none: 0 } });
     e.qty = r3(e.qty + qty);
+    e.by[section || 'none'] = r3(e.by[section || 'none'] + qty);
     if (!e.refs.includes(ref)) e.refs.push(ref);
   };
-  for (const r of req) add(r.key, num(r.qty), requestNo(r.request_no));
-  for (const p of po) add(p.key, num(p.qty), p.ref);
+  for (const r of req) add(r.key, num(r.qty), requestNo(r.request_no), r.section);
+  for (const p of po) add(p.key, num(p.qty), p.ref, p.section);
   return out;
 }
 
