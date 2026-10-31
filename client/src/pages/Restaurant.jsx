@@ -267,7 +267,9 @@ function SessionDetail({ id, onClose }) {
             </div>
 
             <div className="stat-grid">
-              <Stat label="Paid at the restaurant" value={fmtIDR(s.outlet_total)} sub={`${fmtIDR(s.outlet_net)} before service & tax → F&B`} />
+              <Stat label="Paid at the restaurant" value={fmtIDR(s.outlet_total)} sub={<>{fmtIDR(s.outlet_net)} before service & tax → F&B
+                {s.fnb_split && <div>Food {fmtIDR(s.fnb_split.food + s.fnb_split.unset)} · Drinks {fmtIDR(s.fnb_split.drink)}</div>}
+                {s.fnb_split?.unset_all > 0 && <div>{fmtIDR(s.fnb_split.unset_all)} not marked in the POS (counted as food)</div>}</>} />
               <Stat label="Charged to rooms" value={fmtIDR(s.room_charge_total)} sub="Already on the folios" />
               {s.event_charge_total > 0 && <Stat label="Charged to events" value={fmtIDR(s.event_charge_total)}
                 sub={(s.event_charges || []).map(e => `${e.event || ''}${e.name ? ` · ${e.name}` : ''}`).join(', ') || "Already on the events' bills"} />}

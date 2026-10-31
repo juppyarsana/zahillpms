@@ -337,6 +337,10 @@ function JournalTab() {
           </div>
         </div>
 
+        {data.checks.fnb_not_marked > 0 && (
+          <div className="alert alert-warn mt-3"><div>{idr(data.checks.fnb_not_marked)} of restaurant sales are on menu items not marked food or drink, so they are counted as food. Mark them in the POS (Menu → Set food or drink), then send those sessions again.</div></div>
+        )}
+
         {!data.days.length && <div className="card"><div className="text-muted" style={{ fontSize: 13 }}>Nothing to post in this period.</div></div>}
 
         {data.days.map(day => (

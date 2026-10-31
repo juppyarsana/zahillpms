@@ -74,8 +74,8 @@ const entryNo = n => `JE-${String(n).padStart(4, '0')}`;
 // A sold line's net amount by revenue key. `items` = the sale's lines
 // (category, subtotal, meal) — per-night lines are left out, they post night
 // by night. A restaurant bill from the POS has no lines: all F&B.
-function saleParts(amount, items, orderSource) {
-  if (orderSource === 'external_pos') return [['revenue.fnb_outlet', amount]];
+function saleParts(amount, items, orderSource, split) {
+  if (orderSource === 'external_pos') return restaurantParts(amount, split);
   const parts = new Map();
   const add = (k, v) => { if (Math.abs(v) > 0.004) parts.set(k, (parts.get(k) || 0) + v); };
   for (const it of items || []) {
@@ -91,6 +91,20 @@ function saleParts(amount, items, orderSource) {
   // The lines don't add up to the amount (a typed price, a night removed):
   // keep their proportions.
   return fit([...parts.entries()], amount);
+}
+
+// A restaurant bill or session by meal period and food / drink, from what the POS
+// sent with its session (`split` = { session, fnb: { food, drink, unset } }). What
+// isn't marked counts as food, as in Cost of sales. Nothing to go on (the session
+// isn't sent yet, or was sent before the split): one amount on the unsplit key.
+function restaurantParts(amount, split) {
+  const fnb = split?.fnb;
+  const food = num(fnb?.food) + num(fnb?.unset), drink = num(fnb?.drink);
+  if (!['breakfast', 'lunch', 'dinner'].includes(split?.session) || !(food + drink > 0)) return [['revenue.fnb_outlet', amount]];
+  const parts = [];
+  if (food > 0) parts.push([`revenue.fnb_outlet.food.${split.session}`, food]);
+  if (drink > 0) parts.push([`revenue.fnb_outlet.drink.${split.session}`, drink]);
+  return fit(parts, amount);
 }
 
 // Scales [key, value] parts to add up to `total` exactly (last part takes the cent).
@@ -134,7 +148,7 @@ async function collectPosts(propertyId, from, to) {
       SELECT fc.id, fc.booking_id, fc.type, fc.amount, COALESCE(fc.tax_mode, 'added') AS tax_mode, fc.sale_id,
              ${ymd(chargeDay)} AS day, b.complimentary_scope,
              ${BILL_TAX_SQL} AS tax_rate, ${BILL_SC_SQL} AS sc_rate,
-             u.name AS room, g.name AS guest, ${PAID_AT_DESK_SQL} AS paid_at_desk, s.order_source,
+             u.name AS room, g.name AS guest, ${PAID_AT_DESK_SQL} AS paid_at_desk, s.order_source, s.external_ref,
              COALESCE(ab.service_charge_amount, 0) AS ab_sc, COALESCE(ab.tax_amount, 0) AS ab_tax,
              LEAST(ba.breakfasts * ba.meal_price, ba.quantity * ba.unit_price) AS addon_meal, pa.category AS addon_category
       FROM folio_charges fc
@@ -219,8 +233,8 @@ async function collectPosts(propertyId, from, to) {
         AND ab.scheduled_date BETWEEN $1::date AND $2::date
         AND NOT EXISTS (SELECT 1 FROM payments p3 WHERE p3.activity_booking_id = ab.id)`, P),
     db.query(`
-      SELECT ${ymd('business_date')} AS day, COALESCE(label, session_key) AS session,
-             outlet_net, outlet_service, outlet_tax, outlet_total
+      SELECT ${ymd('business_date')} AS day, COALESCE(label, session_key) AS session, session_key,
+             outlet_net, outlet_service, outlet_tax, outlet_total, summary->'fnb_split' AS fnb_split
       FROM pos_sessions WHERE property_id = $3 AND business_date BETWEEN $1::date AND $2::date`, P),
     db.query(`
       SELECT ap.amount, ap.commission_amount, ap.method, ap.reference, ${ymd('ap.received_on')} AS day, COALESCE(ag.name, 'Agent') AS agent
@@ -288,6 +302,19 @@ async function collectPosts(propertyId, from, to) {
     for (const r of rows) itemsBySale.set(r.sale_id, [...(itemsBySale.get(r.sale_id) || []), r]);
   }
 
+  // Bills charged to a room or event, in the sessions the POS sent around the
+  // period (a folio line's day and a session's business date can differ by a day).
+  const posBills = new Map();
+  {
+    const { rows } = await db.query(`
+      SELECT b->>'id' AS id, ps.session_key AS session, b->'fnb' AS fnb
+      FROM pos_sessions ps CROSS JOIN LATERAL jsonb_array_elements(ps.summary->'bill_list') b
+      WHERE ps.property_id = $1 AND ps.business_date BETWEEN $2::date AND $3::date
+        AND jsonb_typeof(ps.summary->'bill_list') = 'array' AND b ? 'fnb' AND b->>'method' IN ('Room Charge', 'Event Charge')`,
+      [propertyId, addDays(from, -2), addDays(to, 2)]);
+    for (const r of rows) posBills.set(r.id, r);
+  }
+
   // Signed postings: amount > 0 is a debit, < 0 a credit.
   const posts = [];
   const post = (date, entry, key, amount, ref, memo) => {
@@ -296,6 +323,10 @@ async function collectPosts(propertyId, from, to) {
     posts.push({ date, entry, key, amount: a, ref: ref || '', memo: memo || '' });
   };
   const who = (room, guest) => [room, guest].filter(Boolean).join(' · ');
+
+  // A bill charged to a room or event carries its meal period and food / drink in
+  // the session the POS sent. A resend after the hotel voided it has "~n" on its ref.
+  const billSplit = ref => (ref ? posBills.get(String(ref).split('~')[0]) : null);
 
   // ── Guest charges, stay by stay ──
   const byBooking = new Map();
@@ -323,7 +354,7 @@ async function collectPosts(propertyId, from, to) {
           const meal = Math.min(num(c.addon_meal), net);
           const cat = EXTRA_CATEGORIES.includes(c.addon_category) ? c.addon_category : 'room_addon';
           parts = [[`revenue.extra.${cat}`, net - meal], ['revenue.fnb_package', meal]];
-        } else if (c.type === 'sale') parts = saleParts(net, itemsBySale.get(c.sale_id), c.order_source);
+        } else if (c.type === 'sale') parts = saleParts(net, itemsBySale.get(c.sale_id), c.order_source, billSplit(c.external_ref));
         else parts = [['revenue.extra.other', net]];
         for (const [k, v] of parts) add(k, v);
       }
@@ -349,7 +380,7 @@ async function collectPosts(propertyId, from, to) {
   {
     const [{ rows: eventLines }, { rows: eventPays }, { rows: eventMoves }] = await Promise.all([
       db.query(`
-        SELECT c.type, c.amount, c.shown_total, c.description, ${ymd('c.service_date')} AS day,
+        SELECT c.type, c.amount, c.shown_total, c.description, c.external_ref, ${ymd('c.service_date')} AS day,
                e.event_no, e.name, e.bill_tax_rate, e.bill_service_charge_rate
         FROM event_charges c JOIN events e ON e.id = c.event_id
         WHERE c.property_id = $3 AND e.status = 'confirmed' AND NOT c.is_voided
@@ -373,7 +404,8 @@ async function collectPosts(propertyId, from, to) {
       // the line's own total is what was agreed (a price typed incl. service & tax)
       const total = c.shown_total != null ? num(c.shown_total) : t.total;
       const sc = t.service_charge_amount, tax = round2(total - net - sc);
-      post(c.day, 'charges', c.type === 'pos' ? 'revenue.fnb_outlet' : 'revenue.events', -net, evRef(c), c.description);
+      if (c.type === 'pos') for (const [k, v] of restaurantParts(net, billSplit(c.external_ref))) post(c.day, 'charges', k, -v, evRef(c), c.description);
+      else post(c.day, 'charges', 'revenue.events', -net, evRef(c), c.description);
       post(c.day, 'charges', 'tax.service', -sc, evRef(c));
       post(c.day, 'charges', 'tax.pb1', -tax, evRef(c));
       post(c.day, 'charges', 'ledger.guest', total, evRef(c));
@@ -441,7 +473,8 @@ async function collectPosts(propertyId, from, to) {
   for (const s of posSessions) {
     const total = num(s.outlet_total), service = num(s.outlet_service), tax = num(s.outlet_tax);
     post(s.day, 'pos', 'pos.takings', total, s.session, 'Paid at the restaurant');
-    post(s.day, 'pos', 'revenue.fnb_outlet', -(total - service - tax), s.session);   // rounding inside the POS stays in revenue
+    // rounding inside the POS stays in revenue
+    for (const [k, v] of restaurantParts(total - service - tax, { session: s.session_key, fnb: s.fnb_split })) post(s.day, 'pos', k, -v, s.session);
     post(s.day, 'pos', 'tax.service', -service, s.session);
     post(s.day, 'pos', 'tax.pb1', -tax, s.session);
   }
@@ -613,6 +646,13 @@ async function closedRows(propertyId, from, to) {
 }
 const storedPosts = row => row.postings.map(p => ({ ...p, date: row.date }));
 
+async function fnbNotMarked(propertyId, from, to) {
+  const { rows: [r] } = await db.query(
+    `SELECT COALESCE(SUM((summary->'fnb_split'->>'unset_all')::numeric), 0) AS amount FROM pos_sessions
+     WHERE property_id = $1 AND business_date BETWEEN $2::date AND $3::date`, [propertyId, from, to]);
+  return round2(num(r.amount));
+}
+
 // The journal of a period: closed days as they were kept, open days rebuilt
 // from today's data.
 async function buildJournal(propertyId, from, to, { withDetail = false } = {}) {
@@ -646,6 +686,8 @@ async function buildJournal(propertyId, from, to, { withDetail = false } = {}) {
     checks: {
       money: { journal: journalMoney, pms: round2(pmsMoney.total), difference: round2(journalMoney - pmsMoney.total) },
       revenue: revenueRows,
+      // Restaurant sales on items not marked food or drink in the POS (counted as food).
+      fnb_not_marked: await fnbNotMarked(propertyId, from, to),
     },
   };
   if (withDetail) {
@@ -702,9 +744,10 @@ async function pendingCorrections(propertyId, q = db) {
   const kept = new Map();   // day | entry | key | ref → amount already in the books for that day
   // The department on a cost and the split of the service charge don't change
   // what the guest paid or the hotel spent: no correction (days closed before
-  // migration 147 have neither in the key).
+  // migration 147 have neither in the key). Same for a restaurant bill's meal
+  // period and food / drink: a session sent or marked later leaves a closed day alone.
   const bump = (map, day, entry, key, ref, amount) => {
-    const k = [day, entry, key.replace(/^(expense\.[^.]+|tax\.service)\..*$/, '$1'), ref || ''].join(SEP);
+    const k = [day, entry, key.replace(/^(expense\.[^.]+|tax\.service|revenue\.fnb_outlet)\..*$/, '$1'), ref || ''].join(SEP);
     map.set(k, (map.get(k) || 0) + amount);
   };
   const closedDates = new Set();

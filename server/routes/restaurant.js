@@ -41,6 +41,7 @@ const sessionRow = s => ({
   breakfast_pax_expected: s.breakfast_pax_expected, breakfast_pax_came: s.breakfast_pax_came,
   sent_by: s.sent_by, sent_at: s.sent_at, first_sent_at: s.first_sent_at, send_count: s.send_count,
   comp_bills: s.summary?.complimentary?.bills || 0, comp_value: r2(s.summary?.complimentary?.value || 0),
+  fnb_split: s.summary?.fnb_split || null,
 });
 
 // Restaurant complimentary (bills given away in the POS, charged to a

@@ -33,6 +33,15 @@
 
 Laba Rugi langsung memakai baris baru, untuk semua bulan.
 
+## Pendapatan restoran per waktu makan
+
+Pendapatan restoran di buku dipisah **makanan / minuman** dan **sarapan / makan siang / makan malam**: akun 410-21-001 s.d. 003 (makanan) dan 410-21-101 s.d. 103 (minuman).
+
+- Waktu makan mengikuti sesi di POS, yaitu sesi saat bill dibayar.
+- Makanan atau minuman mengikuti tanda pada item menu di POS: **Menu → Set food or drink**. Item tanpa tanda dihitung makanan, dan halaman Daily journal memberi peringatan.
+- Bill yang sesinya belum dikirim dari POS masuk dulu ke **410-21-004**, lalu pindah sendiri setelah sesi dikirim. Hari yang sudah ditutup tidak berubah.
+- Sarapan dari paket kamar tetap di 410-21-001.
+
 ## Laporan diskon
 
 Pendapatan di buku dicatat **net**, setelah diskon. Untuk melihat diskonnya: **Accounting → Discounts**, pilih periode.
