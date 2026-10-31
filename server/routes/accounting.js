@@ -14,6 +14,7 @@
 //   GET  /entries  POST /entries  GET /entries/:id
 //   POST /entries/:id/void { reason }  /entries/:id/reverse { date, memo? }
 //   GET|PUT /opening            { balances: [{ account_id, amount }] } opening balances
+//   GET  /discounts?from=&to= (+ /xlsx)   discounts given, rooms and restaurant
 //   GET|POST /cost-of-sales  PUT /cost-of-sales/settings  food & drink by the inventory method
 //   GET  /trial-balance?from=&to= (+ /xlsx)   GET /balance-sheet?date= (+ /xlsx, /pdf)
 // Owner, or the `accounting` permission (an accountant's login).
@@ -165,6 +166,30 @@ const reply = (res, r, okStatus = 200) => (r.error ? res.status(r.status || 400)
 const wrap = fn => async (req, res) => {
   try { await fn(req, res); } catch (err) { res.status(500).json({ error: err.message }); }
 };
+
+// Discounts given: revenue stays net, this shows what was taken off.
+const discountReport = require('../services/discountReport');
+function discountPeriod(req, res) {
+  const { from, to } = req.query;
+  if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '') || to < from) { res.status(400).json({ error: 'Choose a period' }); return null; }
+  if ((Date.parse(to) - Date.parse(from)) / 86400000 > 366) { res.status(400).json({ error: 'At most a year at a time' }); return null; }
+  return { from, to };
+}
+router.get('/discounts', wrap(async (req, res) => {
+  const p = discountPeriod(req, res);
+  if (p) res.json(await discountReport.build(req.propertyId, p.from, p.to));
+}));
+router.get('/discounts/xlsx', wrap(async (req, res) => {
+  const p = discountPeriod(req, res);
+  if (!p) return;
+  const { rows: [prop] } = await db.query(
+    `SELECT COALESCE(NULLIF(ps.property_name, ''), pr.name) AS name
+     FROM properties pr LEFT JOIN property_settings ps ON ps.property_id = pr.id WHERE pr.id = $1`, [req.propertyId]);
+  const buf = await discountReport.buildXlsx(await discountReport.build(req.propertyId, p.from, p.to), prop?.name || 'Property');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="discounts-${p.from}_to_${p.to}.xlsx"`);
+  res.send(Buffer.from(buf));
+}));
 
 // Food & drink by the inventory method (migration 148)
 const costOfSales = require('../services/costOfSales');

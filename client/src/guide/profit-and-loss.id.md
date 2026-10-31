@@ -32,3 +32,14 @@
 3. Pilih **Line on the Profit & Loss** → **Save**.
 
 Laba Rugi langsung memakai baris baru, untuk semua bulan.
+
+## Laporan diskon
+
+Pendapatan di buku dicatat **net**, setelah diskon. Untuk melihat diskonnya: **Accounting → Discounts**, pilih periode.
+
+- **Ringkasan:** sebelum diskon, diskon, dan pendapatan net, untuk kamar dan restoran.
+- **Rooms:** setiap booking yang punya diskon. Diskon dibagi rata per malam dan dihitung untuk malam dalam periode. Ada kolom termasuk pajak (seperti yang diketik di booking) dan kolom net.
+- **Restaurant:** setiap bill dengan diskon, dari sesi yang dikirim POS. Sesi yang belum dikirim belum terhitung.
+- **Excel** berisi data yang sama.
+
+Harga yang langsung diketik lebih rendah, tanpa memakai kolom diskon, tidak muncul di sini.

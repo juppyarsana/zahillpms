@@ -72,6 +72,10 @@ export const REPORTS = [
   { group: 'Finance & accounting', id: 'journal', title: 'Daily journal', what: 'The day-by-day journal, account totals and every posting (up to 92 days).',
     can: c => c('accounting'), mod: ['accounting'], fields: [D('from', 'From', monthStart), D('to', 'To', () => addDaysYmd(propertyToday(), -1))],
     files: [{ label: 'Excel', url: () => '/api/accounting/journal/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `journal-${v.from}_to_${v.to}.xlsx` }] },
+  { group: 'Finance & accounting', id: 'discounts', title: 'Discounts given', what: 'Room and restaurant discounts: before discount, discount and net revenue, with every booking and bill.',
+    can: c => c('accounting'), mod: ['accounting'], fields: [D('from', 'From', monthStart), D('to', 'To', propertyToday)],
+    files: [{ label: 'Excel', url: () => '/api/accounting/discounts/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `discounts-${v.from}_to_${v.to}.xlsx` }],
+    page: { to: '/accounting?tab=discounts', label: 'Open on screen' } },
   { group: 'Finance & accounting', id: 'pl', title: 'Profit & Loss', what: 'The month, the month before and the year to date.',
     can: c => c('accounting'), mod: ['accounting'], fields: [M('month', 'Month', lastMonth)],
     files: [

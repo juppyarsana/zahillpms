@@ -32,3 +32,14 @@
 3. Choose **Line on the Profit & Loss** → **Save**.
 
 The P&L uses the new line straight away, for every month.
+
+## Discount report
+
+Revenue in the books is **net**, after discounts. To see the discounts: **Accounting → Discounts**, then choose a period.
+
+- **Summary:** before discount, discount and net revenue, for rooms and the restaurant.
+- **Rooms:** every booking with a discount. It is shared evenly over the nights and counted for the nights in the period, shown including tax (as typed on the booking) and net.
+- **Restaurant:** every bill with a discount, from the sessions the POS has sent. A session not sent yet isn't counted.
+- **Excel** has the same data.
+
+A price simply typed lower, without using the discount field, doesn't appear here.
