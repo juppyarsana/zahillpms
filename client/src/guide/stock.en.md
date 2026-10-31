@@ -62,6 +62,7 @@ The kitchen and bar ingredients and their supplies are kept in the **restaurant 
 
 - **Stock items** — every item with what is left (in kg / L), its average cost and value. Click one for its **history**: each sale (with the bill number), purchase, stock opname, edited bill.
 - **Usage** — between two of the chef's stock opnames: **by recipe** (what the dishes sold should have used) and **used** (opening + bought − closing). The **difference** is what the count found missing — waste, portions, a recipe that is wrong. Ask the chef about big red ones.
+- **The breakfast buffet** has no recipe, so the kitchen types what it cooked with in the POS: **Inventory → Kitchen use → Add kitchen use**. One sheet per day per purpose; open it again to add more or change it, and the stock moves by the difference. A sheet locks once a stock opname is finished after it. The buffet sheet shows the cost per guest. The **Usage** tab has a *Kitchen use* column.
 - Buying for the restaurant is done here, by purchasing (a purchase request, a PO, or Bought without a PO with kind *Restaurant (POS)*). The goods go into the POS stock by themselves — the chef never adds purchases in the POS.
 
 ## Write-offs on Telegram

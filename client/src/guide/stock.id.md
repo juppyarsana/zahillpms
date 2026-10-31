@@ -62,6 +62,7 @@ Bahan dapur dan bar beserta perlengkapannya disimpan di **aplikasi restoran (POS
 
 - **Stock items** — setiap barang dengan sisanya (dalam kg / L), harga rata-rata dan nilainya. Klik barangnya untuk melihat **riwayatnya**: setiap penjualan (dengan nomor bill), pembelian, stock opname, bill yang diubah.
 - **Usage** — di antara dua stock opname chef: **by recipe** (yang seharusnya terpakai untuk menu yang terjual) dan **used** (awal + beli − akhir). **Selisihnya** adalah yang hilang saat dihitung — terbuang, porsi, resep yang salah. Tanyakan ke chef kalau ada angka merah yang besar.
+- **Buffet sarapan** tidak punya resep, jadi dapur mengetik bahan yang dimasak di POS: **Inventory → Kitchen use → Add kitchen use**. Satu lembar per hari per keperluan; buka lagi untuk menambah atau mengubah, dan stok bergerak sebesar selisihnya. Lembar terkunci setelah ada stock opname sesudahnya. Lembar buffet menunjukkan biaya per tamu. Tab **Usage** punya kolom *Kitchen use*.
 - Pembelian untuk restoran dilakukan di sini oleh purchasing (purchase request, PO, atau Bought without a PO dengan jenis *Restaurant (POS)*). Barangnya masuk ke stok POS dengan sendirinya — chef tidak pernah menambah pembelian di POS.
 
 ## Write-off di Telegram

@@ -687,7 +687,7 @@ function RestaurantUsageTab() {
       {error && <div className="alert alert-error"><div>{error}</div></div>}
       {u && (<>
         <p className="text-muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
-          <b>By recipe</b> = what the dishes sold should have used. <b>Used</b> = opening + bought − closing. The <b>difference</b> is what the stock opname found missing (red) or extra — waste, portions, a recipe that is wrong.
+          <b>By recipe</b> = what the dishes sold should have used. <b>Kitchen use</b> = what the kitchen typed on a sheet in the POS (the breakfast buffet). <b>Used</b> = opening + bought − closing. The <b>difference</b> is what the stock opname found missing (red) or extra — waste, portions, a recipe that is wrong.
           It only shows once a stock opname is inside the period; until then used = by recipe. Values at today's average cost.
         </p>
         <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
@@ -697,17 +697,17 @@ function RestaurantUsageTab() {
         </div>
         <div className="card">
           <div className="table-wrap">
-            <table style={{ minWidth: 900, fontSize: 13 }}>
-              <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Opening</th><th style={{ textAlign: 'right' }}>Bought</th><th style={{ textAlign: 'right' }}>By recipe</th><th style={{ textAlign: 'right' }}>Used</th><th style={{ textAlign: 'right' }}>Difference</th><th style={{ textAlign: 'right' }}>Closing</th><th style={{ textAlign: 'right' }}>Used value</th></tr></thead>
+            <table style={{ minWidth: 1000, fontSize: 13 }}>
+              <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Opening</th><th style={{ textAlign: 'right' }}>Bought</th><th style={{ textAlign: 'right' }}>By recipe</th><th style={{ textAlign: 'right' }}>Kitchen use</th><th style={{ textAlign: 'right' }}>Used</th><th style={{ textAlign: 'right' }}>Difference</th><th style={{ textAlign: 'right' }}>Closing</th><th style={{ textAlign: 'right' }}>Used value</th></tr></thead>
               <tbody>{rows.map(r => (
                 <tr key={r.id}>
                   <td><div style={{ fontWeight: 600 }}>{r.name}</div><div className="text-muted" style={{ fontSize: 11 }}>{POS_KIND[r.category] || r.category}</div></td>
-                  {['opening', 'bought', 'by_recipe', 'used'].map(k => <td key={k} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r[k] ? fmtQty(r[k], r.unit) : <span className="text-muted">—</span>}</td>)}
+                  {['opening', 'bought', 'by_recipe', 'kitchen_use', 'used'].map(k => <td key={k} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{r[k] ? fmtQty(r[k], r.unit) : <span className="text-muted">—</span>}</td>)}
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: r.difference > 0 ? 'var(--danger-text)' : undefined }}>{r.difference ? `${r.difference > 0 ? '+' : ''}${fmtQty(r.difference, r.unit)}` : <span className="text-muted">—</span>}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap', color: r.closing < 0 ? 'var(--danger-text)' : undefined }}>{fmtQty(r.closing, r.unit)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(r.used_value)}</td>
                 </tr>))}
-                {!rows.length && <tr><td colSpan={8} className="text-muted">Nothing in this period.</td></tr>}</tbody>
+                {!rows.length && <tr><td colSpan={9} className="text-muted">Nothing in this period.</td></tr>}</tbody>
             </table>
           </div>
         </div>
