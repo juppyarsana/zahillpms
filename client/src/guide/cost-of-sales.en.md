@@ -35,6 +35,6 @@ Go to **Journal entries**: **Void** if the day is still open, **Reverse** if it 
 
 - **One bill, one category.** When a PO has both food and drinks, make two bills so the split is right.
 - **Purchases not kept in stock** (market food for the day, say) are still recorded under Food. They aren't in the stock at the end, so they reach cost of sales at month end.
-- **POS stock must be marked Food or Drink:** in the POS, Stock → **Set food or drink**. Unmarked items count as food, and this page warns you.
+- **POS stock must be marked Food or Drink:** in the POS, Stock → **Set food or drink**. Unmarked items count as food, and this page warns you. **Both** (the kitchen and the resto use it) counts as food. **Neither** is left out of the stock value, so use it only for what isn't food or drink, like packaging or cleaning.
 - **A negative result** means the stock at the end is more than the start plus purchases. Check the opening balance and the purchase categories.
 - **Stock at the end is valued at today's average cost**, so post soon after the opname.

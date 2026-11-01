@@ -72,7 +72,7 @@ async function posStock(propertyId, at) {
     const sum = test => round2(items.filter(test).reduce((s, i) => s + (i.value || 0), 0));
     return {
       linked: true,
-      food: sum(i => i.fnb_kind === 'food' || !i.fnb_kind),
+      food: sum(i => i.fnb_kind === 'food' || i.fnb_kind === 'both' || !i.fnb_kind),
       drinks: sum(i => i.fnb_kind === 'drink'),
       unset: items.filter(i => !i.fnb_kind && i.value > 0).map(i => i.name),
       last_count: r?.last_opname || null,
