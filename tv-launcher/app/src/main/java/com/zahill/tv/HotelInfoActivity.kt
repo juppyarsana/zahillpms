@@ -1,6 +1,7 @@
 package com.zahill.tv
 
 import android.app.Activity
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -27,9 +28,15 @@ class HotelInfoActivity : Activity() {
             @JavascriptInterface fun close() = runOnUiThread { finish() }
         }, "ZahillTV")
         setContentView(webView)
-        window.insetsController?.let {
-            it.hide(WindowInsets.Type.systemBars())
-            it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.systemBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         }
         val path = intent.getStringExtra(EXTRA_PATH) ?: ""
         WelcomeWeb.load(webView, path, intent.getStringExtra(EXTRA_LANG))

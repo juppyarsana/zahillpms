@@ -12,12 +12,13 @@ android {
 
     defaultConfig {
         applicationId 'com.zahill.tv'
-        minSdk 30
-        // 30 on purpose: the TVs are Android 11, and tv-home's package
-        // visibility / HOME behaviour was written against it.
+        // 28 for the Mi TV Sticks (Android 9, Room 801); the Sharp TVs are 11 and 14.
+        minSdk 28
+        // 30 on purpose: tv-home's package visibility / HOME behaviour was
+        // written against Android 11.
         targetSdk 30
-        versionCode 6
-        versionName '0.2.4'
+        versionCode 7
+        versionName '0.2.5'
     }
 
     // Release key kept out of git: keystore.properties next to settings.gradle

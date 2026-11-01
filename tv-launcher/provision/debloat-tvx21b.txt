@@ -1,0 +1,7 @@
+# Packages disabled on the Sharp AQUOS-TVX21B (Android 14): -AnyModel -List debloat-tvx21b.txt
+# Only what Zahill TV needs in order to be Home. First: Room 801, 2026-11-01.
+#
+# Order matters, as on the TVX22A: setup wizard first. provision.ps1 skips it while it owns saved Wi-Fi.
+com.google.android.tungsten.setupwraith
+# Stock launcher: its Home has priority 2, so it beats Zahill TV even as the HOME role holder.
+com.google.android.tvlauncher

@@ -62,6 +62,9 @@ lists the TVs that failed — fix those and run again (safe to repeat).
   `-AnyModel -List debloat-tvx22a.txt`, which disables the Google TV launcher (otherwise Home keeps
   opening it) and the setup wizard (its recovery screen otherwise takes over Home in a loop on some
   of these TVs, e.g. 305, 306). Inputs / Live TV not yet tried on this model.
+- AQUOS-TVX21B (Android 14) and Mi TV Stick (Android 9; first: Room 801, 2026-11-01): add
+  `-AnyModel -List debloat-tvx21b.txt` or `debloat-mistick.txt` (setup wizard + launcher only).
+  Several TVs in one villa share a Room ID; use `-DeviceName` to tell them apart in the Cast list.
 - At power-on the TVX19A opens Live TV by itself. `BootReceiver` takes the screen back: it asks to be
   first in the boot broadcast (36 s of Live TV otherwise, under 1 s with it; since app 0.2.4).
 - Back to the stock home: `.\restore.ps1 -Tv <tv ip>` (add `-Uninstall` to remove the app too).
