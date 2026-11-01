@@ -35,7 +35,8 @@ export default function PurchaseRequests({ embedded = false }) {
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [newOpen, setNewOpen] = useState(null);       // null | { lowOnly }
-  const [selected, setSelected] = useState({});       // request line id → true (To order view)
+  const [openList, setOpenList] = useState(null);     // open requests, for Items to order whatever Requests is showing
+  const [selected, setSelected] = useState({});       // request line id → true (Items to order view)
   const [makePo, setMakePo] = useState(null);         // the lines to order
   const [closing, setClosing] = useState(null);       // { req, kind }
   const [openId, setOpenId] = useState(null);         // the request shown in its window
@@ -43,15 +44,20 @@ export default function PurchaseRequests({ embedded = false }) {
 
   const canOrder = !!setup?.can_order;
   const canAsk = can('purchase_request') || can('purchasing');
-  // Two views: Requests (one row each, opened in a window) and To order —
-  // purchasing's work list, every line still to order from all open requests.
-  const view = canOrder && params.get('view') !== 'requests' ? 'order' : 'requests';
+  // Two views: Requests (one row each, opened in a window; the default) and
+  // Items to order — every line still to order from all open requests.
+  const view = canOrder && params.get('view') === 'order' ? 'order' : 'requests';
   const setView = v => setParams(p => { const n = new URLSearchParams(p); n.set('view', v); return n; }, { replace: true });
   const listShow = view === 'order' ? 'open' : show;
 
   function load() {
     api.get('/api/purchase-requests', { params: { show: listShow, department: dept || undefined } })
-      .then(r => setList(r.data)).catch(err => setError(err.response?.data?.error || 'Could not load the requests'));
+      .then(r => { setList(r.data); if (listShow === 'open') setOpenList(r.data); })
+      .catch(err => setError(err.response?.data?.error || 'Could not load the requests'));
+    if (listShow !== 'open') {
+      api.get('/api/purchase-requests', { params: { show: 'open', department: dept || undefined } })
+        .then(r => setOpenList(r.data)).catch(() => {});
+    }
     // Stock left and what is already on order change with every request and PO.
     api.get('/api/purchase-requests/setup').then(r => setSetup(r.data)).catch(() => {});
   }
@@ -76,13 +82,13 @@ export default function PurchaseRequests({ embedded = false }) {
   const requests = (list || []).filter(matchReq);
   const toOrder = useMemo(() => {
     const out = [];
-    for (const r of list || []) {
+    for (const r of openList || []) {
       if (r.status !== 'open') continue;
       for (const l of r.lines) if (l.left_to_order > 0) out.push({ ...l, request: r });
     }
     return out.sort((a, b) => String(a.request.needed_by || '9999').localeCompare(String(b.request.needed_by || '9999'))
       || a.request.request_no - b.request.request_no);
-  }, [list]);
+  }, [openList]);
   const toOrderShown = toOrder.filter(l => !q || [l.description, l.request.request_no_text, l.request.department_label, l.note]
     .some(t => String(t || '').toLowerCase().includes(q)));
   const picked = toOrder.filter(l => selected[l.id]);
@@ -104,8 +110,8 @@ export default function PurchaseRequests({ embedded = false }) {
 
       {canOrder && (
         <div className="seg" style={{ marginBottom: 12 }}>
-          <button className={view === 'order' ? 'active' : ''} onClick={() => setView('order')}>To order{toOrder.length > 0 ? ` · ${toOrder.length}` : ''}</button>
-          <button className={view === 'requests' ? 'active' : ''} onClick={() => setView('requests')}>All requests</button>
+          <button className={view === 'requests' ? 'active' : ''} onClick={() => setView('requests')}>Requests</button>
+          <button className={view === 'order' ? 'active' : ''} onClick={() => setView('order')}>Items to order{toOrder.length > 0 ? ` · ${toOrder.length}` : ''}</button>
         </div>
       )}
 

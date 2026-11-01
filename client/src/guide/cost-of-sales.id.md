@@ -35,6 +35,6 @@ Buka tab **Journal entries**: **Void** kalau harinya belum ditutup, **Reverse** 
 
 - **Satu tagihan, satu kategori.** Kalau satu PO berisi makanan dan minuman, buat dua tagihan supaya pembagiannya benar.
 - **Belanja yang tidak masuk stok** (misalnya makanan pasar untuk hari itu) tetap tercatat dengan kategori Food. Karena tidak ada di stok akhir, nilainya masuk cost of sales di akhir bulan.
-- **Stok POS harus diberi tanda Food atau Drink:** di POS, Stock → **Set food or drink**. Yang belum diberi tanda dihitung sebagai makanan, dan halaman ini memberi peringatan. **Both** (dipakai dapur dan resto) dihitung sebagai makanan. **Neither** tidak masuk nilai stok, jadi pakai hanya untuk yang bukan makanan atau minuman, seperti kemasan atau alat kebersihan.
+- **Stok POS harus diberi tanda Food atau Drink:** di POS, Stock → **Set food or drink**. Yang belum diberi tanda dihitung sebagai makanan, dan halaman ini memberi peringatan. **Both** (dipakai dapur dan resto) dihitung sebagai makanan. **Non F&B** tidak masuk nilai stok, jadi pakai hanya untuk yang bukan makanan atau minuman, seperti kemasan atau alat kebersihan.
 - **Hasil minus** berarti stok akhir lebih besar dari stok awal ditambah pembelian. Periksa opening balance dan kategori pembelian.
 - **Stok akhir dihitung dengan harga rata-rata hari ini**, jadi posting secepatnya setelah opname.

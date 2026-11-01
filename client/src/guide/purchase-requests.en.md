@@ -22,7 +22,7 @@ Every request from the POS says **for Kitchen or Resto**, so both can ask for th
 
 ## Ordering (purchasing)
 
-1. **To order** lists every item still to order, from all open requests (**All requests** shows each request whole). Tick the items to buy. You can tick items from several requests if they come from one supplier.
+1. On **Requests**, open a request and tick the items to buy. To buy from one supplier across several requests, use **Items to order** instead: it lists every item still to order from all open requests, and the number on the tab shows how many are waiting.
 2. **Make purchase order** → choose the supplier, check how many, and type the prices.
    - For an item that was typed in (not in the list), choose to buy it as typed (kept in no stock), or add it to a stock item.
 3. A **draft PO** is made on the **[Purchase Orders](/purchasing?tab=purchase_orders)** tab. Submit and approve it as usual. The request shows the PO number.

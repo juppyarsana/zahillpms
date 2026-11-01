@@ -22,7 +22,7 @@ Setiap permintaan dari POS memilih **untuk Kitchen atau Resto**, jadi barang yan
 
 ## Memesan (purchasing)
 
-1. **To order** berisi semua barang yang belum dipesan dari semua permintaan terbuka (**All requests** menampilkan per permintaan). Centang barang yang akan dibeli. Boleh dari beberapa permintaan jika supplier-nya sama.
+1. Di **Requests**, buka satu permintaan lalu centang barang yang akan dibeli. Untuk membeli dari satu supplier untuk beberapa permintaan, pakai **Items to order**: isinya semua barang yang belum dipesan dari semua permintaan terbuka, dan angka di tab menunjukkan berapa yang menunggu.
 2. **Make purchase order** → pilih supplier, cek jumlah, dan isi harga.
    - Untuk barang yang diketik (tidak ada di daftar), pilih beli apa adanya (tidak masuk stok), atau masukkan ke salah satu barang stok.
 3. **PO draft** dibuat di tab **[Purchase Orders](/purchasing?tab=purchase_orders)**. Ajukan dan setujui seperti biasa. Nomor PO terlihat di permintaan.
