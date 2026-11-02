@@ -23,13 +23,16 @@ Setiap malam menunjukkan okupansi, dan di bawahnya harga yang kita kirim per tip
 | Tanggal merah | Sepi. Tekan untuk mengubah harga |
 | Tanggal hijau | On track |
 | Tanggal marun | Terisi 70% atau lebih |
+| Tanggal abu-abu | Lebih dari 30 hari ke depan, jadi tidak punya target |
 | Harga kuning | Harga tetap (fixed) yang diketik seseorang |
 
 Arahkan kursor ke harga (atau tekan di HP) untuk melihat alasan harganya dan bedanya dengan malam sebelumnya. Pakai tombol di kanan atas untuk melihat meal plan lain. Ini harga yang kita kirim. Diskon dari OTA sendiri tidak termasuk, jadi tamu bisa melihat harga yang lebih rendah di OTA.
 
+Untuk melihat lebih jauh ke depan, tekan **‹ ›** untuk maju atau mundur 30 malam, atau pilih tanggal mulai. **Today** kembali ke hari ini. Malam yang lebih dari 30 hari ke depan tidak pernah disebut sepi dan tidak dihitung di angka merah atau **Slow dates**. Tekan tanggal mana pun untuk mengubah harganya.
+
 ## Mengubah harga
 
-1. Tekan **Change price** pada tanggal sepi, atau tekan tanggal merah di kalender.
+1. Tekan **Change price** pada tanggal sepi, atau tekan tanggal mana pun di kalender. Saran harga hanya ada untuk tanggal sepi.
 2. Baca bagian kiri: posisi tanggal ini, perbandingannya, hal lain yang penting, dan saran harga.
 3. Tekan harga saran untuk memakainya, atau **Use all suggested**. Anda juga bisa mengetik harga sendiri.
 4. Kalau menjual lebih dari satu meal plan, ganti meal plan dan lakukan hal yang sama. **Will send** menunjukkan berapa harga yang akan dikirim.

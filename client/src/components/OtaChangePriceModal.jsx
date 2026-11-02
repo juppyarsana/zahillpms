@@ -23,7 +23,7 @@ function Step({ n, title, last, children }) {
   );
 }
 
-export default function OtaChangePriceModal({ date, onClose, onSaved }) {
+export default function OtaChangePriceModal({ date, onClose, onSaved, onRemoved }) {
   const [night, setNight] = useState(null);
   const [plan, setPlan] = useState(null);
   const [edits, setEdits] = useState({});
@@ -70,6 +70,23 @@ export default function OtaChangePriceModal({ date, onClose, onSaved }) {
     }
   }
 
+  async function removeFixed() {
+    if (!window.confirm(`Remove the fixed prices on ${night.label}? The date goes back to the ladder or normal price on all OTAs.`)) return;
+    setBusy(true); setError('');
+    try {
+      await api.delete(`/api/ota-dashboard/night/${date}`);
+      onRemoved(night.label);
+    } catch (e) {
+      setError(e.response?.data?.error || 'Could not remove');
+      setBusy(false);
+    }
+  }
+
+  const farAhead = night?.target == null;
+  const dateHeadline = night?.headline
+    || (night?.manual ? (farAhead ? 'A fixed price is on' : 'It is on track, and a fixed price is still on')
+      : farAhead ? 'Too far ahead for a suggestion' : 'It is on track');
+
   return (
     <div className="modal-backdrop" style={{ alignItems: 'flex-start', overflowY: 'auto' }}>
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ota-price-title" style={{ maxWidth: 1040, maxHeight: 'none' }}>
@@ -90,13 +107,15 @@ export default function OtaChangePriceModal({ date, onClose, onSaved }) {
                 <Step n={1} title="Where it stands">
                   <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
                     {night.long_label} is <b>{night.pct}% full</b>{night.days === 0 ? ' tonight' : ` with ${night.days} day${night.days === 1 ? '' : 's'} to go`}.{' '}
-                    {night.needed > 0
-                      ? <>It needs <b>{night.needed} more room{night.needed === 1 ? '' : 's'}</b> to reach its {night.target}% target.</>
-                      : <>That is at or above its {night.target}% target.</>}
+                    {farAhead
+                      ? <>Occupancy targets stop at 30 days ahead.</>
+                      : night.needed > 0
+                        ? <>It needs <b>{night.needed} more room{night.needed === 1 ? '' : 's'}</b> to reach its {night.target}% target.</>
+                        : <>That is at or above its {night.target}% target.</>}
                   </p>
                   <div style={{ position: 'relative', height: 8, background: '#EEE7DE', borderRadius: 99, marginTop: 10 }}>
                     <div style={{ height: 8, borderRadius: 99, background: 'var(--green-dark)', width: `${Math.min(100, night.pct)}%` }} />
-                    <div title="Occupancy target" style={{ position: 'absolute', top: -3, width: 2, height: 14, background: '#1A1A1A', left: `${night.target}%` }} />
+                    {!farAhead && <div title="Occupancy target" style={{ position: 'absolute', top: -3, width: 2, height: 14, background: '#1A1A1A', left: `${night.target}%` }} />}
                   </div>
                 </Step>
                 <Step n={2} title="How it compares">
@@ -109,14 +128,19 @@ export default function OtaChangePriceModal({ date, onClose, onSaved }) {
                   <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{night.context}</p>
                 </Step>
                 <Step n={4} title={night.slow ? 'So we suggest' : 'This date'} last>
-                  <p style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 700, color: 'var(--green-dark)' }}>{night.headline || 'It is on track, and a fixed price is still on'}</p>
+                  <p style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 700, color: 'var(--green-dark)' }}>{dateHeadline}</p>
                   {(night.notes.length > 0 || night.breakeven) && (
                     <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>
                       {night.notes.join(' ')}{night.notes.length > 0 && night.breakeven ? ' ' : ''}
                       {night.breakeven && <>To earn the same, every 10 rooms you'd have sold at today's price need to become <b>{night.breakeven}</b>.</>}
                     </p>
                   )}
-                  {!night.slow && <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>Remove the fixed price from the page if the ladder should take over again.</p>}
+                  {night.manual && (
+                    <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>
+                      Remove the fixed price if the ladder or normal price should take over again.{' '}
+                      <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={removeFixed} style={{ marginTop: 6 }}>Remove fixed price</button>
+                    </p>
+                  )}
                 </Step>
               </div>
 

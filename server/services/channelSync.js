@@ -55,9 +55,10 @@ async function logSend(propertyId, entry) {
 const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
 // The values the channel manager should have now, keyed `kind|external|night`.
-async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
+// `start` reads a stretch further ahead (the OTA dashboard); the send never passes it.
+async function desiredValues(propertyId, { days = SYNC_DAYS, start } = {}) {
   const { rows: [{ today }] } = await db.query(`SELECT to_char(${TODAY_WITA_SQL}, 'YYYY-MM-DD') AS today`);
-  const from = today, to = addDays(today, days);   // `to` = the morning after the last night
+  const from = start || today, to = addDays(from, days);   // `to` = the morning after the last night
   const nights = [];
   for (let d = from; d < to; d = addDays(d, 1)) nights.push(d);
 

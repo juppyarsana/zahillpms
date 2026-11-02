@@ -7,10 +7,12 @@ import OtaLadderModal from '../components/OtaLadderModal';
 import OtaPriceButtons from '../components/OtaPriceButtons';
 import OtaChangePriceModal from '../components/OtaChangePriceModal';
 import OtaRulesModal from '../components/OtaRulesModal';
+import DateNav from '../components/DateNav';
 
-// OTA dashboard (Sales): the next 30 nights with the prices we send, the dates
-// below their occupancy target with a suggested price, how each OTA is doing and
-// what came in since yesterday. Logic in server/services/otaDashboard.js.
+// OTA dashboard (Sales): the next 30 nights with the prices we send (the calendar
+// can move further ahead), the dates below their occupancy target with a suggested
+// price, how each OTA is doing and what came in since yesterday. Logic in
+// server/services/otaDashboard.js.
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const juta = n => (Number(n) ? `Rp ${(Number(n) / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jt` : 'Rp 0');
 const cellPrice = n => (Number(n) / 1000000).toFixed(2).replace('.', ',');
@@ -24,7 +26,20 @@ const ago = d => {
 // The year shows when it isn't this year: "8 Sep 2027" must not read like a stay already over.
 const shortDate = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC', ...(d.slice(0, 4) === String(new Date().getFullYear()) ? {} : { year: 'numeric' }) });
 
-const SLOW = '#B91C1C', HIGH = '#5C1A2E', ON_TRACK = '#CFE3D4', MANUAL = '#FCD34D';
+const addDays = (ymd, n) => new Date(Date.parse(ymd + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+const longDate = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+// Consecutive nights of one month, for the row above the dates.
+function monthGroups(nights) {
+  const groups = [];
+  for (const n of nights) {
+    const key = n.date.slice(0, 7);
+    if (groups[groups.length - 1]?.key === key) groups[groups.length - 1].span++;
+    else groups.push({ key, span: 1, label: new Date(n.date + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }) });
+  }
+  return groups;
+}
+
+const SLOW = '#B91C1C', HIGH = '#5C1A2E', ON_TRACK = '#CFE3D4', MANUAL = '#FCD34D', NO_TARGET = '#E5E7EB';
 const KIND = {
   new: { label: 'New', color: '#065F46' },
   changed: { label: 'Changed', color: '#92400E' },
@@ -63,11 +78,11 @@ function priceReasons(n, prev, c, steps) {
   return { source, rows };
 }
 
-function PriceTip({ tip, data, plan }) {
-  const n = data.nights[tip.i];
-  const c = n.prices[plan]?.[tip.type];
+function PriceTip({ tip, data, nights, plan }) {
+  const n = nights[tip.i];
+  const c = n?.prices[plan]?.[tip.type];
   if (!c) return null;
-  const prev = tip.i > 0 ? { n: data.nights[tip.i - 1], c: data.nights[tip.i - 1].prices[plan]?.[tip.type] } : null;
+  const prev = tip.i > 0 ? { n: nights[tip.i - 1], c: nights[tip.i - 1].prices[plan]?.[tip.type] } : null;
   const type = data.room_types.find(t => t.id === tip.type);
   const steps = (c.season_id ? data.season_ladders?.[c.season_id] : data.ladders)?.[plan]?.[tip.type];
   const { source, rows } = priceReasons(n, prev, c, steps);
@@ -127,8 +142,8 @@ function SlowNotes({ d }) {
 const daysToGo = d => (d.days === 0 ? 'Tonight' : `${d.days} day${d.days === 1 ? '' : 's'}`);
 
 function NightHead({ n, onPick }) {
-  const bg = n.slow ? SLOW : n.pct >= 70 ? HIGH : ON_TRACK;
-  const fg = n.slow || n.pct >= 70 ? '#fff' : '#14532D';
+  const bg = n.slow ? SLOW : n.pct >= 70 ? HIGH : n.target == null ? NO_TARGET : ON_TRACK;
+  const fg = n.slow || n.pct >= 70 ? '#fff' : n.target == null ? '#374151' : '#14532D';
   const body = (
     <>
       <span style={{ display: 'block', fontSize: 11, fontWeight: 500 }}>{n.dow}</span>
@@ -136,11 +151,8 @@ function NightHead({ n, onPick }) {
       <span style={{ display: 'block', fontSize: 11, fontWeight: 500 }}>{n.pct}%</span>
     </>
   );
-  const style = { display: 'block', width: 46, boxSizing: 'border-box', padding: '5px 0', border: 0, borderRadius: 6, textAlign: 'center', background: bg, color: fg, fontFamily: 'inherit', lineHeight: 1.3, textTransform: 'none', letterSpacing: 'normal' };
-  if (n.slow || n.manual) {
-    return <button type="button" title={n.holiday || n.label} aria-label={`Change price for ${n.label}, ${n.pct} percent full`} onClick={() => onPick(n.date)} style={{ ...style, cursor: 'pointer' }}>{body}</button>;
-  }
-  return <div title={n.holiday || n.label} style={style}>{body}</div>;
+  const style = { display: 'block', width: 46, boxSizing: 'border-box', padding: '5px 0', border: 0, borderRadius: 6, textAlign: 'center', background: bg, color: fg, fontFamily: 'inherit', lineHeight: 1.3, textTransform: 'none', letterSpacing: 'normal', cursor: 'pointer' };
+  return <button type="button" title={n.holiday || n.label} aria-label={`Change price for ${n.label}, ${n.pct} percent full`} onClick={() => onPick(n.date)} style={style}>{body}</button>;
 }
 
 export default function OtaDashboard() {
@@ -153,9 +165,12 @@ export default function OtaDashboard() {
   const [window_, setWindow] = useState(null);   // 'prices' | 'ladder' | 'rules'
   const [tip, setTip] = useState(null);          // the price being hovered: { i, type, x, y }
   const [notice, setNotice] = useState('');
+  const [calFrom, setCalFrom] = useState(null);  // null = from today, the page's own 30 nights
+  const [cal, setCal] = useState(null);          // the nights from calFrom
+  const [refreshed, setRefreshed] = useState(0);
 
   const load = useCallback(() => api.get('/api/ota-dashboard')
-    .then(r => { setData(r.data); setError(''); setPlan(p => (r.data.plans.some(x => x.id === p) ? p : r.data.plans[0]?.id || null)); })
+    .then(r => { setData(r.data); setError(''); setRefreshed(n => n + 1); setPlan(p => (r.data.plans.some(x => x.id === p) ? p : r.data.plans[0]?.id || null)); })
     .catch(e => setError(e.response?.data?.error || 'Could not load the OTA dashboard')), []);
 
   useEffect(() => {
@@ -163,6 +178,15 @@ export default function OtaDashboard() {
     const t = setInterval(load, 2 * 60 * 1000);
     return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    if (!calFrom) { setCal(null); return undefined; }
+    let live = true;
+    api.get('/api/ota-dashboard/calendar', { params: { from: calFrom } })
+      .then(r => { if (live) { setCal(r.data); setError(''); } })
+      .catch(e => { if (live) setError(e.response?.data?.error || 'Could not load those dates'); });
+    return () => { live = false; };
+  }, [calFrom, refreshed]);
 
   // A touch screen has no hover: a tap opens the box, so it also has to close on
   // a tap elsewhere or a scroll, or it stays floating away from its price.
@@ -203,6 +227,13 @@ export default function OtaDashboard() {
   const { targets } = data.rules;
   const channel = data.channel;
   const channelOk = channel && channel.ok && channel.last_ok_at;
+  const calNights = (calFrom && cal?.nights) || data.nights;
+  const calStart = calFrom || data.today;
+  const moveCal = date => {
+    const d = date < data.today ? data.today : date > data.last_start ? data.last_start : date;
+    setTip(null);
+    setCalFrom(d === data.today ? null : d);
+  };
 
   return (
     <div className="page-wrap">
@@ -247,26 +278,38 @@ export default function OtaDashboard() {
       <section className="card" aria-labelledby="ota-cal" style={{ padding: 18, marginBottom: 18 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div>
-            <h2 id="ota-cal" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Next 30 nights</h2>
+            <h2 id="ota-cal" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+              {calFrom && cal ? `${longDate(calNights[0].date)} – ${longDate(calNights[calNights.length - 1].date)}` : 'Next 30 nights'}
+            </h2>
             <div className="text-muted" style={{ fontSize: 13, marginTop: 2 }}>Occupancy, and the price we send per room per night, in Rp million.</div>
           </div>
           <div className="seg" role="group" aria-label="Meal plan">
             {data.plans.map(p => <button key={p.id} type="button" className={p.id === plan ? 'active' : ''} onClick={() => setPlan(p.id)}>{p.name}</button>)}
           </div>
         </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+          <DateNav value={calStart} today={data.today} min={data.today} max={data.last_start}
+            onChange={moveCal} onToday={() => moveCal(data.today)}
+            onPrev={() => moveCal(addDays(calStart, -30))} onNext={() => moveCal(addDays(calStart, 30))}
+            prevLabel="Previous 30 nights" nextLabel="Next 30 nights" dateLabel="Show 30 nights from" />
+        </div>
         <div className="table-wrap">
           <table style={{ borderCollapse: 'separate', borderSpacing: '2px 0' }}>
             <thead>
               <tr>
                 <th className="ota-name-col" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff' }} />
-                {data.nights.map(n => <th key={n.date} style={{ padding: '0 0 6px' }}><NightHead n={n} onPick={setPicked} /></th>)}
+                {monthGroups(calNights).map(g => <th key={g.key} colSpan={g.span} style={{ padding: '0 0 4px', textAlign: 'left', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, textTransform: 'none', letterSpacing: 'normal', whiteSpace: 'nowrap' }}>{g.label}</th>)}
+              </tr>
+              <tr>
+                <th className="ota-name-col" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff' }} />
+                {calNights.map(n => <th key={n.date} style={{ padding: '0 0 6px' }}><NightHead n={n} onPick={setPicked} /></th>)}
               </tr>
             </thead>
             <tbody>
               {data.room_types.map(t => (
                 <tr key={t.id}>
                   <th scope="row" className="ota-name-col" style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff', color: 'var(--text)', fontSize: 13, fontWeight: 600, textAlign: 'left', textTransform: 'none', letterSpacing: 'normal', padding: '9px 10px 9px 0' }}>{t.name}</th>
-                  {data.nights.map((n, i) => {
+                  {calNights.map((n, i) => {
                     const c = n.prices[plan]?.[t.id];
                     return (
                       <td key={n.date} data-price
@@ -285,13 +328,14 @@ export default function OtaDashboard() {
           </table>
         </div>
         <div className="text-muted" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: 12, fontSize: 13 }}>
-          <Legend color={SLOW}>Slow: tap the date to change its price</Legend>
+          <Legend color={SLOW}>Slow</Legend>
           <Legend color={ON_TRACK}>On track</Legend>
           <Legend color={HIGH}>70% or more</Legend>
+          {calNights.some(n => n.target == null) && <Legend color={NO_TARGET}>Over 30 days ahead, no target</Legend>}
           <Legend color={MANUAL}>Fixed price</Legend>
-          <span>Service and tax included. An OTA's own discounts aren't included. Hover over or tap a price to see why.</span>
+          <span>Press a date to change its price. Service and tax included. An OTA's own discounts aren't included. Hover over or tap a price to see why.</span>
         </div>
-        {tip && <PriceTip tip={tip} data={data} plan={plan} />}
+        {tip && <PriceTip tip={tip} data={data} nights={calNights} plan={plan} />}
       </section>
 
       <section className="card" aria-labelledby="ota-slow" style={{ padding: 18, marginBottom: 18 }}>
@@ -407,7 +451,8 @@ export default function OtaDashboard() {
 
       {picked && (
         <OtaChangePriceModal date={picked} onClose={() => setPicked(null)}
-          onSaved={label => { setPicked(null); setNotice(`Saved for ${label}. It reaches the OTAs within about 20 seconds. The change is logged.`); load(); }} />
+          onSaved={label => { setPicked(null); setNotice(`Saved for ${label}. It reaches the OTAs within about 20 seconds. The change is logged.`); load(); }}
+          onRemoved={label => { setPicked(null); setNotice(`Fixed prices removed for ${label}.`); load(); }} />
       )}
       {window_ === 'prices' && <OtaPricesModal onClose={() => { setWindow(null); load(); }} />}
       {window_ === 'ladder' && <OtaLadderModal onClose={() => { setWindow(null); load(); }} />}

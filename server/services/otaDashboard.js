@@ -1,5 +1,7 @@
 // The OTA dashboard (Sales): the next 30 nights with the prices we send, the
-// dates below their occupancy target, why, and a suggested price.
+// dates below their occupancy target, why, and a suggested price. The calendar
+// can look further ahead, as far as prices are sent; targets stop at 30 days, so
+// later nights are never called slow and get no suggestion.
 //
 // Occupancy is the Forecast page's (services/forecast.js) and the prices are
 // exactly what the channel manager would send now (channelSync.desiredValues),
@@ -37,6 +39,9 @@ const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 const targetFor = (days, t) => (days <= 7 ? t.near : days <= 14 ? t.mid : t.far);
+const validDate = d => YMD.test(d || '') && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+// The last date a 30-night calendar can start on: prices are sent for SYNC_DAYS nights.
+const lastStart = today => addDays(today, channelSync.SYNC_DAYS - DAYS);
 
 // ── The suggestion rule ──────────────────────────────────────
 // Well below target (a quarter or more) → 10%, otherwise 5%; 3 days or less to
@@ -138,24 +143,25 @@ async function loadLinks(propertyId) {
   return { types, plans, planList };
 }
 
-async function buildNights(propertyId) {
+async function buildNights(propertyId, { from, days: count = DAYS } = {}) {
   const today = todayWITA();
+  const start = from || today;
   const [forecast, links, rules, desired, { rows: picked }] = await Promise.all([
-    buildForecast(propertyId, { from: today, days: DAYS }),
+    buildForecast(propertyId, { from: start, days: count }),
     loadLinks(propertyId),
     loadRules(propertyId),
-    channelSync.desiredValues(propertyId, { days: DAYS }),
+    channelSync.desiredValues(propertyId, { days: count, start }),
     db.query(
       `SELECT to_char(gs, 'YYYY-MM-DD') AS night, count(b.id)::int AS rooms
          FROM generate_series($2::date, $2::date + $3::int - 1, '1 day') gs
          LEFT JOIN bookings b ON b.property_id = $1 AND b.status NOT IN ('cancelled', 'no_show')
           AND b.check_in_date <= gs::date AND b.check_out_date > gs::date AND b.created_at > NOW() - INTERVAL '7 days'
-        GROUP BY gs`, [propertyId, today, DAYS]),
+        GROUP BY gs`, [propertyId, start, count]),
   ]);
   const pickedBy = new Map(picked.map(p => [p.night, p.rooms]));
   const nights = forecast.rows.map(r => {
     const days = daysBetween(today, r.date);
-    const target = targetFor(days, rules.targets);
+    const target = days < DAYS ? targetFor(days, rules.targets) : null;
     const prices = {};
     let manual = false;
     for (const p of links.plans) {
@@ -172,7 +178,7 @@ async function buildNights(propertyId) {
     }
     const free_by_type = {};
     for (const t of links.types) free_by_type[t.id] = desired.values.get(`a|${t.external}|${r.date}`) ?? 0;
-    const slow = r.sellable > 0 && r.occupancy < target;
+    const slow = target != null && r.sellable > 0 && r.occupancy < target;
     return {
       date: r.date, dow: DOW[dowOf(r.date)], day: Number(r.date.slice(8)), label: short(r.date), days,
       pct: r.occupancy, sold: r.sold, sellable: r.sellable, free: r.free, target, slow, manual,
@@ -283,13 +289,23 @@ async function buildDashboard(propertyId) {
     };
   });
   return {
-    today, linked: links.types.length > 0, ladders, season_ladders, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
+    today, last_start: lastStart(today), linked: links.types.length > 0, ladders, season_ladders, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
     rules, nights, slow_dates: list, slow_total: nights.filter(n => n.slow).length,
     slow_soon: nights.filter(n => n.slow && n.days <= 7).length,
     since, otas,
     channel: sync ? { ok: !sync.last_error, last_ok_at: sync.last_ok_at, last_error: sync.last_error, waiting: !!sync.waiting } : null,
     changes: await otaPriceLog.recent(propertyId),
   };
+}
+
+// GET /calendar?from= — 30 nights from any date prices are sent for.
+async function buildCalendar(propertyId, from) {
+  if (!validDate(from)) throw bad('Pick a date');
+  const today = todayWITA();
+  const last = lastStart(today);
+  const start = from < today ? today : from > last ? last : from;
+  const { nights } = await buildNights(propertyId, { from: start });
+  return { from: start, nights };
 }
 
 // The menu's red count and Overview's line: nights below target, nothing else.
@@ -388,10 +404,13 @@ async function nightContext(propertyId, night, nights, firstPlan, links) {
 
 // GET /night/:date
 async function nightDetail(propertyId, date) {
-  if (!YMD.test(date || '')) throw bad('Pick a date');
-  const { today, nights, links, rules } = await buildNights(propertyId);
+  if (!validDate(date)) throw bad('Pick a date');
+  const start = todayWITA();
+  if (date < start || date >= addDays(start, channelSync.SYNC_DAYS)) throw bad('Prices are not sent for that date', 404, 'NOT_FOUND');
+  // This night and the ones either side of it.
+  const from = date > start ? addDays(date, -1) : date;
+  const { today, nights, links, rules } = await buildNights(propertyId, { from, days: daysBetween(from, date) + 2 });
   const night = nights.find(n => n.date === date);
-  if (!night) throw bad('That date is not in the next 30 nights', 404, 'NOT_FOUND');
   const cut = night.slow ? cutFor(night) : null;
   const firstPlan = links.planList[0]?.id;
 
@@ -435,13 +454,13 @@ async function nightDetail(propertyId, date) {
     else headline = `About ${cut}% lower on ${cutTypes.length} of ${first.length} room types`;
   }
   const notes = [];
-  if (kept.length) notes.push(`${kept.map(l => l.name).join(', ')} ${kept.length === 1 ? 'keeps its' : 'keep their'} price, with fewer than 3 rooms left.`);
+  if (night.slow && kept.length) notes.push(`${kept.map(l => l.name).join(', ')} ${kept.length === 1 ? 'keeps its' : 'keep their'} price, with fewer than 3 rooms left.`);
   if (atMin.length) notes.push(`${atMin.map(l => l.name).join(', ')} ${atMin.length === 1 ? 'stops' : 'stop'} at your minimum.`);
 
   return {
     date, label: night.label, long_label: long(date), days: night.days, pct: night.pct, target: night.target, free: night.free,
     sold: night.sold, sellable: night.sellable, slow: night.slow, manual: night.manual, cut,
-    needed: Math.max(0, Math.ceil((night.sellable * night.target) / 100) - night.sold),
+    needed: night.target == null ? 0 : Math.max(0, Math.ceil((night.sellable * night.target) / 100) - night.sold),
     same, pace, context, headline, notes,
     breakeven: cut && cutTypes.length ? Math.ceil(10 / (1 - cut / 100)) : null,
     plans,
@@ -469,4 +488,4 @@ async function removeNight(propertyId, user, date) {
   return { removed };
 }
 
-module.exports = { buildDashboard, slowCount, nightDetail, saveNight, removeNight, saveRules, loadRules, cutFor, suggestedPrice, targetFor };
+module.exports = { buildDashboard, buildCalendar, slowCount, nightDetail, saveNight, removeNight, saveRules, loadRules, cutFor, suggestedPrice, targetFor };

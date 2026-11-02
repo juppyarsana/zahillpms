@@ -23,13 +23,16 @@ Each night shows its occupancy and, under it, the price we send per room type in
 | Red date | Slow. Press it to change the price |
 | Green date | On track |
 | Maroon date | 70% full or more |
+| Grey date | More than 30 days ahead, so it has no target |
 | Amber price | A fixed price typed by someone |
 
 Hover over a price (or tap it on a phone) to see why it is that price and how it differs from the night before. Use the switch at the top right to see another meal plan. These are the prices we send. An OTA's own discounts aren't included, so a guest may see a lower price on the OTA.
 
+To look further ahead, press **‹ ›** to move 30 nights at a time, or pick a date to start from. **Today** comes back. Nights more than 30 days ahead are never called slow and aren't counted in the red number or **Slow dates**. Press any date to change its price.
+
 ## Changing a price
 
-1. Press **Change price** on a slow date, or press the red date in the calendar.
+1. Press **Change price** on a slow date, or press any date in the calendar. Only slow dates get a suggested price.
 2. Read the left side: where the date stands, how it compares, what else matters, and what we suggest.
 3. Press a suggested price to use it, or **Use all suggested**. You can also type your own.
 4. If you sell more than one meal plan, switch meal plan and do the same. **Will send** shows how many prices will go.

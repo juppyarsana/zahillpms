@@ -2,6 +2,7 @@
 // `ota_dashboard` permission, index.js). Logic in services/otaDashboard.js.
 //   GET    /             the page
 //   GET    /count        slow dates in the next 30 nights (the menu's red count)
+//   GET    /calendar     ?from= 30 nights from any date prices are sent for
 //   GET    /night/:date  one night: the story, the suggestion, the prices
 //   PUT    /night/:date  { lines: [{ room_type_id, rate_plan_id, price }] }
 //   DELETE /night/:date  remove the manual prices of that night
@@ -22,6 +23,10 @@ router.get('/', async (req, res) => {
 
 router.get('/count', async (req, res) => {
   try { res.json({ slow: await ota.slowCount(req.propertyId) }); } catch (err) { send(res, err); }
+});
+
+router.get('/calendar', async (req, res) => {
+  try { res.json(await ota.buildCalendar(req.propertyId, req.query.from)); } catch (err) { send(res, err); }
 });
 
 router.get('/night/:date', async (req, res) => {
