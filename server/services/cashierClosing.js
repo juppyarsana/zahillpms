@@ -10,7 +10,7 @@
 // (as FO's old closing had it): they settle the guest's bill, so they are in
 // the grand total, but nothing was received — `money_total` leaves them out.
 const db = require('../db');
-const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, billRates, round2 } = require('./folioService');
+const { AGENT_BILLABLE_LINE_SQL, AGENT_PREPAID_SQL, agentDue, billRates, round2 } = require('./folioService');
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
@@ -131,9 +131,9 @@ async function load(propertyId, date, { userId = null } = {}) {
            cr.checkout_by AS user_id, us.name AS user_name,
            to_char(cr.checkout_time AT TIME ZONE ${TZ}, 'HH24:MI') AS time,
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+                     WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS untaxed_subtotal,
            ${AGENT_PREPAID_SQL} AS prepaid
     FROM bookings b
     JOIN units u ON u.id = b.unit_id

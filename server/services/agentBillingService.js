@@ -1,5 +1,5 @@
 const db = require('../db');
-const { loadFolio, round2, agentDue, billRates, AGENT_PREPAID_SQL, PAID_AT_DESK_SQL } = require('./folioService');
+const { loadFolio, round2, agentDue, billRates, AGENT_PREPAID_SQL, AGENT_BILLABLE_LINE_SQL } = require('./folioService');
 const { otaCollects } = require('./otaCollect');
 const { ensureOtaAgent } = require('./agentService');
 
@@ -93,9 +93,9 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
     const { rows: [due] } = await client.query(
       `SELECT b.bill_tax_rate, b.bill_service_charge_rate, ps.tax_rate AS ps_tax_rate, ps.service_charge_rate AS ps_service_charge_rate,
               COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
               COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS untaxed_subtotal,
               ${AGENT_PREPAID_SQL} AS prepaid
        FROM bookings b LEFT JOIN property_settings ps ON ps.property_id = b.property_id
        WHERE b.id = $1`, [bookingId]);

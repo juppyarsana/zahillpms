@@ -51,7 +51,7 @@ If Receivables shows a room as **On the group's bill · not the agent's**, it wa
 
 The PMS refuses when the group has a refund, has paid more than its rooms' price, or a room is already on an agent invoice or part-paid by the agent. The window says which; put that right first. If this happens at check-out, the guest still checks out, the room stays on the group's bill, and the reason is in the room's Edit History.
 
-> Check extras first on a group that pays **Everything**: the window's figures are the room price only, so extras charged to a room are added on top for that room. A group that has already paid for extras can't be switched.
+> Check extras first on a group that pays **Everything**: the window's figures are the room price only, so extras charged to a room are added on top for that room (for a room the OTA pays, they stay the guest's). A group that has already paid for extras can't be switched.
 
 ## After check-out
 

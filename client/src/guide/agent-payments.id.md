@@ -51,7 +51,7 @@ Kalau di Receivables sebuah kamar berlabel **On the group's bill · not the agen
 
 PMS menolak kalau grup punya refund, sudah membayar lebih dari harga kamarnya, atau ada kamar yang sudah masuk invoice agen atau sudah dibayar sebagian oleh agen. Jendelanya menyebutkan sebabnya; bereskan dulu. Kalau ini terjadi saat check-out, tamu tetap bisa check-out, kamar tetap di tagihan grup, dan alasannya tercatat di Edit History kamar.
 
-> Cek ekstra dulu pada grup yang membayar **Everything**: angka di jendela hanya harga kamar, jadi ekstra yang dibebankan ke kamar ditambahkan di atasnya untuk kamar itu. Grup yang sudah membayar ekstra tidak bisa diubah.
+> Cek ekstra dulu pada grup yang membayar **Everything**: angka di jendela hanya harga kamar, jadi ekstra yang dibebankan ke kamar ditambahkan di atasnya untuk kamar itu (untuk kamar yang dibayar OTA, ekstra tetap dibayar tamu). Grup yang sudah membayar ekstra tidak bisa diubah.
 
 ## Setelah check-out
 

@@ -33,7 +33,7 @@
 // between the day rebuilt from today's data and what was kept; that difference
 // is posted as "Corrections to closed days" in the next day that is closed.
 const db = require('../db');
-const { PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
+const { PAID_AT_DESK_SQL, AGENT_BILLABLE_LINE_SQL, AGENT_PREPAID_SQL, agentDue, BILL_TAX_SQL, BILL_SC_SQL, billRates, computeFolioTotals, round2 } = require('./folioService');
 const { loadMapping, EXTRA_CATEGORIES, serviceSplit } = require('./accountingService');
 const { OWED_SQL: VENDOR_OWED_SQL } = require('./vendorPayoutService');
 
@@ -245,9 +245,9 @@ async function collectPosts(propertyId, from, to) {
       SELECT b.bill_tax_rate, b.bill_service_charge_rate, u.name AS room, g.name AS guest, COALESCE(a.name, 'No agent') AS agent,
              ${ymd(dayOf('cr.checkout_time'))} AS day,
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+                       WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS untaxed_subtotal,
              ${AGENT_PREPAID_SQL} AS prepaid
       FROM bookings b
       JOIN units u ON u.id = b.unit_id

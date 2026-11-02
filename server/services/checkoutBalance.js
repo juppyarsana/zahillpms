@@ -42,14 +42,16 @@ async function guestBalance(bookingId, propertyId, { billToAgent, memo } = {}) {
   // An OTA's account (migration 126) pays only the room, never the guest's
   // extras: the OTA rule below applies to it, not "the agent pays everything".
   const cityLedger = CITY_LEDGER.includes(b.agent_payment_status) && b.agent_type !== 'ota';
-  const alreadyBilled = ['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status);
+  const billed = ['pending_agent_invoice', 'invoiced', 'paid'].includes(b.folio_status);
+  const onOtaAccount = billed && b.agent_type === 'ota';
+  const alreadyBilled = billed && !onOtaAccount;
   if (alreadyBilled || (cityLedger && billToAgent !== false)) {
     return { owed: 0, agent_billed: true, agent_name: b.agent_name || null, ota: false };
   }
   const pf = await (memo ? memo.proforma(bookingId, propertyId) : computeProforma(bookingId, propertyId));
   if (!pf) return null;
   // Who collects (migration 121, set by the channel manager) wins over the source.
-  const ota = otaCollects(b);
+  const ota = otaCollects(b) || onOtaAccount;
   let owed = pf.balance_due;
   if (ota) {
     const roomPending = pf.payments
@@ -62,7 +64,8 @@ async function guestBalance(bookingId, propertyId, { billToAgent, memo } = {}) {
   // the room's own part (above); what the group still owes is shown, not
   // asked of this guest (`group_owed`).
   let group = null;
-  if (pf.group) {
+  // A room the OTA pays goes on the OTA's account at check-out, not the group's.
+  if (pf.group && !ota) {
     const bill = await (memo ? memo.bill(pf.group.group_id, propertyId) : require('./groupBilling').groupBill(pf.group.group_id, propertyId));
     if (bill) group = { group_id: bill.group_id, group_owed: bill.balance_due >= 1 ? bill.balance_due : 0, billing_mode: bill.billing_mode };
   }

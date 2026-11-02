@@ -1,5 +1,5 @@
 const db = require('../db');
-const { round2, PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, billRates } = require('./folioService');
+const { round2, AGENT_BILLABLE_LINE_SQL, AGENT_PREPAID_SQL, agentDue, billRates } = require('./folioService');
 
 // Agent Accounts / Direct Billing — Slice C.
 //
@@ -52,10 +52,10 @@ async function bookingLedger(propertyId, { agentId } = {}) {
             ai.issued_on AS invoice_issued_on, ai.invoice_number,
             -- extras the guest paid at the desk are never billed to the agent
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
             -- activity lines priced with tax included / no tax (migration 078): no service/tax added
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS untaxed_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations
                       WHERE booking_id = b.id), 0) AS allocated,
             -- money already received on the stay (paid before check-out) — not billed again
@@ -252,7 +252,7 @@ async function reconcileBookingStatuses(client, propertyId, bookingIds) {
       `SELECT COALESCE(SUM(fc.amount) FILTER (WHERE fc.tax_mode = 'added'), 0) AS subtotal,
               COALESCE(SUM(fc.amount) FILTER (WHERE fc.tax_mode <> 'added'), 0) AS untaxed
        FROM folio_charges fc
-       WHERE fc.booking_id = $1 AND fc.is_voided = false AND NOT ${PAID_AT_DESK_SQL}`,
+       WHERE fc.booking_id = $1 AND fc.is_voided = false AND ${AGENT_BILLABLE_LINE_SQL}`,
       [id]
     );
     const { rows: [{ prepaid }] } = await client.query(
@@ -550,10 +550,10 @@ async function invoicePayload(propertyId, invoiceId) {
     `SELECT b.id AS booking_id, b.check_in_date, b.check_out_date, g.name AS guest_name, u.name AS unit_name,
             b.bill_tax_rate, b.bill_service_charge_rate,
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS charge_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
             -- activity lines priced with tax included / no tax (migration 078): no service/tax added
             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
-                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND NOT ${PAID_AT_DESK_SQL}), 0) AS untaxed_subtotal,
+                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode <> 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS untaxed_subtotal,
             COALESCE((SELECT SUM(amount) FROM agent_payment_allocations WHERE booking_id = b.id), 0) AS allocated,
             ${AGENT_PREPAID_SQL} AS prepaid
      FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id

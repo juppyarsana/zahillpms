@@ -1,5 +1,6 @@
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('./publishRate');
 const db = require('../db');
+const { otaCollectsSql } = require('./otaCollect');
 const { loadNightRates, roomNightAmounts } = require('./nightRates');
 
 function round2(n) {
@@ -90,6 +91,13 @@ function chargeTotals(charges, taxRate, serviceChargeRate) {
 const PAID_AT_DESK_SQL = `(fc.paid_payment_id IS NOT NULL
     OR EXISTS (SELECT 1 FROM sales s WHERE s.id = fc.sale_id AND s.payment_method NOT IN ('room_charge', 'unpaid'))
     OR EXISTS (SELECT 1 FROM activity_bookings ab WHERE ab.folio_charge_id = fc.id AND ab.payment_method <> 'room_charge'))`;
+// A folio line an agent can be billed for: not paid at the desk, and for an
+// OTA's account (agent_type 'ota', migration 126) only the room and meal plan —
+// the guest pays extras at the hotel, whatever is still unpaid stays the guest's.
+// A travel agent or company that pays later is billed the extras too.
+const AGENT_BILLABLE_LINE_SQL = `(NOT ${PAID_AT_DESK_SQL} AND (fc.type IN ('room', 'fnb')
+    OR NOT EXISTS (SELECT 1 FROM bookings ob JOIN agents oa ON oa.id = ob.agent_id
+                   WHERE ob.id = fc.booking_id AND oa.agent_type = 'ota')))`;
 // Billed to an agent (city ledger) = what is still owed on the stay: the
 // agent-billable lines (above) MINUS money already received on the stay —
 // the agent usually pays before arrival and FO records it on the room. One
@@ -99,13 +107,16 @@ const PAID_AT_DESK_SQL = `(fc.paid_payment_id IS NOT NULL
 // again). Counted: received deposit / balance / extras payments and refunds
 // (negative) — not a payment for a line paid at the desk (a Pay-now sale, an
 // activity paid directly, lines or extra-bed nights paid on their own), since
-// those lines are already left off the agent's bill. Needs bookings as `b`.
+// those lines are already left off the agent's bill. On an OTA's account the
+// guest's extras payments don't count either: extras aren't on its bill.
+// Needs bookings as `b`.
 const AGENT_PREPAID_SQL = `COALESCE((SELECT SUM(p.amount) FROM payments p
     WHERE p.booking_id = b.id AND p.status = 'received'
       AND NOT EXISTS (SELECT 1 FROM payments q WHERE q.id = COALESCE(p.refund_of, p.id)
         AND (q.sale_id IS NOT NULL OR q.activity_booking_id IS NOT NULL
              OR EXISTS (SELECT 1 FROM folio_charges pf WHERE pf.paid_payment_id = q.id)
-             OR EXISTS (SELECT 1 FROM booking_addons pa WHERE pa.paid_payment_id = q.id)))), 0)`;
+             OR EXISTS (SELECT 1 FROM booking_addons pa WHERE pa.paid_payment_id = q.id)
+             OR (q.type = 'incidental' AND EXISTS (SELECT 1 FROM agents oa WHERE oa.id = b.agent_id AND oa.agent_type = 'ota'))))), 0)`;
 
 // { billable, prepaid, due } for a row carrying charge_subtotal /
 // untaxed_subtotal (agent-billable NET lines, see the queries) and prepaid
@@ -205,17 +216,21 @@ function toGroup(c, billingMode) {
   return billingMode === 'everything';
 }
 // SQL for the booking queries below: the group, when it's billed as a whole.
-const GROUP_BILLING_SQL = `rgb.id AS billed_group_id, rgb.billing_mode AS group_billing_mode`;
+// ota_pays_room needs booking_sources bs and agents ag joined.
+const GROUP_BILLING_SQL = `rgb.id AS billed_group_id, rgb.billing_mode AS group_billing_mode,
+            (${otaCollectsSql('b', 'bs')} AND (ag.id IS NULL OR ag.agent_type = 'ota')) AS ota_pays_room`;
 const GROUP_BILLING_JOIN = `LEFT JOIN reservation_groups rgb ON rgb.id = b.reservation_group_id AND rgb.group_billing`;
 
 // Splits a group room's billable lines into the group part and the room's
 // own part (each with its own service & tax). Marks each line `to_group`.
 function groupSplit(booking, billable, rates) {
   if (!booking?.billed_group_id) return null;
-  for (const c of billable) c.to_group = toGroup(c, booking.group_billing_mode);
+  // The OTA pays this room, so its extras are the guest's, even on a group that pays everything.
+  const mode = booking.ota_pays_room ? 'room_meals' : booking.group_billing_mode;
+  for (const c of billable) c.to_group = toGroup(c, mode);
   const g = chargeTotals(billable.filter(c => c.to_group), rates.tax_rate, rates.service_charge_rate);
   const own = chargeTotals(billable.filter(c => !c.to_group), rates.tax_rate, rates.service_charge_rate);
-  return { group_id: booking.billed_group_id, billing_mode: booking.group_billing_mode, group_total: g.total, own_total: own.total, group_subtotal: g.subtotal };
+  return { group_id: booking.billed_group_id, billing_mode: mode, group_total: g.total, own_total: own.total, group_subtotal: g.subtotal };
 }
 
 // A balance of a few cents is rounding (service + tax on net amounts can't
@@ -236,7 +251,7 @@ async function loadFolio(bookingId, propertyId, conn = db) {
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
             ${STAY_DETAILS_SQL},
-            b.agent_id, ag.name AS agent_name,
+            b.agent_id, ag.name AS agent_name, ag.agent_type,
             COALESCE(ag.payment_status, 'normal') AS agent_payment_status,
             COALESCE(ag.payment_status, 'normal') AS source_payment_status, bs.label as source_label,
             ${PUBLISH_RATE_SQL} AS publish_rate, ${ARRANGED_BY_SQL} AS arranged_by,
@@ -298,7 +313,8 @@ async function loadFolio(bookingId, propertyId, conn = db) {
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
   const agent_billable_total = chargeTotals(
-    billable.filter(c => !c.paid_at_desk), rates.tax_rate, rates.service_charge_rate
+    billable.filter(c => !c.paid_at_desk && (booking.agent_type !== 'ota' || c.type === 'room' || c.type === 'fnb')),
+    rates.tax_rate, rates.service_charge_rate
   ).total;
 
   return {
@@ -454,4 +470,4 @@ async function computeProforma(bookingId, propertyId) {
   };
 }
 
-module.exports = { onAccountTotal, TRANSFERRED_FROM_SQL, PAID_AT_DESK_SQL, AGENT_PREPAID_SQL, agentDue, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };
+module.exports = { onAccountTotal, TRANSFERRED_FROM_SQL, PAID_AT_DESK_SQL, AGENT_BILLABLE_LINE_SQL, AGENT_PREPAID_SQL, agentDue, PAYMENTS_WITH_RECEIPT_SQL, toGroup, settleCents, BILL_TAX_SQL, BILL_SC_SQL, billRates, chargeTotals, loadFolio, computeProforma, round2, computeFolioTotals, ymd, stayNights, nightlyAmount };

@@ -769,7 +769,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
     SELECT b.id, b.check_in_date, b.check_out_date, b.nights, b.num_guests, b.status, b.folio_status, b.reservation_group_id,
            g.name AS guest_name, u.name AS unit_name, u.type AS unit_type,
            COALESCE(bs.label, b.source) AS source_label, ${otaCollectsSql('b', 'bs')} AS is_ota,
-           COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name,
+           COALESCE(ag.payment_status, 'normal') AS source_payment_status, ag.name AS agent_name, ag.agent_type,
            CASE WHEN b.status = 'checked_out' OR b.check_out_date = $2::date THEN 'departing'
                 WHEN b.check_out_date < $2::date THEN 'overdue'
                 ELSE 'staying' END AS section
@@ -796,8 +796,14 @@ async function loadBalanceDue(propertyId, requestedDate) {
     const roomAndMeals = round2(pf.charges.filter(x => x.type === 'room' || x.type === 'fnb').reduce((s, x) => s + parseFloat(x.amount), 0));
     const extras = round2(pf.charges.filter(x => x.type !== 'room' && x.type !== 'fnb').reduce((s, x) => s + parseFloat(x.amount), 0));
     const paid = round2(pf.payments.filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0));
-    const agentBilled = agentBilling.CITY_LEDGER.includes(c.source_payment_status)
-      || ['pending_agent_invoice', 'invoiced', 'paid'].includes(c.folio_status);
+    const onBill = ['pending_agent_invoice', 'invoiced', 'paid'].includes(c.folio_status);
+    // On an OTA's account the OTA owes the room; only what the guest owes is listed.
+    const onOtaAccount = onBill && c.agent_type === 'ota';
+    const agentBilled = !onOtaAccount && (agentBilling.CITY_LEDGER.includes(c.source_payment_status) || onBill);
+    const balanceDue = onOtaAccount
+      ? round2(pf.balance_due - pf.payments.filter(p => p.status !== 'received' && ['deposit', 'balance'].includes(p.type)).reduce((s, p) => s + parseFloat(p.amount), 0))
+      : pf.balance_due;
+    if (balanceDue < 1) continue;
     sections[c.section].push({
       ...c,
       room_and_meals: roomAndMeals,
@@ -805,7 +811,7 @@ async function loadBalanceDue(propertyId, requestedDate) {
       service_and_tax: round2(pf.service_charge_amount + pf.tax_amount),
       total: pf.total,
       paid,
-      balance_due: pf.balance_due,
+      balance_due: balanceDue,
       agent_billed: agentBilled,
     });
   }
@@ -1347,7 +1353,10 @@ router.get('/:id', auth, async (req, res) => {
              END AS group_size,
              -- A group billed as a whole (migration 097): the room price is paid by the group.
              COALESCE((SELECT rg.group_billing FROM reservation_groups rg WHERE rg.id = b.reservation_group_id), false) AS group_billed,
-             (SELECT rg.billing_mode FROM reservation_groups rg WHERE rg.id = b.reservation_group_id) AS group_billing_mode,
+             -- a room the OTA pays: its extras are the guest's, whatever the group pays (folioService.groupSplit)
+             (SELECT CASE WHEN ${otaCollectsSql('b', 'bs')} AND (ag.id IS NULL OR ag.agent_type = 'ota') THEN 'room_meals' ELSE rg.billing_mode END
+                FROM reservation_groups rg LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+               WHERE rg.id = b.reservation_group_id) AS group_billing_mode,
              -- Agent billing (city ledger): shown as a badge on the booking page.
              ai.invoice_number AS agent_invoice_number,
              (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
