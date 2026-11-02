@@ -16,6 +16,7 @@ Channel manager mengisi ini sendiri dari OTA. Kalau OTA tidak menyebutkan, PMS m
 
 - Booking langsung **Confirmed**, tamu bisa check-in tanpa membayar kamar.
 - **Jangan tagih kamar ke tamu** dan jangan tandai kamar sebagai diterima. Tagih hanya extra (minibar, extra bed, laundry…).
+- **Beberapa kamar dalam satu reservasi OTA** (+ Add Another Room) menjadi grup yang dibayar per kamar, tidak pernah satu tagihan. Kalau tamu bayar di hotel, atur **Edit Details → Room paid by → The guest, at the hotel** di tiap kamar; satu transfer untuk semua kamar tetap lewat **Record Group Payment**.
 - **Ekstra selalu dibayar tamu**, juga di grup yang membayar Everything. Check-out memintanya dulu. Kalau tamu pergi tanpa membayar, isi alasan: ekstra tetap jadi balance due tamu dan tidak masuk tagihan OTA.
 - Saat **check-out**, sisa harga kamar otomatis masuk ke **akun OTA itu di Receivables** (akunnya dibuat sendiri oleh PMS kalau belum ada). Tidak ada yang perlu ditekan.
 

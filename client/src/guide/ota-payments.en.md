@@ -16,6 +16,7 @@ The channel manager fills this in from the OTA. When the OTA doesn't say, the PM
 
 - The booking is **Confirmed** straight away; the guest checks in without paying the room.
 - **Don't charge the room to the guest** and don't mark the room received. Charge only the extras (minibar, extra bed, laundry…).
+- **Several rooms on one OTA reservation** (+ Add Another Room) make a group paid room by room, never one bill. If the guest pays at the hotel, set **Edit Details → Room paid by → The guest, at the hotel** on each room; one transfer for all of them still goes through **Record Group Payment**.
 - **Extras are always the guest's**, also on a group that pays Everything. Check-out asks for them first. If the guest leaves without paying, give a reason: the extra stays as the guest's balance due and never goes on the OTA's bill.
 - At **check-out**, what is still owed for the room goes onto **that OTA's account in Receivables** by itself (the PMS makes the account if there is none). Nothing to press.
 

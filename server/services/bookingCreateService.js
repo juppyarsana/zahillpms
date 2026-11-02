@@ -16,6 +16,7 @@ const nightRatesSvc = require('./nightRates');
 const agentService = require('./agentService');
 const agentBilling = require('./agentBillingService');
 const { occupiedUntilSql } = require('./occupancySql');
+const { otaCollects } = require('./otaCollect');
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
@@ -235,6 +236,12 @@ async function createGroup(client, { propertyId, userId, input }) {
   if (groupBilled && agentPick.agentId) {
     const { rows: [ag] } = await client.query('SELECT payment_status FROM agents WHERE id = $1', [agentPick.agentId]);
     if (agentBilling.CITY_LEDGER.includes(ag?.payment_status)) groupBilled = false;
+  }
+  // An OTA's rooms are never one bill: each is paid by the OTA, or by its own
+  // guest when Edit Details says so (typed in by hand, like the channel manager's).
+  if (groupBilled) {
+    const { rows: [src] } = await client.query('SELECT is_ota FROM booking_sources WHERE id = $1 AND property_id = $2', [source || 'direct', propertyId]);
+    if (otaCollects({ source, is_ota: src?.is_ota })) groupBilled = false;
   }
   const billingMode = input.billing_mode === 'everything' ? 'everything' : 'room_meals';
 

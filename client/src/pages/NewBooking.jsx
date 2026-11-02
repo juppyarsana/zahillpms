@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { shownAmount, includesText } from '../lib/priceBasis';
 import BookingAgentFields from '../components/BookingAgentFields';
 import { CITY_LEDGER, HAS_COMMISSION, commissionText as fmtCommission, EMPTY_AGENT_VALUE, agentBody } from '../lib/agents';
+import { otaName } from '../lib/otaDue';
 
 // Staff-facing heads-up when the booking's agent (migration 084) has a
 // billing arrangement: billed to the agent at checkout and/or a commission.
@@ -328,6 +329,7 @@ export default function NewBooking() {
   }
   const extrasTotal = rooms.reduce((s, r) => s + extraTotal(r), 0);
   const srcObj = sources.find(s => s.id === form.source);
+  const groupOta = otaName(sources, form.source);   // an OTA's rooms are never one bill (bookingCreateService)
   const extrasInDeposit = !(srcObj?.is_ota || AGENT_SOURCE_TYPES.includes(srcObj?.source_type) || CITY_LEDGER.includes(agentVal.agent?.payment_status));
   // The agent field shows by itself for Travel Agent / Corporate / Wholesaler sources.
   const agentFieldShown = showAgent || !!agentVal.agent || ['travel_agent', 'company', 'wholesaler'].includes(srcObj?.source_type);
@@ -968,6 +970,8 @@ export default function NewBooking() {
               <label className="form-label">Group pays</label>
               {CITY_LEDGER.includes(agentVal.agent?.payment_status) ? (
                 <div className="text-muted" style={{ fontSize: 12 }}>Billed to {agentVal.agent?.name} — each room goes on the agent's bill.</div>
+              ) : groupOta ? (
+                <div className="text-muted" style={{ fontSize: 12 }}>{groupOta} reservation — each room is paid on its own, by {groupOta}. If the guest pays at the hotel, set it on the room afterwards: Edit Details → Room paid by.</div>
               ) : (<>
                 <div className="flex gap-2 flex-center" style={{ marginBottom: 6, flexWrap: 'wrap' }}>
                   {[{ v: 'room_meals', label: 'Room & meal plan' }, { v: 'everything', label: 'Everything' }].map(opt => (
@@ -1255,7 +1259,7 @@ export default function NewBooking() {
                       <span>{idr(deposit)} · then {idr(netAmt + extrasTotal - deposit)}</span>
                     </div>
                   )}
-                  {isGroup && !CITY_LEDGER.includes(agentVal.agent?.payment_status) && (
+                  {isGroup && !CITY_LEDGER.includes(agentVal.agent?.payment_status) && !groupOta && (
                     <div className="flex-between text-muted" style={{ fontSize: 13 }}>
                       <span>Group pays</span>
                       <span>{groupPays === 'everything' ? 'Everything (rooms, meals, extras)' : 'Room & meal plan · rooms pay their extras'}</span>
