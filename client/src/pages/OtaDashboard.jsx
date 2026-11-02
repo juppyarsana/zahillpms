@@ -92,9 +92,9 @@ function PriceTip({ tip, data, nights, plan }) {
   return (
     <div role="tooltip" style={{ position: 'fixed', left, ...place, width, zIndex: 150, pointerEvents: 'none', background: '#fff', border: '1px solid var(--border-strong)', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '12px 14px' }}>
       <div className="text-muted" style={{ fontSize: 12, fontWeight: 600 }}>{type?.name} · {n.label}</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, margin: '2px 0 8px' }}>
-        <span style={{ fontSize: 18, fontWeight: 700 }}>{idr(c.price)}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 99, whiteSpace: 'nowrap', background: source.bg, color: source.fg }}>{source.label}</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '4px 8px', margin: '2px 0 8px' }}>
+        <span style={{ fontSize: 18, fontWeight: 700, whiteSpace: 'nowrap' }}>{idr(c.price)}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 10, overflowWrap: 'anywhere', background: source.bg, color: source.fg }}>{source.label}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 5, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 13 }}>
         {rows.map(([k, v]) => (
