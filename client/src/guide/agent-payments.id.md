@@ -39,6 +39,20 @@ Check-out seperti biasa. PMS hanya menagihkan ke agen **sisa yang belum dibayar*
 
 Tamu tidak membayar kamar — hanya ekstra yang ia bayar sendiri di meja depan (minibar, laundry, dll.). Reservasi tetap tercatat milik agen itu di laporan (By agent), walaupun sudah lunas sebelum check-out.
 
+## Grup satu tagihan dengan agen yang ditagih
+
+Grup dengan satu tagihan menyimpan uang kamar di tagihan grup, bukan di kamar. Saat kamar yang agennya membayar belakangan (atau OTA yang menerima uang dari tamu) check-out, PMS otomatis mengubah grup menjadi **ditagih per kamar**: yang sudah dibayar grup pindah ke kamar, dan sisanya masuk ke tagihan agen. Closing hari itu tidak berubah.
+
+Kalau di Receivables sebuah kamar berlabel **On the group's bill · not the agent's**, kamar itu masih tertinggal di grup:
+
+1. Buka grup → kartu **Group Bill** → **🧾 Bill room by room** (owner, atau izin Corrections).
+2. Baca **What will happen**, isi alasan, konfirmasi.
+3. Kamar yang sudah check-out kini muncul di tagihan agen.
+
+PMS menolak kalau grup punya refund, sudah membayar lebih dari harga kamarnya, atau ada kamar yang sudah masuk invoice agen atau sudah dibayar sebagian oleh agen. Jendelanya menyebutkan sebabnya; bereskan dulu. Kalau ini terjadi saat check-out, tamu tetap bisa check-out, kamar tetap di tagihan grup, dan alasannya tercatat di Edit History kamar.
+
+> Cek ekstra dulu pada grup yang membayar **Everything**: angka di jendela hanya harga kamar, jadi ekstra yang dibebankan ke kamar ditambahkan di atasnya untuk kamar itu. Grup yang sudah membayar ekstra tidak bisa diubah.
+
 ## Setelah check-out
 
 Kalau agen membayar setelah tamu pulang, catat di **Receivables**, bukan di reservasi.

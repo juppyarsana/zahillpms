@@ -115,10 +115,9 @@ async function settleCheckout(client, { propertyId, bookingId, billToAgent, acto
 
   let commission_posted = false;
   if (agent && COMMISSION.includes(paymentStatus)) {
-    // loadFolio reads via the pool, not `client` — fine here because folio
-    // charges are always posted (and committed) during the stay, well before
-    // checkout; nothing in the checkout transaction touches folio_charges.
-    const folio = await loadFolio(bookingId, propertyId);
+    // Through `client`: Bill room by room (groupRoomByRoom) can post the
+    // stay's missing nights in this same transaction.
+    const folio = await loadFolio(bookingId, propertyId, client);
     // Commission base excludes extras the guest paid at the desk (migration
     // 067) — the agent didn't sell or bill those.
     const amount = computeCommission(agent, folio ? folio.agent_billable_total : 0);

@@ -185,6 +185,69 @@ export function GroupRefundModal({ groupId, onClose, onSaved }) {
   );
 }
 
+// Group billed as a whole → room by room (correction, reason required). Shows
+// what will happen first — worked out by the server for real, then undone
+// (GET …/room-by-room/quote) — e.g. which checked-out rooms go onto their
+// agent's bill in Receivables.
+function RoomByRoomModal({ groupId, onClose, onSaved }) {
+  const [quote, setQuote] = useState(null);
+  const [error, setError] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get(`/api/bookings/group/${groupId}/room-by-room/quote`)
+      .then(r => setQuote(r.data))
+      .catch(err => setError(err.response?.data?.error || 'Could not work it out'));
+  }, [groupId]);
+  async function go() {
+    if (!reason.trim() || busy) return;
+    setBusy(true); setError('');
+    try {
+      await api.put(`/api/bookings/group/${groupId}/room-by-room`, { reason: reason.trim() });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not do that');
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 520, width: '100%' }}>
+        <div className="modal-header">
+          <div className="modal-title">Bill this group room by room?</div>
+          <button className="btn btn-icon" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
+          <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
+            The group stops having one bill. Each room gets its own payments: what the group has paid moves onto the rooms
+            (same amount, method and date — the day's closing doesn't change), and each room's unpaid rest is owed on the room.
+            A room already checked out whose agent pays the hotel later goes onto that agent's bill in Receivables.
+          </div>
+          {!quote && !error && <div className="text-muted" style={{ fontSize: 13 }}>Working it out…</div>}
+          {quote && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 13 }}>
+              <div className="text-muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }}>What will happen</div>
+              {quote.details.map((d, i) => <div key={i} style={{ padding: '2px 0' }}>• {d}</div>)}
+            </div>
+          )}
+          <div className="form-group">
+            <label className="form-label">Reason (required — kept in the history)</label>
+            <input className="form-input" value={reason} placeholder="e.g. Agoda pays these rooms, not the group"
+              onChange={e => setReason(e.target.value)} onKeyDown={e => e.key === 'Enter' && go()} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={go} disabled={busy || !quote || !reason.trim()}>
+            {busy ? 'Saving…' : 'Bill room by room'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GroupBillingCard({ groupId, bill, rollup, canPay, canRefund, onChanged }) {
   const [refunding, setRefunding] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -193,6 +256,7 @@ export default function GroupBillingCard({ groupId, bill, rollup, canPay, canRef
   const [voidError, setVoidError] = useState('');
   const [busy, setBusy] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
+  const [roomByRoom, setRoomByRoom] = useState(false);
 
   const live = bill.payments.filter(p => !p.is_voided);
   const voided = bill.payments.filter(p => p.is_voided);
@@ -280,14 +344,18 @@ export default function GroupBillingCard({ groupId, bill, rollup, canPay, canRef
         </div>
       )}
 
-      {(canPay || (canRefund && bill.received > 0)) && (
+      {(canPay || canRefund) && (
         <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           {canPay && <button className="btn btn-primary" onClick={() => setPaying(true)}>💳 Record Group Payment</button>}
           {canRefund && bill.received > 0 && (
             <button className="btn btn-secondary" title="Give money back to the group (a credit, or a cancelled group)" onClick={() => setRefunding(true)}>💸 Refund</button>
           )}
+          {canRefund && (
+            <button className="btn btn-secondary" title="Each room gets its own payments — e.g. the rooms' agent (an OTA, a travel agent) pays the hotel, room by room" onClick={() => setRoomByRoom(true)}>🧾 Bill room by room</button>
+          )}
         </div>
       )}
+      {roomByRoom && <RoomByRoomModal groupId={groupId} onClose={() => setRoomByRoom(false)} onSaved={() => { setRoomByRoom(false); onChanged(); }} />}
       {refunding && <GroupRefundModal groupId={groupId} onClose={() => setRefunding(false)} onSaved={() => { setRefunding(false); onChanged(); }} />}
 
       <div style={{ marginTop: 14 }}>

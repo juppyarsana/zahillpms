@@ -10,6 +10,7 @@ const { sendControlAlert } = require('../services/ownerAlerts');
 const sse = require('../sse');
 const agentBilling = require('../services/agentBillingService');
 const agentService = require('../services/agentService');
+const groupRoomByRoom = require('../services/groupRoomByRoom');
 
 // Corrections — mounted at /api/bookings (reservations module), ahead of
 // routes/bookings.js. Front desk mistakes are put right by reversing the
@@ -22,6 +23,7 @@ const agentService = require('../services/agentService');
 //   PUT /:id/agent-billing   agent billing decided wrong at check-out
 //   PUT /:id/join-group      a booking on its own → a room of a group
 //   PUT /:id/leave-group     a group's room → a booking on its own
+//   PUT /group/:groupId/room-by-room   a group billed as a whole → room by room
 const canCorrect = requireOwnerOrMenu('corrections');
 
 const readReason = req => String(req.body?.reason || '').trim().slice(0, 500);
@@ -390,5 +392,35 @@ router.put('/:id/leave-group', auth, canCorrect, correction(async (client, b, { 
   return { json: { id: b.id, reservation_group_id: null, status: status || b.status },
     headline: `👤 Room taken out of the group of ${q.booker}`, details };
 }));
+
+// ── Group billed as a whole → room by room (services/groupRoomByRoom.js) ──
+// GET /api/bookings/group/:groupId/room-by-room/quote — what the switch would
+// do, worked out for real inside a transaction that is then rolled back.
+// PUT /api/bookings/group/:groupId/room-by-room { reason } — does it. Also
+// after check-out: a checked-out room whose agent pays the hotel later goes
+// onto the agent's bill (Receivables), as check-out would have done.
+async function roomByRoom(req, res, apply) {
+  const reason = readReason(req);
+  if (apply && !reason) return res.status(400).json({ error: 'A reason is required', code: 'REASON_REQUIRED' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const r = await groupRoomByRoom.billRoomByRoom(client, { propertyId: req.propertyId, groupId: req.params.groupId, userId: req.user.id, reason });
+    if (r.error) { await client.query('ROLLBACK'); return res.status(r.status || 409).json({ error: r.error, ...(r.code ? { code: r.code } : {}) }); }
+    await client.query(apply ? 'COMMIT' : 'ROLLBACK');
+    if (apply) {
+      sendControlAlert(req.propertyId, { bookingIds: r.booking_ids, userId: req.user.id, reason,
+        headline: `🧾 Group of ${r.booker} now billed room by room`, details: r.details });
+    }
+    res.json({ applied: apply, details: r.details, rooms: r.rooms, received: r.received });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+router.get('/group/:groupId/room-by-room/quote', auth, canCorrect, (req, res) => roomByRoom(req, res, false));
+router.put('/group/:groupId/room-by-room', auth, canCorrect, (req, res) => roomByRoom(req, res, true));
 
 module.exports = router;

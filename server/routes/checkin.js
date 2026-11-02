@@ -3,6 +3,7 @@ const db = require('../db');
 const { otherGuestsFor } = require('../services/otherGuests');
 const auth = require('../middleware/auth');
 const agentBilling = require('../services/agentBillingService');
+const groupRoomByRoom = require('../services/groupRoomByRoom');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
 const roomCharge = require('../services/roomChargeService');
 const { applyBookingPrice } = require('../services/bookingPriceService');
@@ -507,9 +508,8 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     });
   }
 
-  // Folio catch-up must be committed BEFORE the checkout transaction opens,
-  // because agentBilling.settleCheckout reads the folio via the pool (not the
-  // txn client) to compute the commission base.
+  // Folio catch-up, committed BEFORE the checkout transaction opens: a failed
+  // catch-up is logged and must not stop the guest checking out.
   {
     const c = await db.pool.connect();
     try {
@@ -537,6 +537,16 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
     const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.bookingId, req.propertyId]);
     if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
 
+    // A room of a group billed as a whole whose agent takes the room money
+    // (city ledger / OTA payout): its price is on the GROUP's bill, which
+    // settleCheckout can't see — switch the group to room by room first so
+    // the unpaid price goes on the agent's bill (services/groupRoomByRoom.js).
+    // If the group can't be switched its money stays on the group's bill, so
+    // the agent must not be billed for this room as well.
+    const groupSwitch = bill_to_agent !== false
+      ? await groupRoomByRoom.switchAtCheckout(client, { propertyId: req.propertyId, bookingId: req.params.bookingId, userId: req.user.id })
+      : null;
+
     // Agent billing: mark the folio billed-to-agent (city ledger) and/or post
     // the agent commission, all inside this checkout transaction.
     const settlement = await agentBilling.settleCheckout(client, {
@@ -544,7 +554,8 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
       bookingId: req.params.bookingId,
       // Not sent (Check-in/out, Quick Check-in screens): follow the agent — a
       // stay whose agent pays the hotel later is billed to it.
-      billToAgent: bill_to_agent === undefined || bill_to_agent === null ? null : !!bill_to_agent,
+      billToAgent: groupSwitch?.error ? false
+        : bill_to_agent === undefined || bill_to_agent === null ? null : !!bill_to_agent,
       actorUserId: req.user.id,
     });
     if (settlement.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: settlement.error }); }

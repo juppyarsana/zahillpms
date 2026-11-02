@@ -229,8 +229,9 @@ function settleCents(balance) {
 const STAY_DETAILS_SQL = `g.nationality AS guest_nationality, u.type AS room_type, b.num_guests, b.children,
             ag.name AS stay_agent_name`;
 
-async function loadFolio(bookingId, propertyId) {
-  const bookingQ = db.query(
+// conn: a transaction's client, to read what that transaction has just posted.
+async function loadFolio(bookingId, propertyId, conn = db) {
+  const bookingQ = () => conn.query(
     `SELECT b.id, b.check_in_date, b.check_out_date, b.folio_status, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
@@ -251,7 +252,7 @@ async function loadFolio(bookingId, propertyId) {
      WHERE b.id = $1 AND b.property_id = $2`,
     [bookingId, propertyId]
   );
-  const chargesQ = db.query(
+  const chargesQ = () => conn.query(
     `SELECT fc.id, fc.type, fc.description, fc.quantity, fc.unit_price, fc.amount, fc.posted_at, fc.service_date, fc.tax_mode, fc.paid_payment_id, fc.addon_id, u.name as posted_by_name, ${TRANSFERRED_FROM_SQL} AS transferred_from,
             EXISTS (SELECT 1 FROM booking_addons ba WHERE ba.id = fc.addon_id AND ba.breakfasts > 0) AS addon_meal,
             -- is_fnb: a 'sale' charge whose sale contains food/drinks reads as
@@ -271,15 +272,17 @@ async function loadFolio(bookingId, propertyId) {
      ORDER BY fc.service_date NULLS LAST, fc.posted_at`,
     [bookingId]
   );
-  const settingsQ = db.query(
+  const settingsQ = () => conn.query(
     `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
      FROM property_settings WHERE property_id = $1`,
     [propertyId]
   );
-  const paymentsQ = db.query(PAYMENTS_WITH_RECEIPT_SQL, [bookingId]);
+  const paymentsQ = () => conn.query(PAYMENTS_WITH_RECEIPT_SQL, [bookingId]);
 
-  const [{ rows: [booking] }, { rows: charges }, { rows: [settings] }, { rows: payments }] =
-    await Promise.all([bookingQ, chargesQ, settingsQ, paymentsQ]);
+  // A client runs one query at a time; the pool can run them together.
+  const [{ rows: [booking] }, { rows: charges }, { rows: [settings] }, { rows: payments }] = conn === db
+    ? await Promise.all([bookingQ(), chargesQ(), settingsQ(), paymentsQ()])
+    : [await bookingQ(), await chargesQ(), await settingsQ(), await paymentsQ()];
 
   if (!booking) return null;
 

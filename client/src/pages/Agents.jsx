@@ -428,6 +428,9 @@ function billingText(b, billedMode, owedIds) {
     // check-out) — not an open item of the statement.
     if (b.folio_status === 'pending_agent_invoice' && owedIds && !owedIds.has(b.id)) return ['Paid before check-out', 'badge-green'];
     if (b.folio_status === 'pending_agent_invoice') return ['On the bill · not invoiced', 'badge-amber'];
+    // A room of a group billed as a whole: the room money is on the GROUP's
+    // bill, not the agent's — nothing was paid (fix: group page → Bill room by room).
+    if (billedMode && b.group_billed) return ['On the group\'s bill · not the agent\'s', 'badge-amber'];
     // A billed agent's stay checked out with nothing on the agent's bill was
     // paid before check-out (on the reservation, usually H-7) — check-out
     // only bills what is still owed.
@@ -481,9 +484,14 @@ function AgentBookings({ bookings, agent, owedIds }) {
               })}
             </tbody>
           </table></div>
-          {stage === 'checked_out' && billedMode && rows.some(b => !b.folio_status) && (
+          {stage === 'checked_out' && billedMode && rows.some(b => !b.folio_status && !b.group_billed) && (
             <div style={{ fontSize: 12, color: '#6B7280', marginTop: 8 }}>
               "Paid before check-out" stays were fully paid on the reservation before the guest left, so nothing went on the agent's bill — check-out only bills what is still owed.
+            </div>
+          )}
+          {stage === 'checked_out' && billedMode && rows.some(b => !b.folio_status && b.group_billed) && (
+            <div style={{ fontSize: 12, color: '#92400E', marginTop: 6 }}>
+              "On the group's bill" rooms belong to a group billed as a whole, so check-out left their price on the group instead of this agent's bill. Open the group → Group Bill → <b>Bill room by room</b> to move them here.
             </div>
           )}
         </>

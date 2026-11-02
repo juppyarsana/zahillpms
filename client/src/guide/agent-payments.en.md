@@ -39,6 +39,20 @@ Check out as usual. The PMS bills the agent only **what is still unpaid** — no
 
 The guest doesn't pay for the room — only extras they pay themselves at the desk (minibar, laundry, etc.). The reservation still counts for that agent in the reports (By agent), even when it was paid before check-out.
 
+## A group with one bill under a billed agent
+
+A group billed as a whole holds the room money on the group's bill, not on the rooms. When a room whose agent pays later (or an OTA that collects from the guest) checks out, the PMS switches the group to **billing room by room** by itself: what the group has paid moves onto the rooms, and the unpaid rest goes on the agent's bill. The day's closing doesn't change.
+
+If Receivables shows a room as **On the group's bill · not the agent's**, it was left on the group:
+
+1. Open the group → **Group Bill** card → **🧾 Bill room by room** (owner, or the Corrections permission).
+2. Read **What will happen**, type a reason, confirm.
+3. Rooms already checked out now show on the agent's bill.
+
+The PMS refuses when the group has a refund, has paid more than its rooms' price, or a room is already on an agent invoice or part-paid by the agent. The window says which; put that right first. If this happens at check-out, the guest still checks out, the room stays on the group's bill, and the reason is in the room's Edit History.
+
+> Check extras first on a group that pays **Everything**: the window's figures are the room price only, so extras charged to a room are added on top for that room. A group that has already paid for extras can't be switched.
+
 ## After check-out
 
 If the agent pays after the guest has left, record it in **Receivables**, not on the reservation.
