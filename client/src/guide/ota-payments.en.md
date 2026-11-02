@@ -15,7 +15,8 @@ The channel manager fills this in from the OTA. When the OTA doesn't say, the PM
 ## Front desk: paid by the OTA (payout)
 
 - The booking is **Confirmed** straight away; the guest checks in without paying the room.
-- **Don't charge the room to the guest** and don't mark the room received. Charge only the extras (minibar, extra bed, laundry…).
+- **Don't charge the room to the guest.** The booking has no Mark Received button for the room: it shows *Paid by Agoda: nothing to collect from the guest*. Charge only the extras (minibar, extra bed, laundry…).
+- **The guest really pays at the hotel?** Change **Edit Details → Room paid by → The guest, at the hotel**, and Mark Received comes back.
 - **Several rooms on one OTA reservation** (+ Add Another Room) make a group paid room by room, never one bill. If the guest pays at the hotel, set **Edit Details → Room paid by → The guest, at the hotel** on each room; one transfer for all of them still goes through **Record Group Payment**.
 - **Extras are always the guest's**, also on a group that pays Everything. Check-out asks for them first. If the guest leaves without paying, give a reason: the extra stays as the guest's balance due and never goes on the OTA's bill.
 - At **check-out**, what is still owed for the room goes onto **that OTA's account in Receivables** by itself (the PMS makes the account if there is none). Nothing to press.
@@ -47,6 +48,20 @@ What follows:
 - What a virtual card didn't cover: **Record payout** with *Amount received* **0** and the commission = the rest.
 
 A payout recorded by mistake: ask the owner / accountant to **Void** it (with a reason) — its stays are open again — then record it again.
+
+## Agoda Card payouts
+
+If Agoda's payout list shows the method **Agoda Card**, one payout covers many bookings. It is still a payout, so leave those bookings on **The OTA — paid to the hotel by its payout**, not on the virtual card option (that one is for an OTA giving one card per booking).
+
+Record it as above, with these three details:
+
+- **Method:** OTA virtual card.
+- **Reference:** the Payout ID, e.g. 20261029-21835.
+- **Date:** the day the card is charged on the card machine, so it matches the slip.
+
+A stay on 29 November paid on 7 December: the revenue stays in November, the money and the commission count in December, and Agoda owes the hotel in between.
+
+**A payout covers an older stay that isn't on the list?** Stays checked out before OTA accounts existed were never put on the account. Open the booking → **⋮ More → Fix Agent Billing**, choose the OTA and tick *Bill this stay to the agent*. It then appears to tick.
 
 ## Accountant: commission bills (guest paid at the hotel)
 

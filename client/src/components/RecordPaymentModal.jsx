@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import { lineShown, shownAmount, shownTotal } from '../lib/priceBasis';
-import { otaName, roomPending } from '../lib/otaDue';
+import { otaName, roomPending, otaPaysRoom } from '../lib/otaDue';
 
 // Record Payment (migrations 082–083): everything the guest owes, in two
 // tables — the room's pending deposit / balance lines, and the extras
@@ -27,6 +27,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const ota = otaName(sources, booking.source, booking.payment_collect);
   // A virtual card (migration 126): front desk charges it — the room lines are ticked and the method is the card.
   const vcc = booking.payment_collect === 'vcc';
+  const otaPayout = !vcc && otaPaysRoom(sources, booking);   // ticking the room here is the exception: warn
   const methods = paymentMethods.filter(m => m.is_active !== false && m.id !== 'ota_managed');
   const [folio, setFolio] = useState(null);
   const [addons, setAddons] = useState([]);
@@ -174,8 +175,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
               )}
               {roomLines.length > 0 && ota && !vcc && (
                 <div className="alert" style={{ marginBottom: 8 }}><div>
-                  <b>The room is paid by {ota}, not by the guest.</b> Leave it unticked — at check-out it goes onto {ota}'s account in Receivables,
-                  closed when the weekly {ota} withdrawal is recorded under OTA payouts. Tick it here only if {ota}'s money for this stay already arrived before check-out.
+                  <b>The room is paid by {ota}, not by the guest.</b> Leave it unticked — at check-out it goes onto {ota}'s account,
+                  closed when {ota}'s payout is recorded in Receivables. Tick it here only if {ota}'s money for this stay already arrived before check-out.
                 </div></div>
               )}
               {roomLines.length > 0 && (
@@ -285,6 +286,9 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                   <input className="form-input" value={form.notes} placeholder="Optional" onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
               </div>
+              {otaPayout && roomLines.some(l => room[l.id]?.on) && (
+                <div className="alert alert-warn"><div><b>{otaPayout} pays this room.</b> Tick it only if {otaPayout}'s money for this stay has really arrived: it counts as money received today.</div></div>
+              )}
               {roomBad && <div className="alert alert-error"><div>A room amount must be more than 0 and not more than what's due.</div></div>}
               {extrasBad && <div className="alert alert-error"><div>The extras amount must be more than 0 and not more than {fmtIDR(shownTotal(extrasDue, rates))}.</div></div>}
               {error && <div className="alert alert-error"><div>{error}</div></div>}

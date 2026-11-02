@@ -8,7 +8,7 @@ import { stayTone } from '../lib/stayTone';
 import ReasonModal from '../components/ReasonModal';
 import GuestPicker from '../components/GuestPicker';
 import { useSettings } from '../context/SettingsContext';
-import { otaName, roomPending } from '../lib/otaDue';
+import { otaName, otaPaysRoom, roomPending } from '../lib/otaDue';
 import { useAuth } from '../context/AuthContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import GroupPriceModal from '../components/GroupPriceModal';
@@ -187,11 +187,12 @@ export default function GroupDetail() {
     ? data.bookings.filter(b => !['cancelled', 'no_show'].includes(b.status)).map(b => ({ unit_name: b.unit_name, over: roomCredit(b) })).filter(r => r.over >= 1)
     : [];
 
-  // Every unpaid room payment line in the group, room by room.
+  // Every unpaid room payment line in the group, room by room. Not a room the
+  // OTA pays: its money is recorded in Receivables, a virtual card on its booking.
   function pendingLines() {
     if (!data) return [];
     return data.bookings
-      .filter(b => !['cancelled', 'no_show'].includes(b.status))
+      .filter(b => !['cancelled', 'no_show'].includes(b.status) && !otaPaysRoom(sources, b))
       .flatMap(b => (b.payments || [])
         .filter(p => (p.type === 'deposit' || p.type === 'balance') && p.status !== 'received' && parseFloat(p.amount) > 0)
         .map(p => ({ ...p, unit_name: b.unit_name, guest_name: b.guest_name })));
@@ -450,7 +451,7 @@ export default function GroupDetail() {
   const { group, bookings, rollup } = data;
   // OTA rooms (e.g. Agoda): their open room lines are the OTA's to pay, not
   // the guest's — shown apart so FO doesn't ask the guest for them.
-  const otaOpenOf = b => (!data.bill && otaName(sources, b.source, b.payment_collect) && !['cancelled', 'no_show'].includes(b.status)) ? roomPending(b.payments) : 0;
+  const otaOpenOf = b => (!data.bill && otaPaysRoom(sources, b) && !['cancelled', 'no_show'].includes(b.status)) ? roomPending(b.payments) : 0;
   const otaOpenTotal = bookings.reduce((s, b) => s + otaOpenOf(b), 0);
   const otaNames = [...new Set(bookings.filter(b => otaOpenOf(b) >= 1).map(b => otaName(sources, b.source, b.payment_collect)))].join(' / ');
   const anyEligibleForCheckin = bookings.some(b => !['cancelled', 'no_show', 'checked_in', 'checked_out'].includes(b.status));
@@ -751,7 +752,7 @@ export default function GroupDetail() {
                   <span>{fmtIDR(Math.max(0, rollup.balance_due - otaOpenTotal))}</span>
                 </div>
                 <div className="text-muted" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
-                  The guests paid {otaNames}; {otaNames} pays the hotel. Mark each room's line received when that money comes in.
+                  The guests paid {otaNames}; {otaNames} pays the hotel. Each room goes on {otaNames}'s account at check-out, and is closed when the payout is recorded in Receivables.
                   Extras (restaurant, extra bed…) are on each room's folio.
                 </div>
               </div>

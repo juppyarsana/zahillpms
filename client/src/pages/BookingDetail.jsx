@@ -31,7 +31,7 @@ import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentB
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
 
 import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '../lib/priceBasis';
-import { otaName, roomPending, COLLECT_OPTIONS } from '../lib/otaDue';
+import { otaName, otaPaysRoom, roomPending, COLLECT_OPTIONS } from '../lib/otaDue';
 import { propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 import StaffNotes from '../components/StaffNotes';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
@@ -184,7 +184,7 @@ function fmtShortDate(s) { const [y, m, d] = String(s).slice(0, 10).split('-').m
 // OTA booking (e.g. Agoda): what of the balance is the OTA's to pay and what
 // the guest pays at the desk — so FO doesn't ask the guest for the room.
 // collect 'vcc' (migration 126): a virtual card front desk charges itself.
-function OtaNote({ ota, amount, collect, vccFrom }) {
+function OtaNote({ ota, amount, collect, vccFrom, notOnAccount }) {
   const box = { fontSize: 12, marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'var(--cream)', border: '1px solid var(--border)', lineHeight: 1.45 };
   if (collect === 'vcc') {
     return (
@@ -198,7 +198,10 @@ function OtaNote({ ota, amount, collect, vccFrom }) {
   return (
     <div style={box}>
       🌐 {fmtIDR(amount)} is paid to the hotel by <b>{ota}</b> — the guest paid {ota}. <b>Don't collect it from the guest.</b>{' '}
-      Nothing to do at the desk: at check-out it goes onto {ota}'s account, and is closed when the weekly {ota} withdrawal is recorded under OTA payouts.
+      Nothing to do at the desk: at check-out it goes onto {ota}'s account, and is closed when {ota}'s payout is recorded in Receivables.
+      {notOnAccount
+        ? <> <b>This stay is not on {ota}'s account yet:</b> ⋮ More → Fix Agent Billing.</>
+        : <> If this guest really pays at the hotel, change it in Edit Details → Room paid by.</>}
     </div>
   );
 }
@@ -932,6 +935,7 @@ export default function BookingDetail() {
   // OTA booking: the open room lines are the OTA's to pay, not the guest's.
   const ota = otaName(sources, booking.source, booking.payment_collect);
   const otaOpen = ota && !['cancelled', 'no_show'].includes(booking.status) ? roomPending(booking.payments) : 0;
+  const otaPays = otaPaysRoom(sources, booking);   // no Mark Received: the OTA's money is recorded in Receivables
   const pendingBalance = roomPaymentLines
     .filter(p => p.type === 'balance' && p.status !== 'received')
     .reduce((s, p) => s + parseFloat(p.amount), 0);
@@ -1330,7 +1334,8 @@ export default function BookingDetail() {
             {' '}for the whole stay.
           </div>
           {/* Agent pays the hotel (city ledger): where its money is recorded. */}
-          {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status) && (
+          {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status)
+            && (booking.folio_status || booking.agent_type !== 'ota') && (
             <div className="alert alert-info" style={{ fontSize: 12, marginBottom: 12 }}><div>
               {booking.folio_status
                 ? <>On <b>{booking.agent_name}</b>'s bill — the agent's payment is recorded in <b>Receivables → Record Payment</b>, not here.</>
@@ -1400,7 +1405,7 @@ export default function BookingDetail() {
                 ) : (
                   <div className="flex-center gap-2" style={{ marginBottom: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 18 }}>{fmtIDR(p.amount)}</span>
-                    {p.status === 'pending' && (
+                    {p.status === 'pending' && !otaPays && (
                       <button className="btn btn-icon btn-sm" title="Change the deposit / balance split (not the price)"
                         onClick={() => { setEditingAmount(p.id); setNewAmount(p.amount); }}>✏️</button>
                     )}
@@ -1410,6 +1415,12 @@ export default function BookingDetail() {
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
                     {/* received_at is a timestamp — show the local (Bali) date, not the UTC one */}
                     ✓ {p.method?.replace('_',' ')} · {p.received_at ? new Date(p.received_at).toLocaleDateString('en-CA') : ''}
+                  </div>
+                ) : otaPays ? (
+                  <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8, lineHeight: 1.4 }}>
+                    {booking.payment_collect === 'vcc'
+                      ? <>💳 {otaPays}'s virtual card: charge the card, then Record payment</>
+                      : <>🌐 Paid by {otaPays}: nothing to collect from the guest</>}
                   </div>
                 ) : (
                   <button className="btn btn-sm btn-primary mt-2" onClick={() => markPaid(p)}>Mark Received</button>
@@ -1435,7 +1446,8 @@ export default function BookingDetail() {
                   <span>{fmtIDR(Math.abs(bookingNet - roomPaid))}</span>
                 </div>
               )}
-              {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} collect={booking.payment_collect} vccFrom={booking.vcc_charge_from} />}
+              {otaOpen >= 1 && <OtaNote ota={ota} amount={otaOpen} collect={booking.payment_collect} vccFrom={booking.vcc_charge_from}
+                notOnAccount={booking.status === 'checked_out' && !booking.folio_status} />}
             </>
           )}
           {!['cancelled', 'no_show'].includes(booking.status) && (

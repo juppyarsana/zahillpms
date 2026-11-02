@@ -16,9 +16,17 @@ export function otaName(sources, sourceId, collect = null) {
   return null;
 }
 
+// The OTA itself pays this room (payout or virtual card): the OTA's name, else
+// null. Nobody marks such a room received at the desk. A travel agent on an OTA
+// source keeps its own rules (server agentBillingService.settleCheckout).
+export function otaPaysRoom(sources, booking) {
+  const name = otaName(sources, booking.source, booking.payment_collect);
+  return name && (!booking.agent_type || booking.agent_type === 'ota') ? name : null;
+}
+
 // Who pays the room, for Edit Details (bookings.payment_collect).
 export const COLLECT_OPTIONS = [
-  ['', 'By the source (OTA source = paid by the OTA)'],
+  ['', 'Automatic (from the source)'],
   ['ota', 'The OTA — paid to the hotel by its payout'],
   ['vcc', 'The OTA — with a virtual card the hotel charges'],
   ['property', 'The guest, at the hotel'],

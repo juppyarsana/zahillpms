@@ -15,7 +15,8 @@ Channel manager mengisi ini sendiri dari OTA. Kalau OTA tidak menyebutkan, PMS m
 ## Front desk: dibayar OTA (payout)
 
 - Booking langsung **Confirmed**, tamu bisa check-in tanpa membayar kamar.
-- **Jangan tagih kamar ke tamu** dan jangan tandai kamar sebagai diterima. Tagih hanya extra (minibar, extra bed, laundry…).
+- **Jangan tagih kamar ke tamu.** Booking tidak punya tombol Mark Received untuk kamar: tertulis *Paid by Agoda: nothing to collect from the guest*. Tagih hanya extra (minibar, extra bed, laundry…).
+- **Tamu benar-benar bayar di hotel?** Ubah **Edit Details → Room paid by → The guest, at the hotel**, dan Mark Received muncul lagi.
 - **Beberapa kamar dalam satu reservasi OTA** (+ Add Another Room) menjadi grup yang dibayar per kamar, tidak pernah satu tagihan. Kalau tamu bayar di hotel, atur **Edit Details → Room paid by → The guest, at the hotel** di tiap kamar; satu transfer untuk semua kamar tetap lewat **Record Group Payment**.
 - **Ekstra selalu dibayar tamu**, juga di grup yang membayar Everything. Check-out memintanya dulu. Kalau tamu pergi tanpa membayar, isi alasan: ekstra tetap jadi balance due tamu dan tidak masuk tagihan OTA.
 - Saat **check-out**, sisa harga kamar otomatis masuk ke **akun OTA itu di Receivables** (akunnya dibuat sendiri oleh PMS kalau belum ada). Tidak ada yang perlu ditekan.
@@ -47,6 +48,20 @@ Hasilnya:
 - Sisa kartu virtual yang tidak ter-charge: **Record payout** dengan *Amount received* **0** dan komisi = sisanya.
 
 Payout salah catat: minta owner / akuntan untuk **Void** (dengan alasan) — stay-nya kembali terbuka, lalu catat ulang.
+
+## Payout Agoda Card
+
+Kalau daftar payout Agoda menunjukkan metode **Agoda Card**, satu payout mencakup banyak booking. Itu tetap payout, jadi biarkan booking tersebut di **The OTA — paid to the hotel by its payout**, bukan opsi kartu virtual (opsi itu untuk OTA yang memberi satu kartu per booking).
+
+Catat seperti di atas, dengan tiga detail ini:
+
+- **Method:** OTA virtual card.
+- **Reference:** Payout ID, mis. 20261029-21835.
+- **Tanggal:** hari kartu digesek di mesin kartu, supaya sama dengan slip.
+
+Tamu menginap 29 November, payout 7 Desember: pendapatan tetap di November, uang dan komisi masuk Desember, dan Agoda berutang ke hotel di antaranya.
+
+**Payout mencakup menginap lama yang tidak ada di daftar?** Menginap yang check-out sebelum ada akun OTA tidak pernah masuk akun. Buka booking → **⋮ More → Fix Agent Billing**, pilih OTA-nya dan centang *Bill this stay to the agent*. Setelah itu bisa dicentang.
 
 ## Akuntan: tagihan komisi (tamu bayar di hotel)
 
