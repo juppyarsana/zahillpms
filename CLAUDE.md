@@ -997,7 +997,7 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 `main` = 171c676 (+ docs on `dev`). **Done today on production:** test purchase data removed (POS stock + two test opnames; PMS PR-0001 / 0002 and PO-2610-004 / 005 / 006 cancelled; backup `/var/backups/zahill-pms/pms-2026-11-02_103630.sql.gz`); OTA ladder seasons deployed, High season saved and sent. **Open:** tiket.com (two Pool View listings) and Agoda sold Deluxe Pool View on 2 Nov although the PMS had sent 0 and the last send was fine: owner is talking to Agoda, tiket.com unexplained, possibly not connected to Channex; a bill ending "01", owner to say if it was a test.
 
-- **OTA calendar further ahead (no migration) — seen on production 2026-11-02 (14dd08d); the price box fix for a long season name (171c676) is on `main`, deploy not confirmed.** `bash deploy.sh`; nothing by hand. Tell sales: OTA dashboard → ‹ › or a date picker on the calendar; Guide → *OTA dashboard*.
+- **OTA calendar further ahead + price box fix (no migration) — deployed 2026-11-02 at `main` 171c676.** Still by hand: tell sales: OTA dashboard → ‹ › or a date picker on the calendar; Guide → *OTA dashboard*.
 
 - **OTA ladder seasons (migration 150) — deployed 2026-11-02 at `main` 5572634; High season saved and sent the same day (Non Refund and Refundable, Channex task IDs on the send list).** Not confirmed yet: remove any fixed OTA prices on those nights if the ladder should apply, Settings → Channel Manager → Compare with Channex = 0 different, a high-season date looked at on a connected OTA. Tell sales: Guide → *Booking dari OTA* → Season; **Manual price** is now **Fixed price** and **OTA prices** is now **Fixed OTA prices**.
 
