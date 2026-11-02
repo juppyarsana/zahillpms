@@ -18,6 +18,24 @@ Tiga aturan:
 
 Nota yang berisi stok dan barang lain (misalnya telur dan gas): telur di *Bought without a PO*, gas di Expenses, dengan nomor nota yang sama di keduanya.
 
+## Purchase order: dari persetujuan sampai tagihan
+
+1. **Setujui.** Semua PO perlu persetujuan, di PMS atau di Telegram.
+2. **Kirim ke supplier.** Buka PO yang sudah disetujui → **Send to supplier**:
+   - **✉ Email**: PDF terlampir dan balasan masuk ke hotel. Perlu email supplier.
+   - **WhatsApp**: membuka WhatsApp dengan pesan yang sudah terisi dan link ke PDF. **Tekan kirim di sana.** PO langsung bertanda *Sent* begitu WhatsApp terbuka, jadi pastikan pesannya benar-benar terkirim. Perlu nomor telepon supplier.
+   - **⬇ Download PDF**: untuk dikirim dengan cara lain. Ini tidak menandai PO sebagai terkirim.
+   Daftar PO punya filter *Not sent yet*. Link untuk supplier berhenti berlaku setelah 90 hari. Kalau PO dibatalkan, link-nya akan memberi tahu, tapi **supplier tetap harus Anda kabari**.
+3. **Cek barang di atas kertas (opsional).** **🖨 Print checklist** berisi barang yang belum datang, tanpa harga, dengan kotak isian dan tempat tanda tangan.
+4. **Terima barang.** **Receive Items** → **Date received**, **Delivery note no.** (surat jalan), dan jumlah yang datang. Tidak bisa menerima lebih dari sisa yang belum datang. Tanggalnya hanya catatan: stok bergerak saat Anda konfirmasi, jadi masukkan barang di hari barang datang. Setiap pengiriman tercatat di **Deliveries** pada PO.
+5. **Buat tagihan.** **Make bill** terisi dari barang yang datang, dengan harga PO, surat jalan, dan tanggalnya. Setelah semua barang yang datang ditagihkan, tombol ini hilang dan **View bill** membuka tagihannya, sudah dibayar atau belum.
+
+**Not billed / Part billed.** PO yang barangnya sudah datang tapi tagihannya belum penuh diberi tanda ini, dan daftar PO punya filter *Not billed yet*. Kalau tagihan supplier memang lebih rendah (misalnya ada diskon), tekan **Mark as fully billed** dengan alasannya. PO yang diterima sebelum fitur ini tidak diberi tanda.
+
+**Sisanya tidak datang.** Pada PO yang sudah disetujui dan sebagian barangnya datang, tekan **Close – rest won't come** dengan alasannya. Barang yang datang tetap tercatat. Yang kurang kembali ke permintaan pembelian sebagai belum dipesan, jadi bisa dipesan lagi atau permintaannya ditutup.
+
+**Cancel** perlu alasan dan hanya bisa selama belum ada barang yang datang. Setelah itu, pakai Close.
+
 ## Belanja tanpa PO
 
 Untuk stok yang dibeli di pasar atau toko, tanpa purchase order. Perlu izin **Purchasing** atau **Buy without a PO**.
@@ -27,7 +45,7 @@ Untuk stok yang dibeli di pasar atau toko, tanpa purchase order. Perlu izin **Pu
 3. **Date bought** = tanggal di nota. **Receipt / nota number** kalau ada.
 4. **What it is for** (Food, Drinks, Guest supplies…) dan **Department** (terisi sendiri).
 5. Satu baris per barang: **stock item**, **berapa banyak** dan **harga yang dibayar** untuk baris itu, sesuai nota. Barang yang disimpan dalam g atau ml diketik dalam **kg atau L** (pilihan di sebelah kotaknya). Harga per satuan dihitung otomatis, dengan harga biasanya di sebelahnya (merah kalau 20% atau lebih di atasnya).
-   - Untuk dapur atau bar, pilih jenis **Restaurant (POS)**: barangnya langsung masuk ke stok restoran di POS, bukan di PMS. Setelah POS menerimanya, pembelian ini tidak bisa di-void — chef membetulkan stok POS lewat stock opname. Kalau POS tidak bisa dihubungi, buka pembeliannya dan tekan **Send to the POS**.
+   - Untuk dapur atau bar, pilih jenis **Restaurant (POS)**: barangnya menunggu konfirmasi chef di POS, lalu masuk ke stok restoran, bukan di PMS. Setelah POS menerimanya, pembelian ini tidak bisa di-void — chef membetulkan stok POS lewat stock opname. Kalau POS tidak bisa dihubungi, buka pembeliannya dan tekan **Send to the POS**.
 6. **The money**:
    - **Paid already** → pilih **Paid with** (Cash…). Otomatis masuk Expenses.
    - **Pay later** → harus pilih supplier. Tagihan dibuat di Payables, jatuh tempo sesuai termin supplier (atau ketik tanggalnya). Bayar di sana saat uangnya keluar.

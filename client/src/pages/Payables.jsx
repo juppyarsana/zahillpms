@@ -9,7 +9,11 @@ import ReasonModal from '../components/ReasonModal';
 // `payables` permission. ?from_po=<id> opens a new bill filled from a
 // received purchase order (Purchasing → Make bill).
 
-const idr = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
+// The exact figure: a bill can carry cents, and rounding here makes a whole payment look like it settles it.
+const idr = n => {
+  const v = Number(n || 0), digits = Math.abs(v - Math.round(v)) < 0.005 ? 0 : 2;
+  return 'Rp ' + v.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
 const fmtDate = d => d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const STATUS = { open: ['Not paid', 'amber'], part_paid: ['Part paid', 'blue'], paid: ['Paid', 'green'], voided: ['Voided', 'gray'] };
@@ -63,16 +67,29 @@ export default function Payables() {
     params.delete('bill'); setParams(params, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ?bills_for=<PO number> (from the PO window) lists its bills, paid or not.
+  useEffect(() => {
+    const po = params.get('bills_for');
+    if (!po) return;
+    setStatus('all'); setQ(po); setTab('bills');
+    params.delete('bills_for'); setParams(params, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Make bill from a purchase order
   useEffect(() => {
     const po = params.get('from_po');
     if (!po || !setup) return;
     api.get(`/api/payables/from-po/${po}`).then(r => {
       const d = r.data;
-      if (!(d.amount > 0)) { setError(`Everything received on ${d.purchase_order.po_number} is already on a bill.`); return; }
+      if (!(d.amount > 0)) {   // show that bill: a paid one isn't on the page's opening views
+        setStatus('all'); setSupplierId(''); setQ(d.purchase_order.po_number); setTab('bills');
+        setError(`Everything received on ${d.purchase_order.po_number} is already on a bill, listed below.`);
+        return;
+      }
       setBillForm({ prefill: {
         supplier_id: d.supplier.id, purchase_order_id: d.purchase_order.id, po_number: d.purchase_order.po_number,
         category: d.supplier.default_category || '', department: d.supplier.default_department || '', amount: String(d.amount), notes: `${d.purchase_order.po_number}: ${d.items}`,
+        supplier_ref: (d.delivery_notes || []).join(', ').slice(0, 100), bill_date: d.received_on,
       } });
     }).catch(e => setError(errText(e)));
     params.delete('from_po'); setParams(params, { replace: true });
@@ -130,7 +147,7 @@ export default function Payables() {
                 <option value="">All suppliers</option>
                 {setup?.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-              <input className="form-input" style={{ width: 200 }} placeholder="Search bill no., invoice…" value={q} onChange={e => setQ(e.target.value)} />
+              <input className="form-input" style={{ width: 200 }} placeholder="Search bill no., invoice, PO…" value={q} onChange={e => setQ(e.target.value)} />
             </div>
           </div>
           <div className="card">
@@ -330,7 +347,7 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
     supplier_id: bill.supplier_id, supplier_ref: bill.supplier_ref || '', bill_date: bill.bill_date, due_date: bill.due_date,
     notes: bill.notes || '', purchase_order_id: bill.purchase_order_id || null, category: bill.category, department: bill.department, amount: String(bill.total),
   } : {
-    supplier_id: p.supplier_id || '', supplier_ref: '', bill_date: setup.today, due_date: '', notes: p.notes || '',
+    supplier_id: p.supplier_id || '', supplier_ref: p.supplier_ref || '', bill_date: p.bill_date || setup.today, due_date: '', notes: p.notes || '',
     purchase_order_id: p.purchase_order_id || null, category: p.category || '', department: p.department || setup.categories.find(c => c.key === p.category)?.department || '', amount: p.amount || '',
   });
   const [dueTouched, setDueTouched] = useState(!!bill);
@@ -435,7 +452,7 @@ function BillFormModal({ setup, bill, prefill, onClose, onSaved, onSupplierAdded
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Amount (IDR) *</label>
-              <input className="form-input" type="number" style={{ textAlign: 'right' }} value={f.amount} placeholder="total on the bill, tax included"
+              <input className="form-input" type="number" step="any" style={{ textAlign: 'right' }} value={f.amount} placeholder="total on the bill, tax included"
                 onChange={e => setF({ ...f, amount: e.target.value })} /></div>
           </div>
           <div className="form-group"><label className="form-label">Notes</label>
@@ -602,7 +619,7 @@ function PayModal({ setup, initial, onClose, onSaved }) {
                 {setup.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select></div>
             <div className="form-group"><label className="form-label">Amount paid</label>
-              <input className="form-input" type="number" value={amount} placeholder="spreads over the bills, oldest first" onChange={e => spread(e.target.value)} />
+              <input className="form-input" type="number" step="any" value={amount} placeholder="spreads over the bills, oldest first" onChange={e => spread(e.target.value)} />
               {over && <div style={{ fontSize: 12, color: '#DC2626', marginTop: 4 }}>More than this supplier is owed — the rest isn't recorded.</div>}</div>
           </div>
           {supplierId && (
@@ -615,8 +632,9 @@ function PayModal({ setup, initial, onClose, onSaved }) {
                       <td>{b.bill_no_text}{b.supplier_ref ? ` · ${b.supplier_ref}` : ''}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(b.due_date)}{b.days_overdue > 0 && <span style={{ color: '#DC2626' }}> · {b.days_overdue}d late</span>}</td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{idr(b.balance)}</td>
-                      <td><input className="form-input" type="number" style={{ textAlign: 'right' }} value={pay[b.id] || ''}
-                        onChange={e => setPay(x => ({ ...x, [b.id]: e.target.value }))} /></td>
+                      <td><input className="form-input" type="number" step="any" style={{ textAlign: 'right' }} value={pay[b.id] || ''}
+                        onChange={e => setPay(x => ({ ...x, [b.id]: e.target.value }))} />
+                        {parseFloat(pay[b.id]) > 0 && b.balance - parseFloat(pay[b.id]) > 0.004 && <div style={{ fontSize: 11, color: '#B45309', textAlign: 'right', marginTop: 2, whiteSpace: 'nowrap' }}>{idr(b.balance - parseFloat(pay[b.id]))} stays owed</div>}</td>
                     </tr>
                   ))}
                   {!open.length && <tr><td colSpan={4} className="text-muted" style={{ textAlign: 'center', padding: 16 }}>Nothing owed to this supplier</td></tr>}

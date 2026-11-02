@@ -1,3 +1,4 @@
+import { waNumber } from '../lib/whatsapp';
 import { useState, useEffect } from 'react';
 import { CheckoutBalanceBlock, checkoutBlocked } from '../components/CheckoutBalance';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
@@ -916,13 +917,7 @@ export default function BookingDetail() {
 
   function waLink() {
     const msg = encodeURIComponent(`Hi ${booking.guest_name}! 🌿 Thank you for booking at ${branding?.name || 'our hotel'}${branding?.area ? `, ${branding.area}` : ''}.\n\nBooking details:\n📍 Unit: ${booking.unit_name}\n📅 Check-in: ${booking.check_in_date?.slice(0,10)}\n📅 Check-out: ${booking.check_out_date?.slice(0,10)}\n🌙 ${booking.nights} nights\n💰 Total: ${fmtIDR(booking.total_amount)}\n\nWe look forward to welcoming you! 🌄`);
-    const rawWa = (booking.guest_whatsapp || '').trim();
-    let waNum = rawWa.replace(/\D/g, '');
-    if (!rawWa.startsWith('+')) {
-      if (waNum.startsWith('0')) waNum = '62' + waNum.slice(1);
-      else if (!waNum.startsWith('62')) waNum = '62' + waNum;
-    }
-    window.open(`https://wa.me/${waNum}?text=${msg}`, '_blank');
+    window.open(`https://wa.me/${waNumber(booking.guest_whatsapp)}?text=${msg}`, '_blank');
   }
 
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;

@@ -116,10 +116,10 @@ const LIST_SQL = `
 
 const LINES_SQL = `
   SELECT l.*, COALESCE(rm.unit_of_measure, l.unit, CASE WHEN l.product_id IS NOT NULL THEN 'pcs' END) AS unit_text,
-         COALESCE(SUM(i.quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS ordered_qty,
+         COALESCE(SUM(i.quantity - i.short_qty) FILTER (WHERE po.status <> 'cancelled'), 0) AS ordered_qty,
          COALESCE(SUM(i.received_quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS received_qty,
          COALESCE(json_agg(json_build_object('po_id', po.id, 'po_number', po.po_number, 'status', po.status,
-           'quantity', i.quantity, 'received', i.received_quantity))
+           'quantity', i.quantity, 'received', i.received_quantity, 'short', i.short_qty))
            FILTER (WHERE po.id IS NOT NULL AND po.status <> 'cancelled'), '[]') AS orders
   FROM purchase_request_lines l
   LEFT JOIN raw_materials rm ON rm.id = l.raw_material_id
@@ -201,14 +201,14 @@ async function onOrder(propertyId) {
                          WHEN ${t}.pos_item_id IS NOT NULL THEN 'pos:' || ${t}.pos_item_id END`;
   const [{ rows: po }, { rows: req }] = await Promise.all([
     db.query(`
-      SELECT ${KEY('i')} AS key, po.po_number AS ref, pr.section, SUM(i.quantity - i.received_quantity) AS qty
+      SELECT ${KEY('i')} AS key, po.po_number AS ref, pr.section, SUM(i.quantity - i.short_qty - i.received_quantity) AS qty
       FROM purchase_order_items i JOIN purchase_orders po ON po.id = i.purchase_order_id
       LEFT JOIN purchase_request_lines prl ON prl.id = i.request_line_id
       LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
-      WHERE po.property_id = $1 AND po.status <> 'cancelled' AND i.quantity > i.received_quantity
+      WHERE po.property_id = $1 AND po.status <> 'cancelled' AND i.quantity - i.short_qty > i.received_quantity
       GROUP BY 1, 2, 3`, [propertyId]),
     db.query(`
-      SELECT ${KEY('l')} AS key, r.request_no, r.section, l.quantity - COALESCE(SUM(i.quantity) FILTER (WHERE po.status <> 'cancelled'), 0) AS qty
+      SELECT ${KEY('l')} AS key, r.request_no, r.section, l.quantity - COALESCE(SUM(i.quantity - i.short_qty) FILTER (WHERE po.status <> 'cancelled'), 0) AS qty
       FROM purchase_request_lines l
       JOIN purchase_requests r ON r.id = l.request_id
       LEFT JOIN purchase_order_items i ON i.request_line_id = l.id

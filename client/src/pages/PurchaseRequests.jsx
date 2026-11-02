@@ -4,7 +4,7 @@ import ItemPicker from '../components/ItemPicker';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import ReasonModal from '../components/ReasonModal';
-import { BIG_UNIT, isBig, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit } from '../lib/units';
+import { BIG_UNIT, isBig, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit, lineTotalOf } from '../lib/units';
 
 // Operations → Purchase requests (migration 144): a department asks for what
 // it needs, purchasing orders it on a normal PO. The restaurant asks from its
@@ -289,6 +289,7 @@ function RequestModal({ r, canOrder, onDismiss, onClose, onMakePo }) {
                       {l.orders.length === 0 ? <span className="text-muted">—</span> : l.orders.map(o => (
                         <div key={o.po_id + o.quantity}>
                           {canOrder ? <Link to={`/purchasing?po=${o.po_id}`}>{o.po_number}</Link> : o.po_number} · {q_(o.quantity, l.unit)}
+                          {Number(o.short) > 0 && <span className="text-muted"> · {q_(o.short, l.unit)} not coming</span>}
                         </div>))}
                       {open && l.ordered_qty > 0 && l.left_to_order > 0 && <div className="text-muted">{q_(l.left_to_order, l.unit)} not ordered yet</div>}
                     </td>
@@ -471,7 +472,7 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
       const { quantity, unit_cost } = toBase(r, rowUnit(r));
       if (!(quantity > 0)) return setError(`How many of ${l.description}?`);
       if (!(unit_cost >= 0) || r.unit_cost === '') return setError(`The price of ${l.description}`);
-      const base = { quantity, unit_cost, request_line_id: l.id };
+      const base = { quantity, unit_cost, line_total: lineTotalOf(r), request_line_id: l.id };
       if (l.raw_material_id) out.push({ ...base, raw_material_id: l.raw_material_id });
       else if (l.product_id) out.push({ ...base, product_id: l.product_id });
       else if (l.pos_item_id) out.push({ ...base, pos_item_id: l.pos_item_id, description: l.description, unit: l.unit });
@@ -548,7 +549,7 @@ function MakePoModal({ lines, items, pos, onClose, onDone }) {
           </div>
           <div style={{ textAlign: 'right', fontWeight: 700, marginTop: 8 }}>Total {fmtIDR(total)}</div>
           <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
-            The PO is made as a draft in Purchasing — submit and approve it there as usual. Restaurant items go to the POS stock when you receive them.
+            The PO is made as a draft in Purchasing — submit and approve it there as usual. Restaurant items wait for the kitchen to confirm in the POS when you receive them.
           </div>
         </div>
         <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Cancel</button>

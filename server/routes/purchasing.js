@@ -14,6 +14,7 @@ const ownerOnly = [auth, requireOwnerOrMenu('purchasing')];
 // (the `direct_purchase` permission — e.g. the accountant).
 const directGate = [auth, requireOwnerOrMenu(['purchasing', 'direct_purchase'])];
 const direct = require('../services/directPurchaseService');
+const poDocs = require('../services/poDocuments');
 const canApprove = req => req.user?.role === 'owner' || (req.user?.allowed_menus || []).includes('approve_po');
 
 // ───────────────────────────── Suppliers ─────────────────────────────
@@ -262,7 +263,7 @@ function csvEscape(v) {
 router.get('/purchase-orders/export', ownerOnly, async (req, res) => {
   try {
     const rows = await svc.listPurchaseOrders(req.propertyId, { status: req.query.status });
-    const header = ['PO #', 'Supplier', 'Status', 'Total', 'Created', 'Updated'];
+    const header = ['PO #', 'Supplier', 'Status', 'Direct', 'Total', 'Billed', 'Created', 'Updated'];
     const lines = [header.join(',')];
     for (const r of rows) {
       // created_at/updated_at are TIMESTAMPTZ, so pg hands back real JS Date
@@ -273,7 +274,9 @@ router.get('/purchase-orders/export', ownerOnly, async (req, res) => {
         csvEscape(r.po_number),
         csvEscape(r.supplier_name),
         csvEscape(r.status),
+        r.is_direct ? 'yes' : 'no',
         csvEscape(r.total_amount),
+        csvEscape(r.is_direct ? '' : r.billed_amount),
         csvEscape(r.created_at.toISOString().slice(0, 10)),
         csvEscape(r.updated_at.toISOString().slice(0, 10)),
       ].join(','));
@@ -317,26 +320,100 @@ router.put('/purchase-orders/:id', ownerOnly, async (req, res) => {
 });
 
 router.patch('/purchase-orders/:id/status', ownerOnly, async (req, res) => {
-  const { status } = req.body;
-  const { rows: [d] } = await db.query('SELECT is_direct FROM purchase_orders WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-  if (d?.is_direct) return res.status(409).json({ error: 'Bought without a PO — void it instead', code: 'DIRECT_PURCHASE' });
+  const { status, reason } = req.body;
   if (!status) return res.status(400).json({ error: 'status required' });
   if (status === 'approved' && !canApprove(req)) return res.status(403).json({ error: 'You may not approve purchase orders', code: 'NO_APPROVE' });
   try {
-    const result = await svc.setPurchaseOrderStatus(req.propertyId, req.params.id, status, req.user.id);
-    if (result.error) return res.status(400).json({ error: result.error });
+    const { rows: [d] } = await db.query('SELECT is_direct FROM purchase_orders WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
+    if (d?.is_direct) return res.status(409).json({ error: 'Bought without a PO — void it instead', code: 'DIRECT_PURCHASE' });
+    const result = await svc.setPurchaseOrderStatus(req.propertyId, req.params.id, status, req.user.id, { reason });
+    if (result.error) return res.status(400).json({ error: result.error, code: result.code });
     res.json(result.purchase_order);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post('/purchase-orders/:id/receive', ownerOnly, async (req, res) => {
-  const { items } = req.body;
+// POST /purchase-orders/:id/close { reason } — part came in, the rest won't.
+router.post('/purchase-orders/:id/close', ownerOnly, async (req, res) => {
   try {
-    const result = await svc.receivePurchaseOrder(req.propertyId, req.params.id, items, req.user.id);
-    if (result.error) return res.status(400).json({ error: result.error });
+    const result = await svc.closePurchaseOrder(req.propertyId, req.params.id, req.body?.reason, req.user.id);
+    if (result.error) return res.status(400).json({ error: result.error, code: result.code });
+    res.json(result.purchase_order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /purchase-orders/:id/billing-done { reason } | { undo: true }
+router.post('/purchase-orders/:id/billing-done', [auth, requireOwnerOrMenu(['purchasing', 'payables'])], async (req, res) => {
+  try {
+    const result = await svc.setBillingDone(req.propertyId, req.params.id, req.body || {}, req.user.id);
+    if (result.error) return res.status(400).json({ error: result.error, code: result.code });
+    res.json(result.purchase_order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /purchase-orders/:id/receive { received_on?, delivery_note?, items }
+router.post('/purchase-orders/:id/receive', ownerOnly, async (req, res) => {
+  try {
+    const result = await svc.receivePurchaseOrder(req.propertyId, req.params.id, req.body, req.user.id);
+    if (result.error) return res.status(400).json({ error: result.error, code: result.code });
     res.json({ ...result.purchase_order, pos_sync: result.pos });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The PO's papers. Paths end in /pdf so the app never serves them from its
+// cache (client/vite.config.js).
+function sendPdf(res, buffer, filename) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.send(buffer);
+}
+
+// GET /purchase-orders/:id/checklist/pdf — for checking a delivery on paper, no prices.
+router.get('/purchase-orders/:id/checklist/pdf', ownerOnly, async (req, res) => {
+  try {
+    const r = await poDocs.checklistPdf(req.propertyId, req.params.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, code: r.code });
+    sendPdf(res, r.buffer, `checklist-${r.po_number}.pdf`);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /purchase-orders/:id/pdf — the PO for the supplier. ?download=1 notes it on the PO.
+router.get('/purchase-orders/:id/pdf', ownerOnly, async (req, res) => {
+  try {
+    const r = await poDocs.poPdf(req.propertyId, req.params.id, { logDownloadBy: req.query.download === '1' ? req.user.id : null });
+    if (r.error) return res.status(r.status).json({ error: r.error, code: r.code });
+    sendPdf(res, r.buffer, `${r.po_number}.pdf`);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /purchase-orders/:id/share-link { phone } → { url, message } — for WhatsApp.
+router.post('/purchase-orders/:id/share-link', ownerOnly, async (req, res) => {
+  try {
+    const r = await poDocs.shareLink(req.propertyId, req.params.id, req.body?.phone, req.user.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, code: r.code });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /purchase-orders/:id/send-email { to, cc?, subject, message, save_to_supplier? }
+router.post('/purchase-orders/:id/send-email', ownerOnly, async (req, res) => {
+  try {
+    const r = await poDocs.sendEmail(req.propertyId, req.params.id, req.body || {}, req.user.id);
+    if (r.error) return res.status(r.status).json({ error: r.error, code: r.code });
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

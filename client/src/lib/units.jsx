@@ -34,6 +34,10 @@ export function toBase(line, unit, qtyKey = 'quantity', priceKey = 'unit_cost') 
   return out;
 }
 
+// What a line costs, as typed — exact, where a price per kg kept per g is not.
+export const lineTotalOf = (line, qtyKey = 'quantity', priceKey = 'unit_cost') =>
+  Math.round((Number(line[qtyKey]) || 0) * (Number(line[priceKey]) || 0) * 100) / 100;
+
 // Starting values for a line from figures in the item's own unit.
 export function fromBase(unit, quantity, unitCost) {
   const big = !!BIG_UNIT[unit];

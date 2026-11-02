@@ -8,6 +8,7 @@
 // Nothing is deleted: a bill or payment entered by mistake is voided with a
 // reason. A bill can be changed or voided only while nothing is paid on it.
 const db = require('../db');
+const { receivedValue } = require('./poFormat');
 const { todayWITA } = require('./roomChargeService');
 const { COST_CATEGORIES, CATEGORY_KEYS, CATEGORY_LABEL, DEPARTMENTS, DEPARTMENT_KEYS, DEPARTMENT_LABEL, departmentFor } = require('./costCategories');
 
@@ -248,7 +249,7 @@ async function listBills(propertyId, { supplier_id, department, status = 'open',
     const s = String(q).trim();
     P.push(`%${s}%`);
     const m = s.match(/^(?:bill-?)?0*(\d+)$/i);
-    where.push(`(s.name ILIKE $${P.length} OR b.supplier_ref ILIKE $${P.length} OR b.notes ILIKE $${P.length}${m ? ` OR b.bill_no = ${parseInt(m[1], 10)}` : ''})`);
+    where.push(`(s.name ILIKE $${P.length} OR b.supplier_ref ILIKE $${P.length} OR b.notes ILIKE $${P.length} OR EXISTS (SELECT 1 FROM purchase_orders spo WHERE spo.id = b.purchase_order_id AND spo.po_number ILIKE $${P.length})${m ? ` OR b.bill_no = ${parseInt(m[1], 10)}` : ''})`);
   }
   const { rows } = await db.query(`SELECT ${BILL_COLS} ${BILL_FROM} WHERE ${where.join(' AND ')}
     ORDER BY b.due_date, b.bill_no LIMIT 1000`, P);
@@ -373,18 +374,24 @@ async function fromPurchaseOrder(propertyId, poId) {
      FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1 AND po.property_id = $2`, [poId, propertyId]);
   if (!po) return fail(404, 'Purchase order not found');
   if (po.is_direct) return fail(409, 'This was bought without a PO — its money is already recorded with it', 'DIRECT_PURCHASE');
-  const [{ rows: items }, { rows: [billed] }] = await Promise.all([
-    db.query(`SELECT i.description, i.unit_cost, i.received_quantity, COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
+  if (po.status === 'cancelled') return fail(409, 'This purchase order was cancelled', 'CANCELLED');
+  const [{ rows: items }, { rows: [billed] }, { rows: receipts }] = await Promise.all([
+    db.query(`SELECT i.description, i.quantity, i.unit_cost, i.line_total, i.received_quantity, COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
               WHERE i.purchase_order_id = $1 AND i.received_quantity > 0 ORDER BY i.description`, [poId]),
     db.query('SELECT COALESCE(SUM(total), 0) AS amount FROM supplier_bills WHERE purchase_order_id = $1 AND NOT is_voided', [poId]),
+    db.query(`SELECT to_char(received_on, 'YYYY-MM-DD') AS received_on, delivery_note FROM purchase_order_receipts
+              WHERE purchase_order_id = $1 ORDER BY received_on, created_at`, [poId]),
   ]);
-  const received = r2(items.reduce((t, i) => t + num(i.received_quantity) * num(i.unit_cost), 0));
+  const received = r2(items.reduce((t, i) => t + receivedValue(i), 0));
   const already = r2(num(billed.amount));
   return {
     purchase_order: { id: po.id, po_number: po.po_number, status: po.status },
     supplier: { id: po.supplier_id, name: po.supplier_name, payment_terms_days: po.payment_terms_days, default_category: po.default_category, default_department: po.default_department },
-    received, billed: already, amount: r2(Math.max(0, received - already)),
+    // Whole rupiah to start with: suppliers bill that way, and it can be changed on the form.
+    received, billed: already, amount: Math.round(Math.max(0, received - already)),
+    delivery_notes: [...new Set(receipts.map(r => r.delivery_note).filter(Boolean))],
+    received_on: receipts.length ? receipts[receipts.length - 1].received_on : null,
     // what came in, for the bill's notes
     items: items.map(i => `${i.description} ${num(i.received_quantity)}${i.unit_of_measure ? ' ' + i.unit_of_measure : ''}`).join(', '),
   };

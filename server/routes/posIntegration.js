@@ -311,4 +311,15 @@ router.post('/purchase-requests/:id/cancel', prGate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/pos/purchase-handovers { ref, accepted_qty, note, by, confirmed_at } —
+// the chef's answer on goods purchasing sent (migration 152). The same ref again
+// changes nothing, so the POS can keep sending until it lands.
+router.post('/purchase-handovers', prGate, async (req, res) => {
+  try {
+    const r = await require('../services/posHandover').confirm(req.propertyId, req.body || {});
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

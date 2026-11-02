@@ -1,3 +1,4 @@
+import HandoverLines from './HandoverLines';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
@@ -105,7 +106,7 @@ export function DirectPurchasesTab() {
           onClose={() => setBuying(false)}
           onSaved={r => {
             setBuying(false); load();
-            const pos = r.pos_sync ? (r.pos_sync.failed ? ' Restaurant items NOT sent to the POS yet — open it and press Send to the POS.' : ' Restaurant items added to the POS stock.') : '';
+            const pos = r.pos_sync ? (r.pos_sync.failed ? ' Restaurant items NOT sent to the POS yet — open it and press Send to the POS.' : ' Restaurant items are waiting for the kitchen to confirm in the POS.') : '';
             showToast(`Saved ${r.purchase.po_number} — stock updated, ${r.money.kind === 'bill' ? `bill ${r.money.bill_no_text} in Payables` : 'expense recorded in Expenses'}.${pos}`);
           }}
         />
@@ -375,6 +376,7 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
                       {it.pos_item_id && <span className="badge badge-blue" style={{ marginLeft: 6 }}>Restaurant</span>}
                       {it.pos_item_id && (it.pos_send_error
                         ? <div style={{ fontSize: 11, color: 'var(--danger, #b91c1c)' }}>Not sent to the POS: {it.pos_send_error}</div>
+                        : it.handovers?.length ? <HandoverLines handovers={it.handovers} unit={it.unit_of_measure || it.unit} />
                         : Number(it.pos_sent_qty) >= Number(it.quantity) ? <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div> : null)}</td>
                     <td style={{ textAlign: 'right' }}>{it.product_id ? qtyText(it.quantity) : fmtQty(it.quantity, it.unit_of_measure)}</td>
                     <td style={{ textAlign: 'right' }}>{BIG_UNIT[it.unit_of_measure] ? `${fmtIDR(it.line_total / it.quantity * BIG_UNIT[it.unit_of_measure][1])} / ${BIG_UNIT[it.unit_of_measure][0]}` : fmtIDR(it.line_total / it.quantity)}</td>

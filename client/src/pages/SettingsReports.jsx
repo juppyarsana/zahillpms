@@ -226,6 +226,28 @@ function WriteoffAlertSettings() {
   );
 }
 
+// How long restaurant goods wait for the chef before a reminder.
+function KitchenHandoverSettings() {
+  const [hours, setHours] = useState(null);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { api.get('/api/smart-reports/kitchen-handover-alert').then(r => setHours(r.data.settings.hours)).catch(() => {}); }, []);
+  if (hours == null) return null;
+  async function save() {
+    setMsg('');
+    try { const r = await api.put('/api/smart-reports/kitchen-handover-alert', { hours: Number(hours) }); setHours(r.data.settings.hours); setMsg('Saved'); }
+    catch (err) { setMsg(err.response?.data?.error || 'Could not save'); }
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginTop: 8, fontSize: 13 }}>
+      Remind after
+      <input className="form-input" type="number" min="1" max="24" style={{ width: 80, height: 32 }} value={hours} onChange={e => { setHours(e.target.value); setMsg(''); }} />
+      hours
+      <button className="btn btn-sm btn-secondary" onClick={save}>Save</button>
+      {msg && <span style={{ fontSize: 12, color: msg === 'Saved' ? 'var(--success-text)' : 'var(--danger-text)' }}>{msg}</span>}
+    </div>
+  );
+}
+
 export default function SettingsReports() {
   const { branding } = useSettings();
   const [catalog, setCatalog] = useState(null);
@@ -414,6 +436,7 @@ export default function SettingsReports() {
                         </div>
                         {r.key === 'alert_direct_purchase' && <DirectPurchaseAlertSettings />}
                         {r.key === 'alert_stock_writeoff' && <WriteoffAlertSettings />}
+                        {r.key === 'alert_kitchen_handover' && <KitchenHandoverSettings />}
                       </div>
                     );
                   })}

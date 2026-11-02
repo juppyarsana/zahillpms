@@ -106,7 +106,7 @@ async function view(propertyId, month, today) {
   const ended = today > last;
   // Midnight at the hotel after the month's last day; a running month = now.
   const at = ended ? `${addDays(last, 1)}T00:00:00+08:00` : new Date().toISOString();
-  const [hotel, pos] = await Promise.all([stock.fnbValueAt(propertyId, at), posStock(propertyId, at)]);
+  const [hotel, pos, waiting] = await Promise.all([stock.fnbValueAt(propertyId, at), posStock(propertyId, at), require('./posHandover').waitingAt(propertyId, at)]);
 
   const warnings = [];
   const lines = LINES.map(l => {
@@ -132,6 +132,7 @@ async function view(propertyId, month, today) {
 
   if (pos.error) warnings.push(`The restaurant app (POS) can't be reached: ${pos.error}. Its stock is missing from the figures, type the stock at the end yourself.`);
   if (pos.linked && pos.unset.length) warnings.push(`${pos.unset.length} restaurant stock items don't say food or drink and are counted as food: ${pos.unset.slice(0, 5).join(', ')}${pos.unset.length > 5 ? '…' : ''}. Set them in the POS: Stock → Set food or drink.`);
+  if (waiting.count) warnings.push(`${waiting.count} restaurant ${waiting.count === 1 ? 'delivery' : 'deliveries'} worth Rp ${Math.round(waiting.value).toLocaleString('id-ID')} had not been confirmed by the kitchen at that moment, so ${waiting.count === 1 ? 'it is' : 'they are'} not in the POS stock figure. Type the stock at the end yourself if ${waiting.count === 1 ? 'it was' : 'they were'} in the kitchen by then.`);
   if (hotel.uncosted) warnings.push(`${hotel.uncosted} hotel stock items have no cost yet and count as Rp 0.`);
   const w1 = countWarning('Hotel stock', hotel.last_count, first, last);
   if (w1 && hotel.items) warnings.push(w1);

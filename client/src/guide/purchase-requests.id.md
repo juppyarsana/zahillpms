@@ -36,9 +36,13 @@ Satu barang boleh masuk lebih dari satu PO (dibagi ke beberapa supplier). Permin
 Terima barang di PO seperti biasa (**Receive Items**).
 
 - **Barang hotel** masuk ke stok PMS.
-- **Barang restoran** masuk ke **stok restoran di POS**, dengan harga di PO, supaya food cost-nya benar. Stok PMS tidak berubah.
+- **Barang restoran** menunggu chef di POS, dan PO bertanda **Waiting for kitchen**. Chef membuka **Inventory → 📦 Incoming** di POS, mengecek barang yang datang, lalu mengonfirmasi jumlahnya. Hanya yang dikonfirmasi chef yang masuk ke stok restoran, dengan harga PO. Stok PMS tidak berubah.
+- Jika dapur mengonfirmasi lebih sedikit, baris PO menampilkannya dengan warna merah, misalnya *Kitchen got 9 of 10 kg · 1 kg spoiled · short Rp 50.000*, dan pesan Telegram terkirim. Tagihan supplier tidak berubah, karena hotel memang menerima semuanya.
+- Barang yang belum dikonfirmasi tetap di luar stok restoran. Telegram mengingatkan yang mencentang *Kitchen handover* di **[Settings → Notifications](/settings/reports)**, setelah 3 jam secara default, dan tidak pernah pada malam hari.
 - Jika POS tidak bisa dihubungi, baris PO bertuliskan *Not sent to the POS*. Tekan **Send to the POS** di PO setelah POS menyala lagi. Mengirim ulang tidak pernah menambah barang dua kali.
 
-Permintaan otomatis menjadi **Received** setelah semua barangnya datang. Jika ada yang tidak jadi dibeli, **Close** dengan alasannya.
+**🖨 Print checklist** di PO memberi daftar kertas tanpa harga, terpisah untuk stok hotel, Kitchen, dan Resto, untuk mengecek barang dan serah terima. Saat menerima, isi juga tanggal dan nomor surat jalan. Cara mengirim PO ke supplier, menutup pengiriman yang kurang, dan tanda tagihan dijelaskan di **[Belanja: pakai halaman yang mana](/guide/purchasing)**.
+
+Permintaan otomatis menjadi **Received** setelah semua barangnya datang. Kalau supplier tidak bisa mengirim sisanya, purchasing menutup PO (**Close – rest won't come**): yang kurang kembali terlihat belum dipesan di permintaan, untuk dipesan ke supplier lain. Jika ada yang tidak jadi dibeli, **Close** permintaannya dengan alasan.
 
 **Make bill** di PO otomatis memakai departemen dari permintaan, supaya Costs by department tetap benar.

@@ -6,8 +6,11 @@
 // PMS (Payables / Make bill) — the POS records no expense for it.
 //
 //   POS GET  /api/hotel/inventory          its items: id, name, unit, stock, low
-//   POS POST /api/hotel/purchase-batches   { ref, po_number, supplier, received_on, by, section,
+//   POS POST /api/hotel/purchase-batches   { ref, po_number, supplier, received_on, by, section, handover: true,
 //                                            items: [{ inventory_id, qty, total_cost }] }
+//
+// handover: the POS holds the goods until the chef confirms what really came
+// (posHandover.js). An older POS answers without `pending` and books them at once.
 //
 // Same hotel key and address as room tablet orders (posRoomOrders.js). `ref`
 // = '<PO line id>:<received so far>' — sending the same state again is a
@@ -15,6 +18,8 @@
 const db = require('../db');
 const { config, call } = require('./posRoomOrders');
 const { todayWITA } = require('./roomChargeService');
+const { lineAmount } = require('./poFormat');
+const handover = require('./posHandover');
 
 const num = v => parseFloat(v) || 0;
 const NOT_LINKED = 'The POS link is not set up (Property Details → POS Integration → Room tablet orders)';
@@ -39,8 +44,9 @@ async function sendToPos(propertyId, poId) {
 
 async function send(propertyId, poId) {
   const { rows: lines } = await db.query(
-    `SELECT i.id, i.description, i.pos_item_id, i.unit_cost, i.received_quantity, i.pos_sent_qty,
-            po.po_number, COALESCE(s.name, po.bought_from) AS supplier, pr.section
+    `SELECT i.id, i.description, i.pos_item_id, i.quantity, i.unit_cost, i.line_total, i.received_quantity, i.pos_sent_qty,
+            po.po_number, COALESCE(s.name, po.bought_from) AS supplier, pr.section,
+            (SELECT to_char(MAX(r.received_on), 'YYYY-MM-DD') FROM purchase_order_receipts r WHERE r.purchase_order_id = po.id) AS received_on
      FROM purchase_order_items i
      JOIN purchase_orders po ON po.id = i.purchase_order_id
      LEFT JOIN suppliers s ON s.id = po.supplier_id
@@ -59,11 +65,14 @@ async function send(propertyId, poId) {
     if (!cfg.url || !cfg.key) error = NOT_LINKED;
     else {
       try {
-        await call(cfg, 'POST', '/api/hotel/purchase-batches', {
-          ref: `${l.id}:${num(l.received_quantity)}`, po_number: l.po_number, supplier: l.supplier,
-          received_on: todayWITA(), by: 'Hotel purchasing', section: l.section,
-          items: [{ inventory_id: l.pos_item_id, qty, total_cost: Math.round(qty * num(l.unit_cost) * 100) / 100 }],
+        const unitCost = lineAmount(l) / num(l.quantity);
+        const ref = `${l.id}:${num(l.received_quantity)}`;
+        const r = await call(cfg, 'POST', '/api/hotel/purchase-batches', {
+          ref, po_number: l.po_number, supplier: l.supplier,
+          received_on: l.received_on || todayWITA(), by: 'Hotel purchasing', section: l.section, handover: true,
+          items: [{ inventory_id: l.pos_item_id, qty, total_cost: Math.round(qty * unitCost * 100) / 100 }],
         });
+        await handover.recordSent(propertyId, { poItemId: l.id, ref, qty, unitCost, pending: !!r?.pending });
       } catch (err) { error = err.message; }
     }
     await db.query(

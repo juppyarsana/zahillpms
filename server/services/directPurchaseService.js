@@ -332,7 +332,7 @@ async function voidPurchase(propertyId, poId, reason, user) {
       let newAvg = avg;
       if (left > 0 && avg != null) {
         const back = (onHand * avg - qty * cost) / left;
-        if (back > 0) newAvg = r2(back);
+        if (back > 0) newAvg = Math.round(back * 10000) / 10000;
       }
       await client.query(`UPDATE ${table} SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3`, [left, newAvg, id]);
       if (it.product_id) {
@@ -424,7 +424,7 @@ async function get(propertyId, poId) {
   if (!r) return null;
   const [{ rows: items }, { rows: events }] = await Promise.all([
     db.query(`SELECT i.id, i.description, i.quantity, i.unit_cost, COALESCE(i.line_total, i.quantity * i.unit_cost) AS line_total,
-                     i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.pos_send_error,
+                     i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.pos_send_error, ${require('./posHandover').handoversSql('i')} AS handovers,
                      COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
               WHERE i.purchase_order_id = $1 ORDER BY i.description`, [poId]),

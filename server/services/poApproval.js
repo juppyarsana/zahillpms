@@ -1,6 +1,7 @@
 const db = require('../db');
 const telegram = require('./telegramService');
 const { DEPARTMENT_LABEL } = require('./costCategories');
+const { fmtIDR, qtyText, perUnitText } = require('./poFormat');
 
 // Approve purchase orders on Telegram (migration 145).
 //
@@ -19,19 +20,6 @@ const MAX_CHARS = 3500;      // Telegram's limit is 4096; leave room for the hea
 const PRICE_JUMP = 0.2;      // flag a line priced 20% above the item's usual cost
 
 const h = telegram.escapeHtml;
-const fmtIDR = n => 'Rp ' + Math.round(Number(n || 0)).toLocaleString('id-ID');
-const num = n => Number(Number(n).toFixed(3)).toLocaleString('id-ID');
-// Quantities are kept in g / ml; shown in kg / L from 1,000 up (as on the screens).
-const BIG = { g: ['kg', 1000], ml: ['L', 1000] };
-function qtyText(qty, unit) {
-  const big = BIG[unit];
-  if (big && Number(qty) >= big[1]) return `${num(qty / big[1])} ${big[0]}`;
-  return `${num(qty)}${unit ? ' ' + unit : ''}`;
-}
-function perUnitText(cost, unit) {
-  const big = BIG[unit];
-  return big ? `${fmtIDR(cost * big[1])}/${big[0]}` : `${fmtIDR(cost)}${unit ? '/' + unit : ''}`;
-}
 
 async function approvers(propertyId) {
   const { rows } = await db.query(
@@ -188,7 +176,7 @@ async function closeMessages(poId, note) {
 }
 
 const LEFT_NOTE = {
-  approved: (by, via) => `✅ Approved by ${by}${via === 'telegram' ? ' on Telegram' : ' in the PMS'}.`,
+  approved: (by, via) => `✅ Approved by ${by}${via === 'telegram' ? ' on Telegram. Send it to the supplier from the PMS.' : ' in the PMS.'}`,
   draft: (by, via) => `↩️ Sent back to draft by ${by}${via === 'telegram' ? ' on Telegram' : ''} — nothing to do.`,
   cancelled: by => `🚫 Cancelled by ${by} — nothing to do.`,
 };

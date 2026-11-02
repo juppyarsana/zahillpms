@@ -15,6 +15,22 @@ router.post('/channex/webhook/:token', async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/public/po/:token — a purchase order's PDF, for the supplier: the link
+// in the hotel's WhatsApp message (migration 151). The random token is the secret.
+router.get('/po/:token', async (req, res) => {
+  try {
+    const r = await require('../services/poDocuments').publicPdf(req.params.token);
+    if (r.error) return res.status(r.status).type('text/plain').send(r.error);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${r.po_number}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(r.buffer);
+  } catch (err) {
+    console.error('[PO link]', err.message);
+    res.status(500).type('text/plain').send('Could not open this purchase order');
+  }
+});
+
 // GET /api/public/properties/:slug/branding — no auth. Used by the login
 // screen to show the right property's logo/name before credentials are
 // submitted. Cosmetic only — does not affect how /api/auth/login resolves

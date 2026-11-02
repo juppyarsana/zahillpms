@@ -4,6 +4,14 @@ Last updated: 2026-10-29
 
 ---
 
+## 🟢 Kitchen handover — the chef confirms restaurant goods in the POS (BUILT 2026-11-02, migration 152 + POS 20261102_hotel_handover; on `dev` / `pms-integration`, not released; write-up in CLAUDE.md "Kitchen handover")
+
+Not built: a shortfall report over a period, a separate account for shortfalls in the books.
+
+## 🟢 Purchase order flow — close short, deliveries, exact totals, send to supplier (BUILT 2026-11-02, migration 151; on `dev`, not released; write-up in CLAUDE.md "Purchase order flow")
+
+Every PO needs approval for now; the auto-approve limit in `PO_FLOW_FIXES_PLAN.md` section 8 was not built. 
+
 ## 🟢 Purchase requests — departments ask, purchasing orders (BUILT 2026-10-29/30, migrations 144–145 + POS; RELEASED 2026-10-30, not deployed; write-up in CLAUDE.md "Purchase requests" incl. the 2026-10-30 additions: Requests tab of Purchasing, PO approval on Telegram, edit draft PO, usual-cost warnings, restaurant stock in the PMS, POS stock ledger, VHP opening stock)
 
 **Why:** the restaurant's stock lives in the POS (recipes take ingredients off it at each sale, its food cost comes from its own purchase batches); the hotel's stock lives in the PMS (Stock page). A POS sale never lowers PMS stock — so restaurant ingredients bought through PMS Purchasing made the PMS stock only go up and the POS stock only go down. Owner's flow: the chef (and any department) checks stock, asks for what is needed, hotel purchasing orders it.
@@ -111,7 +119,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **OTA price ladder (migration 137, 2026-10-23, on `dev`):** sales' OTA prices follow rooms sold in the whole hotel. Pricing → My rules → 📈 OTA price ladder: per meal plan (Breakfast Non Refund / Breakfast Refundable) a grid of "sold up to" tiers × room types, pasted from Excel; the channel manager sends the price of the tier the next room falls in, re-counted on every booking / cancellation (~20 s). A fixed OTA price still wins on its nights. Details: CLAUDE.md → "OTA price ladder".
 **App colour + tab icon (migration 138, 2026-10-23, on `dev`):** each property has its own staff-app colour (Superadmin → Branding) and its own tab / home-screen icon (its logo, or its first letter) — no more Zahill maroon and lotus for every hotel. Details: CLAUDE.md → "Per-property app colour + tab icon".
 **OTA dashboard (migration 146, 2026-10-31, deployed to production; production at `main` 881557a):** Sales → OTA dashboard: next 30 nights with the prices we send, slow dates against occupancy targets, a suggested price with the reasons, minimum prices, a log and alert for price changes. Next: automatic pricing in steps (suggest → automatic within limits → more factors), competitor prices with a rate shopper. Details: CLAUDE.md → "OTA dashboard".
-Next migration number: **151**.
+Next migration number: **153**.
 
 ### Channex re-certification run sheet (2026-10-21)
 
@@ -2190,7 +2198,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 151
+## Next migration number: 153
 
 ---
 

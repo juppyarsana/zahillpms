@@ -6,8 +6,11 @@ import { DEPARTMENTS, DEPARTMENT_LABEL, categoryDepartment } from '../lib/costLi
 import { useAuth } from '../context/AuthContext';
 import ReasonModal from '../components/ReasonModal';
 import ItemPicker from '../components/ItemPicker';
+import HandoverLines from '../components/HandoverLines';
 import { DirectPurchasesTab, DirectPurchaseDetail } from '../components/DirectPurchases';
-import { BIG_UNIT, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit } from '../lib/units';
+import { BIG_UNIT, fmtQty, flipBig, toBase, fromBase, UnitSwitch, perUnit, lineTotalOf } from '../lib/units';
+import { waNumber } from '../lib/whatsapp';
+import { propertyToday } from '../lib/propertyTime';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
 function fmtDate(str) {
@@ -21,10 +24,17 @@ function fmtDateTime(str) {
 
 const EMPTY_SUPPLIER = { name: '', contact_name: '', contact_phone: '', contact_email: '', address: '', payment_terms_days: '' };
 
-const PO_STATUS_LABELS = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved', received: 'Received', cancelled: 'Cancelled' };
-const PO_STATUS_BADGE = { draft: 'gray', pending_approval: 'amber', approved: 'blue', received: 'green', cancelled: 'red' };
+const PO_STATUS_LABELS = { draft: 'Draft', pending_approval: 'Pending Approval', approved: 'Approved', received: 'Received', closed: 'Closed (short)', cancelled: 'Cancelled' };
+const PO_STATUS_BADGE = { draft: 'gray', pending_approval: 'amber', approved: 'blue', received: 'green', closed: 'orange', cancelled: 'red' };
+const BILL_STATE_LABELS = { not_billed: 'Not billed', part_billed: 'Part billed' };
+// Filters that aren't a status: worked out on the list.
+const PO_FILTERS = { not_billed: 'Not billed yet', not_sent: 'Not sent yet' };
+const SEND_STATUSES = ['approved', 'received', 'closed'];
+// What a PO line costs, and its price per unit in the item's own unit.
+const amountOf = it => (it.line_total != null ? Number(it.line_total) : Number(it.quantity) * Number(it.unit_cost));
+const priceOf = it => (Number(it.quantity) > 0 ? amountOf(it) / Number(it.quantity) : Number(it.unit_cost));
 // Hex equivalents of the badge colors above, for the row's left-edge accent stripe.
-const PO_STATUS_COLOR = { draft: '#9CA3AF', pending_approval: '#D97706', approved: '#2563EB', received: '#16A34A', cancelled: '#DC2626' };
+const PO_STATUS_COLOR = { draft: '#9CA3AF', pending_approval: '#D97706', approved: '#2563EB', received: '#16A34A', closed: '#EA580C', cancelled: '#DC2626' };
 
 // Shared CSV/PDF-style download helper — same blob-then-click pattern
 // Agents.jsx already uses for invoice PDFs, just swapped to text/csv.
@@ -173,7 +183,10 @@ function SuppliersTab() {
                 <tr key={s.id}>
                   <td style={{ fontWeight: 600 }}>{s.name}</td>
                   <td>{s.contact_name || <span className="text-muted">—</span>}</td>
-                  <td>{s.contact_phone || <span className="text-muted">—</span>}</td>
+                  <td>
+                    {s.contact_phone || <span className="text-muted">—</span>}
+                    {!s.contact_phone && !s.contact_email && <div className="text-muted" style={{ fontSize: 11 }} title="Add a phone or email to send POs from the PMS">POs can only be sent by download</div>}
+                  </td>
                   <td>{s.payment_terms_days != null ? `${s.payment_terms_days}d` : <span className="text-muted">—</span>}</td>
                   <td><span className={`badge badge-${s.is_active ? 'green' : 'gray'}`}>{s.is_active ? 'Active' : 'Inactive'}</span></td>
                   <td>
@@ -238,7 +251,7 @@ function PurchaseOrdersTab() {
   function showToast(msg, type = 'success') { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); }
 
   function loadPos() {
-    api.get('/api/purchasing/purchase-orders', { params: statusFilter ? { status: statusFilter } : {} })
+    api.get('/api/purchasing/purchase-orders', { params: PO_STATUS_LABELS[statusFilter] ? { status: statusFilter } : {} })
       .then(r => setPos(r.data)).catch(() => {});
   }
   useEffect(() => { loadPos(); }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -284,9 +297,9 @@ function PurchaseOrdersTab() {
     return () => clearInterval(t);
   }, [waitingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function setStatus(po, status) {
+  async function setStatus(po, status, reason) {
     try {
-      await api.patch(`/api/purchasing/purchase-orders/${po.id}/status`, { status });
+      await api.patch(`/api/purchasing/purchase-orders/${po.id}/status`, { status, reason });
       showToast(`Moved to ${PO_STATUS_LABELS[status]}`);
       loadPos();
       if (detail?.id === po.id) refreshDetail(po.id);
@@ -295,7 +308,11 @@ function PurchaseOrdersTab() {
     }
   }
 
+  const { can, hasModule } = useAuth();
+  const showBilling = can('payables') && hasModule('accounting');
   const filtered = pos.filter(po => {
+    if (statusFilter === 'not_billed' && !po.bill_state) return false;
+    if (statusFilter === 'not_sent' && (po.status !== 'approved' || po.is_direct || po.sent_to_supplier_at)) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return [po.po_number, po.supplier_name, po.notes].some(v => v?.toLowerCase().includes(q));
@@ -309,10 +326,12 @@ function PurchaseOrdersTab() {
           <select className="form-select" style={{ width: 180 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(PO_STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            <option value="not_sent">{PO_FILTERS.not_sent}</option>
+            {showBilling && <option value="not_billed">{PO_FILTERS.not_billed}</option>}
           </select>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-secondary" onClick={() => downloadCsv(`/api/purchasing/purchase-orders/export${statusFilter ? `?status=${statusFilter}` : ''}`, 'purchase-orders.csv')}>⬇ Export CSV</button>
+          <button className="btn btn-secondary" onClick={() => downloadCsv(`/api/purchasing/purchase-orders/export${PO_STATUS_LABELS[statusFilter] ? `?status=${statusFilter}` : ''}`, 'purchase-orders.csv')}>⬇ Export CSV</button>
           <button className="btn btn-primary" onClick={() => setNewModal(true)}>+ New Purchase Order</button>
         </div>
       </div>
@@ -330,7 +349,10 @@ function PurchaseOrdersTab() {
                   <td>{po.supplier_name}{po.is_direct && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Bought without a PO">Direct</span>}</td>
                   <td style={{ textDecoration: po.voided_at ? 'line-through' : 'none' }}>{fmtIDR(po.total_amount)}</td>
                   <td>{fmtDate(po.created_at)}</td>
-                  <td><span className={`badge badge-${po.voided_at ? 'red' : PO_STATUS_BADGE[po.status]}`} style={{ fontSize: 13, padding: '5px 14px' }}>{po.voided_at ? 'Voided' : PO_STATUS_LABELS[po.status]}</span></td>
+                  <td><span className={`badge badge-${po.voided_at ? 'red' : PO_STATUS_BADGE[po.status]}`} style={{ fontSize: 13, padding: '5px 14px' }}>{po.voided_at ? 'Voided' : PO_STATUS_LABELS[po.status]}</span>
+                    {showBilling && po.bill_state && <span className="badge badge-amber" style={{ marginLeft: 6 }} title="Goods came in; the supplier's bill is not all recorded in Payables">{BILL_STATE_LABELS[po.bill_state]}</span>}
+                    {po.waiting_kitchen && <span className="badge badge-amber" style={{ marginLeft: 6 }} title="Restaurant goods came in; the chef has not confirmed them in the POS yet">Waiting for kitchen</span>}
+                  </td>
                   <td><button className="btn btn-sm btn-secondary" onClick={() => openDetail(po)}>View</button></td>
                 </tr>
               ))}
@@ -360,10 +382,11 @@ function PurchaseOrdersTab() {
           suppliers={suppliers} products={products} materials={materials}
           onEdited={() => { showToast('Purchase order saved'); loadPos(); refreshDetail(detail.id); }}
           onClose={() => setDetail(null)}
-          onStatus={status => setStatus(detail, status)}
+          onStatus={(status, reason) => setStatus(detail, status, reason)}
+          onChanged={msg => { showToast(msg); loadPos(); refreshDetail(detail.id); }}
           onReceived={sync => {
             showToast(sync?.failed ? `Received — but the restaurant system did not get it: ${sync.error}. Use "Send to the POS" on the PO.`
-              : sync?.sent ? 'Received — restaurant items sent to the POS stock' : 'Received', sync?.failed ? 'error' : 'success');
+              : sync?.sent ? 'Received — restaurant items are waiting for the kitchen to confirm in the POS' : 'Received', sync?.failed ? 'error' : 'success');
             loadPos(); refreshDetail(detail.id);
           }}
           onError={m => showToast(m, 'error')}
@@ -399,10 +422,10 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
       if (!Number.isFinite(cost) || cost < 0) { setFormError('Every line needs a unit cost'); return; }
       if (l.kind === 'product') {
         if (!l.product_id) { setFormError('Choose the item on every "For resale" line'); return; }
-        items.push({ product_id: l.product_id, quantity: qty, unit_cost: cost });
+        items.push({ product_id: l.product_id, quantity: qty, unit_cost: cost, line_total: lineTotalOf(l) });
       } else {
         if (!l.raw_material_id) { setFormError('Choose the stock item on every line'); return; }
-        items.push({ raw_material_id: l.raw_material_id, quantity: qty, unit_cost: cost });
+        items.push({ raw_material_id: l.raw_material_id, quantity: qty, unit_cost: cost, line_total: lineTotalOf(l) });
       }
     }
     setSaving(true);
@@ -499,12 +522,46 @@ function NewPOModal({ suppliers, products, materials, onClose, onCreated, onErro
   );
 }
 
-function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, onReceived, onEdited, onError }) {
+// Opens a PDF in a new tab, or saves it if the browser blocks the tab.
+async function openPdf(url, filename) {
+  const r = await api.get(url, { responseType: 'blob' });
+  const blobUrl = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+  if (!window.open(blobUrl, '_blank')) { const a = document.createElement('a'); a.href = blobUrl; a.download = filename; a.click(); }
+}
+
+function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, onChanged, onReceived, onEdited, onError }) {
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [asking, setAsking] = useState(null); // 'cancelled' | 'draft' | 'close' | 'billing'
+  const [emailOpen, setEmailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const { can, hasModule } = useAuth();   // approving needs the approve_po permission (owners always)
   // Received goods → the supplier's bill in Finance → Payables (needs the chart: accounting module).
-  const canBill = can('payables') && hasModule('accounting') && po.items.some(it => Number(it.received_quantity) > 0);
+  const someIn = po.items.some(it => Number(it.received_quantity) > 0);
+  const showBilling = can('payables') && hasModule('accounting');
+  // Same rounding as the amount Make bill starts with (payablesService.fromPurchaseOrder).
+  const leftToBill = Math.round(Number(po.received_value) - Number(po.billed_amount)) > 0;
+  const canBill = showBilling && someIn && po.status !== 'cancelled' && leftToBill && !po.billing_done_at;
+  const sendable = SEND_STATUSES.includes(po.status);
+  const phone = waNumber(po.supplier_contact_phone);
+  const pdfFail = err => { // a blob error's message has to be read back out
+    const b = err.response?.data;
+    if (b instanceof Blob) b.text().then(t => { try { onError(JSON.parse(t).error); } catch { onError('Could not open the PDF'); } });
+    else onError('Could not open the PDF');
+  };
+  // WhatsApp can't attach a file: the message carries a link to the PDF. The tab is
+  // opened before asking the server, or a browser treats it as a popup and blocks it.
+  async function sendWhatsApp() {
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const r = await api.post(`/api/purchasing/purchase-orders/${po.id}/share-link`, { phone });
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(r.data.message)}`;
+      if (tab) tab.location.href = url; else window.location.href = url;
+      onChanged(`WhatsApp opened for ${po.po_number} — press send there`);
+    } catch (err) {
+      if (tab) tab.close();
+      onError(err.response?.data?.error || 'Could not make the link');
+    }
+  }
   // Restaurant lines received here but not yet in the POS's stock (it was down / not linked).
   const unsent = po.items.some(it => it.pos_item_id && Number(it.received_quantity) > Number(it.pos_sent_qty));
   const [sending, setSending] = useState(false);
@@ -520,14 +577,15 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
   const transitions = {
     draft: [['pending_approval', 'Submit for Approval'], ['cancelled', 'Cancel']],
     pending_approval: [can('approve_po') && ['approved', 'Approve'], ['draft', 'Back to Draft'], ['cancelled', 'Cancel']].filter(Boolean),
-    approved: [['cancelled', 'Cancel']],
+    approved: someIn ? [] : [['cancelled', 'Cancel']], // goods in → Close instead
     received: [],
+    closed: [],
     cancelled: [],
   }[po.status] || [];
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 640 }}>
+      <div className="modal" style={{ maxWidth: 760, width: '100%' }}>
         <div className="modal-header">
           <div>
             <div className="modal-title">{po.po_number}</div>
@@ -538,12 +596,29 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
         <div className="modal-body">
           <div className="flex gap-2" style={{ marginBottom: 12, alignItems: 'center' }}>
             <span className={`badge badge-${PO_STATUS_BADGE[po.status]}`}>{PO_STATUS_LABELS[po.status]}</span>
-            {['approved', 'received'].includes(po.status) && po.approved_by_name && (
+            {SEND_STATUSES.includes(po.status) && po.approved_by_name && (
               <span className="text-muted" style={{ fontSize: 12 }}>by {po.approved_by_name}{po.approved_via === 'telegram' ? ' on Telegram' : ''}</span>)}
             {po.status === 'pending_approval' && po.telegram_approvers?.length > 0 && (
               <span className="text-muted" style={{ fontSize: 12 }} title="They can approve it from the Telegram message">Waiting on Telegram: {po.telegram_approvers.join(', ')}</span>)}
             {po.notes && <span className="text-muted" style={{ fontSize: 13 }}>{po.notes}</span>}
           </div>
+          {po.status === 'closed' && po.close_reason && <div className="alert alert-warn" style={{ marginBottom: 12 }}><div>Closed{po.closed_by_name ? ` by ${po.closed_by_name}` : ''} — the rest is not coming: {po.close_reason}</div></div>}
+          {po.status === 'cancelled' && po.cancel_reason && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>Cancelled: {po.cancel_reason}</div></div>}
+          {sendable && (
+            <div className="card card-note" style={{ marginBottom: 12, padding: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                Send to supplier {po.sent_to_supplier_at
+                  ? <span className="badge badge-green" style={{ marginLeft: 6 }}>Sent {fmtDate(po.sent_to_supplier_at)}</span>
+                  : po.status === 'approved' && <span className="text-muted" style={{ fontWeight: 400 }}>— approved, not sent yet</span>}
+              </div>
+              <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                <button className="btn btn-sm btn-secondary" disabled={!po.supplier_contact_email} title={po.supplier_contact_email ? '' : "Add the supplier's email in Suppliers"} onClick={() => setEmailOpen(true)}>✉ Email</button>
+                <button className="btn btn-sm btn-secondary" disabled={!phone} title={phone ? '' : "Add the supplier's phone in Suppliers"} onClick={sendWhatsApp}>WhatsApp</button>
+                <button className="btn btn-sm btn-secondary" onClick={() => openPdf(`/api/purchasing/purchase-orders/${po.id}/pdf?download=1`, `${po.po_number}.pdf`).then(() => onChanged('PDF opened')).catch(pdfFail)}>⬇ Download PDF</button>
+                {po.status === 'approved' && <button className="btn btn-sm btn-secondary" title="For checking the delivery on paper — no prices" onClick={() => openPdf(`/api/purchasing/purchase-orders/${po.id}/checklist/pdf`, `checklist-${po.po_number}.pdf`).catch(pdfFail)}>🖨 Print checklist</button>}
+              </div>
+            </div>
+          )}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
             <thead><tr style={{ borderBottom: '1px solid #E5E7EB' }}>
               <th style={{ textAlign: 'left', padding: '6px 4px' }}>Item</th>
@@ -557,28 +632,55 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
                 <tr key={it.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '6px 4px' }}>
                     {it.description}{it.unit_of_measure && !it.product_id ? ` (${it.unit_of_measure})` : ''}
-                    {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Goes to the restaurant's stock in the POS when received">Restaurant</span>}
+                    {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="When received, waits for the kitchen to confirm in the POS, then goes to its stock">Restaurant</span>}
                     {it.line_kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Not kept in any stock">Not in stock</span>}
                     {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }} title="Asked for by this part of the restaurant">For {it.request_section}</span>}
                     {it.request_no_text && <Link to="/purchasing?tab=requests&view=requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
                     {it.line_kind === 'pos' && it.pos_send_error && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not sent to the POS: {it.pos_send_error}</div>}
-                    {it.line_kind === 'pos' && !it.pos_send_error && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
+                    {it.line_kind === 'pos' && <HandoverLines handovers={it.handovers} unit={it.unit_of_measure} />}
+                    {it.line_kind === 'pos' && !it.pos_send_error && !it.handovers?.length && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
+                    {Number(it.short_qty) > 0 && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>{it.product_id ? Number(it.short_qty) : fmtQty(it.short_qty, it.unit_of_measure)} not coming</div>}
                   </td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>{it.product_id ? it.quantity : fmtQty(it.quantity, it.unit_of_measure)}</td>
                   <td style={{ textAlign: 'right', padding: '6px 4px', color: Number(it.received_quantity) >= Number(it.quantity) ? '#16A34A' : '#6B7280' }}>{it.product_id ? it.received_quantity : fmtQty(it.received_quantity, it.unit_of_measure)}</td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>
-                    {perUnitIDR(it.unit_cost, it.product_id ? null : it.unit_of_measure)}
+                    {perUnitIDR(priceOf(it), it.product_id ? null : it.unit_of_measure)}
                     {it.price_jump != null && (
                       <div style={{ fontSize: 11, color: 'var(--danger-text)', whiteSpace: 'nowrap' }} title="Compared with the item's average cost">
                         ⚠ {Math.round(it.price_jump * 100)}% above usual {perUnitIDR(it.usual_cost, it.product_id ? null : it.unit_of_measure)}
                       </div>)}
                   </td>
-                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>{fmtIDR(it.quantity * it.unit_cost)}</td>
+                  <td style={{ textAlign: 'right', padding: '6px 4px' }}>{fmtIDR(amountOf(it))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div style={{ fontWeight: 700, textAlign: 'right' }}>Total: {fmtIDR(po.total_amount)}</div>
+
+          {showBilling && someIn && (
+            <div className="text-muted" style={{ fontSize: 13, textAlign: 'right', marginTop: 4 }}>
+              Goods in {fmtIDR(po.received_value)} · billed {fmtIDR(po.billed_amount)}
+              {po.bill_state && <span className="badge badge-amber" style={{ marginLeft: 6 }}>{BILL_STATE_LABELS[po.bill_state]}</span>}
+              {po.billing_done_at && <div>Marked as fully billed{po.billing_done_by_name ? ` by ${po.billing_done_by_name}` : ''}: {po.billing_done_reason}{' '}
+                <button className="btn-link" style={{ background: 'none', border: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', textDecoration: 'underline' }}
+                  onClick={() => api.post(`/api/purchasing/purchase-orders/${po.id}/billing-done`, { undo: true }).then(() => onChanged('Put back as not fully billed')).catch(err => onError(err.response?.data?.error || 'Could not change it'))}>Undo</button></div>}
+            </div>
+          )}
+
+          {po.receipts?.length > 0 && (
+            <>
+              <div className="form-label" style={{ marginTop: 16 }}>Deliveries</div>
+              <div style={{ fontSize: 12 }}>
+                {po.receipts.map(r => (
+                  <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px solid #F3F4F6' }}>
+                    <b>{fmtDate(r.received_on)}</b>{r.delivery_note ? ` · surat jalan ${r.delivery_note}` : ''}
+                    {r.created_by_name && <span className="text-muted"> — entered by {r.created_by_name}</span>}
+                    <div className="text-muted">{r.lines.map(l => `${l.description} ${fmtQty(l.quantity, l.unit)}`).join(', ')}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="form-label" style={{ marginTop: 16 }}>Activity</div>
           <div style={{ fontSize: 12 }}>
@@ -594,11 +696,15 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
         <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
           {po.status === 'draft' && <button className="btn btn-sm btn-secondary" onClick={() => setEditOpen(true)}>✏ Edit</button>}
           {transitions.map(([status, label]) => (
-            <button key={status} className={`btn btn-sm ${status === 'cancelled' ? 'btn-secondary' : 'btn-primary'}`} onClick={() => onStatus(status)}>{label}</button>
+            <button key={status} className={`btn btn-sm ${status === 'cancelled' || status === 'draft' ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => (status === 'cancelled' || status === 'draft' ? setAsking(status) : onStatus(status))}>{label}</button>
           ))}
           {po.status === 'approved' && <button className="btn btn-sm btn-primary" onClick={() => setReceiveOpen(true)}>Receive Items</button>}
+          {po.status === 'approved' && someIn && <button className="btn btn-sm btn-secondary" onClick={() => setAsking('close')}>Close – rest won't come</button>}
+          {showBilling && po.bill_state && <button className="btn btn-sm btn-secondary" title="The supplier's bill is in and this is all of it (a discount, say)" onClick={() => setAsking('billing')}>Mark as fully billed</button>}
           {unsent && <button className="btn btn-sm btn-secondary" disabled={sending} onClick={sendToPos}>{sending ? 'Sending…' : 'Send to the POS'}</button>}
           {canBill && <Link className="btn btn-sm btn-secondary" to={`/payables?from_po=${po.id}`} title="Record the supplier's bill for what was received">Make bill</Link>}
+          {showBilling && Number(po.billed_amount) > 0 && <Link className="btn btn-sm btn-secondary" to={`/payables?bills_for=${encodeURIComponent(po.po_number)}`} title="The bills recorded for this purchase order, paid or not">View bill</Link>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -608,8 +714,81 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
           onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); onEdited(); }} onError={onError} />
       )}
       {receiveOpen && (
-        <ReceiveModal po={po} onClose={() => setReceiveOpen(false)} onDone={sync => { setReceiveOpen(false); onReceived(sync); }} onError={onError} />
+        <ReceiveModal po={po} onClose={() => setReceiveOpen(false)} onDone={sync => { setReceiveOpen(false); onReceived(sync); }} />
       )}
+      {emailOpen && <SendEmailModal po={po} onClose={() => setEmailOpen(false)} onSent={to => { setEmailOpen(false); onChanged(`Sent to ${to}`); }} />}
+      {asking === 'cancelled' && (
+        <ReasonModal title={`Cancel ${po.po_number}?`} confirmLabel="Cancel the PO" danger placeholder="Why is it being cancelled?"
+          onClose={() => setAsking(null)}
+          onConfirm={async reason => { await onStatus('cancelled', reason); setAsking(null); }}>
+          {po.sent_to_supplier_at
+            ? <><b>This PO was already sent to the supplier</b> — tell them it is cancelled. The link they got will say so too.</>
+            : 'Anything it was ordering from a purchase request goes back to be ordered.'}
+        </ReasonModal>
+      )}
+      {asking === 'draft' && (
+        <ReasonModal title="Back to draft" confirmLabel="Back to Draft" optional placeholder="What needs changing?"
+          onClose={() => setAsking(null)}
+          onConfirm={async reason => { await onStatus('draft', reason); setAsking(null); }} />
+      )}
+      {asking === 'close' && (
+        <ReasonModal title={`Close ${po.po_number} — the rest won't come`} confirmLabel="Close the PO" placeholder="Why is the rest not coming?"
+          onClose={() => setAsking(null)}
+          onConfirm={async reason => {
+            await api.post(`/api/purchasing/purchase-orders/${po.id}/close`, { reason });
+            setAsking(null); onChanged(`${po.po_number} closed`);
+          }}>
+          What came in stays. What is missing goes back on its purchase request as not ordered{po.sent_to_supplier_at ? ', and the supplier should be told' : ''}.
+        </ReasonModal>
+      )}
+      {asking === 'billing' && (
+        <ReasonModal title="Mark as fully billed" confirmLabel="Mark as fully billed" placeholder="e.g. supplier gave a discount"
+          onClose={() => setAsking(null)}
+          onConfirm={async reason => {
+            await api.post(`/api/purchasing/purchase-orders/${po.id}/billing-done`, { reason });
+            setAsking(null); onChanged('Marked as fully billed');
+          }}>
+          Goods in {fmtIDR(po.received_value)}, billed {fmtIDR(po.billed_amount)}. The PO stops showing as {BILL_STATE_LABELS[po.bill_state]}.
+        </ReasonModal>
+      )}
+    </div>
+  );
+}
+
+// The PO goes to the supplier as an attached PDF; replies go to the hotel.
+function SendEmailModal({ po, onClose, onSent }) {
+  const name = po.property_name || 'our hotel';
+  const [to, setTo] = useState(po.supplier_contact_email || '');
+  const [cc, setCc] = useState(po.property_email || '');
+  const [save, setSave] = useState(false);
+  const [subject, setSubject] = useState(`Purchase Order ${po.po_number} — ${name}`);
+  const [message, setMessage] = useState(`Selamat siang${po.supplier_contact_name ? ` ${po.supplier_contact_name}` : ''},\n\nBerikut kami kirimkan PO ${po.po_number} dari ${name} (terlampir).\nMohon cantumkan nomor PO di surat jalan dan invoice.\n\nTerima kasih.`);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const changed = to.trim() !== (po.supplier_contact_email || '');
+  async function send() {
+    setBusy(true); setError('');
+    try {
+      await api.post(`/api/purchasing/purchase-orders/${po.id}/send-email`, { to: to.trim(), cc: cc.trim(), subject, message, save_to_supplier: changed && save });
+      onSent(to.trim());
+    } catch (err) { setError(err.response?.data?.error || 'Could not send'); setBusy(false); }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 520, width: '100%' }}>
+        <div className="modal-header"><div className="modal-title">Email {po.po_number} to the supplier</div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
+          <div className="form-group"><label className="form-label">To</label><input className="form-input" type="email" value={to} onChange={e => setTo(e.target.value)} />
+            {changed && <label style={{ fontSize: 12, display: 'flex', gap: 6, marginTop: 4 }}><input type="checkbox" checked={save} onChange={e => setSave(e.target.checked)} /> Save this address on the supplier</label>}</div>
+          <div className="form-group"><label className="form-label">CC (optional)</label><input className="form-input" type="email" value={cc} onChange={e => setCc(e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">Subject</label><input className="form-input" value={subject} onChange={e => setSubject(e.target.value)} /></div>
+          <div className="form-group"><label className="form-label">Message</label><textarea className="form-textarea" rows={6} value={message} onChange={e => setMessage(e.target.value)} /></div>
+          <div className="text-muted" style={{ fontSize: 12 }}>{po.po_number}.pdf is attached. Replies come back to {po.property_email || 'the hotel'}.</div>
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || !to.trim()} onClick={send}>{busy ? 'Sending…' : 'Send'}</button></div>
+      </div>
     </div>
   );
 }
@@ -630,7 +809,7 @@ function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onE
       raw_material_id: it.raw_material_id || '', product_id: it.product_id || '', pos_item_id: it.pos_item_id || null,
       description: it.description, unit: it.unit || null, request_line_id: it.request_line_id || null,
       request_no_text: it.request_no_text, request_section: it.request_section, usual_cost: it.usual_cost, existing: true,
-      ...(BIG_UNIT[unit] ? fromBase(unit, it.quantity, it.unit_cost) : { big: false, quantity: String(Number(it.quantity)), unit_cost: String(Number(it.unit_cost)) }),
+      ...(BIG_UNIT[unit] ? fromBase(unit, it.quantity, priceOf(it)) : { big: false, quantity: String(Number(it.quantity)), unit_cost: String(+priceOf(it).toFixed(4)) }),
     };
   };
   const [supplierId, setSupplierId] = useState(po.supplier_id || '');
@@ -654,7 +833,7 @@ function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onE
       const { quantity, unit_cost } = toBase(l, unitOf(l));
       if (!(quantity > 0)) return setFormError(`How many ${l.description || 'of each item'}?`);
       if (!Number.isFinite(unit_cost) || unit_cost < 0) return setFormError(`Type the price of ${l.description || 'each item'}`);
-      const base = { quantity, unit_cost, request_line_id: l.request_line_id || undefined };
+      const base = { quantity, unit_cost, line_total: lineTotalOf(l), request_line_id: l.request_line_id || undefined };
       if (l.kind === 'material') { if (!l.raw_material_id) return setFormError('Choose the stock item on every line'); items.push({ ...base, raw_material_id: l.raw_material_id }); }
       else if (l.kind === 'product') { if (!l.product_id) return setFormError('Choose the item on every "For resale" line'); items.push({ ...base, product_id: l.product_id }); }
       else items.push({ ...base, pos_item_id: l.pos_item_id || undefined, description: l.description, unit: l.unit });
@@ -770,24 +949,31 @@ function EditPOModal({ po, suppliers, products, materials, onClose, onSaved, onE
   );
 }
 
-function ReceiveModal({ po, onClose, onDone, onError }) {
+function ReceiveModal({ po, onClose, onDone }) {
   const outstanding = po.items.filter(it => Number(it.received_quantity) < Number(it.quantity));
   // Lines kept in g / ml are received in kg / L (switchable).
   const unitOf = it => (it.product_id ? null : it.unit_of_measure);
-  const [amounts, setAmounts] = useState(() => Object.fromEntries(outstanding.map(it => [it.id, fromBase(unitOf(it), Number(it.quantity) - Number(it.received_quantity))])));
+  const leftOf = it => Number(it.quantity) - Number(it.received_quantity);
+  const [amounts, setAmounts] = useState(() => Object.fromEntries(outstanding.map(it => [it.id, fromBase(unitOf(it), leftOf(it))])));
+  const today = propertyToday();
+  const [receivedOn, setReceivedOn] = useState(today);
+  const [deliveryNote, setDeliveryNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const typed = it => toBase(amounts[it.id] || {}, unitOf(it), 'quantity', null).quantity || 0;
+  const tooMany = it => typed(it) > leftOf(it) + 0.0005;
+  const notWhole = it => it.product_id && !Number.isInteger(typed(it));
+  const blocked = outstanding.some(it => tooMany(it) || notWhole(it));
 
   async function submit() {
-    const items = Object.entries(amounts)
-      .map(([item_id, v]) => ({ item_id, receive_quantity: toBase(v, unitOf(po.items.find(it => it.id === item_id)), 'quantity', null).quantity }))
-      .filter(i => i.receive_quantity > 0);
-    if (items.length === 0) { onError('Enter a quantity to receive for at least one item'); return; }
-    setSaving(true);
+    const items = outstanding.map(it => ({ item_id: it.id, receive_quantity: typed(it) })).filter(i => i.receive_quantity > 0);
+    if (items.length === 0) { setError('Enter a quantity to receive for at least one item'); return; }
+    setSaving(true); setError('');
     try {
-      const r = await api.post(`/api/purchasing/purchase-orders/${po.id}/receive`, { items });
+      const r = await api.post(`/api/purchasing/purchase-orders/${po.id}/receive`, { received_on: receivedOn, delivery_note: deliveryNote, items });
       onDone(r.data?.pos_sync);
     } catch (err) {
-      onError(err.response?.data?.error || 'Failed to receive items');
+      setError(err.response?.data?.error || 'Failed to receive items');
     } finally {
       setSaving(false);
     }
@@ -801,6 +987,14 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {error && <div className="alert alert-error" style={{ marginBottom: 12 }}><div>{error}</div></div>}
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Date received</label>
+              <input className="form-input" type="date" max={today} value={receivedOn} onChange={e => setReceivedOn(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Delivery note no. (surat jalan)</label>
+              <input className="form-input" maxLength={100} value={deliveryNote} onChange={e => setDeliveryNote(e.target.value)} placeholder="optional" /></div>
+          </div>
+          {receivedOn < today && <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>The date is a record of when it came. The stock moves today, when you confirm.</div>}
           {outstanding.length === 0 ? (
             <div className="text-muted">Everything on this PO has already been received.</div>
           ) : outstanding.map(it => (
@@ -809,9 +1003,11 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
                 {it.description}
                 {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }}>For {it.request_section}</span>}
                 <div className="text-muted" style={{ fontSize: 11 }}>
-                  outstanding {fmtQty(Number(it.quantity) - Number(it.received_quantity), unitOf(it))}
+                  outstanding {fmtQty(leftOf(it), unitOf(it))}
                   {it.line_kind === 'pos' ? ' · to the restaurant stock (POS)' : it.line_kind === 'text' ? ' · not kept in stock' : ''}
                 </div>
+                {tooMany(it) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Only {fmtQty(leftOf(it), unitOf(it))} still to come</div>}
+                {!tooMany(it) && notWhole(it) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Whole numbers only</div>}
               </div>
               <input
                 className="form-input" style={{ width: 100 }} type="number" step={it.product_id ? '1' : 'any'} min="0"
@@ -823,7 +1019,7 @@ function ReceiveModal({ po, onClose, onDone, onError }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={saving || outstanding.length === 0}>{saving ? 'Saving…' : 'Confirm Receipt'}</button>
+          <button className="btn btn-primary" onClick={submit} disabled={saving || blocked || outstanding.length === 0}>{saving ? 'Saving…' : 'Confirm Receipt'}</button>
         </div>
       </div>
     </div>

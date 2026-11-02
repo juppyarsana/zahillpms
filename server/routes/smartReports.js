@@ -100,6 +100,20 @@ router.put('/direct-purchase-alert', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Kitchen handover — how long before a reminder (Notifications → Kitchen handover).
+const posHandover = require('../services/posHandover');
+router.get('/kitchen-handover-alert', async (req, res) => {
+  try { res.json({ settings: await posHandover.settings(req.propertyId) }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.put('/kitchen-handover-alert', async (req, res) => {
+  try {
+    const r = await posHandover.saveSettings(req.propertyId, req.body || {});
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/recipients', async (req, res) => {
   try {
     const { rows } = await db.query(
