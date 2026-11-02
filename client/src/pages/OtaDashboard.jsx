@@ -2,9 +2,9 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import Icon from '../components/Icon';
 import OtaPricesModal from '../components/OtaPricesModal';
 import OtaLadderModal from '../components/OtaLadderModal';
+import OtaPriceButtons from '../components/OtaPriceButtons';
 import OtaChangePriceModal from '../components/OtaChangePriceModal';
 import OtaRulesModal from '../components/OtaRulesModal';
 
@@ -42,11 +42,11 @@ function priceReasons(n, prev, c, steps) {
   const rows = [];
   let source;
   if (c.manual) {
-    source = { label: 'Manual price', bg: MANUAL, fg: '#451A03' };
+    source = { label: 'Fixed price', bg: MANUAL, fg: '#451A03' };
     if (c.base != null && c.base !== c.price) rows.push(['Without it', idr(c.base)]);
     rows.push(['Stays until', 'Someone removes it']);
   } else if (c.tier != null) {
-    source = { label: 'Price ladder', bg: '#F3E3E6', fg: '#5C1A2E' };
+    source = { label: c.season_name ? `${c.season_name} ladder` : 'Price ladder', bg: '#F3E3E6', fg: '#5C1A2E' };
     rows.push(['Rooms sold', n.ladder_sold]);
     rows.push(['Ladder tier', `Sold up to ${c.tier}`]);
     const next = (steps || []).find(s => s.up_to > c.tier);
@@ -69,7 +69,8 @@ function PriceTip({ tip, data, plan }) {
   if (!c) return null;
   const prev = tip.i > 0 ? { n: data.nights[tip.i - 1], c: data.nights[tip.i - 1].prices[plan]?.[tip.type] } : null;
   const type = data.room_types.find(t => t.id === tip.type);
-  const { source, rows } = priceReasons(n, prev, c, data.ladders?.[plan]?.[tip.type]);
+  const steps = (c.season_id ? data.season_ladders?.[c.season_id] : data.ladders)?.[plan]?.[tip.type];
+  const { source, rows } = priceReasons(n, prev, c, steps);
   const width = Math.min(300, window.innerWidth - 16);
   const left = Math.max(8, Math.min(tip.x + 14, window.innerWidth - width - 8));
   const place = tip.y > window.innerHeight - 280 ? { bottom: window.innerHeight - tip.y + 14 } : { top: tip.y + 14 };
@@ -109,7 +110,7 @@ function SlowActions({ d, onPick, onRemove }) {
   return (
     <>
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPick(d.date)} style={{ marginRight: 6 }}>Change</button>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onRemove(d)}>Remove manual price</button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => onRemove(d)}>Remove fixed price</button>
     </>
   );
 }
@@ -117,7 +118,7 @@ function SlowActions({ d, onPick, onRemove }) {
 function SlowNotes({ d }) {
   return (
     <>
-      {d.manual && <div style={{ fontSize: 12, fontWeight: 500, color: '#92400E' }}>{d.slow ? 'Manual price, ladder off' : 'On track, manual price still on'}</div>}
+      {d.manual && <div style={{ fontSize: 12, fontWeight: 500, color: '#92400E' }}>{d.slow ? 'Fixed price, ladder off' : 'On track, fixed price still on'}</div>}
       {d.holiday && <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>{d.holiday}</div>}
     </>
   );
@@ -180,10 +181,10 @@ export default function OtaDashboard() {
   }, [data, filter]);
 
   async function removeManual(d) {
-    if (!window.confirm(`Remove the manual prices on ${d.label}? The date goes back to the ladder or normal price on all OTAs.`)) return;
+    if (!window.confirm(`Remove the fixed prices on ${d.label}? The date goes back to the ladder or normal price on all OTAs.`)) return;
     try {
       await api.delete(`/api/ota-dashboard/night/${d.date}`);
-      setNotice(`Manual prices removed for ${d.label}.`);
+      setNotice(`Fixed prices removed for ${d.label}.`);
       load();
     } catch (e) { setError(e.response?.data?.error || 'Could not remove'); }
   }
@@ -205,22 +206,22 @@ export default function OtaDashboard() {
 
   return (
     <div className="page-wrap">
-      <div className="page-header">
+      <div className="page-header ota-dash-header">
         <div>
           <h1 className="page-title">OTA dashboard</h1>
           <div className="page-subtitle">Dates that need a price decision, and what changed on the OTAs.</div>
         </div>
         <div>
-          <button type="button" className="btn btn-secondary" onClick={() => setWindow('prices')}><Icon name="globe" />OTA prices</button>
-          <button type="button" className="btn btn-secondary" onClick={() => setWindow('ladder')}><Icon name="globe" />OTA price ladder</button>
           <button type="button" className="btn btn-secondary" onClick={() => setWindow('rules')}>Pricing rules</button>
         </div>
       </div>
 
+      <OtaPriceButtons onLadder={() => setWindow('ladder')} onFixed={() => setWindow('prices')} />
+
       {error && <div className="alert alert-error" style={{ marginBottom: 14 }}>{error}</div>}
       {notice && <div className="alert alert-success" role="status" style={{ marginBottom: 14 }}>{notice}</div>}
 
-      <div className="stat-grid stat-grid-money" style={{ marginBottom: 18 }}>
+      <div className="stat-grid stat-grid-money ota-dash-stats" style={{ marginBottom: 18 }}>
         <div className="stat-card">
           <div className="stat-label">Slow dates, next 30 days</div>
           <div className="stat-value" style={{ color: data.slow_total ? SLOW : undefined }}>{data.slow_total}</div>
@@ -287,7 +288,7 @@ export default function OtaDashboard() {
           <Legend color={SLOW}>Slow: tap the date to change its price</Legend>
           <Legend color={ON_TRACK}>On track</Legend>
           <Legend color={HIGH}>70% or more</Legend>
-          <Legend color={MANUAL}>Manual price</Legend>
+          <Legend color={MANUAL}>Fixed price</Legend>
           <span>Service and tax included. An OTA's own discounts aren't included. Hover over or tap a price to see why.</span>
         </div>
         {tip && <PriceTip tip={tip} data={data} plan={plan} />}

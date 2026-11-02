@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { RateCalendarTab, AutomaticTab, EventsTab, ReportsTab } from './pricing/YieldTabs';
 import OtaPricesModal from '../components/OtaPricesModal';
 import OtaLadderModal from '../components/OtaLadderModal';
+import OtaPriceButtons from '../components/OtaPriceButtons';
 import { typeComparator } from '../lib/roomTypeOrder';
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -112,11 +113,10 @@ function MyRules() {
           <div className="page-subtitle">Set seasonal and special date pricing — overrides base rate on booking</div>
         </div>
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          {otaOn && <button className="btn btn-secondary" onClick={() => setOtaPrices(true)}><Icon name="globe" />OTA prices</button>}
-          {otaOn && <button className="btn btn-secondary" onClick={() => setOtaLadder(true)}><Icon name="globe" />OTA price ladder</button>}
           <button className="btn btn-primary" onClick={openNew}><Icon name="plus" />New period</button>
         </div>
       </div>
+      {otaOn && <OtaPriceButtons onLadder={() => setOtaLadder(true)} onFixed={() => setOtaPrices(true)} />}
       {otaPrices && <OtaPricesModal onClose={() => setOtaPrices(false)} />}
       {otaLadder && <OtaLadderModal onClose={() => setOtaLadder(false)} />}
 

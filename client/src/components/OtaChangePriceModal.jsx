@@ -109,14 +109,14 @@ export default function OtaChangePriceModal({ date, onClose, onSaved }) {
                   <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>{night.context}</p>
                 </Step>
                 <Step n={4} title={night.slow ? 'So we suggest' : 'This date'} last>
-                  <p style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 700, color: 'var(--green-dark)' }}>{night.headline || 'It is on track, and a manual price is still on'}</p>
+                  <p style={{ margin: 0, fontSize: 18, lineHeight: 1.3, fontWeight: 700, color: 'var(--green-dark)' }}>{night.headline || 'It is on track, and a fixed price is still on'}</p>
                   {(night.notes.length > 0 || night.breakeven) && (
                     <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>
                       {night.notes.join(' ')}{night.notes.length > 0 && night.breakeven ? ' ' : ''}
                       {night.breakeven && <>To earn the same, every 10 rooms you'd have sold at today's price need to become <b>{night.breakeven}</b>.</>}
                     </p>
                   )}
-                  {!night.slow && <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>Remove the manual price from the page if the ladder should take over again.</p>}
+                  {!night.slow && <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5 }}>Remove the fixed price from the page if the ladder should take over again.</p>}
                 </Step>
               </div>
 
@@ -140,7 +140,7 @@ export default function OtaChangePriceModal({ date, onClose, onSaved }) {
                               <div style={{ fontSize: 12, fontWeight: low ? 700 : 400, color: low ? '#B91C1C' : 'var(--text-muted)' }}>{l.min != null ? `Minimum ${fmt(l.min)}` : 'No minimum set'}</div>
                             </td>
                             <td style={{ textAlign: 'right' }}>{l.free}</td>
-                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(l.now)}{l.manual && <div style={{ fontSize: 11, fontWeight: 600, color: '#92400E' }}>manual</div>}</td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(l.now)}{l.manual && <div style={{ fontSize: 11, fontWeight: 600, color: '#92400E' }}>fixed</div>}</td>
                             {night.slow && (
                               <td style={{ textAlign: 'right' }}>
                                 <button type="button" aria-label={`Use suggested price for ${l.name}`} onClick={() => setValue(current.id, l, fmt(l.suggested))}

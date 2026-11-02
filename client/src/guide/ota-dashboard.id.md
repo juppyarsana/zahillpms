@@ -23,7 +23,7 @@ Setiap malam menunjukkan okupansi, dan di bawahnya harga yang kita kirim per tip
 | Tanggal merah | Sepi. Tekan untuk mengubah harga |
 | Tanggal hijau | On track |
 | Tanggal marun | Terisi 70% atau lebih |
-| Harga kuning | Harga manual yang diketik seseorang |
+| Harga kuning | Harga tetap (fixed) yang diketik seseorang |
 
 Arahkan kursor ke harga (atau tekan di HP) untuk melihat alasan harganya dan bedanya dengan malam sebelumnya. Pakai tombol di kanan atas untuk melihat meal plan lain. Ini harga yang kita kirim. Diskon dari OTA sendiri tidak termasuk, jadi tamu bisa melihat harga yang lebih rendah di OTA.
 
@@ -39,9 +39,9 @@ Owner mendapat pesan Telegram, dan perubahannya tercatat di **Pricing rules → 
 
 > Harga di bawah minimum tipe kamar tidak bisa disimpan. Tanya owner kalau memang perlu lebih rendah.
 
-## Harga manual tetap berlaku sampai dihapus
+## Harga tetap (fixed) berlaku sampai dihapus
 
-Harga yang Anda ketik tetap berlaku di tanggal itu, **walaupun tanggalnya sudah terisi**. Ladder tidak akan menaikkannya. Kalau sudah tidak perlu, tekan **Remove manual price** di daftar Slow dates. Tanggal dengan harga manual tetap ada di daftar itu walaupun sudah on track, supaya mudah ditemukan.
+Harga yang Anda ketik tetap berlaku di tanggal itu, **walaupun tanggalnya sudah terisi**. Ladder tidak akan menaikkannya. Kalau sudah tidak perlu, tekan **Remove fixed price** di daftar Slow dates. Tanggal dengan harga tetap (fixed) tetap ada di daftar itu walaupun sudah on track, supaya mudah ditemukan.
 
 ## Cara kerja saran harga
 

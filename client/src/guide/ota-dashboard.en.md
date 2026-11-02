@@ -23,7 +23,7 @@ Each night shows its occupancy and, under it, the price we send per room type in
 | Red date | Slow. Press it to change the price |
 | Green date | On track |
 | Maroon date | 70% full or more |
-| Amber price | A manual price typed by someone |
+| Amber price | A fixed price typed by someone |
 
 Hover over a price (or tap it on a phone) to see why it is that price and how it differs from the night before. Use the switch at the top right to see another meal plan. These are the prices we send. An OTA's own discounts aren't included, so a guest may see a lower price on the OTA.
 
@@ -39,9 +39,9 @@ The owner gets a Telegram message, and the change is listed under **Pricing rule
 
 > A price below the room type's minimum can't be saved. Ask the owner if it really needs to go lower.
 
-## Manual prices stay until you remove them
+## Fixed prices stay until you remove them
 
-A price you type stays on that date, **even if the date fills up**. The ladder won't raise it. When the date no longer needs it, press **Remove manual price** in the Slow dates list. A date with a manual price stays in that list even once it is on track, so you can find it.
+A price you type stays on that date, **even if the date fills up**. The ladder won't raise it. When the date no longer needs it, press **Remove fixed price** in the Slow dates list. A date with a fixed price stays in that list even once it is on track, so you can find it.
 
 ## How the suggestion works
 

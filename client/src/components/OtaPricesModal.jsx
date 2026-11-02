@@ -20,7 +20,7 @@ export default function OtaPricesModal({ onClose }) {
 
   async function load() {
     try { setData((await api.get('/api/channel-manager/prices')).data); }
-    catch (e) { setError(e.response?.data?.error || 'Could not load the OTA prices'); }
+    catch (e) { setError(e.response?.data?.error || 'Could not load the fixed OTA prices'); }
   }
   useEffect(() => { load(); }, []);
 
@@ -59,7 +59,7 @@ export default function OtaPricesModal({ onClose }) {
   }
 
   async function remove(p) {
-    if (!window.confirm(`Remove the OTA price for ${p.room_type_name} · ${p.rate_plan_name}, ${fmtDate(p.date_from)} – ${fmtDate(p.date_to)}? Those nights go back to the normal price (or an earlier OTA price).`)) return;
+    if (!window.confirm(`Remove the fixed price for ${p.room_type_name} · ${p.rate_plan_name}, ${fmtDate(p.date_from)} – ${fmtDate(p.date_to)}? Those nights go back to the ladder or normal price (or an earlier fixed price).`)) return;
     try { await api.delete('/api/channel-manager/prices', { data: { ids: [p.id] } }); load(); }
     catch (e) { setError(e.response?.data?.error || 'Could not remove'); }
   }
@@ -70,13 +70,13 @@ export default function OtaPricesModal({ onClose }) {
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 860, width: '100%' }}>
         <div className="modal-header">
-          <div className="modal-title">🌐 OTA prices</div>
+          <div className="modal-title">📌 Fixed OTA prices</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-            A price for one meal plan on the OTAs, per room per night, <b>service &amp; tax included</b> — sent exactly as typed.
-            It replaces the normal price (room rate + meal plan) on the OTAs for those nights only; prices in the PMS
+            A fixed price for one meal plan on the OTAs, per room per night, <b>service &amp; tax included</b> — sent exactly as typed.
+            It replaces the ladder or normal price on the OTAs for those nights only; prices in the PMS
             (New Booking, the bill) don't change. Every line saved together goes to the OTAs in one send.
           </div>
           {error && <div className="alert alert-error">{error}</div>}
@@ -137,7 +137,7 @@ export default function OtaPricesModal({ onClose }) {
             </>
           )}
 
-          <div style={{ fontWeight: 700, marginTop: 20, marginBottom: 8 }}>OTA prices set</div>
+          <div style={{ fontWeight: 700, marginTop: 20, marginBottom: 8 }}>Fixed prices set</div>
           {!data ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
             : !data.prices.length ? <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>None — the OTAs get the normal price (room rate + meal plan).</div>
             : (

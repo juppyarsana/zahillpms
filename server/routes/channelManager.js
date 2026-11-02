@@ -47,7 +47,7 @@ router.post('/prices', async (req, res) => {
     const result = await ratePrices.save(req.propertyId, req.user.id, lines);
     const days = lines.flatMap(l => [l.date_from, l.date_to]).sort();
     await otaPriceLog.record(req.propertyId, req.user, { action: 'prices',
-      summary: `OTA prices: ${result.saved} line${result.saved === 1 ? '' : 's'}, ${logDay(days[0])} – ${logDay(days[days.length - 1])}` });
+      summary: `Fixed OTA prices: ${result.saved} line${result.saved === 1 ? '' : 's'}, ${logDay(days[0])} – ${logDay(days[days.length - 1])}` });
     res.status(201).json(result);
   } catch (err) { send(res, err); }
 });
@@ -56,7 +56,7 @@ router.post('/prices', async (req, res) => {
 router.delete('/prices', async (req, res) => {
   try {
     const result = await ratePrices.remove(req.propertyId, req.body?.ids);
-    await otaPriceLog.record(req.propertyId, req.user, { action: 'prices_removed', summary: `OTA prices: ${result.removed} line${result.removed === 1 ? '' : 's'} removed` });
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'prices_removed', summary: `Fixed OTA prices: ${result.removed} line${result.removed === 1 ? '' : 's'} removed` });
     res.json(result);
   } catch (err) { send(res, err); }
 });
@@ -72,16 +72,42 @@ router.get('/ladders', async (req, res) => {
 router.put('/ladders/:ratePlanId', async (req, res) => {
   try {
     const result = await ladders.save(req.propertyId, req.user.id, req.params.ratePlanId, req.body);
-    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder', summary: `OTA price ladder saved: ${result.room_types} room types, ${result.tiers} tiers` });
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder', summary: `OTA price ladder saved (${result.season_name || 'All year'}, ${result.plan_name}): ${result.room_types} room types, ${result.tiers} tiers` });
     res.json(result);
   } catch (err) { send(res, err); }
 });
 
-// DELETE /api/channel-manager/ladders/:ratePlanId
+// DELETE /api/channel-manager/ladders/:ratePlanId?season_id=
 router.delete('/ladders/:ratePlanId', async (req, res) => {
   try {
-    const result = await ladders.remove(req.propertyId, req.params.ratePlanId);
-    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder_removed', summary: 'OTA price ladder removed' });
+    const result = await ladders.remove(req.propertyId, req.params.ratePlanId, req.query.season_id);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder_removed', summary: `OTA price ladder removed (${result.season_name || 'All year'})` });
+    res.json(result);
+  } catch (err) { send(res, err); }
+});
+
+// Seasons (migration 150): POST /ladders/seasons { name, date_from, date_to, copy_all_year? },
+// PUT /ladders/seasons/:id { name, date_from, date_to }, DELETE /ladders/seasons/:id
+router.post('/ladders/seasons', async (req, res) => {
+  try {
+    const result = await ladders.createSeason(req.propertyId, req.user.id, req.body);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder_season', summary: `OTA ladder season added: ${result.name}, ${result.date_from} to ${result.date_to}` });
+    res.status(201).json(result);
+  } catch (err) { send(res, err); }
+});
+
+router.put('/ladders/seasons/:id', async (req, res) => {
+  try {
+    const result = await ladders.updateSeason(req.propertyId, req.params.id, req.body);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'ladder_season', summary: `OTA ladder season changed: ${result.name}, ${result.date_from} to ${result.date_to}` });
+    res.json(result);
+  } catch (err) { send(res, err); }
+});
+
+router.delete('/ladders/seasons/:id', async (req, res) => {
+  try {
+    const result = await ladders.removeSeason(req.propertyId, req.params.id);
+    await otaPriceLog.record(req.propertyId, req.user, { action: 'season_removed', summary: `OTA ladder season removed: ${result.name}` });
     res.json(result);
   } catch (err) { send(res, err); }
 });

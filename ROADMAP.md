@@ -111,7 +111,7 @@ balance sheet at that date. Details: CLAUDE.md → "Accounting — Profit & Loss
 **OTA price ladder (migration 137, 2026-10-23, on `dev`):** sales' OTA prices follow rooms sold in the whole hotel. Pricing → My rules → 📈 OTA price ladder: per meal plan (Breakfast Non Refund / Breakfast Refundable) a grid of "sold up to" tiers × room types, pasted from Excel; the channel manager sends the price of the tier the next room falls in, re-counted on every booking / cancellation (~20 s). A fixed OTA price still wins on its nights. Details: CLAUDE.md → "OTA price ladder".
 **App colour + tab icon (migration 138, 2026-10-23, on `dev`):** each property has its own staff-app colour (Superadmin → Branding) and its own tab / home-screen icon (its logo, or its first letter) — no more Zahill maroon and lotus for every hotel. Details: CLAUDE.md → "Per-property app colour + tab icon".
 **OTA dashboard (migration 146, 2026-10-31, deployed to production; production at `main` 881557a):** Sales → OTA dashboard: next 30 nights with the prices we send, slow dates against occupancy targets, a suggested price with the reasons, minimum prices, a log and alert for price changes. Next: automatic pricing in steps (suggest → automatic within limits → more factors), competitor prices with a rate shopper. Details: CLAUDE.md → "OTA dashboard".
-Next migration number: **150**.
+Next migration number: **151**.
 
 ### Channex re-certification run sheet (2026-10-21)
 
@@ -2190,7 +2190,7 @@ Session 3: `server/maintenance/moveGroupPayments.js` moves existing groups over 
 per group, one transfer spread over rooms merged back into one payment). Production: back up → deploy → dry run →
 `--apply`. Details in `CLAUDE.md`.
 
-## Next migration number: 150
+## Next migration number: 151
 
 ---
 

@@ -72,10 +72,11 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
   ]);
   const values = new Map();
   const tiers = new Map();      // `r|external|night` → the ladder tier sent ("sold up to")
+  const ladderOf = new Map();   // `r|external|night` → { season, lowest }: which ladder set the price
   const base = new Map();       // `r|external|night` → the price under a typed OTA price
   const manuals = new Set();    // `r|external|night` sent at a typed OTA price
   const soldByNight = new Map();   // night → rooms sold in the whole hotel (counted when a ladder is in use)
-  if (!rtLinks.length) return { values, tiers, base, manuals, soldByNight, from, to };
+  if (!rtLinks.length) return { values, tiers, ladderOf, base, manuals, soldByNight, from, to };
   const typeIds = rtLinks.map(l => l.room_type_id);
 
   const [{ rows: units }, { rows: stays }] = await Promise.all([
@@ -127,15 +128,19 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
   }
 
   // OTA price ladders (migration 137): by rooms sold that night in the whole
-  // hotel (every room, linked or not — the same booking rule as above).
+  // hotel (every room, linked or not — the same booking rule as above). Inside
+  // a season (migration 150) the season's ladder, else the All year one.
   const { rows: ladderRows } = await db.query(
-    `SELECT c.external_rate_plan_id, l.sold_up_to, l.price
+    `SELECT c.external_rate_plan_id, l.season_id, l.sold_up_to, l.price
        FROM channel_price_ladders l
        JOIN channel_rate_plans c ON c.property_id = l.property_id AND c.provider = $2
                                 AND c.room_type_id = l.room_type_id AND c.rate_plan_id = l.rate_plan_id
        JOIN rate_plans rp ON rp.id = l.rate_plan_id AND rp.is_active = true
       WHERE l.property_id = $1 ORDER BY l.sold_up_to`, [propertyId, PROVIDER]);
   if (ladderRows.length) {
+    const { rows: seasons } = await db.query(
+      `SELECT id, name, to_char(date_from, 'YYYY-MM-DD') AS d1, to_char(date_to, 'YYYY-MM-DD') AS d2
+         FROM channel_ladder_seasons WHERE property_id = $1`, [propertyId]);
     const { rows: hotelStays } = await db.query(
       `SELECT b.unit_id, to_char(b.check_in_date, 'YYYY-MM-DD') AS ci, to_char(${occupiedUntilSql('b')}, 'YYYY-MM-DD') AS until
          FROM bookings b
@@ -148,18 +153,27 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
         soldRooms.get(d).add(s.unit_id);
       }
     }
-    const ladders = new Map();
+    const ladders = new Map();   // external rate plan → season id ('' = All year) → tiers
     for (const r of ladderRows) {
-      if (!ladders.has(r.external_rate_plan_id)) ladders.set(r.external_rate_plan_id, []);
-      ladders.get(r.external_rate_plan_id).push({ up_to: r.sold_up_to, price: Number(r.price) });
+      if (!ladders.has(r.external_rate_plan_id)) ladders.set(r.external_rate_plan_id, new Map());
+      const scopes = ladders.get(r.external_rate_plan_id);
+      const scope = r.season_id || '';
+      if (!scopes.has(scope)) scopes.set(scope, []);
+      scopes.get(scope).push({ up_to: r.sold_up_to, price: Number(r.price) });
     }
     for (const night of nights) {
       const sold = soldRooms.get(night)?.size || 0;
       soldByNight.set(night, sold);
-      for (const [ext, list] of ladders) {
+      const season = seasons.find(s => s.d1 <= night && night <= s.d2);
+      for (const [ext, scopes] of ladders) {
+        const inSeason = season ? scopes.get(season.id) : null;
+        const list = inSeason || scopes.get('');
+        if (!list) continue;
         const t = tierFor(list, sold);
-        values.set(`r|${ext}|${night}`, t.price);
-        tiers.set(`r|${ext}|${night}`, t.up_to);
+        const key = `r|${ext}|${night}`;
+        values.set(key, t.price);
+        tiers.set(key, t.up_to);
+        ladderOf.set(key, { season: inSeason ? { id: season.id, name: season.name } : null, lowest: list[0].up_to });
       }
     }
   }
@@ -182,9 +196,10 @@ async function desiredValues(propertyId, { days = SYNC_DAYS } = {}) {
       manuals.add(key);
       values.set(key, Number(o.price));
       tiers.delete(key);
+      ladderOf.delete(key);
     }
   }
-  return { values, tiers, base, manuals, soldByNight, from, to };
+  return { values, tiers, ladderOf, base, manuals, soldByNight, from, to };
 }
 
 // Consecutive nights with the same value → one range.

@@ -22,6 +22,8 @@ const PATHS = {
   chevronRight: <path d="M9 18l6-6-6-6" />,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></>,
   zap: <path d="M13 2L4 14h7l-1 8 9-12h-7z" />,
+  ladder: <><path d="M4 18l6-6 4 4 6-8" /><path d="M15 8h5v5" /></>,
+  pin: <><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6z" /><path d="M12 15v5" /></>,
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
   check2: <><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></>,
   edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,

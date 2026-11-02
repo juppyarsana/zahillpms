@@ -121,22 +121,21 @@ async function saveRules(propertyId, user, body) {
 
 // ── The 30 nights ────────────────────────────────────────────
 async function loadLinks(propertyId) {
-  const [{ rows: types }, { rows: plans }, { rows: tiers }] = await Promise.all([
+  const [{ rows: types }, { rows: plans }, { rows: withLadder }] = await Promise.all([
     db.query(`SELECT c.room_type_id AS id, c.external_room_type_id AS external, rt.name
                 FROM channel_room_types c JOIN room_types rt ON rt.id = c.room_type_id
                WHERE c.property_id = $1 AND c.provider = $2 ORDER BY rt.sort_order, rt.name`, [propertyId, PROVIDER]),
     db.query(`SELECT c.room_type_id, c.rate_plan_id, c.external_rate_plan_id AS external, rp.name, rp.sort_order
                 FROM channel_rate_plans c JOIN rate_plans rp ON rp.id = c.rate_plan_id AND rp.is_active = true
                WHERE c.property_id = $1 AND c.provider = $2`, [propertyId, PROVIDER]),
-    db.query('SELECT DISTINCT rate_plan_id, sold_up_to FROM channel_price_ladders WHERE property_id = $1', [propertyId]),
+    db.query('SELECT DISTINCT rate_plan_id FROM channel_price_ladders WHERE property_id = $1', [propertyId]),
   ]);
-  const lowest = new Map();
-  for (const t of tiers) lowest.set(t.rate_plan_id, Math.min(lowest.get(t.rate_plan_id) ?? Infinity, t.sold_up_to));
+  const hasLadder = new Set(withLadder.map(t => t.rate_plan_id));
   // Meal plans with a ladder first: those are the ones actually being sold.
   const planList = [...new Map(plans.map(p => [p.rate_plan_id, {
-    id: p.rate_plan_id, name: p.name, sort_order: p.sort_order, has_ladder: lowest.has(p.rate_plan_id),
+    id: p.rate_plan_id, name: p.name, sort_order: p.sort_order, has_ladder: hasLadder.has(p.rate_plan_id),
   }])).values()].sort((a, b) => (b.has_ladder - a.has_ladder) || (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
-  return { types, plans, planList, lowest };
+  return { types, plans, planList };
 }
 
 async function buildNights(propertyId) {
@@ -164,9 +163,11 @@ async function buildNights(propertyId) {
       if (!desired.values.has(key)) continue;
       const isManual = desired.manuals.has(key);
       manual = manual || isManual;
+      const ladder = desired.ladderOf.get(key);
       (prices[p.rate_plan_id] ||= {})[p.room_type_id] = {
         price: desired.values.get(key), base: desired.base.get(key) ?? desired.values.get(key),
         manual: isManual, tier: desired.tiers.get(key) || null,
+        season_id: ladder?.season?.id || null, season_name: ladder?.season?.name || null, lowest_tier: ladder?.lowest ?? null,
       };
     }
     const free_by_type = {};
@@ -264,9 +265,13 @@ async function buildDashboard(propertyId) {
   const [since, otas, sync] = await Promise.all([loadSince(propertyId), loadOtas(propertyId), channelSync.status(propertyId)]);
   // Each ladder, so a price can say why it is what it is and where it goes next.
   const { rows: ladderRows } = await db.query(
-    'SELECT rate_plan_id, room_type_id, sold_up_to, price FROM channel_price_ladders WHERE property_id = $1 ORDER BY sold_up_to', [propertyId]);
-  const ladders = {};
-  for (const l of ladderRows) ((ladders[l.rate_plan_id] ||= {})[l.room_type_id] ||= []).push({ up_to: l.sold_up_to, price: Number(l.price) });
+    'SELECT rate_plan_id, room_type_id, season_id, sold_up_to, price FROM channel_price_ladders WHERE property_id = $1 ORDER BY sold_up_to', [propertyId]);
+  const ladders = {};         // All year: plan → room type → steps
+  const season_ladders = {};  // season id → plan → room type → steps
+  for (const l of ladderRows) {
+    const scope = l.season_id ? (season_ladders[l.season_id] ||= {}) : ladders;
+    ((scope[l.rate_plan_id] ||= {})[l.room_type_id] ||= []).push({ up_to: l.sold_up_to, price: Number(l.price) });
+  }
   const firstPlan = links.planList[0]?.id;
   const list = nights.filter(n => n.slow || n.manual).map(n => {
     const row = Object.values(n.prices[firstPlan] || {});
@@ -278,7 +283,7 @@ async function buildDashboard(propertyId) {
     };
   });
   return {
-    today, linked: links.types.length > 0, ladders, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
+    today, linked: links.types.length > 0, ladders, season_ladders, plans: links.planList, room_types: links.types.map(t => ({ id: t.id, name: t.name })),
     rules, nights, slow_dates: list, slow_total: nights.filter(n => n.slow).length,
     slow_soon: nights.filter(n => n.slow && n.days <= 7).length,
     since, otas,
@@ -374,8 +379,8 @@ async function nightContext(propertyId, night, nights, firstPlan, links) {
   else if (strong) out.push(`${long(strong.date)} is ${strong.pct}% full, so a better price could also win longer stays.`);
 
   const cells = Object.values(night.prices[firstPlan] || {});
-  const lowest = links.lowest.get(firstPlan);
-  if (cells.length && lowest != null && cells.some(c => !c.manual) && cells.filter(c => !c.manual).every(c => c.tier === lowest)) {
+  const onLadder = cells.filter(c => !c.manual);
+  if (onLadder.length && onLadder.every(c => c.tier != null && c.tier === c.lowest_tier)) {
     out.push("The ladder is already on its lowest tier, so the price won't drop by itself.");
   }
   return out.length ? out.join(' ') : 'Nothing else stands out for this date.';
@@ -459,8 +464,8 @@ async function saveNight(propertyId, user, date, lines) {
 async function removeNight(propertyId, user, date) {
   if (!YMD.test(date || '')) throw bad('Pick a date');
   const removed = await ratePrices.removeForNight(propertyId, date);
-  if (!removed) throw bad('No manual price on this date', 404, 'NOT_FOUND');
-  await otaPriceLog.record(propertyId, user, { action: 'night_removed', night: date, summary: `${short(date)}: manual prices removed, back to the ladder or normal price` });
+  if (!removed) throw bad('No fixed price on this date', 404, 'NOT_FOUND');
+  await otaPriceLog.record(propertyId, user, { action: 'night_removed', night: date, summary: `${short(date)}: fixed prices removed, back to the ladder or normal price` });
   return { removed };
 }
 

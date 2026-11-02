@@ -51,17 +51,17 @@ Semua itu muncul sebagai pop-up *needs you*, paling atas di **Reservations → O
 
 > Jangan mengetik booking OTA secara manual kalau hotel sudah terhubung — booking-nya jadi dua. Masukkan manual hanya kalau PMS memintanya.
 
-## Harga lain untuk satu meal plan di OTA (owner)
+## Fixed OTA prices: satu harga untuk tanggal tertentu (owner)
 
 Biasanya OTA mendapat harga PMS: harga kamar ditambah meal plan, sudah termasuk service & pajak. Untuk memberi OTA harga lain untuk satu meal plan, misalnya promo Bed & Breakfast:
 
-1. **Pricing** → **🌐 OTA prices**.
+1. **Pricing** → **📌 Fixed OTA prices**.
 2. Di tiap baris pilih **tipe kamar**, **meal plan**, **malam pertama** dan **malam terakhir** (keduanya termasuk), lalu **harga** per kamar per malam, sudah termasuk service & pajak.
 3. Lebih dari satu? **+ Add line**, lalu **Save … — send together**. Semuanya sampai ke OTA bersama dalam sekitar 20 detik.
 
 > Harga ini hanya untuk OTA. New Booking dan tagihan tamu tetap memakai harga PMS.
 
-Harga bisa diisi sampai 5 tahun ke depan: OTA melihat sekitar 16 bulan, dan malam berikutnya dikirim saat masuk jangkauan itu. Kalau dua harga OTA mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke harga normal.
+Harga bisa diisi sampai 5 tahun ke depan: OTA melihat sekitar 16 bulan, dan malam berikutnya dikirim saat masuk jangkauan itu. Kalau dua harga tetap mencakup malam yang sama, yang disimpan terakhir yang berlaku. **✕** pada harga yang tersimpan menghapusnya; malam-malam itu kembali ke tangga harga atau harga normal.
 
 ## Tangga harga OTA — harga mengikuti kamar terjual (owner)
 
@@ -77,6 +77,33 @@ Setiap malam OTA mendapat harga dari tingkat tempat kamar **berikutnya** berada:
 > Dihitung terjual: semua booking kecuali cancelled dan no-show, termasuk yang belum bayar, di semua tipe kamar.
 
 - Tipe kamar yang kolomnya dikosongkan tetap memakai harga normal.
-- **🌐 OTA price** yang tetap (fixed) mengalahkan tangga harga pada malam-malamnya (untuk tanggal khusus). Hapus harga tetap lama untuk meal plan itu, kalau tidak tangga harga tidak berlaku pada malam itu.
+- **📌 Fixed OTA price** mengalahkan tangga harga pada malam-malamnya (untuk tanggal khusus). Hapus harga tetap lama untuk meal plan itu, kalau tidak tangga harga tidak berlaku pada malam itu.
 - **Remove ladder** mengembalikan meal plan ke harga normal.
 - Setiap pengiriman tercatat di **Settings → Channel Manager → Last sends**, dengan tingkatnya ("sold up to 20").
+
+### Season: tangga harga berbeda untuk tanggal tertentu
+
+Untuk high season, tangga harga biasa tetap ada dan Anda menambah season. Harganya berlaku pada malam-malam season itu, dan sesudahnya tangga harga biasa kembali berlaku dengan sendirinya.
+
+1. Di jendela **📈 OTA price ladder**, tekan **+ New season**.
+2. Isi nama, **first night** (malam pertama) dan **last night** (malam terakhir). Last night adalah malam terakhir yang dijual dengan harga ini: kalau last night 15 Jan, tamu check-out 16 Jan.
+3. Biarkan **Start from a copy of the All year ladders** tercentang supaya mulai dari harga sekarang, lalu **Add season**.
+4. Cek baris **You are editing**, ubah harganya, lalu tekan **Save**. Ulangi untuk tiap meal plan.
+
+Harga yang dikirim tiap malam adalah yang pertama berlaku dari urutan ini: **📌 Fixed OTA price**, tangga harga season, tangga harga **All year**, harga normal.
+
+- Season tidak boleh tumpang tindih. Untuk mengubah tanggal atau menghapus season, tekan **Edit dates**.
+- Tipe kamar yang dikosongkan di season, atau meal plan yang belum punya harga di season itu, memakai tangga harga All year pada malam-malam tersebut.
+- Jendela ini menampilkan **Fixed OTA price** yang ada pada malam-malam season. Harga itu mengalahkan tangga harga, jadi hapus kalau tangga harga yang harus berlaku.
+
+### Menghitung harga dengan %
+
+1. Isi harga baris pertama, lalu **%** di tiap baris di bawahnya. Tiap % dihitung dari baris di atasnya.
+2. Pilih **Round to** (Rp 1.000 kalau tidak diubah) lalu tekan **Work out prices**.
+3. Cek harganya. Anda masih bisa mengubah harga mana pun, lalu **Save**.
+
+Kalau ada harga yang Anda ubah sendiri, **Work out prices** akan bertanya dulu sebelum menimpanya.
+
+### Menyalin dari tangga harga lain
+
+Untuk rate yang selalu sekian persen di atas rate lain, misalnya Refundable 10% di atas Non Refund: pilih meal plan-nya, pilih tangga harga di **Copy from**, isi %, tekan **Copy into the grid**, cek harganya, lalu **Save**. Harga di OTA tidak berubah sebelum Anda menekan Save.

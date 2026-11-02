@@ -51,17 +51,17 @@ These appear as a *needs you* pop-up, at the top of **Reservations → OTA booki
 
 > Don't type an OTA booking in by hand when the hotel is connected — it would be in twice. Enter it by hand only when the PMS says so.
 
-## A different price for one meal plan on the OTAs (owner)
+## Fixed OTA prices: one price for chosen dates (owner)
 
 Normally the OTAs get the PMS price: the room rate plus the meal plan, service & tax included. To give the OTAs another price for one meal plan, e.g. a Bed & Breakfast promotion:
 
-1. **Pricing** → **🌐 OTA prices**.
+1. **Pricing** → **📌 Fixed OTA prices**.
 2. Per line pick the **room type**, the **meal plan**, the **first** and **last night** (both included) and the **price** per room per night, service & tax included.
 3. Need several? **+ Add line**, then **Save … — send together**. They reach the OTAs together within about 20 seconds.
 
 > This price is for the OTAs only. New Booking and the guest's bill keep the PMS price.
 
-A price can run up to 5 years ahead: the OTAs see about 16 months, and each later night is sent as it comes into view. Where two OTA prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the normal price.
+A price can run up to 5 years ahead: the OTAs see about 16 months, and each later night is sent as it comes into view. Where two fixed prices cover the same night, the one saved last wins. **✕** on a saved price removes it; those nights go back to the ladder or normal price.
 
 ## OTA price ladder — the price follows rooms sold (owner)
 
@@ -77,6 +77,33 @@ Each night the OTAs get the price of the tier the **next** room falls in: with 1
 > Counted as sold: every booking except cancelled and no-show, unpaid ones too, in every room type.
 
 - A room type whose column is left empty keeps the normal price.
-- A fixed **🌐 OTA price** wins over the ladder on its nights (for a special date). Remove old fixed prices for that meal plan, or the ladder won't show on those nights.
+- A **📌 Fixed OTA price** wins over the ladder on its nights (for a special date). Remove old fixed prices for that meal plan, or the ladder won't show on those nights.
 - **Remove ladder** puts the meal plan back on the normal price.
 - Each send is in **Settings → Channel Manager → Last sends**, with its tier ("sold up to 20").
+
+### Seasons: a different ladder for some dates
+
+For high season, keep your normal ladder and add a season. Its prices apply on its nights, and the normal ladder comes back by itself afterwards.
+
+1. In the **📈 OTA price ladder** window, press **+ New season**.
+2. Type a name, the **first night** and the **last night**. The last night is the last one sold at these prices: with 15 Jan as the last night, the guest checks out on 16 Jan.
+3. Leave **Start from a copy of the All year ladders** ticked to start from your current prices, then **Add season**.
+4. Check the **You are editing** line, change the prices and press **Save**. Do this for each meal plan.
+
+The price sent for each night is the first of these that applies: a **📌 Fixed OTA price**, the season's ladder, the **All year** ladder, the normal price.
+
+- Seasons can't overlap. To change the dates or delete a season, press **Edit dates**.
+- A room type left empty in a season, or a meal plan with no prices there, uses its All year ladder on those nights.
+- The window lists any **Fixed OTA prices** on the season's nights. They win over the ladder, so remove them if the ladder should apply.
+
+### Working out prices with a %
+
+1. Type the first row's prices, then a **%** on each row below. Each % builds on the row above.
+2. Choose **Round to** (Rp 1.000 unless you change it) and press **Work out prices**.
+3. Check the prices. You can still change any of them, then **Save**.
+
+If you changed a price by hand, pressing **Work out prices** again asks before it overwrites it.
+
+### Copying from another ladder
+
+For a rate that is a fixed % above another, such as Refundable at 10% above Non Refund: pick the meal plan, choose the ladder in **Copy from**, type the %, press **Copy into the grid**, check the prices and **Save**. Nothing changes on the OTAs until you press Save.

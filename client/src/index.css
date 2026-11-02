@@ -1063,6 +1063,27 @@ tr:hover td { background: #FAFAF8; }
 .seg button:last-child { border-right: none; }
 .seg button:hover:not(.active) { background: var(--bg-subtle); color: var(--text); }
 .seg button.active { background: var(--green-dark); color: #fff; }
+.ota-price-bar { margin-bottom: 16px; }
+.ota-price-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ota-price-bar-label { font-size: 13px; font-weight: 600; margin-right: 4px; }
+.ota-price-bar-note { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+@media (max-width: 768px) {
+  /* Title and Pricing rules on one line, the description under both. */
+  .ota-dash-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px; align-items: center; }
+  .ota-dash-header > :first-child { display: contents; }
+  .ota-dash-header > div:last-child:not(:first-child) { grid-column: 2; grid-row: 1; }
+  .ota-dash-header .page-subtitle { grid-column: 1 / -1; }
+  .ota-dash-header .btn { padding: 7px 12px; }
+  /* The two price buttons in equal columns. */
+  .ota-price-bar-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ota-price-bar-label { grid-column: 1 / -1; margin-right: 0; }
+  .ota-price-bar-row .btn { justify-content: center; padding: 9px 6px; min-width: 0; font-size: 13px; }
+  /* Labels take two lines either way, so the figures in a row line up. */
+  .ota-dash-stats .stat-label { line-height: 1.35; min-height: 2.7em; }
+}
+@media (max-width: 340px) { .ota-dash-stats .stat-label { min-height: 4.05em; } }
+.seg.seg-wrap { height: auto; flex-wrap: wrap; overflow: hidden; }
+.seg.seg-wrap button { min-height: 34px; }
 .page-toolbar .form-select, .page-toolbar .form-input { height: 34px; padding-top: 0; padding-bottom: 0; }
 
 /* ── Settings frame (2026-10-22): settings menu on the left of every settings page ── */
