@@ -11,6 +11,7 @@
 //   DELETE /:id/charges/:chargeId  { reason }   (void; a restaurant bill → the POS is told and reopens it)
 //   POST /:id/charges/:chargeId/tell-pos        try again to tell the POS
 //   POST /:id/meals · PUT /:id/meals/:mealId · DELETE /:id/meals/:mealId
+//   POST /:id/meals/:mealId/on-bill  agreed meal already on a restaurant bill: its agreed price comes off
 //   POST /:id/payments             { amount, method, received_at?, reference?, notes? }
 //   DELETE /:id/payments/:paymentId { reason }  (void)
 //   GET  /:id/refundable · POST /:id/refund { amount, method, refunded_at?, reference?, reason }
@@ -92,6 +93,11 @@ router.post('/:id/meals', run(async (req, res) => {
 }));
 router.put('/:id/meals/:mealId', run(async (req, res) => {
   await ev.updateMeal(req.propertyId, req.params.id, req.params.mealId, req.body || {}, req.user);
+  res.json({ ok: true });
+}));
+// An agreed meal that is already on a restaurant bill covering more: take its agreed price off.
+router.post('/:id/meals/:mealId/on-bill', run(async (req, res) => {
+  await ev.mealOnBill(req.propertyId, req.params.id, req.params.mealId, req.user);
   res.json({ ok: true });
 }));
 router.delete('/:id/meals/:mealId', run(async (req, res) => {

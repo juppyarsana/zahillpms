@@ -375,6 +375,16 @@ export default function EventDetail() {
               )}
             </div>
             <div className="flex gap-2" style={{ alignItems: 'center' }}>
+              {/* One restaurant bill for several things (charged without picking this meal): its agreed price would count twice. */}
+              {!cancelled && m.agreed_total != null && m.charged_total == null && bill.charges.some(c => c.type === 'pos') && (
+                <button className="btn btn-sm btn-secondary" title="The restaurant's bill already includes this meal — take its agreed price off so it isn't counted twice"
+                  onClick={() => {
+                    if (!window.confirm(`${mealLabel(m.kind)} ${m.service_time || ''}: is it already on a restaurant bill above?
+
+Its agreed price (${fmtIDR(m.agreed_total)}) comes off the expected total. The meal stays listed.`)) return;
+                    api.post(`/api/events/${e.id}/meals/${m.id}/on-bill`).then(load).catch(err => setError(err.response?.data?.error || 'Could not change the meal'));
+                  }}>Already on a restaurant bill</button>
+              )}
               {m.status === 'done'
                 ? <span className="badge badge-green" title={m.done_at ? fmtStamp(m.done_at) : ''}>Handled{m.done_by ? ` by ${m.done_by}` : ''}</span>
                 : <>

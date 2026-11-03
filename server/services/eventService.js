@@ -700,6 +700,30 @@ async function cancelMeal(propertyId, id, mealId, user) {
   if (e.status === 'confirmed') alertEvent(propertyId, 'meal', await getEvent(propertyId, id), user, `Cancelled: ${text}`);
 }
 
+// An agreed meal the restaurant charged on a bill that covers several things
+// (one POS bill for lunch + coffee breaks + the room, charged to the event
+// without picking a meal): its agreed price would be counted again on top of
+// that bill. Takes the agreed price off — open or already handled — and keeps
+// the meal. Only while the event has a restaurant bill. No kitchen alert.
+async function mealOnBill(propertyId, id, mealId, user) {
+  return tx(async client => {
+    const ev = await lockOpen(client, propertyId, id);
+    if (ev.status === 'cancelled') throw new EventError(409, 'This event is cancelled');
+    const { rows: [cur] } = await client.query('SELECT * FROM event_meals WHERE id = $1 AND event_id = $2 FOR UPDATE', [mealId, id]);
+    if (!cur) throw new EventError(404, 'Meal not found');
+    if (cur.status === 'cancelled') throw new EventError(409, 'This meal is cancelled');
+    if (cur.unit_price == null) throw new EventError(409, 'This meal has no agreed price');
+    const { rows: [pos] } = await client.query(
+      "SELECT COUNT(*) FILTER (WHERE meal_id = $2)::int AS own, COUNT(*)::int AS any FROM event_charges WHERE event_id = $1 AND type = 'pos' AND NOT is_voided", [id, mealId]);
+    if (pos.own > 0) throw new EventError(409, 'This meal already has its own restaurant bill');
+    if (!pos.any) throw new EventError(409, 'There is no restaurant bill on this event yet', { code: 'NO_POS_BILL' });
+    const q = mealQuote(ev, cur);
+    await client.query('UPDATE event_meals SET unit_price = NULL, shown_price = NULL, updated_at = NOW() WHERE id = $1', [mealId]);
+    await log(client, id, `Agreed price taken off ${mealText(cur)} (${fmtIDR(q.price)} per person = ${fmtIDR(q.total)}): already on a restaurant bill.`, user.id);
+    return true;
+  });
+}
+
 // ── Payments (the shape of services/groupBilling.js) ─────────────
 async function methodOf(client, propertyId, method) {
   if (!method) throw new EventError(400, 'Payment method required');
@@ -958,6 +982,6 @@ module.exports = {
   EventError, STATUSES, MEAL_KINDS, whenText, posEvents, posMealStatus, posCharge,
   listVenues, saveVenue, list, getEvent, detail, eventBill, listMeals, linkedGroup, linkedBooking, linkedEventIds,
   linkedEventsDue, payLinkedTx,
-  create, update, setStatus, addCharge, voidCharge, tellPos, addMeal, updateMeal, cancelMeal,
+  create, update, setStatus, addCharge, voidCharge, tellPos, addMeal, updateMeal, cancelMeal, mealOnBill,
   recordPayment, voidPayment, refundable, refund, priceOf, log, tx,
 };
