@@ -1216,6 +1216,21 @@ router.put('/:id/to-check/done', auth, async (req, res) => {
 });
 
 // GET /api/bookings/group/:groupId
+// Events (meeting room, not cancelled) linked to a group or to one stay
+// (migrations 106, 153) — the booking / group page shows them and offers the
+// combined invoice. Read here, not through /api/events, so front desk without
+// the Events permission can still print the combined invoice.
+async function linkedEvents(propertyId, { groupId = null, bookingId = null }) {
+  const { rows } = await db.query(
+    `SELECT e.id, e.event_no, e.name, e.status, to_char(e.event_date, 'YYYY-MM-DD') AS event_date,
+            to_char(e.end_date, 'YYYY-MM-DD') AS end_date, to_char(e.start_time, 'HH24:MI') AS start_time, to_char(e.end_time, 'HH24:MI') AS end_time
+     FROM events e
+     WHERE e.property_id = $1 AND e.status <> 'cancelled'
+       AND (($2::uuid IS NOT NULL AND e.reservation_group_id = $2) OR ($3::uuid IS NOT NULL AND e.booking_id = $3))
+     ORDER BY e.event_date, e.start_time`, [propertyId, groupId, bookingId]);
+  return rows;
+}
+
 router.get('/group/:groupId', auth, async (req, res) => {
   try {
     const { rows: [group] } = await db.query(`
@@ -1313,6 +1328,7 @@ router.get('/group/:groupId', auth, async (req, res) => {
       group,
       bookings: bookingsWithPayments,
       events,
+      linked_events: await linkedEvents(req.propertyId, { groupId: group.id }),
       // group_billing: { billing_mode, total, received, balance_due, payments, rooms [{ group_total, own_total, own_balance }] }
       bill,
       rollup: {
@@ -1429,7 +1445,8 @@ router.get('/:id', auth, async (req, res) => {
       FROM bookings b JOIN units u ON u.id = b.unit_id
       WHERE b.property_id = $1 AND (b.id = $2 OR b.split_from_booking_id = $3)
       ORDER BY b.check_in_date`, [req.propertyId, booking.split_from_booking_id || null, booking.id]);
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests, split_links });
+    const linked_events = await linkedEvents(req.propertyId, { bookingId: booking.id });
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests, split_links, linked_events });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2518,6 +2535,31 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
   }
 });
 
+// Record Group Payment taking the group's linked meetings / events too
+// (migration 153): body.events = [{ event_id, amount }], each recorded on its
+// own event inside the same transaction. → { total, parts } or { status, error }.
+async function payGroupEvents(client, req) {
+  const list = (Array.isArray(req.body.events) ? req.body.events : []).filter(x => x && x.event_id);
+  if (!list.length) return { total: 0, parts: [] };
+  const { rows: [g] } = await client.query(
+    'SELECT gu.name FROM reservation_groups rg JOIN guests gu ON gu.id = rg.primary_guest_id WHERE rg.id = $1', [req.params.groupId]);
+  return require('../services/eventService').payLinkedTx(client, req.propertyId, { groupId: req.params.groupId }, list, {
+    method: req.body.method, receivedAt: req.body.received_at || null,
+    reference: String(req.body.reference || '').trim().slice(0, 120) || null, notes: String(req.body.notes || '').trim(),
+    user: req.user, via: `taken with the Record Group Payment of ${g?.name || 'the group'}`,
+  });
+}
+
+// GET /api/bookings/group/:groupId/events-due — the group's linked meetings /
+// events that still owe money, for Record Group Payment.
+router.get('/group/:groupId/events-due', auth, async (req, res) => {
+  try {
+    res.json(await require('../services/eventService').linkedEventsDue(req.propertyId, { groupId: req.params.groupId }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/bookings/group/:groupId/payments — record ONE payment from the
 // group (e.g. the booker's single transfer) against several rooms' pending
 // deposit/balance lines at once: { lines: [{ payment_id, amount }], method,
@@ -2531,6 +2573,7 @@ router.post('/group/:groupId/rooms/:bookingId/cancel', auth, async (req, res) =>
 // A group billed as a whole (migration 097) has no room lines: the body is
 // { amount, method, received_at?, reference?, notes? } and the payment is
 // recorded once, on the group (services/groupBilling.js).
+// Either version may also carry events: [{ event_id, amount }] (migration 153).
 router.post('/group/:groupId/payments', auth, async (req, res, next) => {
   try {
     const { rows: [g] } = await db.query(
@@ -2540,17 +2583,23 @@ router.post('/group/:groupId/payments', auth, async (req, res, next) => {
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
+  const withEvents = Array.isArray(req.body.events) && req.body.events.some(x => x && x.event_id);
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const r = await groupBilling.recordPayment(client, {
+    // Only the events' part (nothing for the rooms): no group payment.
+    const roomsPart = !(withEvents && !(parseFloat(req.body.amount) > 0));
+    const r = roomsPart ? await groupBilling.recordPayment(client, {
       propertyId: req.propertyId, groupId: req.params.groupId, userId: req.user.id,
       amount: req.body.amount, method: req.body.method, receivedAt: req.body.received_at || null,
       reference: req.body.reference, notes: req.body.notes,
-    });
+    }) : { payment: null };
     if (r.error) { await client.query('ROLLBACK'); return res.status(r.status).json({ error: r.error, code: r.code }); }
+    const ev = await payGroupEvents(client, req);
+    if (ev.error) { await client.query('ROLLBACK'); return res.status(ev.status).json({ error: ev.error, code: ev.code }); }
     await client.query('COMMIT');
-    res.status(201).json({ payment: r.payment, total: r.payment.amount });
+    const groupAmt = r.payment ? r.payment.amount : 0;
+    res.status(201).json({ payment: r.payment, total: round2(groupAmt + ev.total), events_amount: ev.total });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
@@ -2642,7 +2691,8 @@ router.post('/group/:groupId/payments', auth, async (req, res) => {
     .map(x => ({ bookingId: String(x.booking_id), chargeIds: uniq(x.charge_ids), addonIds: uniq(x.addon_ids) }))
     .filter(x => x.chargeIds.length || x.addonIds.length);
   if (new Set(extras.map(x => x.bookingId)).size !== extras.length) return res.status(400).json({ error: 'A room is listed twice' });
-  if (!ids.length && !extras.length) return res.status(400).json({ error: 'Select at least one payment line' });
+  const withEvents = Array.isArray(req.body.events) && req.body.events.some(x => x && x.event_id);
+  if (!ids.length && !extras.length && !withEvents) return res.status(400).json({ error: 'Select at least one payment line' });
   if (ids.length !== parts.length) return res.status(400).json({ error: 'A payment line is listed twice' });
   if (!method) return res.status(400).json({ error: 'Payment method required' });
   const receivedAt = req.body.received_at || null;
@@ -2724,8 +2774,10 @@ router.post('/group/:groupId/payments', auth, async (req, res) => {
           x.bookingId, `Paid with Record Group Payment (${pm.label}): ${it.payment.what} — Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')}`.slice(0, 1000), req.user.id]);
       }
     }
+    const ev = await payGroupEvents(client, req);
+    if (ev.error) { await client.query('ROLLBACK'); return res.status(ev.status).json({ error: ev.error, code: ev.code }); }
     await client.query('COMMIT');
-    res.json({ lines: lines.length, rooms: bookingIds.length, total: round2(total + extrasTotal), room_total: total, extras_total: extrasTotal });
+    res.json({ lines: lines.length, rooms: bookingIds.length, total: round2(total + extrasTotal + ev.total), room_total: total, extras_total: extrasTotal, events_amount: ev.total });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

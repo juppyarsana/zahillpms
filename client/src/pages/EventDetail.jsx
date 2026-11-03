@@ -238,7 +238,11 @@ export default function EventDetail() {
   if (error && !data) return <div className="alert alert-error"><div>{error}</div></div>;
   if (!data) return <div className="text-muted" style={{ padding: 40, textAlign: 'center' }}>Loading…</div>;
 
-  const { event: e, bill, meals, history, group, clashes } = data;
+  const { event: e, bill, meals, history, group, booking, clashes } = data;
+  // The rooms' side of a linked group / stay (migration 153), for the totals card and the combined invoice.
+  const stay = group ? { balance_due: group.balance_due, to: `/reservations/group/${group.id}`, what: 'group booking', base: `/api/folio/group/${group.id}` }
+    : booking ? { balance_due: booking.balance_due, to: `/reservations/${booking.id}`, what: 'room', base: `/api/folio/${booking.id}` }
+    : null;
   const cancelled = e.status === 'cancelled';
   const liveMeals = meals.filter(m => m.status !== 'cancelled');
   const blocking = clashes.filter(c => c.status === 'confirmed');
@@ -250,6 +254,10 @@ export default function EventDetail() {
   }
   async function pdf(kind) {
     try { await downloadPdf(api, `/api/events/${e.id}/${kind}`, `event-${e.event_no}-${kind}`); }
+    catch { setError('Could not make the PDF'); }
+  }
+  async function combined(kind) {
+    try { await downloadPdf(api, `${stay.base}/combined/${kind}`, `${kind}-rooms-and-event-${e.event_no}`); }
     catch { setError('Could not make the PDF'); }
   }
   async function openRefund() {
@@ -290,6 +298,9 @@ export default function EventDetail() {
               { label: 'Pro Forma', onClick: () => pdf('proforma'), hint: 'An estimate to send the client' },
               { label: 'Invoice', onClick: () => pdf('invoice') },
               { label: 'Function sheet', onClick: () => pdf('function-sheet'), hint: 'For kitchen, housekeeping and front desk — no prices' },
+              stay && { divider: true },
+              stay && { label: 'Invoice — rooms + event', onClick: () => combined('invoice'), hint: 'One invoice with the rooms and every event linked to them' },
+              stay && { label: 'Pro Forma — rooms + event', onClick: () => combined('proforma'), hint: 'The same, as an estimate for the whole stay' },
             ]} />
           <ActionMenu items={menu} icon={<Icon name="more" />} label="More" />
           {primary}
@@ -330,6 +341,14 @@ export default function EventDetail() {
             👥 <Link to={`/reservations/group/${group.id}`} style={{ fontWeight: 600 }}>{group.booker || 'Group booking'}</Link>
             <span className="text-muted"> · {group.rooms} room{group.rooms === 1 ? '' : 's'} · {fmtDay(group.check_in_date, { day: 'numeric', month: 'short' })} – {fmtDay(group.check_out_date, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
             {group.balance_due != null && <span> · rooms balance <b>{fmtIDR(group.balance_due)}</b></span>}
+          </div>
+        )}
+        {booking && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', fontSize: 14 }}>
+            <div className="text-muted" style={{ fontSize: 11 }}>Room for this event</div>
+            🛏 <Link to={`/reservations/${booking.id}`} style={{ fontWeight: 600 }}>{booking.guest_name || 'Reservation'}</Link>
+            <span className="text-muted"> · room {booking.unit_name} · {fmtDay(booking.check_in_date, { day: 'numeric', month: 'short' })} – {fmtDay(booking.check_out_date, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            {booking.balance_due != null && <span> · room balance <b>{fmtIDR(booking.balance_due)}</b></span>}
           </div>
         )}
       </div>
@@ -462,12 +481,12 @@ export default function EventDetail() {
             </div>
           </div>
         ))}
-        {group?.balance_due != null && (
+        {stay?.balance_due != null && (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 14 }}>
             <div className="flex-between"><span className="text-muted">Event balance</span><span>{fmtIDR(bill.balance_due)}</span></div>
-            <div className="flex-between"><span className="text-muted">Rooms balance (<Link to={`/reservations/group/${group.id}`}>group booking</Link>)</span><span>{fmtIDR(group.balance_due)}</span></div>
-            <div className="flex-between" style={{ fontWeight: 700 }}><span>Total due from the client</span><span>{fmtIDR(bill.balance_due + group.balance_due)}</span></div>
-            <div className="text-muted" style={{ fontSize: 11 }}>Payments are recorded on each: here for the event, on the group for the rooms.</div>
+            <div className="flex-between"><span className="text-muted">Rooms balance (<Link to={stay.to}>{stay.what}</Link>)</span><span>{fmtIDR(stay.balance_due)}</span></div>
+            <div className="flex-between" style={{ fontWeight: 700 }}><span>Total due from the client</span><span>{fmtIDR(bill.balance_due + stay.balance_due)}</span></div>
+            <div className="text-muted" style={{ fontSize: 11 }}>Payments are recorded on each: here for the event, on the {stay.what} for the rooms. Documents → Invoice — rooms + event prints them together.</div>
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 import { lineShown, shownAmount, shownTotal } from '../lib/priceBasis';
 import { otaName, roomPending, otaPaysRoom } from '../lib/otaDue';
+import LinkedEventsPay, { useEventsDue, eventsTotal, eventsBad, eventsPayload } from './LinkedEventsPay';
 
 // Record Payment (migrations 082–083): everything the guest owes, in two
 // tables — the room's pending deposit / balance lines, and the extras
@@ -39,6 +40,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const [error, setError] = useState('');
   const [done, setDone] = useState(null);
   const [extrasTyped, setExtrasTyped] = useState(null);   // null = everything the ticked extras still need
+  // A meeting / event linked to this stay (migration 153): paid here too, recorded on the event.
+  const [evDue, evSel, setEvSel] = useEventsDue(`/api/folio/${booking.id}/events-due`);
 
   const roomLines = (booking.payments || [])
     .filter(p => ['deposit', 'balance'].includes(p.type) && p.status === 'pending' && parseFloat(p.amount) > 0)
@@ -93,7 +96,9 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const extrasPay = !extrasChosen ? 0 : extrasTyped === null ? extrasDue : (parseFloat(extrasTyped) || 0);
   const extrasBad = extrasChosen && !(extrasPay > 0 && extrasPay <= extrasDue + 1);
   const roomTotal = roomLines.reduce((s, l) => s + (room[l.id]?.on ? (parseFloat(room[l.id].amount) || 0) : 0), 0);
-  const total = r2(roomTotal + extrasPay);
+  const evPay = r2(eventsTotal(evDue, evSel));
+  const evBad = eventsBad(evDue, evSel);
+  const total = r2(roomTotal + extrasPay + evPay);
   const roomBad = roomLines.some(l => room[l.id]?.on && !(parseFloat(room[l.id].amount) > 0 && parseFloat(room[l.id].amount) <= parseFloat(l.amount) + 0.005));
   const taxNote = !rates.prices_include_tax && (parseFloat(rates.service_charge_rate) > 0 || parseFloat(rates.tax_rate) > 0);
   const toggle = (list, set, id) => { setExtrasTyped(null); set(list.includes(id) ? list.filter(x => x !== id) : [...list, id]); };
@@ -103,7 +108,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
     try {
       const r = await api.post(`/api/folio/${booking.id}/receive`, {
         room: roomLines.filter(l => room[l.id]?.on).map(l => ({ payment_id: l.id, amount: parseFloat(room[l.id].amount) })),
-        ...(extrasChosen ? { charge_ids: items, addon_ids: nights, extras_amount: extrasPay } : {}), ...form,
+        ...(extrasChosen ? { charge_ids: items, addon_ids: nights, extras_amount: extrasPay } : {}),
+        ...(evPay > 0 ? { events: eventsPayload(evDue, evSel) } : {}), ...form,
       });
       setDone(r.data);
       onPaid?.();
@@ -114,7 +120,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
     }
   }
 
-  const nothingOwed = folio && !roomLines.length
+  const nothingOwed = folio && !roomLines.length && !evDue.length
     && sumItems(itemLines.map(c => c.id), futureNights.map(a => a.id)) - credit <= 0.05;
   return (
     <div className="modal-backdrop">
@@ -130,7 +136,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                 ✓ <b>{fmtIDR(shownTotal(done.total, rates))}</b> received
                 {done.room_amount > 0 && <> — room {fmtIDR(done.room_amount)}</>}
                 {done.items_count > 0 && <>{done.room_amount > 0 ? ',' : ' —'} {done.items_count} item{done.items_count === 1 ? '' : 's'} {fmtIDR(shownTotal(done.items_amount, rates))}</>}
-                {done.items_on_account && <>{done.room_amount > 0 ? ',' : ' —'} extras {fmtIDR(shownTotal(done.items_amount, rates))}</>}.
+                {done.items_on_account && <>{done.room_amount > 0 ? ',' : ' —'} extras {fmtIDR(shownTotal(done.items_amount, rates))}</>}
+                {done.events_amount > 0 && <>{done.room_amount > 0 || done.items_amount > 0 ? ',' : ' —'} meeting / event {fmtIDR(done.events_amount)} (recorded on the event)</>}.
               </div>
               {done.items_on_account && done.items_left > 0.05 && (
                 <div className="alert" style={{ marginBottom: 12 }}><div>
@@ -261,8 +268,10 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
                 </div>
               )}
 
+              <LinkedEventsPay due={evDue} sel={evSel} setSel={setEvSel} />
+
               <div className="flex-between" style={{ padding: '10px 12px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14, flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: 13 }}>Room {fmtIDR(roomTotal)} · Extras {fmtIDR(shownTotal(extrasPay, rates))}{taxNote ? ' (incl. service & tax)' : ''}</span>
+                <span style={{ fontSize: 13 }}>Room {fmtIDR(roomTotal)} · Extras {fmtIDR(shownTotal(extrasPay, rates))}{taxNote ? ' (incl. service & tax)' : ''}{evDue.length > 0 && <> · Meeting {fmtIDR(evPay)}</>}</span>
                 <span style={{ fontWeight: 800, fontSize: 16 }}>Total to receive {fmtIDR(shownTotal(total, rates))}</span>
               </div>
 
@@ -291,6 +300,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
               )}
               {roomBad && <div className="alert alert-error"><div>A room amount must be more than 0 and not more than what's due.</div></div>}
               {extrasBad && <div className="alert alert-error"><div>The extras amount must be more than 0 and not more than {fmtIDR(shownTotal(extrasDue, rates))}.</div></div>}
+              {evBad && <div className="alert alert-error"><div>A meeting / event amount must be more than 0 and not more than what it still owes.</div></div>}
               {error && <div className="alert alert-error"><div>{error}</div></div>}
             </>
           )}
@@ -300,7 +310,7 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
             <button className="btn btn-primary" onClick={onClose}>Done</button>
           ) : (<>
             <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving || !folio || !(total > 0) || roomBad || extrasBad || !form.method}>
+            <button className="btn btn-primary" onClick={save} disabled={saving || !folio || !(total > 0) || roomBad || extrasBad || evBad || !form.method}>
               {saving ? 'Saving…' : `Receive ${fmtIDR(shownTotal(total, rates))}`}
             </button>
           </>)}

@@ -2,8 +2,8 @@
 // positioned below the shared pdfHeader.drawDocumentHeader() block:
 //   renderEventBill     — pro forma / invoice: the event's lines, service &
 //                         tax, payments, balance; and, when the event is
-//                         linked to a group booking, that group's balance and
-//                         the total due for both.
+//                         linked to a group booking or one stay, its balance
+//                         and the total due for both.
 //   renderFunctionSheet — for operations (kitchen, housekeeping, FO): who,
 //                         when, how many, set-up notes, every meal. No prices.
 const { MEAL_KINDS, whenText } = require('./eventService');
@@ -40,9 +40,12 @@ function eventBlock(doc, e) {
 }
 
 // title: 'Pro Forma Invoice' | 'Invoice'. bill: eventService.eventBill().
-// group: eventService.linkedGroup() or null. showBreakdown: print service &
-// tax inside an all-in total (property_settings.show_tax_breakdown).
-function renderEventBill(doc, { bill, group, showBreakdown = false, proforma = false }) {
+// group / booking: eventService.linkedGroup() / linkedBooking() or null (the
+// combined invoice passes neither — the rooms are on it already).
+// showBreakdown: print service & tax inside an all-in total
+// (property_settings.show_tax_breakdown).
+// → { total, received, balance_due } as printed.
+function renderEventBill(doc, { bill, group = null, booking = null, showBreakdown = false, proforma = false }) {
   const e = bill.event;
   // A pro forma is what the client is asked to pay: it also lists the meals
   // agreed with them that the restaurant has not rung up yet. An invoice
@@ -150,20 +153,25 @@ function renderEventBill(doc, { bill, group, showBreakdown = false, proforma = f
     doc.fillColor('#000');
   }
 
-  if (group) {
+  // The stay linked to the event (a group, or one booking — migration 153).
+  const stay = group
+    ? { text: `Group booking of ${group.booker || '—'} · ${group.rooms} room${group.rooms === 1 ? '' : 's'} · ${fmtDay(group.check_in_date)} – ${fmtDay(group.check_out_date)}. The rooms are on the group's own invoice.`, balance_due: group.balance_due }
+    : booking
+      ? { text: `${booking.guest_name || '—'} · room ${booking.unit_name} · ${fmtDay(booking.check_in_date)} – ${fmtDay(booking.check_out_date)}. The room is on the stay's own invoice.`, balance_due: booking.balance_due }
+      : null;
+  if (stay) {
     room(doc, 80);
     doc.moveDown(0.8);
     doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor('#ccc').stroke();
     doc.moveDown(0.5);
     doc.font('Helvetica-Bold').fontSize(10).text('Rooms for this event', L, doc.y);
-    doc.font('Helvetica').fontSize(9).fillColor('#555')
-      .text(`Group booking of ${group.booker || '—'} · ${group.rooms} room${group.rooms === 1 ? '' : 's'} · ${fmtDay(group.check_in_date)} – ${fmtDay(group.check_out_date)}. The rooms are on the group's own invoice.`, L, doc.y, { width: W });
+    doc.font('Helvetica').fontSize(9).fillColor('#555').text(stay.text, L, doc.y, { width: W });
     doc.fillColor('#000');
-    if (group.balance_due != null) {
+    if (stay.balance_due != null) {
       doc.moveDown(0.4);
-      row('Rooms — balance due', money(group.balance_due));
+      row('Rooms — balance due', money(stay.balance_due));
       row('Event — balance due', money(due));
-      row('Total due', money(group.balance_due + due), { bold: true });
+      row('Total due', money(stay.balance_due + due), { bold: true });
     }
   }
   if (e.status !== 'confirmed') {
@@ -173,9 +181,10 @@ function renderEventBill(doc, { bill, group, showBreakdown = false, proforma = f
       .text(e.status === 'cancelled' ? 'This event is cancelled.' : 'Not confirmed yet — the venue is not reserved until the event is confirmed.', L, doc.y, { width: W });
     doc.fillColor('#000');
   }
+  return { total: fig.total, received: bill.received, balance_due: due };
 }
 
-function renderFunctionSheet(doc, { event: e, meals, group }) {
+function renderFunctionSheet(doc, { event: e, meals, group, booking = null }) {
   const field = (label, value) => {
     if (!value) return;
     room(doc, 20);
@@ -193,6 +202,7 @@ function renderFunctionSheet(doc, { event: e, meals, group }) {
   field('When', whenText(e));
   field('People', e.pax);
   if (group) field('Rooms', `${group.rooms} room${group.rooms === 1 ? '' : 's'}, ${fmtDay(group.check_in_date)} – ${fmtDay(group.check_out_date)} (group of ${group.booker || '—'})`);
+  if (booking) field('Room', `${booking.unit_name}, ${fmtDay(booking.check_in_date)} – ${fmtDay(booking.check_out_date)} (${booking.guest_name || '—'})`);
   field('Notes / set-up', e.notes);
 
   doc.moveDown(0.8);

@@ -205,19 +205,56 @@ async function linkedGroup(propertyId, groupId) {
   if (g.group_billing) {
     const bill = await require('./groupBilling').groupBill(groupId, propertyId);
     if (bill) Object.assign(g, { total: bill.total, received: bill.received, balance_due: bill.balance_due });
+  } else {
+    // Paid room by room: the rooms' own whole-stay estimates added up.
+    const { rows } = await db.query(
+      `SELECT id FROM bookings WHERE reservation_group_id = $1 AND property_id = $2 AND status NOT IN ('cancelled', 'no_show')`, [groupId, propertyId]);
+    const { computeProforma } = require('./folioService');
+    const folios = (await Promise.all(rows.map(r => computeProforma(r.id, propertyId)))).filter(Boolean);
+    if (folios.length) {
+      Object.assign(g, {
+        total: round2(folios.reduce((s, f) => s + f.total, 0)),
+        balance_due: settleCents(round2(folios.reduce((s, f) => s + f.balance_due, 0))),
+      });
+      g.received = round2(g.total - g.balance_due);
+    }
   }
   return g;
+}
+
+// The single stay an event is linked to (migration 153): guest, room, dates, balance.
+async function linkedBooking(propertyId, bookingId) {
+  if (!bookingId) return null;
+  const { rows: [b] } = await db.query(
+    `SELECT b.id, b.status, to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in_date, to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out_date,
+            g.name AS guest_name, u.name AS unit_name
+     FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
+     WHERE b.id = $1 AND b.property_id = $2`, [bookingId, propertyId]);
+  if (!b) return null;
+  const f = await require('./folioService').computeProforma(bookingId, propertyId);
+  if (f) Object.assign(b, { total: f.total, balance_due: settleCents(f.balance_due), received: round2(f.total - f.balance_due) });
+  return b;
+}
+
+// Events (not cancelled) linked to a group or to one stay, oldest first — the combined invoice.
+async function linkedEventIds(propertyId, { groupId = null, bookingId = null }) {
+  const { rows } = await db.query(
+    `SELECT id FROM events WHERE property_id = $1 AND status <> 'cancelled'
+       AND (($2::uuid IS NOT NULL AND reservation_group_id = $2) OR ($3::uuid IS NOT NULL AND booking_id = $3))
+     ORDER BY event_date, start_time, event_no`, [propertyId, groupId, bookingId]);
+  return rows.map(r => r.id);
 }
 
 async function detail(propertyId, id) {
   const bill = await eventBill(propertyId, id);
   if (!bill) return null;
   const e = bill.event;
-  const [meals, { rows: history }, group, clashes] = await Promise.all([
+  const [meals, { rows: history }, group, booking, clashes] = await Promise.all([
     listMeals(id),
     db.query(`SELECT l.id, l.note, l.created_at, u.name AS created_by_name FROM event_log l LEFT JOIN users u ON u.id = l.created_by
               WHERE l.event_id = $1 ORDER BY l.created_at DESC LIMIT 300`, [id]),
     linkedGroup(propertyId, e.reservation_group_id),
+    linkedBooking(propertyId, e.booking_id),
     e.status === 'cancelled' ? [] : overlaps(db, propertyId, e, { statuses: ['confirmed', 'tentative'], excludeId: id }),
   ]);
   const rungBy = new Map(bill.charges.filter(c => c.type === 'pos' && c.meal_id).map(c => [c.meal_id, c]));
@@ -228,7 +265,7 @@ async function detail(propertyId, id) {
     m.charged_total = rungBy.has(m.id) ? rungBy.get(m.id).total : null;   // the restaurant's bill, once rung up
   }
   return {
-    event: e, bill: { ...bill, event: undefined }, meals, history, group,
+    event: e, bill: { ...bill, event: undefined }, meals, history, group, booking,
     // other events on the venue at the same time (a tentative one only warns)
     clashes: clashes.map(c => ({ id: c.id, event_no: c.event_no, name: c.name, customer: c.customer, status: c.status, when: whenText(c) })),
     today: todayWITA(),
@@ -236,12 +273,13 @@ async function detail(propertyId, id) {
 }
 
 // The list / calendar: events touching [from, to], with what is owed.
-async function list(propertyId, { from, to, status, q, group_id } = {}) {
+async function list(propertyId, { from, to, status, q, group_id, booking_id } = {}) {
   const where = ['e.property_id = $1'];
   const params = [propertyId];
   if (validDate(from)) { params.push(from); where.push(`e.end_date >= $${params.length}::date`); }
   if (validDate(to)) { params.push(to); where.push(`e.event_date <= $${params.length}::date`); }
   if (/^[0-9a-f-]{36}$/i.test(String(group_id || ''))) { params.push(group_id); where.push(`e.reservation_group_id = $${params.length}`); }
+  if (/^[0-9a-f-]{36}$/i.test(String(booking_id || ''))) { params.push(booking_id); where.push(`e.booking_id = $${params.length}`); }
   if (STATUSES.includes(status)) { params.push(status); where.push(`e.status = $${params.length}`); }
   else if (status === 'active') where.push(`e.status <> 'cancelled'`);
   if (q && String(q).trim()) {
@@ -309,6 +347,7 @@ async function validate(client, propertyId, body, cur = null) {
     pax: parseInt(pick('pax'), 10),
     hold_until: ymd(pick('hold_until')) || null,
     reservation_group_id: pick('reservation_group_id') || null,
+    booking_id: pick('booking_id') || null,
     notes: clean(pick('notes'), 4000),
     internal_notes: clean(pick('internal_notes'), 4000),
   };
@@ -332,6 +371,17 @@ async function validate(client, propertyId, body, cur = null) {
   if (v.reservation_group_id) {
     const { rows: [g] } = await client.query('SELECT id FROM reservation_groups WHERE id = $1 AND property_id = $2', [v.reservation_group_id, propertyId]);
     if (!g) throw new EventError(400, 'Group booking not found');
+  }
+  if (v.booking_id && v.reservation_group_id) throw new EventError(400, 'Link the event to a group booking or to one stay, not both');
+  if (v.booking_id) {
+    const { rows: [b] } = await client.query(
+      'SELECT id, status, reservation_group_id FROM bookings WHERE id = $1 AND property_id = $2', [v.booking_id, propertyId]);
+    if (!b) throw new EventError(400, 'Reservation not found');
+    // An unchanged link is kept even if the stay changed since; a new one must be a live stay of its own.
+    if (b.id !== cur?.booking_id) {
+      if (['cancelled', 'no_show'].includes(b.status)) throw new EventError(400, 'That reservation is cancelled');
+      if (b.reservation_group_id) throw new EventError(400, 'That stay is part of a group booking — link the group instead', { code: 'IN_GROUP' });
+    }
   }
   return { v, venue };
 }
@@ -375,14 +425,14 @@ async function create(propertyId, body, user) {
     const { rows: [e] } = await client.query(
       `INSERT INTO events (property_id, event_no, name, agent_id, company_name, contact_name, contact_phone, contact_email,
                            venue_id, event_date, end_date, start_time, end_time, pax, status, hold_until, reservation_group_id,
-                           notes, internal_notes, bill_tax_rate, bill_service_charge_rate, prices_include_tax, created_by)
+                           notes, internal_notes, bill_tax_rate, bill_service_charge_rate, prices_include_tax, created_by, booking_id)
        VALUES ($1, (SELECT COALESCE(MAX(event_no), 0) + 1 FROM events WHERE property_id = $1),
-               $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+               $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING *`,
       [propertyId, v.name, v.agent_id, v.company_name, v.contact_name, v.contact_phone, v.contact_email,
        v.venue_id, v.event_date, v.end_date, v.start_time, v.end_time, v.pax, status,
        status === 'tentative' ? v.hold_until : null, v.reservation_group_id, v.notes, v.internal_notes,
-       basis.tax_rate, basis.service_charge_rate, basis.include, user.id]);
+       basis.tax_rate, basis.service_charge_rate, basis.include, user.id, v.booking_id]);
     let hire = '';
     if (body.hire_price !== undefined && body.hire_price !== '' && body.hire_price !== null) {
       const ev = shape(e);
@@ -419,10 +469,11 @@ async function update(propertyId, id, body, user) {
     await client.query(
       `UPDATE events SET name = $1, agent_id = $2, company_name = $3, contact_name = $4, contact_phone = $5, contact_email = $6,
               venue_id = $7, event_date = $8, end_date = $9, start_time = $10, end_time = $11, pax = $12, hold_until = $13,
-              reservation_group_id = $14, notes = $15, internal_notes = $16, updated_by = $17, updated_at = NOW()
+              reservation_group_id = $14, notes = $15, internal_notes = $16, updated_by = $17, updated_at = NOW(), booking_id = $19
        WHERE id = $18`,
       [v.name, v.agent_id, v.company_name, v.contact_name, v.contact_phone, v.contact_email, v.venue_id, v.event_date, v.end_date,
-       v.start_time, v.end_time, v.pax, cur.status === 'tentative' ? v.hold_until : null, v.reservation_group_id, v.notes, v.internal_notes, user.id, id]);
+       v.start_time, v.end_time, v.pax, cur.status === 'tentative' ? v.hold_until : null, v.reservation_group_id, v.notes, v.internal_notes, user.id, id,
+       v.booking_id]);
     // The event moved to other days: its own lines (venue hire, other) and the
     // meals not handled yet move with it, by the same number of days — or the
     // hire would be reported on the old day and the kitchen told the old day.
@@ -445,6 +496,7 @@ async function update(propertyId, id, body, user) {
     if (cur.venue_id !== v.venue_id) diffs.push(`Venue: ${cur.venue_name} → ${venue.name}`);
     if ((cur.agent_id || null) !== (v.agent_id || null)) diffs.push('Company / agent changed');
     if ((cur.reservation_group_id || null) !== (v.reservation_group_id || null)) diffs.push(v.reservation_group_id ? 'Linked to a group booking' : 'Link to the group booking removed');
+    if ((cur.booking_id || null) !== (v.booking_id || null)) diffs.push(v.booking_id ? 'Linked to a reservation' : 'Link to the reservation removed');
     if ((cur.notes || '') !== (v.notes || '')) diffs.push('Notes updated');
     if ((cur.internal_notes || '') !== (v.internal_notes || '')) diffs.push('Internal notes updated');
     if (moved) diffs.push(moved);
@@ -658,19 +710,67 @@ async function methodOf(client, propertyId, method) {
 }
 
 async function recordPayment(propertyId, id, body, user) {
-  return tx(async client => {
-    const e = await lockOpen(client, propertyId, id);
-    if (e.status === 'cancelled') throw new EventError(409, 'This event is cancelled');
-    const amt = round2(parseFloat(body.amount));
-    if (!(amt > 0)) throw new EventError(400, 'Enter the amount received');
-    const pm = await methodOf(client, propertyId, body.method);
-    const { rows: [p] } = await client.query(
-      `INSERT INTO event_payments (property_id, event_id, amount, method, received_at, received_by, reference, notes)
-       VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8) RETURNING id, reference`,
-      [propertyId, id, amt, pm.id, body.received_at || null, user.id, clean(body.reference, 120), clean(body.notes, 1000)]);
-    await log(client, id, `Payment received: ${fmtIDR(amt)} by ${pm.label}${p.reference ? ` (ref ${p.reference})` : ''}.`, user.id);
-    return p.id;
-  });
+  return tx(client => recordPaymentTx(client, propertyId, id, body, user));
+}
+
+// One event payment inside the caller's transaction. `via` (optional) says
+// where it was taken, for the event's history.
+async function recordPaymentTx(client, propertyId, id, body, user, via = '') {
+  const e = await lockOpen(client, propertyId, id);
+  if (e.status === 'cancelled') throw new EventError(409, 'This event is cancelled');
+  const amt = round2(parseFloat(body.amount));
+  if (!(amt > 0)) throw new EventError(400, 'Enter the amount received');
+  const pm = await methodOf(client, propertyId, body.method);
+  const { rows: [p] } = await client.query(
+    `INSERT INTO event_payments (property_id, event_id, amount, method, received_at, received_by, reference, notes)
+     VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()), $6, $7, $8) RETURNING id, reference`,
+    [propertyId, id, amt, pm.id, body.received_at || null, user.id, clean(body.reference, 120), clean(body.notes, 1000)]);
+  await log(client, id, `Payment received: ${fmtIDR(amt)} by ${pm.label}${p.reference ? ` (ref ${p.reference})` : ''}${via ? ` — ${via}` : ''}.`, user.id);
+  return p.id;
+}
+
+// The events linked to a stay or group that still owe money (migration 153):
+// what Record Payment / Record Group Payment offer to take with the rooms.
+// → [{ id, event_no, name, event_date, balance_due }]
+async function linkedEventsDue(propertyId, link) {
+  const ids = await linkedEventIds(propertyId, link);
+  const out = [];
+  for (const id of ids) {
+    const b = await eventBill(propertyId, id);
+    if (b && b.balance_due >= 1) {
+      out.push({ id, event_no: b.event.event_no, name: b.event.name, event_date: b.event.event_date, balance_due: b.balance_due });
+    }
+  }
+  return out;
+}
+
+// Record Payment / Record Group Payment taking a linked event's money too:
+// list = [{ event_id, amount }], each becomes an ordinary event payment with
+// the same method, date and reference, inside the caller's transaction. Only
+// events linked to THIS stay / group, not cancelled, never more than what the
+// event still owes. → { total, parts: [{ event_no, amount }] } or { status, error }.
+async function payLinkedTx(client, propertyId, link, list, { method, receivedAt, reference, notes, user, via }) {
+  const items = (Array.isArray(list) ? list : []).filter(x => x && x.event_id).map(x => ({ id: String(x.event_id), amount: round2(parseFloat(x.amount)) }));
+  if (new Set(items.map(x => x.id)).size !== items.length) return { status: 400, error: 'An event is listed twice' };
+  const parts = [];
+  try {
+    for (const x of items.sort((a, b) => a.id.localeCompare(b.id))) {
+      const e = await lockOpen(client, propertyId, x.id);
+      const linked = (link.bookingId && e.booking_id === link.bookingId) || (link.groupId && e.reservation_group_id === link.groupId);
+      if (!linked) return { status: 400, error: 'That event is not linked to this reservation — refresh and try again' };
+      const bill = await eventBill(propertyId, x.id, client);
+      if (!(x.amount > 0) || x.amount > bill.balance_due + 1) {
+        return { status: 400, error: `The amount for event #${e.event_no} must be between 1 and ${Math.round(bill.balance_due).toLocaleString('id-ID')}`, code: 'BAD_AMOUNT' };
+      }
+      await recordPaymentTx(client, propertyId, x.id,
+        { amount: x.amount, method, received_at: receivedAt, reference, notes }, user, via);
+      parts.push({ event_no: e.event_no, amount: x.amount });
+    }
+  } catch (err) {
+    if (err instanceof EventError) return { status: err.status, error: err.message };
+    throw err;
+  }
+  return { total: round2(parts.reduce((s, p) => s + p.amount, 0)), parts };
 }
 
 async function voidPayment(propertyId, id, paymentId, body, user) {
@@ -856,7 +956,8 @@ async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, des
 
 module.exports = {
   EventError, STATUSES, MEAL_KINDS, whenText, posEvents, posMealStatus, posCharge,
-  listVenues, saveVenue, list, getEvent, detail, eventBill, listMeals, linkedGroup,
+  listVenues, saveVenue, list, getEvent, detail, eventBill, listMeals, linkedGroup, linkedBooking, linkedEventIds,
+  linkedEventsDue, payLinkedTx,
   create, update, setStatus, addCharge, voidCharge, tellPos, addMeal, updateMeal, cancelMeal,
   recordPayment, voidPayment, refundable, refund, priceOf, log, tx,
 };

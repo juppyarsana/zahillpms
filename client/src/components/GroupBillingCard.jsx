@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import LinkedEventsPay, { useEventsDue, eventsTotal, eventsBad, eventsPayload } from './LinkedEventsPay';
 
 // Group page payment card for a group billed as a whole (migration 097): one
 // bill and one payment record — payments are recorded on the group, never
@@ -36,11 +37,15 @@ export function GroupPaymentModal({ groupId, balance, onClose, onSaved }) {
   const [error, setError] = useState('');
   const amount = Math.round(parseFloat(form.amount) || 0);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // A meeting / event linked to the group (migration 153): paid here too, recorded on the event.
+  const [evDue, evSel, setEvSel] = useEventsDue(`/api/bookings/group/${groupId}/events-due`);
+  const evPay = Math.round(eventsTotal(evDue, evSel));
+  const evBad = eventsBad(evDue, evSel);
 
   async function save() {
     setSaving(true); setError('');
     try {
-      await api.post(`/api/bookings/group/${groupId}/payments`, { ...form, amount });
+      await api.post(`/api/bookings/group/${groupId}/payments`, { ...form, amount, ...(evPay > 0 ? { events: eventsPayload(evDue, evSel) } : {}) });
       onSaved();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not record the payment');
@@ -51,14 +56,14 @@ export function GroupPaymentModal({ groupId, balance, onClose, onSaved }) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 460, width: '100%' }}>
+      <div className="modal" style={{ maxWidth: evDue.length ? 640 : 460, width: '100%' }}>
         <div className="modal-header">
           <div className="modal-title">Record Group Payment</div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
           <div className="form-group">
-            <label className="form-label">Amount received (IDR)</label>
+            <label className="form-label">{evDue.length ? 'Rooms — amount received (IDR)' : 'Amount received (IDR)'}</label>
             <input className="form-input" type="number" min={1} value={form.amount} autoFocus onChange={e => set('amount', e.target.value)} />
             <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
               Group balance {fmtIDR(balance)}. Recorded once, on the group — not split over the rooms.
@@ -70,6 +75,14 @@ export function GroupPaymentModal({ groupId, balance, onClose, onSaved }) {
               </div>
             )}
           </div>
+          <LinkedEventsPay due={evDue} sel={evSel} setSel={setEvSel} />
+          {evDue.length > 0 && (
+            <div className="flex-between" style={{ padding: '8px 12px', background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 13 }}>Rooms {fmtIDR(amount)} · Meeting {fmtIDR(evPay)}</span>
+              <b>Total to receive {fmtIDR(amount + evPay)}</b>
+            </div>
+          )}
+          {evBad && <div className="alert alert-error" style={{ marginBottom: 8 }}><div>A meeting / event amount must be more than 0 and not more than what it still owes.</div></div>}
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Method</label>
@@ -94,8 +107,8 @@ export function GroupPaymentModal({ groupId, balance, onClose, onSaved }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={saving || !(amount > 0) || !form.method}>
-            {saving ? 'Saving…' : `Record ${fmtIDR(amount)}`}
+          <button className="btn btn-primary" onClick={save} disabled={saving || !(amount > 0 || evPay > 0) || amount < 0 || evBad || !form.method}>
+            {saving ? 'Saving…' : `Record ${fmtIDR(amount + evPay)}`}
           </button>
         </div>
       </div>

@@ -14,6 +14,7 @@ import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import GroupPriceModal from '../components/GroupPriceModal';
 import MasterFolio from '../components/MasterFolio';
 import GroupBillingCard, { GroupPaymentModal } from '../components/GroupBillingCard';
+import LinkedEventsPay, { useEventsDue, eventsTotal, eventsBad, eventsPayload } from '../components/LinkedEventsPay';
 
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
@@ -118,7 +119,8 @@ export default function GroupDetail() {
   useEffect(() => { if (tab === 'folio' && !folio) loadFolio(); }, [tab]);
 
   // kind: 'proforma' (whole stay, estimate) | 'invoice' (posted so far — only
-  // for a group billed as a whole, migration 097)
+  // for a group billed as a whole, migration 097) | 'combined/invoice' |
+  // 'combined/proforma' (the rooms + the events linked to the group, migration 153)
   async function downloadGroupPdf(kind = 'proforma') {
     try {
       const r = await api.get(`/api/folio/group/${groupId}/${kind}`, { responseType: 'blob' });
@@ -126,13 +128,13 @@ export default function GroupDetail() {
       const a = document.createElement('a');
       const t = new Date();
       a.href = url;
-      a.download = `${kind}-group-${groupId.slice(0, 8)}-${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}.pdf`;
+      a.download = `${kind.replace('/', '-')}-group-${groupId.slice(0, 8)}-${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      alert(`Failed to download the ${kind === 'invoice' ? 'invoice' : 'pro forma'}`);
+      alert(`Failed to download the ${kind.endsWith('invoice') ? 'invoice' : 'pro forma'}`);
     }
   }
   const downloadGroupProforma = () => downloadGroupPdf('proforma');
@@ -170,6 +172,9 @@ export default function GroupDetail() {
   const [folioPaying, setFolioPaying] = useState(false);   // group billed as a whole: Record Group Payment from the Master Folio
   const [extrasDue, setExtrasDue] = useState([]);   // [{ booking_id, unit_name, on_account, total, items }] — rooms' unpaid extras
   const [extraSel, setExtraSel] = useState(new Set());   // booking_id — rooms whose extras are paid too (all of them)
+  // A meeting / event linked to the group (migration 153), paid here too and
+  // recorded on the event. Loaded each time the window opens (group paid room by room).
+  const [evDue, evSel, setEvSel] = useEventsDue(paying && data && !data.bill ? `/api/bookings/group/${groupId}/events-due` : null);
   // Rooms whose extras can be paid here (a room with a part payment on account is paid on its own folio).
   const payableExtras = () => extrasDue.filter(r => !(r.on_account > 0.005));
   const extrasPicked = () => payableExtras().filter(r => extraSel.has(r.booking_id));
@@ -250,6 +255,7 @@ export default function GroupDetail() {
           charge_ids: r.items.filter(i => i.kind === 'charge').map(i => i.id),
           addon_ids: r.items.filter(i => i.kind === 'night').map(i => i.id),
         })),
+        ...(eventsTotal(evDue, evSel) > 0 ? { events: eventsPayload(evDue, evSel) } : {}),
         method: payForm.method, received_at: payForm.received_at, reference: payForm.reference, notes: payForm.notes,
       });
       setPaying(false);
@@ -546,6 +552,9 @@ export default function GroupDetail() {
               items={[
                 data.bill && { label: 'Group Invoice', icon: '🧾', hint: 'The group\'s one bill — charges posted so far, group payments, balance', onClick: () => downloadGroupPdf('invoice') },
                 { label: data.bill ? 'Group Pro Forma' : 'Pro Forma', icon: '📋', hint: 'Estimate — projected total across every room in the group', onClick: downloadGroupProforma },
+                data.linked_events?.length > 0 && { divider: true },
+                data.linked_events?.length > 0 && { label: 'Invoice — rooms + event', icon: '🧾', hint: 'One invoice: the rooms, the meeting / event linked to this group, one total', onClick: () => downloadGroupPdf('combined/invoice') },
+                data.linked_events?.length > 0 && { label: 'Pro Forma — rooms + event', icon: '📋', hint: 'The same, as an estimate for the whole stay', onClick: () => downloadGroupPdf('combined/proforma') },
               ].filter(Boolean)}
             />
           {groupMenu.length > 0 && <ActionMenu items={groupMenu} icon={<Icon name="more" />} label="More" />}
@@ -790,7 +799,9 @@ export default function GroupDetail() {
         const picked = lines.filter(l => paySel.has(l.id));
         const roomPart = picked.reduce((sum, l) => sum + lineAmount(l), 0);
         const extrasPart = extrasPicked().reduce((sum, r) => sum + r.total, 0);
-        const total = roomPart + extrasPart;
+        const eventsPart = eventsTotal(evDue, evSel);
+        const evInvalid = eventsBad(evDue, evSel);
+        const total = roomPart + extrasPart + eventsPart;
         const toggleExtras = bid => setExtraSel(sel => { const n = new Set(sel); if (n.has(bid)) n.delete(bid); else n.add(bid); return n; });
         const unpaid = lines.reduce((sum, l) => sum + parseFloat(l.amount), 0);
         const badLine = picked.find(l => !(lineAmount(l) > 0) || lineAmount(l) > parseFloat(l.amount) + 0.005);
@@ -803,7 +814,7 @@ export default function GroupDetail() {
         };
         return (
           <div className="modal-backdrop">
-            <div className="modal" style={{ maxWidth: 560, width: '100%' }}>
+            <div className="modal" style={{ maxWidth: evDue.length ? 640 : 560, width: '100%' }}>
               <div className="modal-header">
                 <div className="modal-title">Record Group Payment</div>
                 <button className="btn btn-icon" onClick={() => setPaying(false)}>✕</button>
@@ -886,6 +897,7 @@ export default function GroupDetail() {
                     </div>
                   </div>
                 )}
+                <LinkedEventsPay due={evDue} sel={evSel} setSel={setEvSel} />
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Method</label>
@@ -909,9 +921,12 @@ export default function GroupDetail() {
                 <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
                   <span>Total received</span><span>{fmtIDR(total)}</span>
                 </div>
-                {extrasPart > 0 && (
-                  <div className="text-muted" style={{ fontSize: 12, textAlign: 'right' }}>Rooms {fmtIDR(roomPart)} · Extras {fmtIDR(extrasPart)}</div>
+                {(extrasPart > 0 || eventsPart > 0) && (
+                  <div className="text-muted" style={{ fontSize: 12, textAlign: 'right' }}>
+                    Rooms {fmtIDR(roomPart)}{extrasPart > 0 && <> · Extras {fmtIDR(extrasPart)}</>}{eventsPart > 0 && <> · Meeting {fmtIDR(eventsPart)}</>}
+                  </div>
                 )}
+                {evInvalid && <div className="alert alert-error" style={{ marginTop: 8, fontSize: 12 }}><div>A meeting / event amount must be more than 0 and not more than what it still owes.</div></div>}
                 <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
                   A line paid in part stays open for the rest. A room counts as deposit paid once its whole deposit is in.
                 </div>
@@ -920,7 +935,7 @@ export default function GroupDetail() {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setPaying(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || (paySel.size === 0 && extrasPicked().length === 0) || !payForm.method || !!badLine}>
+                <button className="btn btn-primary" onClick={saveGroupPayment} disabled={paySaving || (paySel.size === 0 && extrasPicked().length === 0 && !(eventsPart > 0)) || !payForm.method || !!badLine || evInvalid}>
                   {paySaving ? 'Saving…' : `Record ${fmtIDR(total)}`}
                 </button>
               </div>

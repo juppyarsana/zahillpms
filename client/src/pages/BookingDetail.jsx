@@ -1105,6 +1105,12 @@ export default function BookingDetail() {
                   { divider: true },
                   { label: 'Pro Forma', icon: '📋', hint: 'Estimate — projected total for the whole stay', onClick: () => downloadProforma(false) },
                 ]),
+                // A meeting / event linked to this stay (migration 153): one invoice for both.
+                ...(booking.linked_events?.length ? [
+                  { divider: true },
+                  { label: 'Invoice — room + event', icon: '🧾', hint: 'One invoice: this stay, the meeting / event linked to it, one total', onClick: () => downloadPdf(`/api/folio/${id}/combined/invoice`, `invoice-room-and-event-${id}.pdf`) },
+                  { label: 'Pro Forma — room + event', icon: '📋', hint: 'The same, as an estimate for the whole stay', onClick: () => downloadPdf(`/api/folio/${id}/combined/proforma`, `proforma-room-and-event-${id}.pdf`) },
+                ] : []),
               ]}
             />
           {moreItems.filter(Boolean).length > 0 && <ActionMenu items={moreItems} icon={<Icon name="more" />} label="More" />}
@@ -1118,6 +1124,14 @@ export default function BookingDetail() {
           <button className="btn btn-sm btn-primary" onClick={undoNoShow}>↩ Undo No-Show</button>
         </div>
       )}
+
+      {(booking.linked_events || []).map(ev => (
+        <div key={ev.id} className="alert alert-info mb-3"><div>
+          🗓 Meeting / event of this stay: <Link to={`/events/${ev.id}`} style={{ fontWeight: 600 }}>#{ev.event_no} {ev.name}</Link>
+          {' '}· {new Date(ev.event_date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} {ev.start_time}–{ev.end_time}
+          {' '}· Documents → <b>Invoice — room + event</b> prints both on one invoice
+        </div></div>
+      ))}
 
       {Array.isArray(booking.split_links) && booking.split_links.map(l => (
         <div key={l.id} className="alert alert-info mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

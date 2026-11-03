@@ -7,6 +7,8 @@ import { fmtIDR, fmtDay, ymd } from '../lib/events';
 // New event / change an event's details (migration 106).
 // event: the event being changed, or null for a new one. date: a day to start on.
 // onSaved(event) after saving.
+const LINKABLE = ['pending', 'deposit_paid', 'confirmed', 'checked_in', 'checked_out'];
+
 export default function EventFormModal({ event, date, venues, onClose, onSaved }) {
   const editing = !!event;
   const live = venues.filter(v => v.is_active || v.id === event?.venue_id);
@@ -31,8 +33,10 @@ export default function EventFormModal({ event, date, venues, onClose, onSaved }
   const [agent, setAgent] = useState(event?.agent_id ? { id: event.agent_id, name: event.agent_name } : null);
   const [multiDay, setMultiDay] = useState(!!event && event.end_date !== event.event_date);
   const [group, setGroup] = useState(null);          // the linked group booking
+  const [stay, setStay] = useState(null);            // or the linked single stay (migration 153)
   const [groupQuery, setGroupQuery] = useState('');
   const [groups, setGroups] = useState([]);
+  const [stays, setStays] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -45,11 +49,24 @@ export default function EventFormModal({ event, date, venues, onClose, onSaved }
       .catch(() => setGroup({ id: event.reservation_group_id, booker_name: 'Group booking' }));
   }, [event?.reservation_group_id]);
 
+  // The single stay the event is already linked to.
+  useEffect(() => {
+    if (!event?.booking_id) return;
+    api.get(`/api/bookings/${event.booking_id}`)
+      .then(r => setStay(r.data))
+      .catch(() => setStay({ id: event.booking_id, guest_name: 'Reservation' }));
+  }, [event?.booking_id]);
+
+  // One search: groups, then stays that are not part of a group (a group's
+  // room is reached through its group).
   useEffect(() => {
     const q = groupQuery.trim();
-    if (q.length < 2) { setGroups([]); return; }
+    if (q.length < 2) { setGroups([]); setStays([]); return; }
     const t = setTimeout(() => {
-      api.get('/api/bookings/groups', { params: { when: 'current', q } }).then(r => setGroups(r.data.slice(0, 6))).catch(() => setGroups([]));
+      api.get('/api/bookings/groups', { params: { when: 'current', q } }).then(r => setGroups(r.data.slice(0, 5))).catch(() => setGroups([]));
+      api.get('/api/bookings', { params: { q } })
+        .then(r => setStays(r.data.filter(b => !b.reservation_group_id && LINKABLE.includes(b.status)).slice(0, 5)))
+        .catch(() => setStays([]));
     }, 300);
     return () => clearTimeout(t);
   }, [groupQuery]);
@@ -79,6 +96,7 @@ export default function EventFormModal({ event, date, venues, onClose, onSaved }
       end_date: multiDay ? form.end_date : form.event_date,
       agent_id: agent?.id || null,
       reservation_group_id: group?.id || null,
+      booking_id: stay?.id || null,
       hold_until: form.status === 'tentative' ? form.hold_until || null : null,
     };
     if (editing) { delete body.status; delete body.hire_price; }
@@ -202,8 +220,16 @@ export default function EventFormModal({ event, date, venues, onClose, onSaved }
           )}
 
           <div className="form-group">
-            <label className="form-label">Rooms for this event — link a group booking (optional)</label>
-            {group ? (
+            <label className="form-label">Rooms for this event — link the group or the stay (optional, for one invoice with rooms + event)</label>
+            {stay ? (
+              <div className="flex-between" style={{ gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <span style={{ fontSize: 13 }}>
+                  🛏 <b>{stay.guest_name}</b>
+                  {stay.check_in_date && <span className="text-muted"> · room {stay.unit_name} · {fmtDay(stay.check_in_date, { day: 'numeric', month: 'short' })} – {fmtDay(stay.check_out_date, { day: 'numeric', month: 'short' })}</span>}
+                </span>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setStay(null)}>Remove</button>
+              </div>
+            ) : group ? (
               <div className="flex-between" style={{ gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
                 <span style={{ fontSize: 13 }}>
                   👥 <b>{group.booker_name}</b>
@@ -213,13 +239,22 @@ export default function EventFormModal({ event, date, venues, onClose, onSaved }
               </div>
             ) : (
               <>
-                <input className="form-input" value={groupQuery} placeholder="Search a group by the booker's or a guest's name…" onChange={e => setGroupQuery(e.target.value)} />
+                <input className="form-input" value={groupQuery} placeholder="Search by the guest's or the group booker's name…" onChange={e => setGroupQuery(e.target.value)} />
                 {groups.map(g => (
                   <button key={g.id} type="button" className="btn btn-sm btn-secondary" style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 4 }}
-                    onClick={() => { setGroup(g); setGroupQuery(''); setGroups([]); }}>
+                    onClick={() => { setGroup(g); setGroupQuery(''); setGroups([]); setStays([]); }}>
                     👥 {g.booker_name} · {fmtDay(g.check_in_date, { day: 'numeric', month: 'short' })} – {fmtDay(g.check_out_date, { day: 'numeric', month: 'short' })} · {g.active_rooms ?? g.room_count} rooms
                   </button>
                 ))}
+                {stays.map(b => (
+                  <button key={b.id} type="button" className="btn btn-sm btn-secondary" style={{ display: 'block', width: '100%', textAlign: 'left', marginTop: 4 }}
+                    onClick={() => { setStay(b); setGroupQuery(''); setGroups([]); setStays([]); }}>
+                    🛏 {b.guest_name} · room {b.unit_name} · {fmtDay(b.check_in_date, { day: 'numeric', month: 'short' })} – {fmtDay(b.check_out_date, { day: 'numeric', month: 'short' })}
+                  </button>
+                ))}
+                {groupQuery.trim().length >= 2 && !groups.length && !stays.length && (
+                  <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>Nothing found. A room of a group is found under its group.</div>
+                )}
               </>
             )}
           </div>

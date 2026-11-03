@@ -1,10 +1,10 @@
 // Events — /api/events (migration 106). The meeting room booked for a date and
 // time, with its own bill, payments and the meals the restaurant prepares.
 // Owner or the `events` permission; venues are set up by the owner.
-//   GET  /                         ?from=&to=&status=&q=   list / calendar
+//   GET  /                         ?from=&to=&status=&q=&group_id=&booking_id=   list / calendar
 //   GET  /venues                   · POST /venues · PUT /venues/:id  (owner)
 //   POST /                         new event { …, status, hire_price? }
-//   GET  /:id                      event + bill + meals + history + linked group
+//   GET  /:id                      event + bill + meals + history + linked group / booking
 //   PUT  /:id                      change details
 //   PUT  /:id/status               { status, reason?, hold_until? }
 //   POST /:id/charges              { type, description, service_date?, quantity?, price }
@@ -127,13 +127,14 @@ function billPdf(title, slug) {
   return run(async (req, res) => {
     const bill = await ev.eventBill(req.propertyId, req.params.id);
     if (!found(res, bill)) return;
-    const [property, group] = await Promise.all([propertyFor(req.propertyId), ev.linkedGroup(req.propertyId, bill.event.reservation_group_id)]);
+    const [property, group, booking] = await Promise.all([propertyFor(req.propertyId), ev.linkedGroup(req.propertyId, bill.event.reservation_group_id),
+      ev.linkedBooking(req.propertyId, bill.event.booking_id)]);
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="event-${bill.event.event_no}-${slug}.pdf"`);
     doc.pipe(res);
     drawDocumentHeader(doc, property, { title, refLine: `Event #${bill.event.event_no}` });
-    renderEventBill(doc, { bill, group, showBreakdown: !!property.show_tax_breakdown, proforma: slug === 'proforma' });
+    renderEventBill(doc, { bill, group, booking, showBreakdown: !!property.show_tax_breakdown, proforma: slug === 'proforma' });
     doc.end();
   });
 }
@@ -143,13 +144,14 @@ router.get('/:id/invoice', billPdf('Invoice', 'invoice'));
 router.get('/:id/function-sheet', run(async (req, res) => {
   const e = await ev.getEvent(req.propertyId, req.params.id);
   if (!found(res, e)) return;
-  const [property, meals, group] = await Promise.all([propertyFor(req.propertyId), ev.listMeals(e.id), ev.linkedGroup(req.propertyId, e.reservation_group_id)]);
+  const [property, meals, group, booking] = await Promise.all([propertyFor(req.propertyId), ev.listMeals(e.id), ev.linkedGroup(req.propertyId, e.reservation_group_id),
+    ev.linkedBooking(req.propertyId, e.booking_id)]);
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="event-${e.event_no}-function-sheet.pdf"`);
   doc.pipe(res);
   drawDocumentHeader(doc, property, { title: 'Function Sheet', refLine: `Event #${e.event_no}` });
-  renderFunctionSheet(doc, { event: e, meals, group });
+  renderFunctionSheet(doc, { event: e, meals, group, booking });
   doc.end();
 }));
 

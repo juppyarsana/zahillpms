@@ -359,16 +359,28 @@ async function extrasDue(bookingId, propertyId) {
   };
 }
 
+// GET /api/folio/:bookingId/events-due — the meetings / events linked to this
+// stay that still owe money (migration 153), for the Record Payment window.
+router.get('/:bookingId/events-due', auth, async (req, res) => {
+  try {
+    res.json(await require('../services/eventService').linkedEventsDue(req.propertyId, { bookingId: req.params.bookingId }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/folio/:bookingId/receive
-//   { room: [{ payment_id, amount }], charge_ids: [], addon_ids: [], method, received_at?, notes? }
-// The Record Payment window: room lines and items in one go, all or nothing.
+//   { room: [{ payment_id, amount }], charge_ids: [], addon_ids: [], events: [{ event_id, amount }], method, received_at?, notes? }
+// The Record Payment window: room lines, items and the meetings / events
+// linked to the stay (each recorded on its own event) in one go, all or nothing.
 router.post('/:bookingId/receive', auth, async (req, res) => {
   const uniq = v => [...new Set((Array.isArray(v) ? v : []).map(String))];
   const chargeIds = uniq(req.body.charge_ids), addonIds = uniq(req.body.addon_ids);
   const room = (Array.isArray(req.body.room) ? req.body.room : []).filter(r => r && r.payment_id);
+  const events = (Array.isArray(req.body.events) ? req.body.events : []).filter(x => x && x.event_id);
   const { method, notes } = req.body;
   const receivedAt = req.body.received_at || null;
-  if (!room.length && !chargeIds.length && !addonIds.length) return res.status(400).json({ error: 'Choose what the guest is paying for' });
+  if (!room.length && !chargeIds.length && !addonIds.length && !events.length) return res.status(400).json({ error: 'Choose what the guest is paying for' });
   if (new Set(room.map(r => String(r.payment_id))).size !== room.length) return res.status(400).json({ error: 'A room line is listed twice' });
   if (!method) return res.status(400).json({ error: 'Payment method required' });
   const client = await db.pool.connect();
@@ -387,10 +399,18 @@ router.post('/:bookingId/receive', auth, async (req, res) => {
     if (rp.error) { await client.query('ROLLBACK'); return res.status(rp.status).json({ error: rp.error }); }
     const it = await payItems(client, booking, { chargeIds, addonIds, ...opts, typed: req.body.extras_amount });
     if (it.error) { await client.query('ROLLBACK'); return res.status(it.status).json({ error: it.error, code: it.code }); }
+    const { rows: [where] } = await client.query(
+      'SELECT u.name AS unit_name, g.name AS guest_name FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id WHERE b.id = $1', [booking.id]);
+    const ev = events.length ? await require('../services/eventService').payLinkedTx(client, req.propertyId, { bookingId: booking.id }, events, {
+      method, receivedAt, reference: opts.reference, notes: cleanNotes, user: req.user,
+      via: `taken with the Record Payment of room ${where.unit_name} (${where.guest_name})`,
+    }) : { total: 0, parts: [] };
+    if (ev.error) { await client.query('ROLLBACK'); return res.status(ev.status).json({ error: ev.error, code: ev.code }); }
 
-    const total = round2(rp.total + (it.payment?.amount || 0));
+    const total = round2(rp.total + (it.payment?.amount || 0) + ev.total);
     const parts = [rp.total ? `room Rp ${Math.round(rp.total).toLocaleString('id-ID')}` : null,
-      it.payment ? `${it.payment.what} Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')}` : null].filter(Boolean);
+      it.payment ? `${it.payment.what} Rp ${Math.round(it.payment.amount).toLocaleString('id-ID')}` : null,
+      ...ev.parts.map(p => `event #${p.event_no} Rp ${Math.round(p.amount).toLocaleString('id-ID')}`)].filter(Boolean);
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
       booking.id, `Payment received (${pm.label}): ${parts.join(' · ')}${cleanNotes ? ` — ${cleanNotes}` : ''}`.slice(0, 1000), req.user.id]);
     await client.query('COMMIT');
@@ -398,6 +418,7 @@ router.post('/:bookingId/receive', auth, async (req, res) => {
       total, room_amount: rp.total,
       items_payment_id: it.payment?.id || null, items_amount: it.payment?.amount || 0, items_count: it.payment?.count || 0,
       items_on_account: !!it.payment?.on_account, items_left: it.payment?.left || 0,
+      events_amount: ev.total,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -1286,18 +1307,33 @@ function drawPaidByRoom(doc, f) {
 }
 
 async function renderGroupBillPdf(res, { group, folios, propertyId, title, filename, note, footer }) {
-  const { rows: [settings] } = await db.query(
-    `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
-     FROM property_settings WHERE property_id = $1`, [propertyId]);
-  const property = settings || {};
+  const settings = await pdfSettings(propertyId);
   const payments = (await groupBilling.listPayments(group.id, propertyId)).filter(p => !p.is_voided);
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   doc.pipe(res);
-  drawDocumentHeader(doc, property, { title, refLine: `Group #${group.id.slice(0, 8).toUpperCase()}` });
+  drawDocumentHeader(doc, settings, { title, refLine: `Group #${group.id.slice(0, 8).toUpperCase()}` });
+  drawGroupBill(doc, { group, folios, payments, settings, note });
 
+  if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
+  doc.moveDown(footer ? 1.5 : 2);
+  doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
+  doc.end();
+}
+
+async function pdfSettings(propertyId) {
+  const { rows: [settings] } = await db.query(
+    `SELECT tax_rate, service_charge_rate, prices_include_tax, show_tax_breakdown, property_name, property_address, property_phone, property_email, logo_url
+     FROM property_settings WHERE property_id = $1`, [propertyId]);
+  return settings || {};
+}
+
+// The group's one bill, drawn on a live doc below the header: who, the rooms'
+// lines on the group's bill, GROUP TOTAL, payments, balance.
+// → { total, received, balance } as printed.
+function drawGroupBill(doc, { group, folios, payments, settings, note }) {
   doc.fontSize(10).font('Helvetica-Bold').text('Billed to');
   doc.font('Helvetica').text(group.guest_name);
   doc.moveDown(0.5);
@@ -1372,11 +1408,7 @@ async function renderGroupBillPdf(res, { group, folios, propertyId, title, filen
   }
   doc.moveDown(0.3);
   line(balance < 0 ? 'Credit' : 'Balance Due', money(Math.abs(settleCents(balance))), { bold: true });
-
-  if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
-  doc.moveDown(footer ? 1.5 : 2);
-  doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
-  doc.end();
+  return { total, received, balance: settleCents(balance) };
 }
 
 async function loadGroupForPdf(groupId, propertyId) {
@@ -1527,6 +1559,180 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
 
     doc.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Combined invoice: rooms + the events linked to them (migration 153) ──
+// One printed bill for a guest / company that wants everything together: the
+// rooms as on their own invoice (a stay, a group billed as a whole, or a group
+// paid room by room), then each linked event's bill, then a summary with one
+// total and one balance due. Only the PRINT is combined — the rooms and each
+// event keep their own bills and payments, so reports and the journal don't
+// change. `proforma`: the whole stay and the agreed meals still to be rung up.
+//   GET /api/folio/:bookingId/combined/invoice | /proforma
+//   GET /api/folio/group/:groupId/combined/invoice | /proforma
+const COMBINED_NOTE = 'Estimate only — projected charges for the full stay and the events. The final invoice may differ if dates, rate plans, extras or meals change.';
+
+// need: room the heading's first block takes, so a heading is never left alone at the foot of a page.
+function combinedHeading(doc, text, need = 120) {
+  if (doc.y + need > doc.page.height - doc.page.margins.bottom) { doc.addPage(); doc.y = 50; }
+  doc.moveDown(0.6);
+  doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text(text, 50, doc.y);
+  doc.moveTo(50, doc.y + 2).lineTo(550, doc.y + 2).strokeColor('#000').lineWidth(1).stroke();
+  doc.moveDown(0.8);
+}
+
+// rows: [{ label, total, received, balance }] — the summary at the end.
+function drawCombinedSummary(doc, rows, money) {
+  combinedHeading(doc, 'SUMMARY', 60 + rows.length * 18 + 60);
+  const cols = [[50, 175, 'left'], [230, 105, 'right'], [340, 105, 'right'], [450, 100, 'right']];
+  const put = (vals, { bold = false, color = '#000' } = {}) => {
+    if (doc.y > 760) { doc.addPage(); doc.y = 50; }
+    const y = doc.y;
+    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10).fillColor(color);
+    let h = 14;
+    vals.forEach((v, i) => {
+      const [x, w, align] = cols[i];
+      doc.text(v, x, y, { width: w, align });
+      h = Math.max(h, doc.y - y);
+    });
+    doc.fillColor('#000');
+    doc.y = y + h + 4;
+  };
+  put(['', 'Total', 'Paid', 'Balance'], { bold: true, color: '#555' });
+  for (const r of rows) put([r.label, money(r.total), money(r.received), money(r.balance)]);
+  const sum = k => round2(rows.reduce((s, r) => s + r[k], 0));
+  doc.moveTo(50, doc.y).lineTo(550, doc.y).strokeColor('#ccc').lineWidth(1).stroke();
+  doc.y += 4;
+  put(['Total', money(sum('total')), money(sum('received')), money(sum('balance'))], { bold: true });
+  const due = settleCents(sum('balance'));
+  doc.moveDown(0.4);
+  const y = doc.y;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(due > 0 ? '#B91C1C' : '#000');
+  doc.text(due < 0 ? 'Credit' : 'Balance due', 260, y, { width: 190, align: 'right' });
+  doc.text(money(Math.abs(due)), 460, y, { width: 90, align: 'right' });
+  doc.fillColor('#000');
+  doc.y = y + 20;
+}
+
+async function renderCombinedPdf(res, { propertyId, proforma, refLine, filename, drawRooms, eventIds }) {
+  const ev = require('../services/eventService');
+  const { renderEventBill } = require('../services/eventPdf');
+  const settings = await pdfSettings(propertyId);
+  const bills = (await Promise.all(eventIds.map(id => ev.eventBill(propertyId, id)))).filter(Boolean);
+  const footer = proforma ? await proformaFooter.load(propertyId) : null;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  doc.pipe(res);
+  drawDocumentHeader(doc, settings, { title: proforma ? 'Pro Forma Invoice' : 'Invoice', refLine, extraLines: ['Rooms and events'] });
+  if (proforma) {
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#92400e').text(COMBINED_NOTE, 50, doc.y, { width: 500 });
+    doc.fillColor('#000');
+    doc.moveDown(0.5);
+  }
+
+  combinedHeading(doc, 'ROOMS');
+  const rooms = await drawRooms(doc, settings);
+  const rows = [{ label: rooms.label, total: rooms.total, received: round2(rooms.total - rooms.balance), balance: rooms.balance }];
+
+  combinedHeading(doc, bills.length === 1 ? 'MEETING ROOM / EVENT' : 'MEETING ROOM / EVENTS', 200);
+  bills.forEach((bill, i) => {
+    if (i > 0 && doc.y > 600) { doc.addPage(); doc.y = 50; }
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000').text(`Event #${bill.event.event_no}`, 50, doc.y);
+    doc.moveDown(0.4);
+    const t = renderEventBill(doc, { bill, showBreakdown: !!settings.show_tax_breakdown, proforma });
+    rows.push({ label: `Event #${bill.event.event_no} · ${bill.event.name}`, total: t.total, received: t.received, balance: t.balance_due });
+    doc.moveDown(1);
+  });
+
+  const whole = n => fmtIDR(Math.round(parseFloat(n) || 0));
+  drawCombinedSummary(doc, rows, settings.prices_include_tax ? whole : fmtIDR);
+  doc.font('Helvetica').fontSize(8).fillColor('#777')
+    .text('Payments are recorded on the rooms and on each event separately; this summary adds them up.', 50, doc.y, { width: 500, align: 'right' });
+  doc.fillColor('#000');
+
+  if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
+  doc.moveDown(footer ? 1.5 : 2);
+  doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
+  doc.end();
+}
+
+const NO_EVENTS = { error: 'No event is linked to this reservation — link one on the event (Edit details), or print the normal invoice', code: 'NO_EVENTS' };
+
+router.get('/:bookingId/combined/:kind(invoice|proforma)', auth, async (req, res) => {
+  try {
+    const proforma = req.params.kind === 'proforma';
+    const folioIn = proforma ? await computeProforma(req.params.bookingId, req.propertyId) : await loadFolio(req.params.bookingId, req.propertyId);
+    if (!folioIn) return res.status(404).json({ error: 'Booking not found' });
+    const eventIds = await require('../services/eventService').linkedEventIds(req.propertyId, { bookingId: folioIn.booking.id });
+    if (!eventIds.length) return res.status(409).json(NO_EVENTS);
+    // A room of a group billed as a whole prints only its own part, as on its own invoice.
+    const folio = groupRoomView(folioIn) || folioIn;
+    await renderCombinedPdf(res, {
+      propertyId: req.propertyId, proforma,
+      refLine: `Booking #${folio.booking.id.slice(0, 8).toUpperCase()}`,
+      filename: `${req.params.kind}-combined-${folio.booking.id}.pdf`,
+      eventIds,
+      drawRooms: async doc => {
+        drawStayDetails(doc, folio.booking);
+        const compNote = complimentaryNote(folio.booking.complimentary_scope);
+        if (compNote) { doc.moveDown(0.3); doc.fontSize(10).font('Helvetica-Bold').fillColor('#047857').text(compNote, { width: 500 }); doc.fillColor('#000'); }
+        doc.moveDown(1);
+        drawChargeTable(doc, folio);
+        return { label: `Room ${folio.booking.unit_name} · ${folio.booking.guest_name}`, total: round2(folio.total), balance: settleCents(round2(folio.balance_due)) };
+      },
+    });
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/group/:groupId/combined/:kind(invoice|proforma)', auth, async (req, res) => {
+  try {
+    const proforma = req.params.kind === 'proforma';
+    const g = await loadGroupForPdf(req.params.groupId, req.propertyId);
+    if (!g) return res.status(404).json({ error: 'Group not found' });
+    const eventIds = await require('../services/eventService').linkedEventIds(req.propertyId, { groupId: g.group.id });
+    if (!eventIds.length) return res.status(409).json(NO_EVENTS);
+    const load = proforma ? computeProforma : loadFolio;
+    const folios = (await Promise.all(g.bookingIds.map(id => load(id, req.propertyId)))).filter(Boolean);
+    const label = `Rooms · group of ${g.group.guest_name}`;
+    await renderCombinedPdf(res, {
+      propertyId: req.propertyId, proforma,
+      refLine: `Group #${g.group.id.slice(0, 8).toUpperCase()}`,
+      filename: `${req.params.kind}-combined-group-${g.group.id}.pdf`,
+      eventIds,
+      drawRooms: async (doc, settings) => {
+        if (g.group.group_billing) {
+          // The group's one bill, exactly as on the group invoice.
+          const payments = (await groupBilling.listPayments(g.group.id, req.propertyId)).filter(p => !p.is_voided);
+          const t = drawGroupBill(doc, { group: g.group, folios, payments, settings });
+          return { label, total: t.total, balance: t.balance };
+        }
+        // Paid room by room: each room's own bill with its own payments.
+        doc.fontSize(10).font('Helvetica-Bold').text('Billed to');
+        doc.font('Helvetica').text(g.group.guest_name);
+        doc.fontSize(9).fillColor('#555').text(`${folios.length} room${folios.length === 1 ? '' : 's'} · each room is billed and paid on its own`, { width: 500 });
+        doc.fillColor('#000');
+        doc.moveDown(1);
+        for (const f of folios) {
+          if (doc.y > 650) { doc.addPage(); doc.y = 50; }
+          doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text(
+            `${f.booking.unit_name}  ·  ${f.booking.guest_name}  ·  ${String(f.booking.check_in_date).slice(0, 10)} – ${String(f.booking.check_out_date).slice(0, 10)}`, 50, doc.y);
+          const compNote = complimentaryNote(f.booking.complimentary_scope);
+          if (compNote) doc.fontSize(9).font('Helvetica-Bold').fillColor('#047857').text(compNote, 50, doc.y).fillColor('#000');
+          doc.moveDown(0.3);
+          drawChargeTable(doc, f);
+          doc.y += 14;
+        }
+        const total = round2(folios.reduce((s, f) => s + f.total, 0));
+        return { label, total, balance: settleCents(round2(folios.reduce((s, f) => s + f.balance_due, 0))) };
+      },
+    });
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
