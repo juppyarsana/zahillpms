@@ -42,3 +42,11 @@ The PMS records the rooms' part on the booking and the meeting's part on the eve
 The event page's own **Record payment** still works for a meeting paid on its own.
 
 A client who wants **separate invoices** keeps using the event's own **Invoice** and the room's own invoice, as before.
+
+## 4. One restaurant bill for several meals
+
+When the restaurant makes **one bill** for lunch + coffee breaks + the meeting room, the cashier ticks the meals it covers when they press **Charge to Event** in the POS (the **This bill covers** part). Those meals' agreed prices then stop counting on top of the bill, so the **Expected total** = the restaurant's bill.
+
+- Number of people changed (e.g. 50 became 60)? That's fine: the invoice follows the restaurant's bill. If it changes before the event, also change the meal's people while the restaurant hasn't handled it yet.
+- Forgot to tick? Press **Already on a restaurant bill** on the meal on the event page.
+- Bill voided: the agreed prices count again until the corrected bill is charged again.

@@ -373,10 +373,15 @@ export default function EventDetail() {
                   {m.charged_total != null && <>{m.agreed_total != null ? ' · ' : ''}restaurant bill <b>{fmtIDR(m.charged_total)}</b>{m.agreed_total != null && Math.abs(m.charged_total - m.agreed_total) > 1 ? <span style={{ color: '#B45309' }}> (differs from the agreed price)</span> : ''}</>}
                 </div>
               )}
+              {m.covered_by && (
+                <div style={{ fontSize: 12, color: '#047857' }}>
+                  On the restaurant bill {m.covered_by.pos_bill_no || m.covered_by.description} ({fmtIDR(m.covered_by.total)}, with other items){m.agreed_total != null ? ' — the agreed price no longer counts on top' : ''}
+                </div>
+              )}
             </div>
             <div className="flex gap-2" style={{ alignItems: 'center' }}>
               {/* One restaurant bill for several things (charged without picking this meal): its agreed price would count twice. */}
-              {!cancelled && m.agreed_total != null && m.charged_total == null && bill.charges.some(c => c.type === 'pos') && (
+              {!cancelled && m.agreed_total != null && m.charged_total == null && !m.covered_by && bill.charges.some(c => c.type === 'pos') && (
                 <button className="btn btn-sm btn-secondary" title="The restaurant's bill already includes this meal — take its agreed price off so it isn't counted twice"
                   onClick={() => {
                     if (!window.confirm(`${mealLabel(m.kind)} ${m.service_time || ''}: is it already on a restaurant bill above?

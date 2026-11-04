@@ -101,14 +101,16 @@ const evErr = (res, err) => {
 
 // POST /api/pos/transactions with event_id (see above) → 201
 // { event_charge_id, event_id, amount, gross_amount, balance_due, replayed:false }
-// (200 + replayed:true for a retry of the same external_ref).
+// (200 + replayed:true for a retry of the same external_ref). meal_ids = the
+// meals one combined bill covers (lunch + coffee breaks on one bill): their
+// agreed prices stop counting on top of it.
 // The POS must report such a bill as CHARGED (like a room charge), not as paid
 // at the restaurant, in its session summary — the PMS counts it as F&B from
 // this line.
 router.post('/transactions', eventsGate, async (req, res) => {
-  const { event_id, meal_id, amount, gross_amount, description, external_ref } = req.body || {};
+  const { event_id, meal_id, meal_ids, amount, gross_amount, description, external_ref } = req.body || {};
   try {
-    const r = await ev.posCharge(req.propertyId, { eventId: event_id, mealId: meal_id, amount, grossAmount: gross_amount, description, externalRef: external_ref,
+    const r = await ev.posCharge(req.propertyId, { eventId: event_id, mealId: meal_id, mealIds: meal_ids, amount, grossAmount: gross_amount, description, externalRef: external_ref,
       ...cleanPosBill(req.body) });
     res.status(r.replayed ? 200 : 201).json(r);
   } catch (err) { evErr(res, err); }

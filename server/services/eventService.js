@@ -148,12 +148,15 @@ async function eventBill(propertyId, eventId, client = db) {
   // Meals with an agreed price that the restaurant has not rung up yet: not
   // on the bill (and not revenue) until the POS charges them, but part of
   // what the client is expected to pay — the pro forma and the balance count
-  // them. A meal is replaced by its restaurant bill once one arrives for it.
+  // them. A meal is replaced by its restaurant bill once one arrives for it:
+  // a bill for that meal (meal_id), or a bill covering several meals
+  // (event_meals.covered_by_charge_id, migration 154).
   const rung = new Set(live.filter(c => c.type === 'pos' && c.meal_id).map(c => c.meal_id));
+  const liveIds = new Set(live.map(c => c.id));
   const { rows: mealRows } = await client.query(
     `SELECT * FROM event_meals WHERE event_id = $1 AND status <> 'cancelled' AND unit_price IS NOT NULL
      ORDER BY service_date, service_time NULLS LAST, created_at`, [eventId]);
-  const quoted = mealRows.filter(m => !rung.has(m.id)).map(m => {
+  const quoted = mealRows.filter(m => !rung.has(m.id) && !liveIds.has(m.covered_by_charge_id)).map(m => {
     const q = mealQuote(e, m);
     return { meal_id: m.id, kind: m.kind, description: `${MEAL_KINDS[m.kind]}${m.note ? ` — ${m.note}` : ''}`, service_date: ymd(m.service_date),
       service_time: hhmm(m.service_time), pax: m.pax, price: q.price, amount: q.net, total: q.total, status: m.status };
@@ -258,11 +261,15 @@ async function detail(propertyId, id) {
     e.status === 'cancelled' ? [] : overlaps(db, propertyId, e, { statuses: ['confirmed', 'tentative'], excludeId: id }),
   ]);
   const rungBy = new Map(bill.charges.filter(c => c.type === 'pos' && c.meal_id).map(c => [c.meal_id, c]));
+  const liveBy = new Map(bill.charges.map(c => [c.id, c]));
   for (const m of meals) {
     const q = mealQuote(e, m);
     m.price = q ? q.price : null;                 // per person, as typed
     m.agreed_total = q ? q.total : null;          // what the client pays for it
     m.charged_total = rungBy.has(m.id) ? rungBy.get(m.id).total : null;   // the restaurant's bill, once rung up
+    // on a restaurant bill that covers several meals (ticked in the POS)
+    const cover = !rungBy.has(m.id) && liveBy.get(m.covered_by_charge_id);
+    m.covered_by = cover ? { charge_id: cover.id, description: cover.description, pos_bill_no: cover.pos_bill_no || null, total: cover.total } : null;
   }
   return {
     event: e, bill: { ...bill, event: undefined }, meals, history, group, booking,
@@ -302,7 +309,8 @@ async function list(propertyId, { from, to, status, q, group_id, booking_id } = 
   const { rows: quotedMeals } = await db.query(
     `SELECT m.* FROM event_meals m
      WHERE m.event_id = ANY($1) AND m.status <> 'cancelled' AND m.unit_price IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM event_charges c WHERE c.meal_id = m.id AND c.type = 'pos' AND NOT c.is_voided)`, [ids]);
+       AND NOT EXISTS (SELECT 1 FROM event_charges c WHERE c.meal_id = m.id AND c.type = 'pos' AND NOT c.is_voided)
+       AND NOT EXISTS (SELECT 1 FROM event_charges c WHERE c.id = m.covered_by_charge_id AND NOT c.is_voided)`, [ids]);
   const quotedBy = new Map();
   const eventBy = new Map(events.map(e => [e.id, e]));
   for (const m of quotedMeals) quotedBy.set(m.event_id, (quotedBy.get(m.event_id) || 0) + mealQuote(eventBy.get(m.event_id), m).total);
@@ -592,6 +600,20 @@ async function voidCharge(propertyId, id, chargeId, body, user) {
          WHERE id = $1 AND status = 'done'
            AND NOT EXISTS (SELECT 1 FROM event_charges x WHERE x.meal_id = $1 AND x.type = 'pos' AND NOT x.is_voided)`, [c.meal_id]);
     }
+    if (c.type === 'pos') {
+      // meals this bill covered: their agreed price counts again until the
+      // corrected bill is charged (it re-ticks them)
+      await client.query(
+        `UPDATE event_meals m SET covered_by_charge_id = NULL,
+           status = CASE WHEN m.status = 'done' AND NOT EXISTS (SELECT 1 FROM event_charges x WHERE x.meal_id = m.id AND x.type = 'pos' AND NOT x.is_voided)
+                         THEN 'open' ELSE m.status END,
+           done_by = CASE WHEN m.status = 'done' AND NOT EXISTS (SELECT 1 FROM event_charges x WHERE x.meal_id = m.id AND x.type = 'pos' AND NOT x.is_voided)
+                          THEN NULL ELSE m.done_by END,
+           done_at = CASE WHEN m.status = 'done' AND NOT EXISTS (SELECT 1 FROM event_charges x WHERE x.meal_id = m.id AND x.type = 'pos' AND NOT x.is_voided)
+                          THEN NULL ELSE m.done_at END,
+           updated_at = NOW()
+         WHERE m.covered_by_charge_id = $1`, [chargeId]);
+    }
     await log(client, id, `Line voided: ${c.description} — ${fmtIDR(c.shown_total ?? c.amount)}${c.type === 'pos' ? ' (restaurant bill)' : ''}. Reason: ${reason}`, user.id);
     return c;
   });
@@ -716,6 +738,10 @@ async function mealOnBill(propertyId, id, mealId, user) {
     const { rows: [pos] } = await client.query(
       "SELECT COUNT(*) FILTER (WHERE meal_id = $2)::int AS own, COUNT(*)::int AS any FROM event_charges WHERE event_id = $1 AND type = 'pos' AND NOT is_voided", [id, mealId]);
     if (pos.own > 0) throw new EventError(409, 'This meal already has its own restaurant bill');
+    if (cur.covered_by_charge_id) {
+      const { rows: [cv] } = await client.query('SELECT 1 FROM event_charges WHERE id = $1 AND NOT is_voided', [cur.covered_by_charge_id]);
+      if (cv) throw new EventError(409, 'The restaurant already marked this meal as on one of its bills');
+    }
     if (!pos.any) throw new EventError(409, 'There is no restaurant bill on this event yet', { code: 'NO_POS_BILL' });
     const q = mealQuote(ev, cur);
     await client.query('UPDATE event_meals SET unit_price = NULL, shown_price = NULL, updated_at = NOW() WHERE id = $1', [mealId]);
@@ -877,7 +903,10 @@ async function posEvents(propertyId, from, to) {
     `SELECT * FROM event_meals WHERE event_id = ANY($1) AND status <> 'cancelled'
      ORDER BY service_date, service_time NULLS LAST, created_at`, [rows.map(r => r.id)]);
   const { rows: chargedRows } = await db.query(
-    `SELECT DISTINCT meal_id FROM event_charges WHERE event_id = ANY($1) AND type = 'pos' AND NOT is_voided AND meal_id IS NOT NULL`, [rows.map(r => r.id)]);
+    `SELECT meal_id FROM event_charges WHERE event_id = ANY($1) AND type = 'pos' AND NOT is_voided AND meal_id IS NOT NULL
+     UNION
+     SELECT m.id FROM event_meals m JOIN event_charges c ON c.id = m.covered_by_charge_id AND NOT c.is_voided
+     WHERE m.event_id = ANY($1)`, [rows.map(r => r.id)]);
   const charged = new Set(chargedRows.map(r => r.meal_id));
   return rows.map(shape).map(e => ({
     event_id: e.id, event_no: e.event_no, name: e.name, company: e.customer || null, venue: e.venue_name,
@@ -918,7 +947,15 @@ async function posMealStatus(propertyId, mealId, status, by) {
 // A restaurant bill charged to an event: one 'pos' line on its bill. `amount`
 // is NET; or `grossAmount` = what the client pays, turned to NET at the
 // event's own rates. Safe to retry with the same externalRef (replayed: true).
-async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, description, externalRef, billNo = null, outlet = null }) {
+// mealIds = the meals one combined bill covers (ticked in the POS): each is
+// marked handled and points at the line, so its agreed price stops counting
+// on top of it (migration 154). One meal alone is the same as mealId.
+async function posCharge(propertyId, { eventId, mealId, mealIds, amount, grossAmount, description, externalRef, billNo = null, outlet = null }) {
+  let covers = [...new Set((Array.isArray(mealIds) ? mealIds : []).map(String))];
+  if (covers.some(id => !/^[0-9a-f-]{36}$/i.test(id))) throw new EventError(400, 'meal_ids must be meal ids');
+  if (covers.length > 20) throw new EventError(400, 'Too many meals on one bill');
+  if (!mealId && covers.length === 1) { mealId = covers[0]; covers = []; }
+  covers = covers.filter(id => id !== mealId);
   const gross = grossAmount != null && grossAmount !== '' ? Number(grossAmount) : null;
   if (gross != null && (!Number.isFinite(gross) || gross <= 0)) throw new EventError(400, 'gross_amount must be a positive number');
   if (gross == null && !(Number(amount) > 0)) throw new EventError(400, 'amount must be a positive number');
@@ -945,6 +982,13 @@ async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, des
         ({ rows: [meal] } = await client.query('SELECT * FROM event_meals WHERE id = $1 AND event_id = $2', [mealId, e.id]));
         if (!meal) throw new EventError(404, 'Meal not found on this event');
       }
+      let covered = [];
+      if (covers.length) {
+        ({ rows: covered } = await client.query(
+          `SELECT * FROM event_meals WHERE id = ANY($1::uuid[]) AND event_id = $2 AND status <> 'cancelled'
+           ORDER BY service_date, service_time NULLS LAST`, [covers, e.id]));
+        if (covered.length !== covers.length) throw new EventError(404, 'A ticked meal is not on this event (or was cancelled)');
+      }
       let net, shownTotal = null;
       if (gross != null) {
         const g = round2(gross);
@@ -956,7 +1000,8 @@ async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, des
       }
       // the day it belongs to: the meal's, else today (never outside the event)
       const today = todayWITA();
-      const day = meal ? ymd(meal.service_date) : today < e.event_date ? e.event_date : today > e.end_date ? e.end_date : today;
+      const first = meal || covered[0];
+      const day = first ? ymd(first.service_date) : today < e.event_date ? e.event_date : today > e.end_date ? e.end_date : today;
       const { rows: [c] } = await client.query(
         `INSERT INTO event_charges (property_id, event_id, type, description, service_date, quantity, unit_price, amount, shown_total, external_ref, meal_id, pos_bill_no, pos_outlet)
          VALUES ($1, $2, 'pos', $3, $4, 1, $5, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -964,7 +1009,15 @@ async function posCharge(propertyId, { eventId, mealId, amount, grossAmount, des
       if (meal && meal.status === 'open') {
         await client.query("UPDATE event_meals SET status = 'done', done_by = 'POS', done_at = NOW(), updated_at = NOW() WHERE id = $1", [meal.id]);
       }
-      await log(client, e.id, `Restaurant bill charged to the event: ${desc} — ${fmtIDR(shownTotal ?? net)}${shownTotal == null ? ' net' : ''}${ref ? ` (POS ${ref})` : ''}`, null);
+      if (covered.length) {
+        await client.query(
+          `UPDATE event_meals SET covered_by_charge_id = $1, updated_at = NOW(),
+             status = 'done', done_by = CASE WHEN status = 'done' THEN done_by ELSE 'POS' END,
+             done_at = CASE WHEN status = 'done' THEN done_at ELSE NOW() END
+           WHERE id = ANY($2::uuid[])`, [c.id, covered.map(m => m.id)]);
+      }
+      await log(client, e.id, `Restaurant bill charged to the event: ${desc} — ${fmtIDR(shownTotal ?? net)}${shownTotal == null ? ' net' : ''}${ref ? ` (POS ${ref})` : ''}`
+        + (covered.length ? `. Covers: ${[meal, ...covered].filter(Boolean).map(mealText).join('; ')}` : ''), null);
       return { c };
     });
     return row.again ? result(row.again, true) : result(row.c, false);

@@ -42,3 +42,11 @@ PMS mencatat bagian kamar di booking dan bagian meeting di event, dengan metode,
 **Record payment** di halaman event tetap bisa dipakai untuk meeting yang dibayar terpisah.
 
 Klien yang minta **invoice terpisah** tetap pakai **Invoice** milik event dan invoice kamar seperti biasa.
+
+## 4. Satu bill restoran untuk beberapa makanan
+
+Kalau restoran membuat **satu bill** untuk makan siang + coffee break + ruang meeting, kasir mencentang makanan yang termasuk di bill itu waktu **Charge to Event** di POS (bagian **This bill covers**). Harga yang disepakati untuk makanan itu tidak dihitung lagi di atas bill, jadi **Expected total** = bill restoran.
+
+- Jumlah orang berubah (mis. 50 jadi 60)? Tidak apa-apa: invoice mengikuti bill restoran. Kalau berubah sebelum acara, ubah juga jumlah orang di makanannya selama belum dikerjakan restoran.
+- Lupa dicentang? Tekan **Already on a restaurant bill** di makanannya di halaman event.
+- Bill di-void: harga yang disepakati dihitung lagi sampai bill yang sudah dibetulkan di-charge ulang.
