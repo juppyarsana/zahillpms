@@ -134,10 +134,12 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [storeId, setStoreId] = useState('');   // the store stocked lines go into (migration 156)
 
   useEffect(() => {
     api.get('/api/purchasing/direct/setup').then(r => {
       setSetup(r.data); setDay(r.data.today);
+      setStoreId((r.data.stores || []).find(st => st.kind === 'main')?.id || '');
       const cash = r.data.payment_methods.find(m => /cash|tunai/i.test(m.id + m.label)) || r.data.payment_methods[0];
       if (cash) setMethod(cash.id);
     }).catch(err => setError(err.response?.data?.error || 'Could not load the form'));
@@ -177,7 +179,7 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
     try {
       const r = await api.post('/api/purchasing/direct', {
         supplier_id: supplierId || null, bought_from: supplierId ? null : boughtFrom, purchased_on: day, reference, category,
-        department: department || null, notes, items, pay, method: pay === 'paid' ? method : null,
+        department: department || null, notes, items, pay, method: pay === 'paid' ? method : null, store_id: storeId || undefined,
         due_date: pay === 'later' ? (dueDate || null) : null, confirm_duplicate: confirmDuplicate,
       });
       onSaved(r.data);
@@ -232,6 +234,15 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
                   {setup.departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
                 </select>
               </div>
+              {(setup.stores || []).length > 1 && (
+                <div className="form-group">
+                  <label className="form-label">Into store</label>
+                  <select className="form-select" value={storeId} onChange={e => setStoreId(e.target.value)}>
+                    {setup.stores.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+                  </select>
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Where the goods are put. Restaurant items go to the POS.</div>
+                </div>
+              )}
             </div>
 
             <div className="form-label" style={{ marginTop: 4 }}>What was bought — type the price paid for each line, as on the receipt</div>
@@ -374,6 +385,7 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
                   <tr key={it.id}>
                     <td>{it.description}
                       {it.pos_item_id && <span className="badge badge-blue" style={{ marginLeft: 6 }}>Restaurant</span>}
+                      {!it.pos_item_id && it.store_name && <div className="text-muted" style={{ fontSize: 11 }}>into {it.store_name}</div>}
                       {it.pos_item_id && (it.pos_send_error
                         ? <div style={{ fontSize: 11, color: 'var(--danger, #b91c1c)' }}>Not sent to the POS: {it.pos_send_error}</div>
                         : it.handovers?.length ? <HandoverLines handovers={it.handovers} unit={it.unit_of_measure || it.unit} />

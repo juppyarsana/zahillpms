@@ -20,6 +20,7 @@ const db = require('../db');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 const { CATEGORY_KEYS, CATEGORY_LABEL } = require('./costCategories');
+const storeSvc = require('./storeService');
 
 const num = v => parseFloat(v) || 0;
 const r2 = v => Math.round(v * 100) / 100;
@@ -34,7 +35,7 @@ const PRODUCT_CATEGORY_LABEL = {
 };
 const REASON_LABEL = {
   purchase: 'Bought', restock: 'Added', sale: 'Sold', waste: 'Waste / spoiled', used: 'Used (not sold)',
-  adjustment: 'Correction', opname: 'Stock opname',
+  adjustment: 'Correction', opname: 'Stock opname', transfer: 'Moved between stores',
 };
 const WRITEOFF_DEFAULT = { amount: 500000 };
 
@@ -67,16 +68,50 @@ function shapeItem(r) {
   };
 }
 
-async function listItems(propertyId, { inactive = false } = {}) {
-  const { rows } = await db.query(`SELECT * FROM (${ITEMS_SQL}) x ${inactive ? '' : 'WHERE is_active'} ORDER BY is_active DESC, lower(name)`, [propertyId]);
-  return rows.map(shapeItem);
+// What each PMS store holds, per item key: Map(key → { storeId: qty }).
+async function storeQuantities(propertyId, q = db) {
+  const { rows } = await q.query(
+    `SELECT COALESCE('rm:' || raw_material_id, 'p:' || product_id) AS key, store_id, quantity
+     FROM store_stock WHERE property_id = $1 AND quantity <> 0`, [propertyId]);
+  const m = new Map();
+  for (const r of rows) {
+    const o = m.get(r.key) || {};
+    o[r.store_id] = num(r.quantity);
+    m.set(r.key, o);
+  }
+  return m;
 }
 
-async function getItem(propertyId, key, q = db) {
+// storeId set: on_hand / value / low are that store's. Without: the total.
+// Every item carries `stores` = { storeId: qty } either way.
+function withStores(item, stores, storeId) {
+  const per = stores.get(item.key) || {};
+  if (!storeId) return { ...item, stores: per };
+  const onHand = per[storeId] || 0;
+  return {
+    ...item, stores: per, total_on_hand: item.on_hand, on_hand: onHand,
+    value: item.avg_cost != null ? r2(onHand * item.avg_cost) : null, out: onHand <= 0,
+    // Low stock is judged on the whole hotel (it decides buying), not one store.
+  };
+}
+
+async function listItems(propertyId, { inactive = false, storeId = null } = {}) {
+  const [{ rows }, stores] = await Promise.all([
+    db.query(`SELECT * FROM (${ITEMS_SQL}) x ${inactive ? '' : 'WHERE is_active'} ORDER BY is_active DESC, lower(name)`, [propertyId]),
+    storeQuantities(propertyId),
+  ]);
+  return rows.map(r => withStores(shapeItem(r), stores, storeId));
+}
+
+async function getItem(propertyId, key, q = db, storeId = null) {
   const k = parseKey(key);
   if (!k) return null;
   const { rows: [r] } = await q.query(`SELECT * FROM (${ITEMS_SQL}) x WHERE id = $2 AND kind = $3`, [propertyId, k.id, k.kind]);
-  return r ? shapeItem(r) : null;
+  if (!r) return null;
+  const { rows: per } = await q.query(
+    `SELECT store_id, quantity FROM store_stock WHERE ${k.col} = $1 AND quantity <> 0`, [k.id]);
+  const stores = new Map([[`${k.kind}:${k.id}`, Object.fromEntries(per.map(p => [p.store_id, num(p.quantity)]))]]);
+  return withStores(shapeItem(r), stores, storeId);
 }
 
 // Food and drinks in stock at a moment, valued at today's average cost, for the
@@ -129,16 +164,19 @@ async function saveStockItem(propertyId, body, id = null) {
   return { item: await getItem(propertyId, `rm:${r.id}`) };
 }
 
-// ── History of one item ──
-async function history(propertyId, key) {
+// ── History of one item (one store, or every store) ──
+async function history(propertyId, key, storeId = null) {
   const k = parseKey(key);
-  const item = await getItem(propertyId, key);
+  const item = await getItem(propertyId, key, db, storeId);
   if (!k || !item) return null;
   const { rows } = await db.query(
-    `SELECT m.id, m.change_qty, m.reason, m.note, m.created_at, m.reference_id, u.name AS by_name, po.po_number, po.is_direct
+    `SELECT m.id, m.change_qty, m.reason, m.note, m.created_at, m.reference_id, u.name AS by_name, po.po_number, po.is_direct,
+            m.store_id, st.name AS store_name
      FROM ${k.ledger} m LEFT JOIN users u ON u.id = m.created_by
      LEFT JOIN purchase_orders po ON po.id = m.purchase_order_id
-     WHERE m.${k.col} = $1 AND m.property_id = $2 ORDER BY m.created_at DESC, m.id DESC LIMIT 200`, [k.id, propertyId]);
+     LEFT JOIN stores st ON st.id = m.store_id
+     WHERE m.${k.col} = $1 AND m.property_id = $2 ${storeId ? 'AND m.store_id = $3' : ''}
+     ORDER BY m.created_at DESC, m.id DESC LIMIT 200`, storeId ? [k.id, propertyId, storeId] : [k.id, propertyId]);
   let after = item.on_hand;
   const lines = rows.map(m => {
     const line = { ...m, change_qty: num(m.change_qty), bucket: bucketOf(m), reason_label: labelOf(m), after: r3(after) };
@@ -157,6 +195,7 @@ function bucketOf(m) {
   if (m.reason === 'used') return 'used';
   if (m.reason === 'waste') return 'waste';
   if (m.reason === 'opname') return 'opname';
+  if (m.reason === 'transfer') return 'transfer';
   return 'correction';                                               // corrections, Sales items added by hand
 }
 function labelOf(m) {
@@ -181,23 +220,27 @@ async function adjust(propertyId, key, body, user) {
   const up = reason === 'correction' && body.direction === 'up';
   const change = up ? qty : -qty;
   const client = await db.pool.connect();
-  let item, value;
+  let item, value, store;
   try {
     await client.query('BEGIN');
+    const s = await storeSvc.pmsStore(propertyId, body.store_id, client);
+    if (s.error) { await client.query('ROLLBACK'); return s; }
+    store = s.store;
     const { rows: [row] } = await client.query(
       `SELECT name, stock_quantity, cost_per_unit FROM ${k.table} WHERE id = $1 AND property_id = $2 FOR UPDATE`, [k.id, propertyId]);
     if (!row) { await client.query('ROLLBACK'); return fail(404, 'Item not found'); }
-    if (num(row.stock_quantity) + change < -1e-9) {
+    const inStore = await storeSvc.storeQty(client, store.id, k.kind, k.id);
+    if (inStore + change < -1e-9) {
       await client.query('ROLLBACK');
-      return fail(400, `Only ${+num(row.stock_quantity).toFixed(3)} in stock — correct it with a stock opname if the count is wrong`, 'BELOW_ZERO');
+      return fail(400, `Only ${+inStore.toFixed(3)} in ${store.name} — correct it with a stock opname if the count is wrong`, 'BELOW_ZERO');
     }
     await client.query(`UPDATE ${k.table} SET stock_quantity = stock_quantity + $1 WHERE id = $2`, [change, k.id]);
     await client.query(
-      `INSERT INTO ${k.ledger} (property_id, ${k.col}, change_qty, reason, note, created_by) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [propertyId, k.id, change, reason === 'correction' ? 'adjustment' : reason, note || null, user.id || null]);
+      `INSERT INTO ${k.ledger} (property_id, ${k.col}, change_qty, reason, note, created_by, store_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [propertyId, k.id, change, reason === 'correction' ? 'adjustment' : reason, note || null, user.id || null, store.id]);
     await client.query('COMMIT');
     value = row.cost_per_unit != null ? r2(qty * num(row.cost_per_unit)) : null;
-    item = await getItem(propertyId, key);
+    item = await getItem(propertyId, key, db, store.id);
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
 
   // A big write-off (waste, or a correction down) goes to Telegram.
@@ -207,9 +250,9 @@ async function adjust(propertyId, key, body, user) {
       const e = telegram.escapeHtml;
       return telegram.sendAlert(propertyId, 'alert_stock_writeoff', [
         `🗑 <b>Stock written off — ${e(idr(value))}</b>`,
-        `${e(item.name)}: −${e(qtyText(qty, item.unit))} (${reason === 'waste' ? 'waste / spoiled' : 'correction'})`,
+        `${e(item.name)}: −${e(qtyText(qty, item.unit))} (${reason === 'waste' ? 'waste / spoiled' : 'correction'}) · ${e(store.name)}`,
         note ? `Why: ${e(note)}` : '',
-        `<i>by ${e(user.name || 'someone')} · ${e(qtyText(item.on_hand, item.unit))} left</i>`,
+        `<i>by ${e(user.name || 'someone')} · ${e(qtyText(item.on_hand, item.unit))} left in ${e(store.name)}</i>`,
       ].filter(Boolean).join('\n'), { html: true });
     }).catch(() => {});
   }
@@ -232,8 +275,9 @@ async function saveWriteoffSettings(propertyId, body) {
 
 // ── Stock opname ──
 const OPNAME_COLS = `o.id, o.opname_no, to_char(o.count_date, 'YYYY-MM-DD') AS count_date, o.status, o.notes, o.created_at,
-  o.finished_at, o.cancelled_at, cu.name AS created_by_name, fu.name AS finished_by_name`;
-const OPNAME_FROM = `FROM stock_opnames o LEFT JOIN users cu ON cu.id = o.created_by LEFT JOIN users fu ON fu.id = o.finished_by`;
+  o.finished_at, o.cancelled_at, cu.name AS created_by_name, fu.name AS finished_by_name, o.store_id, st.name AS store_name`;
+const OPNAME_FROM = `FROM stock_opnames o LEFT JOIN users cu ON cu.id = o.created_by LEFT JOIN users fu ON fu.id = o.finished_by
+  LEFT JOIN stores st ON st.id = o.store_id`;
 
 async function listOpnames(propertyId) {
   const { rows } = await db.query(
@@ -254,10 +298,12 @@ async function getOpname(propertyId, id) {
   if (!o) return null;
   // A draft shows what the PMS has now; a finished one what it had when finished.
   const { rows } = await db.query(
-    `SELECT l.*, COALESCE(rm.stock_quantity, p.stock_quantity) AS live_qty, COALESCE(rm.cost_per_unit, p.cost_per_unit) AS live_cost,
+    `SELECT l.*, COALESCE(ss.quantity, 0) AS live_qty, COALESCE(rm.cost_per_unit, p.cost_per_unit) AS live_cost,
             COALESCE(rm.category, p.category) AS category
      FROM stock_opname_lines l LEFT JOIN raw_materials rm ON rm.id = l.raw_material_id LEFT JOIN products p ON p.id = l.product_id
-     WHERE l.opname_id = $1 ORDER BY lower(l.description)`, [id]);
+     LEFT JOIN store_stock ss ON ss.store_id = $2
+       AND (ss.raw_material_id = l.raw_material_id OR ss.product_id = l.product_id)
+     WHERE l.opname_id = $1 ORDER BY lower(l.description)`, [id, o.store_id]);
   const lines = rows.map(l => {
     const expected = o.status === 'finished' ? num(l.expected_qty) : num(l.live_qty);
     const cost = o.status === 'finished' ? (l.unit_cost != null ? num(l.unit_cost) : null) : (l.live_cost != null ? num(l.live_cost) : null);
@@ -284,19 +330,32 @@ async function getOpname(propertyId, id) {
   };
 }
 
+// One store at a time ({ store_id }, empty = Main Store). Main Store lists every
+// active item; another store lists what it holds or has ever held, so
+// Housekeeping isn't handed the kitchen's 200 lines.
 async function startOpname(propertyId, body, user) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    const s = await storeSvc.pmsStore(propertyId, body.store_id, client);
+    if (s.error) { await client.query('ROLLBACK'); return s; }
+    const store = s.store;
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`stock_opname:${propertyId}`]);
-    const { rows: [open] } = await client.query(`SELECT opname_no FROM stock_opnames WHERE property_id = $1 AND status = 'draft'`, [propertyId]);
-    if (open) { await client.query('ROLLBACK'); return fail(409, `${opnameNo(open.opname_no)} is still being counted — finish or cancel it first`, 'OPEN'); }
+    const { rows: [open] } = await client.query(`SELECT opname_no FROM stock_opnames WHERE store_id = $1 AND status = 'draft'`, [store.id]);
+    if (open) { await client.query('ROLLBACK'); return fail(409, `${opnameNo(open.opname_no)} of ${store.name} is still being counted — finish or cancel it first`, 'OPEN'); }
     const { rows: [n] } = await client.query('SELECT COALESCE(MAX(opname_no), 0) + 1 AS no FROM stock_opnames WHERE property_id = $1', [propertyId]);
     const { rows: [o] } = await client.query(
-      `INSERT INTO stock_opnames (property_id, opname_no, count_date, notes, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [propertyId, n.no, todayWITA(), String(body.notes || '').trim().slice(0, 1000) || null, user.id || null]);
-    const { rows: items } = await client.query(`SELECT * FROM (${ITEMS_SQL}) x WHERE is_active`, [propertyId]);
-    if (!items.length) { await client.query('ROLLBACK'); return fail(400, 'Nothing is kept in stock yet — add stock items first'); }
+      `INSERT INTO stock_opnames (property_id, opname_no, count_date, notes, created_by, store_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [propertyId, n.no, todayWITA(), String(body.notes || '').trim().slice(0, 1000) || null, user.id || null, store.id]);
+    const { rows: items } = await client.query(
+      store.kind === 'main' ? `SELECT * FROM (${ITEMS_SQL}) x WHERE is_active`
+        : `SELECT * FROM (${ITEMS_SQL}) x WHERE is_active AND EXISTS (SELECT 1 FROM store_stock ss WHERE ss.store_id = $2
+             AND (ss.raw_material_id = x.id OR ss.product_id = x.id))`,
+      store.kind === 'main' ? [propertyId] : [propertyId, store.id]);
+    if (!items.length) {
+      await client.query('ROLLBACK');
+      return fail(400, store.kind === 'main' ? 'Nothing is kept in stock yet — add stock items first' : `Nothing has been kept in ${store.name} yet`);
+    }
     for (const it of items) {
       await client.query(
         `INSERT INTO stock_opname_lines (opname_id, product_id, raw_material_id, description, unit) VALUES ($1, $2, $3, $4, $5)`,
@@ -335,7 +394,7 @@ async function finishOpname(propertyId, id, user) {
   try {
     await client.query('BEGIN');
     const { rows: [o] } = await client.query(
-      'SELECT id, opname_no, status FROM stock_opnames WHERE id = $1 AND property_id = $2 FOR UPDATE', [id, propertyId]);
+      'SELECT id, opname_no, status, store_id FROM stock_opnames WHERE id = $1 AND property_id = $2 FOR UPDATE', [id, propertyId]);
     if (!o) { await client.query('ROLLBACK'); return fail(404, 'Stock opname not found'); }
     if (o.status !== 'draft') { await client.query('ROLLBACK'); return fail(409, 'This stock opname is already finished or cancelled', 'FINISHED'); }
     const { rows: lines } = await client.query('SELECT * FROM stock_opname_lines WHERE opname_id = $1', [id]);
@@ -343,16 +402,18 @@ async function finishOpname(propertyId, id, user) {
     const note = `Stock opname ${opnameNo(o.opname_no)}`;
     for (const l of lines) {
       const k = l.raw_material_id ? parseKey(`rm:${l.raw_material_id}`) : parseKey(`p:${l.product_id}`);
-      const { rows: [row] } = await client.query(`SELECT stock_quantity, cost_per_unit FROM ${k.table} WHERE id = $1 FOR UPDATE`, [k.id]);
-      const expected = num(row.stock_quantity);
+      // Lock the item, then read what this store holds (the trigger keeps it).
+      const { rows: [row] } = await client.query(`SELECT cost_per_unit FROM ${k.table} WHERE id = $1 FOR UPDATE`, [k.id]);
+      const expected = await storeSvc.storeQty(client, o.store_id, k.kind, k.id);
       await client.query('UPDATE stock_opname_lines SET expected_qty = $1, unit_cost = $2 WHERE id = $3', [expected, row.cost_per_unit, l.id]);
       if (l.counted_qty == null) continue;
       const diff = r3(num(l.counted_qty) - expected);
       if (Math.abs(diff) < 1e-9) continue;
-      await client.query(`UPDATE ${k.table} SET stock_quantity = $1 WHERE id = $2`, [num(l.counted_qty), k.id]);
+      await client.query(`UPDATE ${k.table} SET stock_quantity = stock_quantity + $1 WHERE id = $2`, [diff, k.id]);
       await client.query(
-        `INSERT INTO ${k.ledger} (property_id, ${k.col}, change_qty, reason, reference_id, note, created_by) VALUES ($1, $2, $3, 'opname', $4, $5, $6)`,
-        [propertyId, k.id, diff, id, note, user.id || null]);
+        `INSERT INTO ${k.ledger} (property_id, ${k.col}, change_qty, reason, reference_id, note, created_by, store_id)
+         VALUES ($1, $2, $3, 'opname', $4, $5, $6, $7)`,
+        [propertyId, k.id, diff, id, note, user.id || null, o.store_id]);
     }
     await client.query(`UPDATE stock_opnames SET status = 'finished', finished_at = NOW(), finished_by = $1 WHERE id = $2`, [user.id || null, id]);
     await client.query('COMMIT');
@@ -370,7 +431,7 @@ async function sendOpnameReport(propertyId, o) {
   const { rows: [ps] } = await db.query('SELECT property_name FROM property_settings WHERE property_id = $1', [propertyId]);
   const t = o.totals;
   const tg = [
-    `📦 <b>Stock opname ${e(o.no_text)} finished</b> · ${e(dayText(o.count_date))}`,
+    `📦 <b>Stock opname ${e(o.no_text)} finished</b> · ${e(o.store_name || '')} · ${e(dayText(o.count_date))}`,
     `${t.counted} of ${t.items} items counted · value on hand ${e(idr(t.counted_value))}`,
     `Difference <b>${e(signedIdr(t.difference_value))}</b> — ${t.short} short, ${t.over} over`,
     ...diffs.slice(0, 5).map(l => `• ${e(l.description)}: ${l.difference > 0 ? '+' : ''}${e(qtyText(l.difference, l.unit))}${l.difference_value != null ? ` (${e(signedIdr(l.difference_value))})` : ''}`),
@@ -384,7 +445,7 @@ async function sendOpnameReport(propertyId, o) {
     ${td(l.difference_value ? e(signedIdr(l.difference_value)) : '—', true, l.difference_value < 0 ? '#b91c1c' : '')}${td(l.counted_value != null ? e(idr(l.counted_value)) : '—', true)}</tr>`).join('');
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:24px 16px;color:#111827;">
     <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;">Stock opname</div>
-    <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${e(ps?.property_name || '')} — ${e(o.no_text)}</div>
+    <div style="font-size:22px;font-weight:700;margin:4px 0 2px;">${e(ps?.property_name || '')} — ${e(o.no_text)}${o.store_name ? ` · ${e(o.store_name)}` : ''}</div>
     <div style="font-size:14px;color:#6b7280;margin-bottom:14px;">Counted ${e(dayText(o.count_date))} · finished by ${e(o.finished_by_name || '—')}</div>
     <div style="font-size:14px;margin-bottom:14px;">${t.counted} of ${t.items} items counted · value on hand <b>${e(idr(t.counted_value))}</b> ·
       difference <b style="color:${t.difference_value < 0 ? '#b91c1c' : '#111827'}">${e(signedIdr(t.difference_value))}</b> (${t.short} short, ${t.over} over)</div>
@@ -393,43 +454,47 @@ async function sendOpnameReport(propertyId, o) {
   </div>`;
   const smart = require('./smartReports');   // lazy: smartReports loads many services
   await smart.sendEvent(propertyId, 'alert_stock_opname', {
-    telegram: tg, email: { subject: `📦 Stock opname ${o.no_text} — difference ${signedIdr(t.difference_value)}`, html },
+    telegram: tg, email: { subject: `📦 Stock opname ${o.no_text}${o.store_name ? ` (${o.store_name})` : ''} — difference ${signedIdr(t.difference_value)}`, html },
   });
 }
 const signedIdr = n => `${n < 0 ? '−' : n > 0 ? '+' : ''}${idr(Math.abs(n))}`;
 const dayText = d => new Date(`${String(d).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 // ── Usage between two opnames ──
-// from: a finished opname; to: a later finished opname, or null = until now.
+// from: a finished opname; to: a later finished opname of the same store, or
+// null = until now. The report is for that store: its quantities and its
+// movements only, so stock moved in or out shows as its own column.
 async function usage(propertyId, fromId, toId = null) {
   if (!UUID_RE.test(String(fromId || ''))) return fail(400, 'Choose a finished stock opname to start from');
   if (toId && !UUID_RE.test(String(toId))) return fail(400, 'Choose a finished stock opname to end on');
   const { rows: [a] } = await db.query(
-    `SELECT id, opname_no, finished_at, to_char(count_date, 'YYYY-MM-DD') AS count_date FROM stock_opnames
-     WHERE id = $1 AND property_id = $2 AND status = 'finished'`, [fromId, propertyId]);
+    `SELECT o.id, o.opname_no, o.finished_at, to_char(o.count_date, 'YYYY-MM-DD') AS count_date, o.store_id, st.name AS store_name
+     FROM stock_opnames o LEFT JOIN stores st ON st.id = o.store_id
+     WHERE o.id = $1 AND o.property_id = $2 AND o.status = 'finished'`, [fromId, propertyId]);
   if (!a) return fail(400, 'Choose a finished stock opname to start from');
   let b = null;
   if (toId) {
     ({ rows: [b] } = await db.query(
-      `SELECT id, opname_no, finished_at, to_char(count_date, 'YYYY-MM-DD') AS count_date FROM stock_opnames
+      `SELECT id, opname_no, finished_at, to_char(count_date, 'YYYY-MM-DD') AS count_date, store_id FROM stock_opnames
        WHERE id = $1 AND property_id = $2 AND status = 'finished'`, [toId, propertyId]));
     if (!b) return fail(400, 'Choose a finished stock opname to end on');
+    if (b.store_id !== a.store_id) return fail(400, 'Both stock opnames must be of the same store');
     if (new Date(b.finished_at) <= new Date(a.finished_at)) return fail(400, 'The end must be a later stock opname');
   }
   // Compared inside the database: JavaScript dates drop the microseconds.
   const startSql = '(SELECT finished_at FROM stock_opnames WHERE id = $2)';
-  const afterEnd = b ? 'created_at > (SELECT finished_at FROM stock_opnames WHERE id = $3)' : 'false';
-  const params = b ? [propertyId, a.id, b.id] : [propertyId, a.id];
-  const items = await listItems(propertyId, { inactive: true });
+  const afterEnd = b ? 'created_at > (SELECT finished_at FROM stock_opnames WHERE id = $4)' : 'false';
+  const params = b ? [propertyId, a.id, a.store_id, b.id] : [propertyId, a.id, a.store_id];
+  const items = await listItems(propertyId, { inactive: true, storeId: a.store_id });
   const byKey = new Map(items.map(i => [i.key, { ...i, opening: i.on_hand, closing: i.on_hand,
-    bought: 0, sold: 0, used: 0, waste: 0, correction: 0, opname: 0 }]));
+    bought: 0, sold: 0, used: 0, waste: 0, correction: 0, opname: 0, transfer: 0 }]));
   // Every movement after the start: undo it to get the opening; after the end
   // also undo it for the closing. Movements in between fill the columns.
   const [{ rows: rm }, { rows: pm }] = await Promise.all([
     db.query(`SELECT 'rm:' || raw_material_id AS key, change_qty, reason, purchase_order_id, reference_id, ${afterEnd} AS after_end
-              FROM raw_material_movements WHERE property_id = $1 AND created_at > ${startSql}`, params),
+              FROM raw_material_movements WHERE property_id = $1 AND store_id = $3 AND created_at > ${startSql}`, params),
     db.query(`SELECT 'p:' || product_id AS key, change_qty, reason, purchase_order_id, reference_id, ${afterEnd} AS after_end
-              FROM stock_movements WHERE property_id = $1 AND created_at > ${startSql}`, params),
+              FROM stock_movements WHERE property_id = $1 AND store_id = $3 AND created_at > ${startSql}`, params),
   ]);
   for (const m of [...rm, ...pm]) {
     const it = byKey.get(m.key);
@@ -444,19 +509,22 @@ async function usage(propertyId, fromId, toId = null) {
     else if (bucket === 'used') it.used -= q;
     else if (bucket === 'waste') it.waste -= q;
     else if (bucket === 'opname') it.opname += q;
+    else if (bucket === 'transfer') it.transfer += q;
     else it.correction += q;
   }
   const rows = [...byKey.values()].map(i => {
-    const usedTotal = r3(i.opening + i.bought - i.closing);
+    // Moved in counts like bought; moved out is not used here (it was used, or
+    // is still, in the other store).
+    const usedTotal = r3(i.opening + i.bought + i.transfer - i.closing);
     const cost = i.avg_cost;
     const v = q => (cost != null ? r2(q * cost) : null);
     return {
       key: i.key, name: i.name, unit: i.unit, kind_label: i.kind_label, category_label: i.category_label, avg_cost: cost,
       opening: r3(i.opening), bought: r3(i.bought), sold: r3(i.sold), used: r3(i.used), waste: r3(i.waste),
-      correction: r3(i.correction), opname: r3(i.opname), closing: r3(i.closing), used_total: usedTotal,
+      correction: r3(i.correction), opname: r3(i.opname), transfer: r3(i.transfer), closing: r3(i.closing), used_total: usedTotal,
       value: { used_total: v(usedTotal), sold: v(i.sold), used: v(i.used), waste: v(i.waste), opname: v(i.opname), closing: v(i.closing) },
     };
-  }).filter(r => r.opening || r.bought || r.sold || r.used || r.waste || r.correction || r.opname || r.closing);
+  }).filter(r => r.opening || r.bought || r.sold || r.used || r.waste || r.correction || r.opname || r.transfer || r.closing);
   rows.sort((x, y) => x.category_label.localeCompare(y.category_label) || x.name.localeCompare(y.name));
   const categories = new Map();
   for (const r of rows) {
@@ -468,6 +536,7 @@ async function usage(propertyId, fromId, toId = null) {
   const cats = [...categories.values()];
   const sum = f => r2(cats.reduce((t, c) => t + c[f], 0));
   return {
+    store: { id: a.store_id, name: a.store_name },
     from: { id: a.id, no_text: opnameNo(a.opname_no), count_date: a.count_date, finished_at: a.finished_at },
     to: b ? { id: b.id, no_text: opnameNo(b.opname_no), count_date: b.count_date, finished_at: b.finished_at } : null,
     rows, categories: cats,

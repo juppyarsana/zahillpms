@@ -24,7 +24,7 @@ async function stockSheetPdf(propertyId, o) {
   const done = new Promise(r => doc.on('end', r));
   const finished = o.status === 'finished';
   drawDocumentHeader(doc, await property(propertyId), {
-    title: 'Stock opname', refLine: `${o.no_text} · ${dayText(o.count_date)}`,
+    title: 'Stock opname', refLine: `${o.no_text}${o.store_name ? ` · ${o.store_name}` : ''} · ${dayText(o.count_date)}`,
     extraLines: [finished ? `Finished by ${o.finished_by_name || '—'}` : 'Counted by: ____________________'],
   });
   const L = 40, W = 515;
@@ -84,29 +84,29 @@ async function usageXlsx(propertyId, u) {
   const p = await property(propertyId);
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Usage', { views: [{ state: 'frozen', ySplit: 4, xSplit: 1 }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-  ws.addRow([`${p.property_name || ''} — stock usage`]).font = { bold: true, size: 14 };
-  ws.addRow([`${u.from.no_text} (${dayText(u.from.count_date)}) → ${u.to ? `${u.to.no_text} (${dayText(u.to.count_date)})` : 'now'} · used = opening + bought − closing, valued at average cost`]);
+  ws.addRow([`${p.property_name || ''} — stock usage${u.store?.name ? ` · ${u.store.name}` : ''}`]).font = { bold: true, size: 14 };
+  ws.addRow([`${u.from.no_text} (${dayText(u.from.count_date)}) → ${u.to ? `${u.to.no_text} (${dayText(u.to.count_date)})` : 'now'} · used = opening + bought + moved in − moved out − closing, valued at average cost`]);
   ws.addRow([]);
-  const head = ['Item', 'Kind', 'Category', 'Unit', 'Opening', 'Bought', 'Sold', 'Used (not sold)', 'Waste', 'Corrections', 'Opname difference', 'Closing', 'Used in total', 'Average cost', 'Used — value', 'Waste — value', 'Opname — value', 'Closing — value'];
+  const head = ['Item', 'Kind', 'Category', 'Unit', 'Opening', 'Bought', 'Moved in / out', 'Sold', 'Used (not sold)', 'Waste', 'Corrections', 'Opname difference', 'Closing', 'Used in total', 'Average cost', 'Used — value', 'Waste — value', 'Opname — value', 'Closing — value'];
   const h = ws.addRow(head);
   h.font = { bold: true };
   h.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }; c.alignment = { wrapText: true, vertical: 'middle' }; });
   for (const r of u.rows) {
-    ws.addRow([r.name, r.kind_label, r.category_label, r.unit, r.opening, r.bought, r.sold, r.used, r.waste, r.correction, r.opname, r.closing,
+    ws.addRow([r.name, r.kind_label, r.category_label, r.unit, r.opening, r.bought, r.transfer || 0, r.sold, r.used, r.waste, r.correction, r.opname, r.closing,
       r.used_total, r.avg_cost, r.value.used_total, r.value.waste, r.value.opname, r.value.closing]);
   }
   ws.addRow([]);
-  const t = ws.addRow(['Total', '', '', '', '', '', '', '', '', '', '', '', '', '', u.totals.used_total, u.totals.waste, u.totals.opname, u.totals.closing]);
+  const t = ws.addRow(['Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', u.totals.used_total, u.totals.waste, u.totals.opname, u.totals.closing]);
   t.font = { bold: true };
   ws.addRow([]);
   ws.addRow(['By category']).font = { bold: true };
-  const ch = ws.addRow(['Category', 'Items', '', '', '', '', '', '', '', '', '', '', '', '', 'Used — value', 'Waste — value', 'Opname — value', 'Closing — value']);
+  const ch = ws.addRow(['Category', 'Items', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Used — value', 'Waste — value', 'Opname — value', 'Closing — value']);
   ch.font = { bold: true };
-  for (const c of u.categories) ws.addRow([c.category_label, c.items, '', '', '', '', '', '', '', '', '', '', '', '', c.used_total, c.waste, c.opname, c.closing]);
+  for (const c of u.categories) ws.addRow([c.category_label, c.items, '', '', '', '', '', '', '', '', '', '', '', '', '', c.used_total, c.waste, c.opname, c.closing]);
   ws.columns.forEach((col, i) => {
     col.width = i === 0 ? 30 : i < 4 ? 16 : 13;
-    if (i >= 4 && i <= 12) col.numFmt = '#,##0.###';
-    if (i >= 13) col.numFmt = '"Rp" #,##0';
+    if (i >= 4 && i <= 13) col.numFmt = '#,##0.###';
+    if (i >= 14) col.numFmt = '"Rp" #,##0';
   });
   ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: head.length } };
   return wb.xlsx.writeBuffer();

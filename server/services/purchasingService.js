@@ -1,6 +1,7 @@
 const db = require('../db');
 const { todayWITA } = require('./roomChargeService');
 const { qtyText, lineAmount, receivedValue } = require('./poFormat');
+const storeSvc = require('./storeService');
 
 // Back Office Slice A — Purchase Order creation, status transitions, and
 // receiving. Suppliers and Raw Materials CRUD stay inline in routes/purchasing.js
@@ -372,7 +373,9 @@ async function setPurchaseOrderStatus(propertyId, poId, newStatus, userId, opts 
 // inventory valuation; Stock value reads it). Locks the item's row so two
 // receipts can't blend from a stale quantity. Used by PO receiving and by
 // Buy without a PO (directPurchaseService). Returns the average before.
-async function addStock(client, propertyId, item, delta, unitCost, poId, userId) {
+// storeId = the store it goes into (migration 156; null = Main Store). The
+// average is the item's, over every store.
+async function addStock(client, propertyId, item, delta, unitCost, poId, userId, storeId = null) {
   if (item.product_id) {
     const { rows: [product] } = await client.query(
       'SELECT stock_quantity, cost_per_unit FROM products WHERE id = $1 FOR UPDATE', [item.product_id]);
@@ -382,8 +385,8 @@ async function addStock(client, propertyId, item, delta, unitCost, poId, userId)
     const newAvg = newQty > 0 ? round4(((oldQty > 0 ? oldQty : 0) * (oldAvg || 0) + delta * unitCost) / (Math.max(oldQty, 0) + delta)) : oldAvg;
     await client.query('UPDATE products SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3', [newQty, newAvg, item.product_id]);
     await client.query(
-      `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, created_by)
-       VALUES ($1,$2,$3,'restock',$4,$5)`, [propertyId, item.product_id, delta, poId, userId || null]);
+      `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, created_by, store_id)
+       VALUES ($1,$2,$3,'restock',$4,$5,$6)`, [propertyId, item.product_id, delta, poId, userId || null, storeId]);
     return { oldAvg, oldQty };
   }
   const { rows: [material] } = await client.query(
@@ -394,8 +397,8 @@ async function addStock(client, propertyId, item, delta, unitCost, poId, userId)
   const newAvg = newQty > 0 ? round4(((oldQty > 0 ? oldQty : 0) * (oldAvg || 0) + delta * unitCost) / (Math.max(oldQty, 0) + delta)) : oldAvg;
   await client.query('UPDATE raw_materials SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3', [newQty, newAvg, item.raw_material_id]);
   await client.query(
-    `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, created_by)
-     VALUES ($1,$2,$3,'purchase',$4,$5)`, [propertyId, item.raw_material_id, delta, poId, userId || null]);
+    `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, created_by, store_id)
+     VALUES ($1,$2,$3,'purchase',$4,$5,$6)`, [propertyId, item.raw_material_id, delta, poId, userId || null, storeId]);
   return { oldAvg, oldQty };
 }
 
@@ -466,7 +469,9 @@ async function setBillingDone(propertyId, poId, { reason, undo }, userId) {
   }
 }
 
-// { received_on, delivery_note, items: [{ item_id, receive_quantity }] } —
+// { received_on, delivery_note, store_id?, items: [{ item_id, receive_quantity, store_id? }] } —
+// store_id (a line's, else the receipt's, else Main Store) = the PMS store a
+// stocked line goes into. POS lines and free-text lines have no store.
 // receive_quantity is the amount received THIS call (a delta), and can't be more
 // than is still to come. received_on is a record of when the goods came: stock
 // moves now, when this is entered.
@@ -497,6 +502,12 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
     );
     const byId = Object.fromEntries(lockedItems.map(i => [i.id, i]));
     const receivedNow = []; // for the receipt and the activity-log note
+    const storeById = {};
+    const storeFor = async id => {
+      const key = id || '';
+      if (!storeById[key]) storeById[key] = await storeSvc.pmsStore(propertyId, id || body.store_id, client);
+      return storeById[key];
+    };
 
     for (const req of items) {
       const item = byId[req.item_id];
@@ -515,7 +526,14 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
       }
       const delta = Math.min(requestedQty, outstanding);
       if (delta <= 0) continue;
-      receivedNow.push({ id: item.id, description: item.description, delta, unit: item.unit_text, where: item.pos_item_id ? ' (for the restaurant)' : '' });
+      let store = null;
+      if (item.product_id || item.raw_material_id) {
+        const s = await storeFor(req.store_id);
+        if (s.error) { await client.query('ROLLBACK'); return s; }
+        store = s.store;
+      }
+      receivedNow.push({ id: item.id, description: item.description, delta, unit: item.unit_text, store_id: store?.id || null,
+        where: item.pos_item_id ? ' (for the restaurant)' : store && store.kind !== 'main' ? ` (into ${store.name})` : '' });
 
       await client.query(
         'UPDATE purchase_order_items SET received_quantity = received_quantity + $1 WHERE id = $2',
@@ -525,7 +543,7 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
       // A POS line goes to the restaurant's stock after the commit (sendToPos);
       // a free-text line is kept in no stock.
       if (item.product_id || item.raw_material_id) {
-        await addStock(client, propertyId, item, delta, lineAmount(item) / parseFloat(item.quantity), poId, userId);
+        await addStock(client, propertyId, item, delta, lineAmount(item) / parseFloat(item.quantity), poId, userId, store.id);
       }
     }
     if (!receivedNow.length) { await client.query('ROLLBACK'); return { error: 'Enter a quantity to receive for at least one item' }; }
@@ -534,7 +552,7 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
       `INSERT INTO purchase_order_receipts (purchase_order_id, property_id, received_on, delivery_note, created_by)
        VALUES ($1,$2,$3,$4,$5) RETURNING id`, [poId, propertyId, receivedOn, deliveryNote, userId || null]);
     for (const r of receivedNow) {
-      await client.query('INSERT INTO purchase_order_receipt_lines (receipt_id, po_item_id, quantity) VALUES ($1,$2,$3)', [receipt.id, r.id, r.delta]);
+      await client.query('INSERT INTO purchase_order_receipt_lines (receipt_id, po_item_id, quantity, store_id) VALUES ($1,$2,$3,$4)', [receipt.id, r.id, r.delta, r.store_id]);
     }
     await require('./purchaseRequestService').refreshAfterReceive(client, poId);
 
@@ -606,10 +624,12 @@ async function getPurchaseOrder(propertyId, poId) {
     : { rows: [] };
   const { rows: receipts } = await db.query(
     `SELECT r.id, to_char(r.received_on, 'YYYY-MM-DD') AS received_on, r.delivery_note, r.created_at, u.name AS created_by_name,
-            COALESCE(json_agg(json_build_object('description', i.description, 'quantity', l.quantity, 'unit', COALESCE(rm.unit_of_measure, i.unit)) ORDER BY i.description), '[]') AS lines
+            COALESCE(json_agg(json_build_object('description', i.description, 'quantity', l.quantity, 'unit', COALESCE(rm.unit_of_measure, i.unit),
+              'store', st.name, 'main', st.kind = 'main') ORDER BY i.description), '[]') AS lines
      FROM purchase_order_receipts r
      LEFT JOIN users u ON u.id = r.created_by
      JOIN purchase_order_receipt_lines l ON l.receipt_id = r.id
+     LEFT JOIN stores st ON st.id = l.store_id
      JOIN purchase_order_items i ON i.id = l.po_item_id
      LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
      WHERE r.purchase_order_id = $1

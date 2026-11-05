@@ -6,6 +6,19 @@ Stok bertambah saat **dibeli** (di Purchasing), berkurang saat **dijual**, dan l
 
 Di bagian atas, pilih **Hotel stock** atau **Restaurant stock** (kalau aplikasi restoran sudah terhubung). Semua di bawah ini tentang stok hotel; stok restoran dijelaskan di bagian akhir.
 
+## Gudang (store)
+
+Stok hotel disimpan per **gudang**: **Main Store**, **Engineering**, **Housekeeping** (owner bisa menambah atau mengganti nama lewat tombol **Stores**). **Kitchen** dan **Resto** adalah stok restoran, disimpan dan dihitung di aplikasi restoran (POS).
+
+- Barang yang dibeli masuk ke **Main Store**, kecuali dipilih gudang lain saat **Receive** PO atau **Buy without a PO** (*Into store*). Di jendela Receive, satu baris bisa dikirim ke gudang lain.
+- Di atas daftar barang, pilih **All stores** (total, dengan rincian per gudang di bawah jumlahnya) atau satu gudang (hanya yang ada di gudang itu).
+- **Adjust** selalu untuk satu gudang — pilih gudangnya di jendela Adjust.
+- **Stock opname** dihitung per gudang. Main Store menampilkan semua barang; gudang lain hanya barang yang pernah ada di sana. Satu gudang hanya bisa punya satu stock opname yang sedang dihitung.
+- **Pemakaian** dihitung dari dua stock opname gudang yang sama.
+- Batas *Low stock* dinilai dari total semua gudang (itu yang menentukan pembelian).
+
+Memindahkan barang antar gudang (misalnya dari Main Store ke Housekeeping) belum ada — akan datang berikutnya.
+
 ## Adjust — satu barang, kejadian yang diketahui
 
 Tekan **Adjust** pada barangnya lalu pilih alasannya:

@@ -27,6 +27,7 @@
 // goods: the POS stock is corrected there (stock opname).
 const db = require('../db');
 const posPurchases = require('./posPurchases');
+const storeSvc = require('./storeService');
 const telegram = require('./telegramService');
 const { todayWITA } = require('./roomChargeService');
 const { addStock, logEvent, nextPoNumber } = require('./purchasingService');
@@ -83,11 +84,15 @@ async function setup(propertyId) {
   try { pos = await posPurchases.inventory(propertyId); } catch (err) { pos = { linked: true, items: [], error: err.message }; }
   return {
     suppliers, materials, products, payment_methods: methods, pos,
+    stores: (await storeSvc.listStores(propertyId)).filter(st => st.kind !== 'pos'),
     categories: COST_CATEGORIES.map(([key, label, , department]) => ({ key, label, department })),
     departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
     today: todayWITA(), closed_through: await closedThrough(propertyId),
   };
 }
+
+// "· into Housekeeping" when stocked lines went into a store other than Main Store.
+const intoText = v => (v.store && v.store.kind !== 'main' && v.items.some(i => !i.pos_item_id) ? ` · into ${v.store.name}` : '');
 
 // ── Checks the form ──
 async function clean(client, propertyId, body) {
@@ -105,6 +110,9 @@ async function clean(client, propertyId, body) {
     if (!supplier) return fail(400, 'Supplier not found');
   }
   const boughtFrom = supplier ? null : (String(body.bought_from || '').trim().slice(0, 200) || null);
+  // The PMS store the stocked lines go into (migration 156; empty = Main Store).
+  const st = await storeSvc.pmsStore(propertyId, body.store_id, client);
+  if (st.error) return st;
 
   const pay = body.pay === 'later' ? 'later' : 'paid';
   let method = null;
@@ -156,7 +164,7 @@ async function clean(client, propertyId, body) {
     }
   }
   return { value: {
-    day, supplier, bought_from: boughtFrom, pay, method, due_date: body.due_date || null, category: body.category,
+    day, supplier, bought_from: boughtFrom, pay, method, store: st.store, due_date: body.due_date || null, category: body.category,
     department: departmentFor(body.department, supplier?.default_department, body.category),
     reference: String(body.reference || '').trim().slice(0, 100) || null,
     notes: String(body.notes || '').trim().slice(0, 2000) || null,
@@ -209,7 +217,7 @@ async function create(propertyId, body, user) {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $9)`,
         [po.id, it.product_id, it.raw_material_id, it.pos_item_id || null, it.pos_item_id ? it.unit : null, it.description, it.quantity, r2(unitCost), it.amount]);
       if (it.pos_item_id) continue;   // sent to the POS after the commit
-      const { oldAvg } = await addStock(client, propertyId, it, it.quantity, unitCost, po.id, user.id);
+      const { oldAvg } = await addStock(client, propertyId, it, it.quantity, unitCost, po.id, user.id, v.store.id);
       if (oldAvg > 0) priceJumps.push({ ...it, unit_cost: unitCost, usual: oldAvg, pct: Math.round((unitCost / oldAvg - 1) * 100) });
     }
 
@@ -222,7 +230,7 @@ async function create(propertyId, body, user) {
         [propertyId, v.category, v.total, v.day, v.method.id, v.supplier?.id || null,
           `Stock bought (${po.po_number}): ${what}`.slice(0, 2000), v.reference, user.id || null, v.department, po.id]);
       money = { kind: 'expense', expense_id: e.id, text: `paid ${v.method.label}` };
-      await logEvent(client, po.id, `Bought without a PO — paid ${v.method.label}, recorded in Expenses`, user.id);
+      await logEvent(client, po.id, `Bought without a PO — paid ${v.method.label}, recorded in Expenses${intoText(v)}`, user.id);
     } else {
       const b = await createBillTx(client, propertyId, {
         supplier_id: v.supplier.id, bill_date: v.day, due_date: v.due_date, supplier_ref: v.reference,
@@ -232,7 +240,7 @@ async function create(propertyId, body, user) {
       }, user.id);
       if (b.error) { await client.query('ROLLBACK'); return b; }
       money = { kind: 'bill', bill_id: b.bill_id, bill_no_text: b.bill_no_text, text: `to pay by ${b.due_date} — ${b.bill_no_text}` };
-      await logEvent(client, po.id, `Bought without a PO — to pay later, bill ${b.bill_no_text} in Payables`, user.id);
+      await logEvent(client, po.id, `Bought without a PO — to pay later, bill ${b.bill_no_text} in Payables${intoText(v)}`, user.id);
     }
     await client.query('COMMIT');
     const posSync = v.items.some(i => i.pos_item_id) ? await posPurchases.sendToPos(propertyId, po.id) : null;
@@ -322,9 +330,16 @@ async function voidPurchase(propertyId, poId, reason, user) {
       const id = it.product_id || it.raw_material_id;
       const { rows: [row] } = await client.query(`SELECT stock_quantity, cost_per_unit FROM ${table} WHERE id = $1 FOR UPDATE`, [id]);
       const onHand = num(row.stock_quantity);
-      if (onHand + 1e-9 < qty) {
+      // It comes back out of the store it went into.
+      const { rows: [mv] } = await client.query(
+        `SELECT m.store_id, st.name FROM ${it.product_id ? 'stock_movements' : 'raw_material_movements'} m JOIN stores st ON st.id = m.store_id
+         WHERE m.purchase_order_id = $1 AND m.${it.product_id ? 'product_id' : 'raw_material_id'} = $2 AND m.change_qty > 0
+         ORDER BY m.created_at LIMIT 1`, [poId, id]);
+      const storeId = mv?.store_id || await storeSvc.mainStoreId(propertyId, client);
+      const inStore = await storeSvc.storeQty(client, storeId, it.product_id ? 'p' : 'rm', id);
+      if (inStore + 1e-9 < qty) {
         await client.query('ROLLBACK');
-        return fail(409, `Only ${+onHand.toFixed(3)} of ${it.description} left in stock — ${+qty} were bought. If it was really used, correct it first on Stock (Adjust or a stock opname).`, 'STOCK_USED');
+        return fail(409, `Only ${+inStore.toFixed(3)} of ${it.description} left in ${mv?.name || 'Main Store'} — ${+qty} were bought. If it was really used, correct it first on Stock (Adjust or a stock opname).`, 'STOCK_USED');
       }
       const left = onHand - qty;
       const avg = row.cost_per_unit != null ? num(row.cost_per_unit) : null;
@@ -337,12 +352,12 @@ async function voidPurchase(propertyId, poId, reason, user) {
       await client.query(`UPDATE ${table} SET stock_quantity = $1, cost_per_unit = $2 WHERE id = $3`, [left, newAvg, id]);
       if (it.product_id) {
         await client.query(
-          `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, note, created_by)
-           VALUES ($1, $2, $3, 'adjustment', $4, $5, $6)`, [propertyId, id, -qty, poId, note, user.id || null]);
+          `INSERT INTO stock_movements (property_id, product_id, change_qty, reason, purchase_order_id, note, created_by, store_id)
+           VALUES ($1, $2, $3, 'adjustment', $4, $5, $6, $7)`, [propertyId, id, -qty, poId, note, user.id || null, storeId]);
       } else {
         await client.query(
-          `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, note, created_by)
-           VALUES ($1, $2, $3, 'adjustment', $4, $5, $6)`, [propertyId, id, -qty, poId, note, user.id || null]);
+          `INSERT INTO raw_material_movements (property_id, raw_material_id, change_qty, reason, purchase_order_id, note, created_by, store_id)
+           VALUES ($1, $2, $3, 'adjustment', $4, $5, $6, $7)`, [propertyId, id, -qty, poId, note, user.id || null, storeId]);
       }
     }
 
@@ -425,6 +440,10 @@ async function get(propertyId, poId) {
   const [{ rows: items }, { rows: events }] = await Promise.all([
     db.query(`SELECT i.id, i.description, i.quantity, i.unit_cost, COALESCE(i.line_total, i.quantity * i.unit_cost) AS line_total,
                      i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.pos_send_error, ${require('./posHandover').handoversSql('i')} AS handovers,
+                     (SELECT st.name FROM stores st WHERE st.id = (
+                        SELECT m.store_id FROM raw_material_movements m WHERE m.purchase_order_id = i.purchase_order_id AND m.raw_material_id = i.raw_material_id AND m.change_qty > 0
+                        UNION ALL SELECT m.store_id FROM stock_movements m WHERE m.purchase_order_id = i.purchase_order_id AND m.product_id = i.product_id AND m.change_qty > 0
+                        LIMIT 1)) AS store_name,
                      COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure
               FROM purchase_order_items i LEFT JOIN raw_materials rm ON rm.id = i.raw_material_id
               WHERE i.purchase_order_id = $1 ORDER BY i.description`, [poId]),

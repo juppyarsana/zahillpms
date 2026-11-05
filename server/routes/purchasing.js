@@ -289,6 +289,17 @@ router.get('/purchase-orders/export', ownerOnly, async (req, res) => {
   }
 });
 
+// The stores goods can be received into (migration 156): Main Store and the
+// other PMS stores. Kitchen / Resto stock is the POS's (POS lines go there).
+router.get('/stores', ownerOnly, async (req, res) => {
+  try {
+    const stores = await require('../services/storeService').listStores(req.propertyId);
+    res.json(stores.filter(s => s.kind !== 'pos'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/purchase-orders/:id', ownerOnly, async (req, res) => {
   try {
     const po = await svc.getPurchaseOrder(req.propertyId, req.params.id);

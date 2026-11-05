@@ -6,6 +6,19 @@ Stock goes up when it is **bought** (on Purchasing), down when it is **sold**, a
 
 At the top, choose **Hotel stock** or **Restaurant stock** (when the restaurant app is linked). Everything below is about the hotel's stock; the restaurant's is described at the end.
 
+## Stores
+
+Hotel stock is kept per **store**: **Main Store**, **Engineering**, **Housekeeping** (owners add or rename them with the **Stores** button). **Kitchen** and **Resto** are the restaurant's stock, kept and counted in the restaurant app (POS).
+
+- What is bought goes into **Main Store**, unless another store is picked when you **Receive** a PO or **Buy without a PO** (*Into store*). In the Receive window a single line can go to another store.
+- Above the list, choose **All stores** (the total, with the split per store under it) or one store (only what it holds).
+- **Adjust** is always for one store — pick it in the Adjust window.
+- The **stock opname** counts one store. Main Store lists every item; another store only what it holds or has held. A store has one stock opname being counted at a time.
+- **Usage** runs between two stock opnames of the same store.
+- *Low stock* is judged on the total of every store (that is what decides buying).
+
+Moving stock between stores (e.g. Main Store to Housekeeping) isn't there yet — it comes next.
+
 ## Adjust — one item, something you know happened
 
 Press **Adjust** on the item and choose why:

@@ -2,6 +2,10 @@ const router = require('express').Router();
 const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const svc = require('../services/stockService');
 const { stockSheetPdf, usageXlsx } = require('../services/stockExport');
+const stores = require('../services/storeService');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const storeParam = req => (UUID_RE.test(String(req.query.store || '')) ? req.query.store : null);
 
 // Operations → Stock (migration 136). Mounted at /api/stock behind
 // auth + moduleGuard('back_office'); owner or the `stock` permission.
@@ -10,7 +14,21 @@ router.use(requireOwnerOrMenu('stock'));
 const wrap = fn => (req, res) => fn(req, res).catch(err => res.status(500).json({ error: err.message }));
 const send = (res, r, ok = 200) => (r?.error ? res.status(r.status || 400).json({ error: r.error, code: r.code }) : res.status(ok).json(r));
 
-router.get('/items', wrap(async (req, res) => res.json(await svc.listItems(req.propertyId, { inactive: req.query.inactive === '1' }))));
+// ?store=<id> = that store's quantities (empty = every store together).
+router.get('/items', wrap(async (req, res) => res.json(await svc.listItems(req.propertyId, {
+  inactive: req.query.inactive === '1', storeId: storeParam(req) }))));
+
+// Stores (migration 156). Anyone on the Stock page reads them; owners add /
+// rename / switch off.
+router.get('/stores', wrap(async (req, res) => res.json(await stores.listStores(req.propertyId, { inactive: req.query.inactive === '1' }))));
+router.post('/stores', wrap(async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  send(res, await stores.saveStore(req.propertyId, req.body || {}), 201);
+}));
+router.put('/stores/:id', wrap(async (req, res) => {
+  if (req.user.role !== 'owner') return res.status(403).json({ error: 'Owner only' });
+  send(res, await stores.saveStore(req.propertyId, req.body || {}, req.params.id));
+}));
 
 // The restaurant's stock, read from the POS (it is kept and counted there) —
 // so the hotel's and the restaurant's stock value are seen in one place.
@@ -44,7 +62,7 @@ router.put('/items/:key', wrap(async (req, res) => {
   send(res, await svc.saveStockItem(req.propertyId, req.body || {}, k.id));
 }));
 router.get('/items/:key/history', wrap(async (req, res) => {
-  const h = await svc.history(req.propertyId, req.params.key);
+  const h = await svc.history(req.propertyId, req.params.key, storeParam(req));
   return h ? res.json(h) : res.status(404).json({ error: 'Item not found' });
 }));
 // POST /items/:key/adjust { reason: waste | used | correction, quantity, direction?: up | down, note }
