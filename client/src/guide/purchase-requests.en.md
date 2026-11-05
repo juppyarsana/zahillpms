@@ -12,7 +12,7 @@ A department asks for what it needs; **purchasing** orders it. It is the first t
 3. Add the items. Pick them from the stock list (it shows how much is left), or choose **Something else — type it** for anything not in the list (a spare part, a tool).
 4. **Send to purchasing**. Purchasing gets a Telegram message.
 
-Your request then shows how far it has got: **Waiting** → **Ordered** → **Partly received** → **Received**. It shows **Closed** or **Declined** with purchasing's reason if not everything will be bought. While nothing is ordered yet you can still **Cancel** it.
+Your request then shows how far it has got: **Waiting** → **Ordered** → **Partly received** → **Received**. It shows **Closed** or **Declined** with purchasing's reason if not everything will be bought. While it is still **Waiting** (nothing ordered yet) you can **Edit** it — items, quantities, the needed-by date, Kitchen / Resto or the note; purchasing gets a Telegram message saying what changed — or **Cancel** it. The POS lists requests newest PR number first.
 
 ## The restaurant asks from its own app
 

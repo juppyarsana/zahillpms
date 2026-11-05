@@ -265,6 +265,105 @@ async function closeRequest(propertyId, id, kind, { reason, userId, name }) {
   }
 }
 
+// Change a request nobody has ordered from yet ("Waiting"): needed by, note,
+// Kitchen / Resto (POS), and the lines — sent as the whole list again, a line
+// that keeps its id is changed in place, one without an id is added, one left
+// out is removed. Refused once any line is on a PO that is not cancelled.
+// Purchasing is told on Telegram what changed.
+async function update(propertyId, id, body, actor) {
+  const source = actor.source === 'pos' ? 'pos' : 'pms';
+  if (body.needed_by && !isDate(body.needed_by)) return fail(400, 'Needed by must be a date');
+  if (body.section && !SECTION_LABEL[body.section]) return fail(400, 'Choose Kitchen or Resto');
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) return fail(404, 'Request not found');
+  const before = await get(propertyId, id);
+  if (!before || before.source !== source) return fail(404, 'Request not found');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [r] } = await client.query(
+      'SELECT id, status FROM purchase_requests WHERE id = $1 AND property_id = $2 FOR UPDATE', [id, propertyId]);
+    if (!r) { await client.query('ROLLBACK'); return fail(404, 'Request not found'); }
+    if (r.status !== 'open') { await client.query('ROLLBACK'); return fail(409, 'This request is already closed', 'NOT_OPEN'); }
+    // Locking the lines waits for a PO being saved against them right now.
+    const { rows: had } = await client.query('SELECT id FROM purchase_request_lines WHERE request_id = $1 FOR UPDATE', [id]);
+    const { rows: [o] } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM purchase_request_lines l
+       JOIN purchase_order_items i ON i.request_line_id = l.id
+       JOIN purchase_orders po ON po.id = i.purchase_order_id AND po.status <> 'cancelled'
+       WHERE l.request_id = $1`, [id]);
+    if (o.n) {
+      await client.query('ROLLBACK');
+      return fail(409, 'Purchasing has already ordered from this request — it can no longer be changed. Ask purchasing.', 'ORDERED');
+    }
+    const parsed = await parseLines(client, propertyId, body.lines, { source });
+    if (parsed.error) { await client.query('ROLLBACK'); return parsed; }
+    const hadIds = new Set(had.map(l => l.id));
+    const keep = new Set();
+    for (const [i, l] of parsed.lines.entries()) {
+      const lineId = body.lines[i].id && hadIds.has(body.lines[i].id) && !keep.has(body.lines[i].id) ? body.lines[i].id : null;
+      if (lineId) {
+        keep.add(lineId);
+        await client.query(
+          `UPDATE purchase_request_lines SET raw_material_id = $2, product_id = $3, pos_item_id = $4, description = $5, unit = $6,
+             quantity = $7, stock_when_asked = COALESCE($8, stock_when_asked), note = $9, sort_order = $10 WHERE id = $1`,
+          [lineId, l.raw_material_id, l.product_id, l.pos_item_id, l.description, l.unit, l.quantity, l.stock_when_asked, l.note, l.sort_order]);
+      } else {
+        await client.query(
+          `INSERT INTO purchase_request_lines (request_id, raw_material_id, product_id, pos_item_id, description, unit, quantity, stock_when_asked, note, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [id, l.raw_material_id, l.product_id, l.pos_item_id, l.description, l.unit, l.quantity, l.stock_when_asked, l.note, l.sort_order]);
+      }
+    }
+    const gone = [...hadIds].filter(x => !keep.has(x));
+    if (gone.length) await client.query('DELETE FROM purchase_request_lines WHERE id = ANY($1::uuid[])', [gone]);
+    await client.query(
+      'UPDATE purchase_requests SET needed_by = $2, note = $3, section = $4 WHERE id = $1',
+      [id, body.needed_by || null, clip(body.note, 1000) || null, source === 'pos' ? body.section || before.section : before.section]);
+    await client.query('COMMIT');
+    const request = await get(propertyId, id);
+    const changes = describeChanges(before, request);
+    if (changes.length) alertChanged(propertyId, request, changes, clip(actor.name, 120)).catch(err => console.error('[purchase request alert]', err.message));
+    return { request, changes };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// What changed, in words, for the Telegram message.
+function describeChanges(a, b) {
+  const out = [];
+  const day = d => (d ? String(d).slice(0, 10) : 'no date');
+  if (day(a.needed_by) !== day(b.needed_by)) out.push(`Needed by: ${day(a.needed_by)} → ${day(b.needed_by)}`);
+  if (a.section !== b.section) out.push(`For: ${a.section_label || '—'} → ${b.section_label || '—'}`);
+  if ((a.note || '') !== (b.note || '')) out.push(b.note ? `Note: ${b.note}` : 'Note removed');
+  const key = l => (l.pos_item_id ? `pos:${l.pos_item_id}` : l.item_key || `t:${l.description.toLowerCase()}`);
+  const qty = l => `${l.quantity}${l.unit ? ' ' + l.unit : ''}`;
+  const old = new Map(a.lines.map(l => [key(l), l]));
+  const now = new Map(b.lines.map(l => [key(l), l]));
+  for (const [k, l] of now) {
+    const p = old.get(k);
+    if (!p) out.push(`+ ${l.description} — ${qty(l)}`);
+    else if (p.quantity !== l.quantity) out.push(`${l.description}: ${qty(p)} → ${qty(l)}`);
+    else if ((p.note || '') !== (l.note || '')) out.push(`${l.description}: note ${l.note ? `“${l.note}”` : 'removed'}`);
+  }
+  for (const [k, l] of old) if (!now.has(k)) out.push(`− ${l.description} (was ${qty(l)})`);
+  return out;
+}
+
+async function alertChanged(propertyId, r, changes, by) {
+  const h = telegram.escapeHtml;
+  const msg = [
+    `✏️ <b>Purchase request ${r.request_no_text} changed — ${h(r.department_label)}</b>`,
+    `<i>by ${h(by || r.requested_by_name)}${r.source === 'pos' ? ' (restaurant app)' : ''}</i>`,
+    '',
+    ...changes.map(c => h(c)),
+  ].join('\n');
+  await telegram.sendAlert(propertyId, 'alert_purchase_request', msg, { html: true });
+}
+
 // After PO lines are received: a request whose every line has come in is done.
 async function refreshAfterReceive(client, poId) {
   await client.query(
@@ -302,4 +401,4 @@ async function alertNew(propertyId, r) {
   await telegram.sendAlert(propertyId, 'alert_purchase_request', msg, { html: true });
 }
 
-module.exports = { requestNo, create, get, list, onOrder, closeRequest, refreshAfterReceive, checkRequestLine, PROGRESS_LABEL };
+module.exports = { requestNo, create, update, get, list, onOrder, closeRequest, refreshAfterReceive, checkRequestLine, PROGRESS_LABEL };

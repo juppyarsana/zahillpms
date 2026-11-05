@@ -300,6 +300,19 @@ router.post('/purchase-requests', prGate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT /api/pos/purchase-requests/:id { by, section?, needed_by?, note?,
+//   lines: [{ id?, pos_item_id?, description, unit, quantity, stock?, note? }] }
+// — change one of the restaurant's own while nothing on it is ordered
+// (the whole list again: id = keep that line, none = new, missing = removed).
+router.put('/purchase-requests/:id', prGate, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const out = await purchaseRequests.update(req.propertyId, req.params.id, b, { name: b.by || 'Restaurant', source: 'pos' });
+    if (out.error) return res.status(out.status || 400).json({ error: out.error, code: out.code });
+    res.json({ ...out.request, changes: out.changes });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/pos/purchase-requests/:id/cancel { by, reason? } — only one of
 // the restaurant's own, and only while nothing on it is ordered.
 router.post('/purchase-requests/:id/cancel', prGate, async (req, res) => {

@@ -12,7 +12,7 @@ Departemen meminta barang yang dibutuhkan; **purchasing** yang memesan. Ini tab 
 3. Tambah barang. Pilih dari daftar stok (terlihat sisanya), atau pilih **Something else — type it** untuk barang yang tidak ada di daftar (spare part, alat).
 4. **Send to purchasing**. Purchasing mendapat pesan Telegram.
 
-Permintaan Anda lalu menunjukkan sampai di mana: **Waiting** → **Ordered** → **Partly received** → **Received**. Statusnya **Closed** atau **Declined**, dengan alasan dari purchasing, jika tidak semua akan dibeli. Selama belum ada yang dipesan, Anda masih bisa **Cancel**.
+Permintaan Anda lalu menunjukkan sampai di mana: **Waiting** → **Ordered** → **Partly received** → **Received**. Statusnya **Closed** atau **Declined**, dengan alasan dari purchasing, jika tidak semua akan dibeli. Selama masih **Waiting** (belum ada yang dipesan), Anda masih bisa **Edit** — ubah barang, jumlah, tanggal *needed by*, Kitchen/Resto atau catatan; purchasing mendapat pesan Telegram berisi apa yang berubah — atau **Cancel**. Daftar di POS diurutkan dari nomor PR terbaru.
 
 ## Restoran meminta dari aplikasinya sendiri
 
