@@ -9,18 +9,21 @@
 //   Kitchen      — breakfast / dinner counts from the meal plans (moved here
 //                  from Guest Lists) + how many came, once breakfast is sent.
 //   Room charges — POS room charges checked against the guests' folios.
+//   Bills        — every POS bill in bill-number order, each missing number
+//                  explained (pages/restaurant/RestaurantBills.jsx).
 //   Report       — restaurant revenue over a period for the accountant, with
 //                  checks; Download Excel has every day, bill and item
 //                  (pages/restaurant/RestaurantReport.jsx).
 import { Fragment, useEffect, useState } from 'react';
 import RestaurantReport from './restaurant/RestaurantReport';
+import RestaurantBills from './restaurant/RestaurantBills';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DateNav from '../components/DateNav';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
 
-const TABS = [['today', 'Today'], ['sessions', 'Sessions'], ['kitchen', 'Kitchen'], ['room-charges', 'Room charges'], ['report', 'Report']];
+const TABS = [['today', 'Today'], ['sessions', 'Sessions'], ['kitchen', 'Kitchen'], ['room-charges', 'Room charges'], ['bills', 'Bills'], ['report', 'Report']];
 const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -49,7 +52,7 @@ export default function Restaurant() {
       <div className="page-header">
         <div>
           <div className="page-title">Restaurant</div>
-          <div className="page-subtitle">From the restaurant POS — sessions, kitchen, room charges and the report</div>
+          <div className="page-subtitle">From the restaurant POS — sessions, kitchen, room charges, bills and the report</div>
         </div>
       </div>
       <div className="tab-bar">
@@ -64,6 +67,7 @@ export default function Restaurant() {
       {tab === 'sessions' && <SessionsTab selected={params.get('session')} onOpen={openSession} onClose={() => setTab('sessions')} />}
       {tab === 'kitchen' && <KitchenTab date={date} />}
       {tab === 'room-charges' && <RoomChargesTab />}
+      {tab === 'bills' && <RestaurantBills onOpenSession={openSession} onTab={setTab} />}
       {tab === 'report' && <RestaurantReport onOpenSession={openSession} onTab={setTab} />}
     </div>
   );

@@ -44,3 +44,28 @@ Yang bisa membuka: pemilik, staff dengan izin **Restaurant**, atau staff dengan 
 - **Room & event charges** — tiap beban ke kamar/event dari POS dibandingkan dengan tagihan di PMS.
 - **Complimentary** — tiap bill gratis (bukan pendapatan).
 - **Checks** — hasil cek per sesi dan sesi yang tidak dikirim.
+
+## Bill urut nomor (tab Bills)
+
+Untuk mencocokkan bill yang dicetak dan mencari tahu kenapa ada nomor yang hilang.
+
+1. Buka **Restaurant → Bills** ([buka](/restaurant?tab=bills)). Langsung tampil **kemarin**; pakai ‹ › untuk pindah hari, atau pilih tanggal.
+2. Bill diurutkan **berdasarkan nomor bill**. Nomor yang hilang tampil sebagai baris merah dengan alasannya.
+3. Klik bill untuk melihat item dan totalnya, lalu buka sesi, reservasi atau event-nya.
+4. **⬇ Download Excel** berisi daftar yang sama.
+
+Setiap bill dapat nomor saat dibayar, dihitung per bulan. Bill berikut juga punya nomor:
+
+| Tampil sebagai | Artinya |
+|---|---|
+| 🛏 Room charge | Dibebankan ke kamar tamu; tamu menandatangani bill yang dicetak |
+| 🗓 Event charge | Dibebankan ke meeting / event |
+| Included breakfast | Sarapan termasuk harga kamar, tanpa pembayaran |
+| 🎁 Complimentary | Gratis, dibebankan ke departemen |
+| Reopened | Front desk membatalkan beban ke kamar; POS membuka lagi bill-nya dan belum diselesaikan |
+| Deleted | Dihapus di POS — tertulis siapa yang menghapus, kapan dan alasannya |
+| Missing | Tidak ada catatan di POS: dihapus sebelum POS menyimpan bill yang dihapus (5 Nov 2026) |
+
+> **Session not sent yet** pada bill artinya kasir belum menekan *Send to hotel* untuk sesi itu. Bill-nya ada; ikut terhitung setelah sesinya dikirim.
+
+Di POS, bill yang sudah punya nomor hanya bisa dihapus oleh Owner atau Manager, dan harus diisi alasannya.

@@ -7,6 +7,7 @@
 //   GET /api/restaurant/sessions/:id          one session: every bill + every send (history)
 //   GET /api/restaurant/kitchen?date=         breakfast / dinner counts (was Guest Lists → Kitchen) + who came
 //   GET /api/restaurant/room-charges?from=&to=  POS room charges vs the guests' folios
+//   GET /api/restaurant/bills?from=&to=       every POS bill in bill-number order, gaps explained (+ /bills/xlsx)
 const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
@@ -332,6 +333,38 @@ router.get('/report/xlsx', reportGate, async (req, res) => {
     const buf = await buildRestaurantReportXlsx(report);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="restaurant-report-${p.from}_to_${p.to}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bills in bill-number order (services/restaurantBills.js) — the Restaurant
+// permission, like the rest of the page.
+router.get('/bills', gate, async (req, res) => {
+  if (!isDate(req.query.from) || !isDate(req.query.to)) return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
+  const p = range(req.query);
+  if (p.error) return res.status(400).json({ error: p.error });
+  try {
+    const { buildBills } = require('../services/restaurantBills');
+    res.json(await buildBills(req.propertyId, p.from, p.to, todayWITA()));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/bills/xlsx', gate, async (req, res) => {
+  if (!isDate(req.query.from) || !isDate(req.query.to)) return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
+  const p = range(req.query);
+  if (p.error) return res.status(400).json({ error: p.error });
+  try {
+    const { buildBills, buildBillsXlsx } = require('../services/restaurantBills');
+    const { rows: [prop] } = await db.query(
+      `SELECT COALESCE(NULLIF(ps.property_name, ''), p.name) AS name FROM properties p
+         LEFT JOIN property_settings ps ON ps.property_id = p.id WHERE p.id = $1`, [req.propertyId]);
+    const buf = await buildBillsXlsx(await buildBills(req.propertyId, p.from, p.to, todayWITA()), prop?.name || '');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="restaurant-bills-${p.from}_to_${p.to}.xlsx"`);
     res.send(Buffer.from(buf));
   } catch (err) {
     res.status(500).json({ error: err.message });

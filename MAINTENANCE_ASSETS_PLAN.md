@@ -1,7 +1,7 @@
 # Maintenance & Assets — plan
 
 Written 2026-10-30. First user: **Zahill Kintamani Resort**. Not started.
-Next free migration number today: **146** (re-check before building; purchase requests 144–145 are released, not deployed).
+Next free migration number (2026-11-05): **155**. Re-check before building.
 
 ## Why
 
@@ -94,7 +94,7 @@ CREATE UNIQUE INDEX uq_assets_qr ON assets(qr_token);
 
 - **Start small.** The Assets tab opens with *Add the usual items to every room*: tick categories (AC or heater, water heater, TV, tablet, mattress) and one row per room is created, with details filled in later. Areas (pumps, genset, kitchen) are added by hand. Excel import comes later if wanted.
 - `status` is set by jobs: an open job → `broken`, all jobs done → `working`.
-- **QR labels:** a printable PDF sheet (one asset or a whole room / category), with label size chosen in Settings. The QR opens `/a/<qr_token>`. Not logged in → login, then back. Logged in → the asset page with **Report an issue** first, then its history.
+- **QR labels:** a printable PDF sheet (one asset or a whole room / category, or blank labels to register by scanning), with label size chosen in Settings. The QR is a code read only by the app's **Scan** button (see the answers below), which opens the asset page with **Report an issue** first, then its history.
 - Asset page: details, photo, warranty badge (expired / ends in < 30 days), open jobs, and the history of all jobs with cost and downtime.
 
 ## 3. Jobs (work orders) and reporting an issue
@@ -211,7 +211,7 @@ Excel + PDF like the other reports. The `maintenance` permission covers them.
 ## Build order (sessions)
 
 1. **Dated Out of Order** (`unit_blocks`, helper, availability + channel sync + night audit + Forecast + room board, the PATCH shortcut, migration of current OOO). It touches selling rooms, so it ships and gets tested on its own. Test: block next week's dates on a copy of production and check that the OTA closes those nights only.
-2. **Assets + QR labels** (register, *add the usual items to every room*, asset page, label PDF, `/a/:token`).
+2. **Assets + QR labels** (register, *add the usual items to every room*, asset page, label PDF, in-app Scan button + register by scanning).
 3. **Jobs + Report an issue** (Housekeeping, tablet PIN, QR, front desk, room board), Telegram, release on done → housekeeping, old kanban moved over.
 4. **Parts and costs** (stock *used*, expense / bill link, job and asset cost).
 5. **Preventive schedules** + daily job + Zahill templates.
@@ -227,10 +227,26 @@ Each session: migration, routes, screens, CLAUDE.md write-up, ROADMAP entry, as 
 - Meter readings (genset hours, water / electricity meters), contracts, multiple warehouses, Excel import of assets.
 - Linen and amenity par levels. That's stock, not assets: the planned *room supplies per occupied room-night* on the Stock page.
 
-## To ask Zahill before building
+## Zahill's answers (owner, 2026-11-05) and what they change
 
-1. How are breakdowns reported and logged today (WhatsApp group, book, the kanban)? Who fixes them, and are there in-house technicians or outside vendors?
-2. Who should get the Telegram alerts? Should engineering staff have PMS logins, or only the chief?
-3. Which machines matter most: hot water, heating, pumps, genset? Their current service intervals?
-4. Is there an existing asset list (purchase records, a spreadsheet) to start from?
-5. Label size and printer for the QR stickers (they need to survive damp bathrooms).
+1. **Small fixes are done by in-house engineering, bigger ones by outside vendors.** Most jobs have no cost beyond parts. The *Add cost* link to Expenses / supplier bills (4) is for the vendor jobs.
+2. **Only the chief engineer gets a PMS login.**
+   - The chief gets the Telegram alerts (`alert_maintenance`, role engineering).
+   - `assigned_to` and `done_by` stay users, but a job also gets a typed **Done by (name)** field (`done_by_name`) for the technician who did the work.
+   - The Jobs tab is built for one person running the list from a phone.
+   - Reporting still needs a login (housekeeping and front desk have theirs) or the tablet PIN.
+3. **Water heaters (it is cold there) and kitchen equipment matter most.**
+   - *No hot water* is a quick pick that defaults to **urgent**, with the room-block question shown first.
+   - Kitchen categories get their own quick picks (fridge / freezer not cold, gas / stove, oven, exhaust hood, dishwasher).
+   - Starter schedules lead with the water heater (descale, anode, thermostat check) and the kitchen (fridge / freezer coils + door seals monthly, exhaust hood filters, gas line check). The chief sets the real intervals.
+4. **No asset list exists today.**
+   - *Add the usual items to every room* is the main way in, starting with the water heater.
+   - Kitchen items are added by hand, by area.
+   - Also build **register by scanning** (step 2): print a sheet of blank labels first; scanning a label nobody has registered yet opens *Register this asset* with the room / area picked. The chief labels and registers in one walk round.
+5. **Small labels are fine, and they are scanned only from inside the PMS app** (owner, 2026-11-05). A phone's own camera app must not open anything.
+   - The QR holds a short code, not a web link (e.g. `ZHA1:<qr_token>`), so a normal camera only shows text.
+   - The app gets a **Scan** button (Maintenance and the phone menu). It opens the camera inside the page and reads the code with a JS QR library (jsQR / zxing). The browser's own `BarcodeDetector` isn't on iPhone.
+   - A code is looked up only for the logged-in user's property; unknown → *Register this asset* (4), another property's → "not found".
+   - The asset number (AS-0001) is printed under the QR, so it can be typed in when the camera can't read the label.
+   - Because the scanner is in the app, every scan already has a login, so there is no public asset page and no `/a/:token` route.
+   - Small codes keep the QR readable at about 25 mm. Labels are laminated or vinyl for bathrooms; the sheet PDF has 25 mm and 38 mm sizes.

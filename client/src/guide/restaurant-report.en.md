@@ -44,3 +44,28 @@ Who can open it: the owner, staff with the **Restaurant** permission, or staff w
 - **Room & event charges** — each room / event charge from the POS against the bill in the PMS.
 - **Complimentary** — each free bill (not revenue).
 - **Checks** — the check per session and the sessions not sent.
+
+## Bills in number order (Bills tab)
+
+For ticking off the printed bills and finding out why a number is missing.
+
+1. Go to **Restaurant → Bills** ([open](/restaurant?tab=bills)). It opens on **yesterday**; use ‹ › to move a day, or pick dates.
+2. Bills are listed **by bill number**. A missing number shows as a red line with the reason.
+3. Click a bill to see its items and totals, and open its session, reservation or event.
+4. **⬇ Download Excel** gives the same list.
+
+Every bill gets its number when it is paid, counted per month. These bills have a number too:
+
+| Shown as | Meaning |
+|---|---|
+| 🛏 Room charge | Charged to a guest's room; the guest signs the printed bill |
+| 🗓 Event charge | Charged to a meeting / event |
+| Included breakfast | Breakfast in the room rate, no payment |
+| 🎁 Complimentary | Given away, charged to a department |
+| Reopened | Front desk voided the room charge; the POS reopened the bill and it isn't settled again yet |
+| Deleted | Deleted in the POS — the line says who deleted it, when and why |
+| Missing | No record in the POS: deleted before the POS kept deleted bills (5 Nov 2026) |
+
+> **Session not sent yet** on a bill means the cashier hasn't pressed *Send to hotel* for that session. The bill is real; it counts once the session is sent.
+
+In the POS, a bill that already has a number can only be deleted by an Owner or Manager, and they must say why.

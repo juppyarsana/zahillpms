@@ -43,6 +43,10 @@ export const REPORTS = [
     can: c => c('restaurant') || c('accounting'), mod: ['pos_integration'], fields: [D('from', 'From', monthStart), D('to', 'To', propertyToday)],
     files: [{ label: 'Excel', url: () => '/api/restaurant/report/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `restaurant-report-${v.from}_to_${v.to}.xlsx` }],
     page: { to: '/restaurant?tab=report', label: 'Open on screen' } },
+  { group: 'Restaurant & stock', id: 'restaurant-bills', title: 'Restaurant bills by number', what: 'Every POS bill in bill-number order — room & event charges, included breakfasts and complimentary too — with each missing or deleted number explained.',
+    can: c => c('restaurant'), mod: ['pos_integration'], fields: [D('from', 'From', () => addDaysYmd(propertyToday(), -1)), D('to', 'To', () => addDaysYmd(propertyToday(), -1))],
+    files: [{ label: 'Excel', url: () => '/api/restaurant/bills/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `restaurant-bills-${v.from}_to_${v.to}.xlsx` }],
+    page: { to: '/restaurant?tab=bills', label: 'Open on screen' } },
   { group: 'Restaurant & stock', id: 'stock', title: 'Stock count sheet & stock usage', what: 'Printed from a stock opname, usage between two opnames.',
     can: c => c('stock'), mod: ['back_office'], link: { to: '/stock', label: 'Open Stock' } },
 
