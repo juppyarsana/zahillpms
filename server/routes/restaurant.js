@@ -305,4 +305,37 @@ router.get('/room-charges', gate, async (req, res) => {
   }
 });
 
+// Restaurant report (Restaurant → Report): the period's restaurant revenue and
+// checks for the accountant (services/restaurantReport.js). Also open to the
+// Accounting permission, from the Export / Print library.
+const reportGate = [auth, moduleGuard('pos_integration'), requireOwnerOrMenu(['restaurant', 'accounting'])];
+const { buildRestaurantReport } = require('../services/restaurantReport');
+
+router.get('/report', reportGate, async (req, res) => {
+  if (!isDate(req.query.from) || !isDate(req.query.to)) return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
+  const p = range(req.query);
+  if (p.error) return res.status(400).json({ error: p.error });
+  try {
+    res.json(await buildRestaurantReport(req.propertyId, p.from, p.to));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/report/xlsx', reportGate, async (req, res) => {
+  if (!isDate(req.query.from) || !isDate(req.query.to)) return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
+  const p = range(req.query);
+  if (p.error) return res.status(400).json({ error: p.error });
+  try {
+    const { buildRestaurantReportXlsx } = require('../services/restaurantReportXlsx');
+    const report = await buildRestaurantReport(req.propertyId, p.from, p.to, { withDetail: true });
+    const buf = await buildRestaurantReportXlsx(report);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="restaurant-report-${p.from}_to_${p.to}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

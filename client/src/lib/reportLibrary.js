@@ -39,6 +39,10 @@ export const REPORTS = [
   { group: 'Restaurant & stock', id: 'kitchen', title: 'Kitchen & breakfast list', what: 'Breakfast that morning and dinner that night, room by room.',
     can: c => c('guest_lists') || c('restaurant'), mod: ['reservations'], fields: [D('date', 'Day', () => addDaysYmd(propertyToday(), 1))],
     files: [{ label: 'PDF', url: () => '/api/bookings/kitchen/pdf', params: v => ({ date: v.date }), name: v => `kitchen-${v.date}.pdf` }] },
+  { group: 'Restaurant & stock', id: 'restaurant-report', title: 'Restaurant report', what: 'Restaurant revenue to check: every session per day, payment methods, every bill and item, room & event charges vs the folios, complimentary.',
+    can: c => c('restaurant') || c('accounting'), mod: ['pos_integration'], fields: [D('from', 'From', monthStart), D('to', 'To', propertyToday)],
+    files: [{ label: 'Excel', url: () => '/api/restaurant/report/xlsx', params: v => ({ from: v.from, to: v.to }), name: v => `restaurant-report-${v.from}_to_${v.to}.xlsx` }],
+    page: { to: '/restaurant?tab=report', label: 'Open on screen' } },
   { group: 'Restaurant & stock', id: 'stock', title: 'Stock count sheet & stock usage', what: 'Printed from a stock opname, usage between two opnames.',
     can: c => c('stock'), mod: ['back_office'], link: { to: '/stock', label: 'Open Stock' } },
 
