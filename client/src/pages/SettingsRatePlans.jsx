@@ -7,7 +7,7 @@ import PriceBasisHint from '../components/PriceBasisHint';
 const EMPTY = {
   code: '', name: '',
   includes_breakfast: false, includes_lunch: false, includes_dinner: false,
-  meal_price: '', is_default: false, sort_order: 0, is_active: true,
+  meal_price: '', is_default: false, sort_order: 0, is_active: true, sell_on_ota: true,
 };
 
 function fmtIDR(n) { return 'Rp ' + Number(n || 0).toLocaleString('id-ID'); }
@@ -47,7 +47,7 @@ export default function SettingsRatePlans() {
     setForm({
       code: p.code, name: p.name,
       includes_breakfast: p.includes_breakfast, includes_lunch: p.includes_lunch, includes_dinner: p.includes_dinner,
-      meal_price: p.meal_price, is_default: p.is_default, sort_order: p.sort_order, is_active: p.is_active,
+      meal_price: p.meal_price, is_default: p.is_default, sort_order: p.sort_order, is_active: p.is_active, sell_on_ota: p.sell_on_ota !== false,
     });
     setEditingId(p.id);
     setError('');
@@ -115,6 +115,7 @@ export default function SettingsRatePlans() {
                         <span>{p.name}</span>
                         {p.is_default && <span className="badge badge-green" style={{ fontSize: 10, padding: '2px 6px' }}>Default</span>}
                         {!p.is_active && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }}>Inactive</span>}
+                        {p.sell_on_ota === false && <span className="badge badge-gray" style={{ fontSize: 10, padding: '2px 6px' }} title="Never sent to the OTAs">PMS only — not on OTAs</span>}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
                         {mealsLabel(p)}
@@ -174,6 +175,9 @@ function RatePlanForm({ form, set, onSave, onCancel, saving, error, isNew }) {
       <div className="flex gap-3" style={{ flexWrap: 'wrap', marginTop: 4 }}>
         <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
           <input type="checkbox" checked={!!form.is_default} onChange={e => set('is_default', e.target.checked)} /> Default for new bookings
+        </label>
+        <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }} title="Off = for the PMS only: it can't be linked in Channel Manager and no price is ever sent to the OTAs">
+          <input type="checkbox" checked={form.sell_on_ota !== false} onChange={e => set('sell_on_ota', e.target.checked)} /> Sell on the OTAs (channel manager)
         </label>
         {!isNew && (
           <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>

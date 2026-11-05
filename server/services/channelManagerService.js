@@ -45,7 +45,7 @@ async function pmsRoomTypes(propertyId, client = db) {
 
 async function pmsRatePlans(propertyId, client = db) {
   const { rows } = await client.query(
-    `SELECT id, code, name, includes_breakfast, includes_lunch, includes_dinner, is_active, is_default
+    `SELECT id, code, name, includes_breakfast, includes_lunch, includes_dinner, is_active, is_default, sell_on_ota
      FROM rate_plans WHERE property_id = $1 ORDER BY sort_order, code`, [propertyId]);
   return rows;
 }
@@ -118,7 +118,7 @@ async function getSetup(propertyId) {
         const l = rpLinks.find(x => x.room_type_id === rt.id && x.rate_plan_id === p.id);
         const cxp = l ? rpById.get(l.external_rate_plan_id) : null;
         return {
-          id: p.id, code: p.code, name: p.name, is_active: p.is_active, meal_type: mealTypeFor(p),
+          id: p.id, code: p.code, name: p.name, is_active: p.is_active, sell_on_ota: p.sell_on_ota, meal_type: mealTypeFor(p),
           link: l ? { external_id: l.external_rate_plan_id, title: cxp?.title || null,
                       found: out.channex_error || !cxProperty ? null : !!cxp } : null,
         };
@@ -267,6 +267,7 @@ async function linkRatePlan(propertyId, roomTypeId, ratePlanId, { external_id, c
   const rt = await loadRoomType(propertyId, roomTypeId);
   const plan = (await pmsRatePlans(propertyId)).find(p => p.id === ratePlanId);
   if (!plan) throw httpError(404, 'Meal plan not found');
+  if (!plan.sell_on_ota) throw httpError(409, `${plan.name} is not sold on the OTAs (Settings → Rate Plans → Sell on the OTAs)`, 'NOT_FOR_OTA');
   const { rows: [rtLink] } = await db.query(
     'SELECT external_room_type_id FROM channel_room_types WHERE property_id = $1 AND provider = $2 AND room_type_id = $3',
     [propertyId, PROVIDER, roomTypeId]);

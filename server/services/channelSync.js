@@ -68,7 +68,7 @@ async function desiredValues(propertyId, { days = SYNC_DAYS, start } = {}) {
                WHERE c.property_id = $1 AND c.provider = $2`, [propertyId, PROVIDER]),
     db.query(`SELECT c.room_type_id, c.external_rate_plan_id, rp.*
                 FROM channel_rate_plans c JOIN rate_plans rp ON rp.id = c.rate_plan_id
-               WHERE c.property_id = $1 AND c.provider = $2 AND rp.is_active = true`, [propertyId, PROVIDER]),
+               WHERE c.property_id = $1 AND c.provider = $2 AND rp.is_active = true AND rp.sell_on_ota = true`, [propertyId, PROVIDER]),
     db.query('SELECT tax_rate, service_charge_rate, prices_include_tax FROM property_settings WHERE property_id = $1', [propertyId]),
   ]);
   const values = new Map();
@@ -136,7 +136,7 @@ async function desiredValues(propertyId, { days = SYNC_DAYS, start } = {}) {
        FROM channel_price_ladders l
        JOIN channel_rate_plans c ON c.property_id = l.property_id AND c.provider = $2
                                 AND c.room_type_id = l.room_type_id AND c.rate_plan_id = l.rate_plan_id
-       JOIN rate_plans rp ON rp.id = l.rate_plan_id AND rp.is_active = true
+       JOIN rate_plans rp ON rp.id = l.rate_plan_id AND rp.is_active = true AND rp.sell_on_ota = true
       WHERE l.property_id = $1 ORDER BY l.sold_up_to`, [propertyId, PROVIDER]);
   if (ladderRows.length) {
     const { rows: seasons } = await db.query(
@@ -187,7 +187,7 @@ async function desiredValues(propertyId, { days = SYNC_DAYS, start } = {}) {
        FROM channel_rate_prices o
        JOIN channel_rate_plans c ON c.property_id = o.property_id AND c.provider = $4
                                 AND c.room_type_id = o.room_type_id AND c.rate_plan_id = o.rate_plan_id
-       JOIN rate_plans rp ON rp.id = o.rate_plan_id AND rp.is_active = true
+       JOIN rate_plans rp ON rp.id = o.rate_plan_id AND rp.is_active = true AND rp.sell_on_ota = true
       WHERE o.property_id = $1 AND o.date_to >= $2::date AND o.date_from < $3::date
       ORDER BY o.created_at, o.id`, [propertyId, from, to, PROVIDER]);
   for (const o of overrides) {

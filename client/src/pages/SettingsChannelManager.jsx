@@ -198,7 +198,9 @@ export default function SettingsChannelManager() {
                                 <span style={{ color: 'var(--text-muted)' }}> · {MEAL_LABEL[p.meal_type] || p.meal_type}</span>
                                 {!p.is_active && <span className="badge badge-gray" style={{ marginLeft: 6 }}>Inactive</span>}
                               </div>
-                              {p.link ? (
+                              {!p.link && p.sell_on_ota === false ? (
+                                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Not sold on the OTAs · <Link to="/settings/rate-plans">change in Rate Plans</Link></span>
+                              ) : p.link ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
                                   <span><span className="badge badge-green">Linked</span> {p.link.title || '?'}</span>
                                   {p.link.found === false && <span style={{ color: 'var(--danger-text)' }}>No longer in the channel manager</span>}

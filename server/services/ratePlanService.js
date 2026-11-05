@@ -65,7 +65,7 @@ function parseBody(body) {
     if (!String(body.name || '').trim()) return { error: 'name is required' };
     out.name = String(body.name).trim();
   }
-  for (const f of ['includes_breakfast', 'includes_lunch', 'includes_dinner', 'is_active', 'is_default']) {
+  for (const f of ['includes_breakfast', 'includes_lunch', 'includes_dinner', 'is_active', 'is_default', 'sell_on_ota']) {
     if (body[f] !== undefined) out[f] = !!body[f];
   }
   if (body.meal_price !== undefined) {
@@ -95,10 +95,10 @@ async function createRatePlan(propertyId, body) {
     }
     const { rows: [row] } = await client.query(
       `INSERT INTO rate_plans
-         (property_id, code, name, includes_breakfast, includes_lunch, includes_dinner, meal_price, is_active, is_default, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+         (property_id, code, name, includes_breakfast, includes_lunch, includes_dinner, meal_price, is_active, is_default, sort_order, sell_on_ota)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [propertyId, v.code, v.name, !!v.includes_breakfast, !!v.includes_lunch, !!v.includes_dinner,
-        v.meal_price || 0, v.is_active !== false, !!v.is_default, v.sort_order || 0]
+        v.meal_price || 0, v.is_active !== false, !!v.is_default, v.sort_order || 0, v.sell_on_ota !== false]
     );
     await client.query('COMMIT');
     return { ratePlan: row };
@@ -122,6 +122,13 @@ async function updateRatePlan(propertyId, id, body) {
     await client.query('BEGIN');
     if (v.is_default === true) {
       await client.query('UPDATE rate_plans SET is_default = false WHERE property_id = $1 AND id <> $2', [propertyId, id]);
+    }
+    // Keeping a plan off the OTAs while it is still linked to the channel
+    // manager would leave the OTA selling it at the last price sent.
+    if (v.sell_on_ota === false) {
+      const { rows: [linked] } = await client.query(
+        'SELECT 1 FROM channel_rate_plans WHERE property_id = $1 AND rate_plan_id = $2 LIMIT 1', [propertyId, id]);
+      if (linked) { await client.query('ROLLBACK'); return { error: 'This meal plan is still linked to the channel manager — unlink it in Settings → Channel Manager first' }; }
     }
     const sets = [];
     const vals = [];
