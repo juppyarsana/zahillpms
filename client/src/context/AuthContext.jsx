@@ -30,6 +30,7 @@ const ORDERED_PATHS = [
   { key: 'purchasing',    path: '/purchasing' },
   { key: 'direct_purchase', path: '/purchasing' },
   { key: 'stock',         path: '/stock' },
+  { key: 'store_transfers', path: '/stock?tab=transfers' },
   { key: 'purchase_request', path: '/purchasing' },
   { key: 'sales',         path: '/sales' },
   { key: 'activities',    path: '/activities' },

@@ -101,7 +101,7 @@ drop out of the month-end stock value.
 1. **Stores + Main Store (PMS only)** — built 2026-11-06 (migration 156). The store list is managed from Stock → Stores (owner), not Settings. Migration, store list in Settings, stock per
    store on the Stock page, Receive / Buy without a PO into a PMS store, adjust and
    opname per store. Restaurant goods still go straight to the POS.
-2. **Transfers between PMS stores** (Main → HK / Engineering) with confirmation,
+2. **Transfers between PMS stores** — built 2026-11-06 (migration 157); `store_transfers` covers every store for now (no per-role store list yet). (Main → HK / Engineering) with confirmation,
    `store_transfers` permission, Telegram alert for transfers waiting.
 3. **Restaurant goods through Main Store.** Mirror items, receiving POS items into
    Main Store, transfers to Kitchen / Resto through the POS handover, Main Store

@@ -17,7 +17,17 @@ Hotel stock is kept per **store**: **Main Store**, **Engineering**, **Housekeepi
 - **Usage** runs between two stock opnames of the same store.
 - *Low stock* is judged on the total of every store (that is what decides buying).
 
-Moving stock between stores (e.g. Main Store to Housekeeping) isn't there yet — it comes next.
+### Moving stock between stores
+
+**Stock → Transfers → + Move stock**: choose from which store, to which store, the items and how many, then **Send**.
+
+- The items leave the sending store at once and show as **on the way** (still counted in the stock value).
+- The receiving store opens the transfer, counts what arrived and presses **Confirm what arrived**. If less came, type what came and why — the rest goes back to the sending store.
+- The sender can **Cancel transfer** while it isn't confirmed; the items go back.
+- Give Housekeeping / Engineering heads the **Receive transfers** permission (Roles & Permissions → Operations): they see only the Transfers tab and can confirm.
+- The Telegram alert *Stock moved between stores* says when items are sent and when less arrived.
+
+Kitchen and Resto (POS) can't receive transfers yet — that comes next.
 
 ## Adjust — one item, something you know happened
 

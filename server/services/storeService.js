@@ -18,12 +18,23 @@ async function mainStoreId(propertyId, q = db) {
   return r.id;
 }
 
+// The hidden "on the way" store (migration 157): goods sent to another store
+// sit here until it confirms them. Made the first time it is needed.
+async function transitStoreId(propertyId, q = db) {
+  await mainStoreId(propertyId, q);
+  await q.query(
+    `INSERT INTO stores (property_id, name, kind, sort_order) VALUES ($1, 'On the way', 'transit', 999)
+     ON CONFLICT DO NOTHING`, [propertyId]);
+  const { rows: [r] } = await q.query(`SELECT id FROM stores WHERE property_id = $1 AND kind = 'transit'`, [propertyId]);
+  return r.id;
+}
+
 async function listStores(propertyId, { inactive = false } = {}, q = db) {
   await mainStoreId(propertyId, q);   // a property that never had stock gets its stores now
   const { rows } = await q.query(
     `SELECT s.id, s.name, s.kind, s.section, s.sort_order, s.is_active,
        (SELECT COUNT(*) FROM store_stock ss WHERE ss.store_id = s.id AND ss.quantity <> 0)::int AS items_held
-     FROM stores s WHERE s.property_id = $1 ${inactive ? '' : 'AND s.is_active'}
+     FROM stores s WHERE s.property_id = $1 AND s.kind <> 'transit' ${inactive ? '' : 'AND s.is_active'}
      ORDER BY s.sort_order, lower(s.name)`, [propertyId]);
   return rows.map(s => ({ ...s, kind_label: KIND_LABEL[s.kind], holds_stock: s.kind !== 'pos' }));
 }
@@ -39,7 +50,7 @@ async function pmsStore(propertyId, storeId, q = db) {
   if (!UUID_RE.test(String(storeId))) return fail(400, 'Choose a store');
   const { rows: [s] } = await q.query(
     'SELECT id, name, kind, is_active FROM stores WHERE id = $1 AND property_id = $2', [storeId, propertyId]);
-  if (!s) return fail(400, 'Choose a store');
+  if (!s || s.kind === 'transit') return fail(400, 'Choose a store');
   if (s.kind === 'pos') return fail(400, `${s.name}'s stock is kept in the restaurant app (POS)`, 'POS_STORE');
   if (!s.is_active) return fail(400, `${s.name} is no longer used`, 'STORE_INACTIVE');
   return { store: s };
@@ -73,7 +84,7 @@ async function saveStore(propertyId, body, id = null) {
   }
   if (!UUID_RE.test(String(id))) return fail(404, 'Store not found');
   const { rows: [s] } = await db.query('SELECT * FROM stores WHERE id = $1 AND property_id = $2', [id, propertyId]);
-  if (!s) return fail(404, 'Store not found');
+  if (!s || s.kind === 'transit') return fail(404, 'Store not found');
   if (body.is_active === false && s.is_active) {
     if (s.kind === 'main') return fail(409, 'Main Store is always used', 'MAIN');
     if (s.kind === 'pos') return fail(409, `${s.name} is the restaurant's — it stays`, 'POS_STORE');
@@ -81,6 +92,9 @@ async function saveStore(propertyId, body, id = null) {
     if (held.n) return fail(409, `${s.name} still holds ${held.n} item${held.n > 1 ? 's' : ''} — move or count them out first`, 'NOT_EMPTY');
     const { rows: [open] } = await db.query(`SELECT 1 FROM stock_opnames WHERE store_id = $1 AND status = 'draft'`, [id]);
     if (open) return fail(409, `A stock opname of ${s.name} is still being counted`, 'OPEN');
+    const { rows: [moving] } = await db.query(
+      `SELECT 1 FROM stock_transfers WHERE (from_store_id = $1 OR to_store_id = $1) AND status = 'sent' LIMIT 1`, [id]);
+    if (moving) return fail(409, `Items are still on the way to or from ${s.name} — confirm or cancel that transfer first`, 'OPEN_TRANSFER');
   }
   const order = body.sort_order != null && Number.isInteger(Number(body.sort_order)) ? Number(body.sort_order) : null;
   await db.query(
@@ -89,4 +103,4 @@ async function saveStore(propertyId, body, id = null) {
   return { stores: await listStores(propertyId, { inactive: true }) };
 }
 
-module.exports = { KIND_LABEL, mainStoreId, listStores, pmsStore, storeQty, saveStore };
+module.exports = { KIND_LABEL, mainStoreId, transitStoreId, listStores, pmsStore, storeQty, saveStore };

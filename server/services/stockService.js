@@ -68,15 +68,16 @@ function shapeItem(r) {
   };
 }
 
-// What each PMS store holds, per item key: Map(key → { storeId: qty }).
+// What each PMS store holds, per item key: Map(key → { storeId: qty }). Goods
+// on their way between stores (the hidden transit store) go under 'transit'.
 async function storeQuantities(propertyId, q = db) {
   const { rows } = await q.query(
-    `SELECT COALESCE('rm:' || raw_material_id, 'p:' || product_id) AS key, store_id, quantity
-     FROM store_stock WHERE property_id = $1 AND quantity <> 0`, [propertyId]);
+    `SELECT COALESCE('rm:' || ss.raw_material_id, 'p:' || ss.product_id) AS key, ss.store_id, ss.quantity, st.kind
+     FROM store_stock ss JOIN stores st ON st.id = ss.store_id WHERE ss.property_id = $1 AND ss.quantity <> 0`, [propertyId]);
   const m = new Map();
   for (const r of rows) {
     const o = m.get(r.key) || {};
-    o[r.store_id] = num(r.quantity);
+    o[r.kind === 'transit' ? 'transit' : r.store_id] = num(r.quantity);
     m.set(r.key, o);
   }
   return m;
@@ -85,11 +86,11 @@ async function storeQuantities(propertyId, q = db) {
 // storeId set: on_hand / value / low are that store's. Without: the total.
 // Every item carries `stores` = { storeId: qty } either way.
 function withStores(item, stores, storeId) {
-  const per = stores.get(item.key) || {};
-  if (!storeId) return { ...item, stores: per };
+  const { transit = 0, ...per } = stores.get(item.key) || {};
+  if (!storeId) return { ...item, stores: per, in_transit: transit };
   const onHand = per[storeId] || 0;
   return {
-    ...item, stores: per, total_on_hand: item.on_hand, on_hand: onHand,
+    ...item, stores: per, in_transit: transit, total_on_hand: item.on_hand, on_hand: onHand,
     value: item.avg_cost != null ? r2(onHand * item.avg_cost) : null, out: onHand <= 0,
     // Low stock is judged on the whole hotel (it decides buying), not one store.
   };
@@ -109,8 +110,9 @@ async function getItem(propertyId, key, q = db, storeId = null) {
   const { rows: [r] } = await q.query(`SELECT * FROM (${ITEMS_SQL}) x WHERE id = $2 AND kind = $3`, [propertyId, k.id, k.kind]);
   if (!r) return null;
   const { rows: per } = await q.query(
-    `SELECT store_id, quantity FROM store_stock WHERE ${k.col} = $1 AND quantity <> 0`, [k.id]);
-  const stores = new Map([[`${k.kind}:${k.id}`, Object.fromEntries(per.map(p => [p.store_id, num(p.quantity)]))]]);
+    `SELECT ss.store_id, ss.quantity, st.kind FROM store_stock ss JOIN stores st ON st.id = ss.store_id
+     WHERE ss.${k.col} = $1 AND ss.quantity <> 0`, [k.id]);
+  const stores = new Map([[`${k.kind}:${k.id}`, Object.fromEntries(per.map(p => [p.kind === 'transit' ? 'transit' : p.store_id, num(p.quantity)]))]]);
   return withStores(shapeItem(r), stores, storeId);
 }
 

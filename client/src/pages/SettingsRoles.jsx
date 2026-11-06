@@ -58,6 +58,7 @@ export const MENU_DEFS = [
   { key: 'profit',           label: 'Profit (the books in four steps: department profit, GOP, net profit)', group: 'Insights' },
   { key: 'purchasing',       label: 'Purchasing (suppliers, purchase orders, bought without a PO)', group: 'Operations' },
   { key: 'stock',            label: 'Stock (stock items, adjust, stock opname, usage)', group: 'Operations' },
+  { key: 'store_transfers',  label: 'Receive transfers (confirm stock moved into a store — e.g. Housekeeping, Engineering)', group: 'Operations' },
   // Ask purchasing to buy (purchasing itself sees and orders every request).
   { key: 'purchase_request', label: 'Purchase requests (ask purchasing to buy)', group: 'Operations' },
   // An action permission: approve a purchase order (needs Purchasing too).

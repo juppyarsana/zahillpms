@@ -391,7 +391,7 @@ export default function App() {
                   <Route path="/reports/revenue"  element={<KeepQuery to="/insights/summary" />} />
                   <Route path="/purchasing"      element={<RequireMenu menuKey={['purchasing', 'direct_purchase', 'purchase_request']}><RequireModule moduleName="back_office"><BackOffice /></RequireModule></RequireMenu>} />
                   <Route path="/back-office"     element={<Navigate to="/purchasing" replace />} />
-                  <Route path="/stock"           element={<RequireMenu menuKey="stock"><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />
+                  <Route path="/stock"           element={<RequireMenu menuKey={['stock', 'store_transfers']}><RequireModule moduleName="back_office"><Stock /></RequireModule></RequireMenu>} />
                   <Route path="/purchase-requests" element={<KeepQuery to="/purchasing" tab="requests" />} />
                   <Route path="/vendor-payouts"  element={<RequireMenu menuKey="vendors"><RequireModule moduleName="activities"><VendorPayouts /></RequireModule></RequireMenu>} />
                   <Route path="/payables"        element={<RequireMenu menuKey="payables"><RequireModule moduleName="accounting"><Payables /></RequireModule></RequireMenu>} />

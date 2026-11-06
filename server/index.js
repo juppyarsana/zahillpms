@@ -153,6 +153,7 @@ app.use('/api/activities', auth, moduleGuard('activities'), require('./routes/ac
 app.use('/api/vendors', auth, moduleGuard('activities'), require('./middleware/requireOwnerOrMenu')('vendors'), require('./routes/vendors'));
 app.use('/api/purchasing', auth, moduleGuard('back_office'), require('./routes/purchasing'));
 app.use('/api/expenses', auth, moduleGuard('back_office'), require('./routes/expenses'));
+app.use('/api/stock-transfers', auth, moduleGuard('back_office'), require('./routes/stockTransfers'));
 app.use('/api/stock', auth, moduleGuard('back_office'), require('./routes/stock'));
 app.use('/api/purchase-requests', auth, moduleGuard('back_office'), require('./routes/purchaseRequests'));
 // Accounting, step 1 (migration 101): chart of accounts, account mapping, daily journal.

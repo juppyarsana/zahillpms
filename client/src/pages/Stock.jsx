@@ -4,6 +4,7 @@ import api from '../services/api';
 import { COST_CATEGORIES } from '../lib/costLists';
 import { useAuth } from '../context/AuthContext';
 import { BIG_UNIT, fmtQty } from '../lib/units';
+import ItemPicker from '../components/ItemPicker';
 
 // Operations → Stock (migration 136): everything kept in stock — stock items
 // and Sales items with Track stock — with Adjust (one item, a known event),
@@ -44,6 +45,7 @@ const TABS = {
     { key: 'opname', label: 'Stock opname' },
     { key: 'usage', label: 'Usage' },
     { key: 'value', label: 'Stock value' },
+    { key: 'transfers', label: 'Transfers' },
   ],
   restaurant: [
     { key: 'items', label: 'Stock items' },
@@ -69,17 +71,22 @@ function whereText(i, stores) {
 }
 
 export default function Stock() {
-  const { hasModule, user } = useAuth();
+  const { hasModule, user, can } = useAuth();
+  // `store_transfers` without `stock`: only the Transfers tab (confirm what arrives).
+  const full = can('stock');
   const [stores, reloadStores] = useStores();
   const [editStores, setEditStores] = useState(false);
   const withPos = hasModule('pos_integration');
   const [params, setParams] = useSearchParams();
-  const stock = withPos && params.get('stock') === 'restaurant' ? 'restaurant' : 'hotel';
-  const tab = TABS[stock].some(t => t.key === params.get('tab')) ? params.get('tab') : 'items';
+  const stock = full && withPos && params.get('stock') === 'restaurant' ? 'restaurant' : 'hotel';
+  const tabs = full ? TABS[stock] : TABS.hotel.filter(t => t.key === 'transfers');
+  const tab = tabs.some(t => t.key === params.get('tab')) ? params.get('tab') : tabs[0].key;
+  const [openTransfers, setOpenTransfers] = useState(0);
+  useEffect(() => { api.get('/api/stock-transfers/count').then(r => setOpenTransfers(r.data.open)).catch(() => {}); }, [tab]);
   const go = (st, tb) => setParams(p => { const n = new URLSearchParams(p); n.set('stock', st); n.set('tab', tb); return n; }, { replace: true });
   const storeId = pmsStores(stores).some(s => s.id === params.get('store')) ? params.get('store') : '';
   const setStore = id => setParams(p => { const n = new URLSearchParams(p); if (id) n.set('store', id); else n.delete('store'); return n; }, { replace: true });
-  const showStores = stock === 'hotel' && tab !== 'usage' && pmsStores(stores).length > 1;
+  const showStores = full && stock === 'hotel' && tab !== 'usage' && pmsStores(stores).length > 1;
   return (
     <div>
       <div className="page-header">
@@ -92,17 +99,18 @@ export default function Stock() {
         <div className="flex gap-2">
           {user?.role === 'owner' && <button className="btn btn-secondary" onClick={() => setEditStores(true)}>Stores</button>}
           <Link className="btn btn-secondary" to="/guide/stock">📘 Guide</Link>
-          <Link className="btn btn-primary" to="/purchasing?tab=requests&new=1&low=1" title="Ask purchasing to buy — starts with the items that are low or out">🛒 Request to buy</Link>
+          {full && <Link className="btn btn-primary" to="/purchasing?tab=requests&new=1&low=1" title="Ask purchasing to buy — starts with the items that are low or out">🛒 Request to buy</Link>}
         </div>
       </div>
-      {withPos && (
+      {full && withPos && (
         <div className="seg" style={{ marginBottom: 12 }}>
           <button type="button" className={stock === 'hotel' ? 'active' : ''} onClick={() => go('hotel', tab === 'usage' || tab === 'value' ? tab : 'items')}>Hotel stock</button>
           <button type="button" className={stock === 'restaurant' ? 'active' : ''} onClick={() => go('restaurant', tab === 'usage' || tab === 'value' ? tab : 'items')}>Restaurant stock</button>
         </div>
       )}
       <div className="tab-bar">
-        {TABS[stock].map(t => <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => go(stock, t.key)}>{t.label}</button>)}
+        {tabs.map(t => <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => go(stock, t.key)}>{t.label}
+          {t.key === 'transfers' && openTransfers > 0 && <span className="tab-count">{openTransfers}</span>}</button>)}
       </div>
       {showStores && (
         <div className="seg" style={{ margin: '12px 0 0', flexWrap: 'wrap' }}>
@@ -116,6 +124,7 @@ export default function Stock() {
       {stock === 'restaurant' && tab === 'items' && <RestaurantTab />}
       {stock === 'restaurant' && tab === 'usage' && <RestaurantUsageTab />}
       {tab === 'value' && <ValueTab withPos={withPos} stores={stores} />}
+      {tab === 'transfers' && <TransfersTab stores={stores} storeId={storeId} canSend={full} onCount={setOpenTransfers} />}
       {editStores && <StoresModal stores={stores} onClose={() => setEditStores(false)} onChanged={reloadStores} />}
     </div>
   );
@@ -179,6 +188,7 @@ function ItemsTab({ stores, storeId }) {
                   <td>{i.category_label}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{stockBadge(i)}
                     {!storeId && whereText(i, stores) && <div className="text-muted" style={{ fontSize: 11 }}>{whereText(i, stores)}</div>}
+                    {!storeId && i.in_transit > 0 && <div style={{ fontSize: 11, color: 'var(--warning, #b45309)' }}>{qty(i.in_transit)} on the way</div>}
                     {storeId && i.total_on_hand !== i.on_hand && <div className="text-muted" style={{ fontSize: 11 }}>{qty(i.total_on_hand)} in all stores</div>}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{i.avg_cost != null ? `${fmtIDR(i.avg_cost)} / ${i.unit}` : <span className="text-muted">not known</span>}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 600 }}>{i.value != null ? fmtIDR(i.value) : '—'}</td>
@@ -819,6 +829,7 @@ function ValueTab({ withPos, stores }) {
     ...st, value: items.reduce((t, i) => t + (i.avg_cost != null ? (i.stores?.[st.id] || 0) * i.avg_cost : 0), 0),
     items: items.filter(i => i.stores?.[st.id]).length,
   }));
+  const transitValue = items.reduce((t, i) => t + (i.avg_cost != null ? (i.in_transit || 0) * i.avg_cost : 0), 0);
   return (
     <div>
       <div className="stat-grid stat-grid-money" style={{ marginBottom: 12 }}>
@@ -847,7 +858,9 @@ function ValueTab({ withPos, stores }) {
               <thead><tr><th>Hotel stock by store</th><th style={{ textAlign: 'right' }}>Items</th><th style={{ textAlign: 'right' }}>Value</th></tr></thead>
               <tbody>{byStore.map(st => (
                 <tr key={st.id}><td style={{ fontWeight: 600 }}>{st.name}</td><td style={{ textAlign: 'right' }}>{st.items}</td>
-                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(st.value)}</td></tr>))}</tbody>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(st.value)}</td></tr>))}
+                {transitValue > 0 && <tr><td style={{ fontWeight: 600 }}>On the way between stores</td><td style={{ textAlign: 'right' }}>{items.filter(i => i.in_transit > 0).length}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(transitValue)}</td></tr>}</tbody>
             </table>
           </div>
         </div>
@@ -899,6 +912,202 @@ function StoresModal({ stores, onClose, onChanged }) {
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>Kitchen and Resto are the restaurant's stock, kept and counted in the POS. A store still holding stock can't be switched off.</p>
         </div>
         <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── Transfers ─────────────────────────────
+// Moving stock between stores (migration 157): Main Store sends, the receiving
+// store confirms what arrived; anything short goes back to the sender.
+
+const trStatus = t => t.status === 'sent' ? <span className="badge badge-amber">Waiting for {t.to_store}</span>
+  : t.status === 'confirmed' ? <span className={`badge ${t.short_lines ? 'badge-red' : 'badge-green'}`}>{t.short_lines ? 'Arrived — some short' : 'Arrived'}</span>
+  : <span className="badge badge-gray">Cancelled</span>;
+
+function TransfersTab({ stores, storeId, canSend, onCount }) {
+  const [show, setShow] = useState('open');
+  const [list, setList] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [openT, setOpenT] = useState(null);
+  const [toast, setToast] = useState('');
+  const load = () => {
+    api.get('/api/stock-transfers', { params: { status: show, store: storeId || undefined } }).then(r => setList(r.data)).catch(() => setList([]));
+    api.get('/api/stock-transfers/count').then(r => onCount?.(r.data.open)).catch(() => {});
+  };
+  useEffect(() => { load(); }, [show, storeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  function flash(m) { setToast(m); setTimeout(() => setToast(''), 5000); }
+  return (
+    <div>
+      <div className="page-toolbar">
+        <div className="seg">
+          {[['open', 'Waiting'], ['done', 'Done'], ['all', 'All']].map(([k, l]) => <button key={k} type="button" className={show === k ? 'active' : ''} onClick={() => setShow(k)}>{l}</button>)}
+        </div>
+        <div className="page-toolbar-end">{canSend && <button className="btn btn-primary" onClick={() => setSending(true)}>+ Move stock</button>}</div>
+      </div>
+      <p className="text-muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
+        Items sent to another store leave the sending store at once and wait <b>on the way</b> until the receiving store confirms what arrived.
+        Anything that did not arrive goes back to the sending store.
+      </p>
+      {toast && <div className="alert alert-success"><div>{toast}</div></div>}
+      <div className="card">
+        <div className="table-wrap">
+          <table style={{ minWidth: 680 }}>
+            <thead><tr><th>No.</th><th>From → to</th><th>Items</th><th>Sent</th><th>Status</th><th style={{ textAlign: 'right' }}>Value</th></tr></thead>
+            <tbody>
+              {(list || []).map(t => (
+                <tr key={t.id} style={{ cursor: 'pointer' }} onClick={() => setOpenT(t)}>
+                  <td style={{ fontWeight: 600 }}>{t.no_text}</td>
+                  <td>{t.from_store} → <b>{t.to_store}</b></td>
+                  <td style={{ fontSize: 13 }}>{t.lines.slice(0, 3).map(l => `${l.description} ×${qty(l.sent)}`).join(', ')}{t.lines.length > 3 ? ` +${t.lines.length - 3} more` : ''}</td>
+                  <td style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{fmtDateTime(t.sent_at)}<div className="text-muted" style={{ fontSize: 11 }}>{t.sent_by_name}</div></td>
+                  <td>{trStatus(t)}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmtIDR(t.value)}</td>
+                </tr>
+              ))}
+              {list && !list.length && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>{show === 'open' ? 'Nothing waiting to be confirmed' : 'No transfers yet'}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {sending && <SendTransferModal stores={stores} storeId={storeId} onClose={() => setSending(false)}
+        onSent={t => { setSending(false); load(); flash(`${t.no_text} sent to ${t.to_store} — waiting for them to confirm`); }} />}
+      {openT && <TransferModal t={openT} canSend={canSend} onClose={() => setOpenT(null)}
+        onChanged={(t, m) => { setOpenT(null); load(); flash(m); }} />}
+    </div>
+  );
+}
+
+function SendTransferModal({ stores, storeId, onClose, onSent }) {
+  const choices = pmsStores(stores);
+  const main = choices.find(s => s.kind === 'main');
+  const [from, setFrom] = useState(storeId || main?.id || '');
+  const [to, setTo] = useState(() => choices.find(s => s.id !== (storeId || main?.id))?.id || '');
+  const [items, setItems] = useState([]);
+  const [lines, setLines] = useState([{ key: '', quantity: '' }]);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!from) return;
+    api.get('/api/stock/items', { params: { store: from } }).then(r => setItems(r.data.filter(i => i.on_hand > 0))).catch(() => setItems([]));
+  }, [from]);
+  const byKey = Object.fromEntries(items.map(i => [i.key, i]));
+  const setLine = (n, patch) => setLines(ls => ls.map((l, i) => (i === n ? { ...l, ...patch } : l)));
+  const over = l => byKey[l.key] && Number(l.quantity) > byKey[l.key].on_hand + 1e-9;
+  const ready = from && to && from !== to && lines.some(l => l.key && Number(l.quantity) > 0) && !lines.some(over);
+  async function send() {
+    setBusy(true); setError('');
+    try {
+      const r = await api.post('/api/stock-transfers', { from_store_id: from, to_store_id: to, note,
+        lines: lines.filter(l => l.key && Number(l.quantity) > 0).map(l => ({ key: l.key, quantity: Number(l.quantity) })) });
+      onSent(r.data.transfer);
+    } catch (err) { setError(err.response?.data?.error || 'Could not send'); setBusy(false); }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 720, width: '100%' }}>
+        <div className="modal-header"><div className="modal-title">Move stock to another store</div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error"><div>{error}</div></div>}
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">From</label>
+              <select className="form-select" value={from} onChange={e => { setFrom(e.target.value); setLines([{ key: '', quantity: '' }]); }}>
+                {choices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">To</label>
+              <select className="form-select" value={to} onChange={e => setTo(e.target.value)}>
+                {choices.filter(s => s.id !== from).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+          </div>
+          <div className="form-label">Items</div>
+          {lines.map((l, n) => (
+            <div key={n} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <ItemPicker value={l.key} onChange={v => setLine(n, { key: v })}
+                  placeholder={items.length ? 'Type to find the item…' : `Nothing in ${storeName(stores, from)}`}
+                  options={items.map(i => ({ value: i.key, label: i.name, hint: `${qty(i.on_hand, i.unit)} here` }))} />
+                {over(l) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Only {qty(byKey[l.key].on_hand, byKey[l.key].unit)} in {storeName(stores, from)}</div>}
+              </div>
+              <input className="form-input" style={{ width: 100 }} type="number" min="0" step={byKey[l.key]?.kind === 'p' ? '1' : '0.001'} placeholder="Qty"
+                value={l.quantity} onChange={e => setLine(n, { quantity: e.target.value })} />
+              <span className="text-muted" style={{ width: 34, fontSize: 12 }}>{byKey[l.key]?.unit || ''}</span>
+              <button className="btn btn-icon" title="Remove line" onClick={() => setLines(ls => (ls.length > 1 ? ls.filter((_, i) => i !== n) : [{ key: '', quantity: '' }]))}>✕</button>
+            </div>
+          ))}
+          <button className="btn btn-sm btn-secondary" onClick={() => setLines(ls => [...ls, { key: '', quantity: '' }])}>+ Add line</button>
+          <div className="form-group" style={{ marginTop: 12 }}><label className="form-label">Note</label>
+            <input className="form-input" value={note} onChange={e => setNote(e.target.value)} placeholder="optional — e.g. for the 2nd floor pantry" /></div>
+          <div className="text-muted" style={{ fontSize: 12 }}>The items leave {storeName(stores, from) || 'the store'} now and count in {storeName(stores, to) || 'the other store'} once it confirms what arrived.</div>
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || !ready} onClick={send}>Send to {storeName(stores, to) || '…'}</button></div>
+      </div>
+    </div>
+  );
+}
+
+function TransferModal({ t, canSend, onClose, onChanged }) {
+  const open = t.status === 'sent';
+  const [got, setGot] = useState(() => Object.fromEntries(t.lines.map(l => [l.id, String(l.sent)])));
+  const [notes, setNotes] = useState({});
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const shortOf = l => Math.round((l.sent - Number(got[l.id] || 0)) * 1000) / 1000;
+  const bad = t.lines.some(l => got[l.id] === '' || Number(got[l.id]) < 0 || Number(got[l.id]) > l.sent || (shortOf(l) > 0 && !String(notes[l.id] || '').trim()));
+  async function confirm() {
+    setBusy(true); setError('');
+    try {
+      const r = await api.post(`/api/stock-transfers/${t.id}/confirm`, { lines: t.lines.map(l => ({ line_id: l.id, accepted: Number(got[l.id]), note: notes[l.id] || '' })) });
+      onChanged(r.data.transfer, `${t.no_text} confirmed — in ${t.to_store}${r.data.transfer.short_lines ? '; what did not arrive is back in ' + t.from_store : ''}`);
+    } catch (err) { setError(err.response?.data?.error || 'Could not confirm'); setBusy(false); }
+  }
+  async function cancel() {
+    setBusy(true); setError('');
+    try { const r = await api.post(`/api/stock-transfers/${t.id}/cancel`, { reason }); onChanged(r.data.transfer, `${t.no_text} cancelled — the items are back in ${t.from_store}`); }
+    catch (err) { setError(err.response?.data?.error || 'Could not cancel'); setBusy(false); }
+  }
+  return (
+    <div className="modal-backdrop">
+      <div className="modal" style={{ maxWidth: 720, width: '100%' }}>
+        <div className="modal-header"><div>
+          <div className="modal-title">{t.no_text} · {t.from_store} → {t.to_store}</div>
+          <div className="text-muted" style={{ fontSize: 12 }}>Sent {fmtDateTime(t.sent_at)} by {t.sent_by_name || '—'}
+            {t.confirmed_at ? ` · confirmed ${fmtDateTime(t.confirmed_at)} by ${t.confirmed_by_name || '—'}` : ''}
+            {t.cancelled_at ? ` · cancelled ${fmtDateTime(t.cancelled_at)} by ${t.cancelled_by_name || '—'}: ${t.cancel_reason}` : ''}</div>
+        </div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error"><div>{error}</div></div>}
+          {t.note && <div style={{ fontSize: 14, marginBottom: 10 }}>Note: {t.note}</div>}
+          {open && <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>{t.to_store}: count what arrived. If less came, type what came and why — the rest goes back to {t.from_store}.</div>}
+          <div className="table-wrap">
+            <table style={{ fontSize: 14, minWidth: 560 }}>
+              <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Sent</th><th style={{ textAlign: 'right', width: 150 }}>Arrived</th><th>{open ? 'Why less (if less)' : 'Note'}</th></tr></thead>
+              <tbody>{t.lines.map(l => (
+                <tr key={l.id}>
+                  <td>{l.description}</td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(l.sent, l.unit)}</td>
+                  <td style={{ textAlign: 'right' }}>{open ? (
+                    <input className="form-input" type="number" min="0" max={l.sent} step={l.kind === 'p' ? '1' : '0.001'} style={{ width: 100, textAlign: 'right', height: 32 }}
+                      value={got[l.id]} onChange={e => setGot(g => ({ ...g, [l.id]: e.target.value }))} />
+                  ) : t.status === 'confirmed' ? <span style={{ color: l.short > 0 ? 'var(--danger-text)' : undefined }}>{qty(l.accepted, l.unit)}</span> : '—'}</td>
+                  <td>{open ? (shortOf(l) > 0 && <input className="form-input" style={{ height: 32 }} placeholder={`${qty(shortOf(l), l.unit)} short — why?`}
+                      value={notes[l.id] || ''} onChange={e => setNotes(nn => ({ ...nn, [l.id]: e.target.value }))} />)
+                    : <span className="text-muted" style={{ fontSize: 13 }}>{l.note || ''}</span>}</td>
+                </tr>))}</tbody>
+            </table>
+          </div>
+          {cancelling && (
+            <div className="form-group" style={{ marginTop: 12 }}><label className="form-label">Why cancel? (the items go back to {t.from_store})</label>
+              <input className="form-input" autoFocus value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. sent to the wrong store" /></div>
+          )}
+        </div>
+        <div className="modal-footer">
+          {open && canSend && !cancelling && <button className="btn btn-secondary" onClick={() => setCancelling(true)}>Cancel transfer…</button>}
+          {cancelling && <button className="btn btn-danger" disabled={busy || !reason.trim()} onClick={cancel}>Cancel {t.no_text}</button>}
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          {open && !cancelling && <button className="btn btn-primary" disabled={busy || bad} onClick={confirm}>Confirm what arrived</button>}
+        </div>
       </div>
     </div>
   );

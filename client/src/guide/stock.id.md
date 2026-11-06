@@ -17,7 +17,17 @@ Stok hotel disimpan per **gudang**: **Main Store**, **Engineering**, **Housekeep
 - **Pemakaian** dihitung dari dua stock opname gudang yang sama.
 - Batas *Low stock* dinilai dari total semua gudang (itu yang menentukan pembelian).
 
-Memindahkan barang antar gudang (misalnya dari Main Store ke Housekeeping) belum ada — akan datang berikutnya.
+### Memindahkan barang antar gudang
+
+**Stock → Transfers → + Move stock**: pilih dari gudang mana, ke gudang mana, barang dan jumlahnya, lalu **Send**.
+
+- Barang langsung keluar dari gudang pengirim dan tercatat **on the way** (masih dihitung di nilai stok).
+- Gudang penerima membuka transfernya, menghitung yang datang, lalu **Confirm what arrived**. Kalau yang datang kurang, ketik jumlah yang datang dan alasannya — sisanya kembali ke gudang pengirim.
+- Pengirim bisa **Cancel transfer** selama belum dikonfirmasi; barangnya kembali.
+- Kepala Housekeeping / Engineering cukup diberi izin **Receive transfers** (Roles & Permissions → Operations): mereka hanya melihat tab Transfers dan bisa mengkonfirmasi.
+- Telegram *Stock moved between stores* memberi tahu saat barang dikirim dan saat yang datang kurang.
+
+Kitchen dan Resto (POS) belum bisa menerima transfer — akan datang berikutnya.
 
 ## Adjust — satu barang, kejadian yang diketahui
 

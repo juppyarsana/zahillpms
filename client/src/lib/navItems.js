@@ -59,7 +59,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0, otaSlow = 0 }) {
       // head with only `purchase_request` sees the same page as "Purchase requests".
       (can('purchasing') || can('direct_purchase')) && hasModule('back_office') && { to: '/purchasing', icon: '📦', label: 'Purchasing' },
       !can('purchasing') && !can('direct_purchase') && can('purchase_request') && hasModule('back_office') && { to: '/purchasing', icon: '🛒', label: 'Purchase requests' },
-      can('stock') && hasModule('back_office') && { to: '/stock', icon: '🗃', label: 'Stock' },
+      (can('stock') || can('store_transfers')) && hasModule('back_office') && { to: can('stock') ? '/stock' : '/stock?tab=transfers', icon: '🗃', label: 'Stock' },
     ] },
     // Insights (owner's figures, one question per page): Summary · Forecast,
     // sub-groups Stays · Money, then Export / Print (every printable report).
