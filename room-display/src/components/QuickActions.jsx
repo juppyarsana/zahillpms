@@ -99,7 +99,7 @@ export default function QuickActions({
         return (
           <div className="grid grid-cols-2 gap-3">
             {fo}
-            {btn(onCallRestaurant, 'restaurant', 'Restaurant',
+            {btn(onCallRestaurant, 'call', 'Restaurant',
               'var(--accent)', 'var(--accent-contrast)', '0 6px 18px rgb(var(--accent-rgb) / 0.35)')}
           </div>
         );
