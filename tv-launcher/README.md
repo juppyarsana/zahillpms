@@ -72,6 +72,26 @@ lists the TVs that failed — fix those and run again (safe to repeat).
   sign the apps out when the room is turned over.
 - First TV on production: Room 302 (192.168.20.116), 2026-10-29.
 
+## From a PC in the hotel: Zahill TV Setup (setup-app/)
+
+A Windows window around `provision.ps1` / `restore.ps1`, to set up or update the TVs from any PC on the
+hotel network (e.g. over remote desktop). Build it here with `setup-app\build.ps1` (add `-IncludeAdbKey`
+so TVs that trust this PC don't ask again); it writes `setup-app\dist\ZahillTvSetup\` and a `.zip`
+(not in git). Copy the folder to the hotel PC and run `ZahillTvSetup.exe`: no install, adb and the APK
+are inside, compiled with the C# compiler that ships with Windows.
+
+- The room list comes from the table in `TV_ROOMS.md`; the `state\*.json` records are copied in so
+  Undo works there. The display token is typed once and saved encrypted for that Windows user.
+- **Check**: online / not found / waiting for OK on the TV, model, app version, the TV's name. A TV named
+  after another room shows "Check the address" and Set up refuses it.
+- **Update app**: `adb install -r` only (keeps room, Home, screensaver); skips TVs already up to date.
+- **Set up** runs `provision.ps1` with the list for the model (TVX19A, 2K Smart TV, TVX22A, TVX21B,
+  Mi stick); unknown models are refused. **Undo setup** runs `restore.ps1`.
+- Before Update / Set up it asks the PMS which rooms have a guest (yes = all, no = empty rooms only);
+  Home is not pressed on a TV with a guest.
+- `toolsdbkey` (with `-IncludeAdbKey`) unlocks every TV that trusts this PC: keep that folder on the
+  hotel PC only.
+
 ## What `provision/provision.ps1` does
 One TV:
 ```powershell
