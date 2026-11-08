@@ -72,38 +72,38 @@ export default function QuickActions({
 
   return (
     <div className="flex flex-col gap-2.5">
-      {callingEnabled && (
-        <button
-          onClick={onCallFrontDesk}
-          disabled={callActive}
-          className="w-full flex items-center justify-center gap-2.5 rounded-2xl"
-          style={{
-            padding: '14px 0', border: 'none', cursor: callActive ? 'default' : 'pointer',
-            background: 'var(--danger)', color: '#fff',
-            boxShadow: callActive ? 'none' : '0 6px 18px rgba(179,38,30,0.35)',
-            opacity: callActive ? 0.5 : 1, transition: 'opacity 0.2s',
-          }}
-        >
-          <span className="material-symbols-outlined filled" style={{ fontSize: 22 }}>call</span>
-          <span className="text-sm font-extrabold uppercase tracking-widest">{callActive ? 'On a call…' : 'Call Front Desk'}</span>
-        </button>
-      )}
-      {callingEnabled && restaurantLineEnabled && (
-        <button
-          onClick={onCallRestaurant}
-          disabled={callActive}
-          className="w-full flex items-center justify-center gap-2.5 rounded-2xl"
-          style={{
-            padding: '14px 0', border: 'none', cursor: callActive ? 'default' : 'pointer',
-            background: 'var(--accent)', color: 'var(--accent-contrast)',
-            boxShadow: callActive ? 'none' : '0 6px 18px rgb(var(--accent-rgb) / 0.35)',
-            opacity: callActive ? 0.5 : 1, transition: 'opacity 0.2s',
-          }}
-        >
-          <span className="material-symbols-outlined filled" style={{ fontSize: 22 }}>restaurant</span>
-          <span className="text-sm font-extrabold uppercase tracking-widest">Call Restaurant</span>
-        </button>
-      )}
+      {callingEnabled && (() => {
+        // Both lines on: side by side at the old button's height, so the
+        // alarm card below stays on screen without scrolling.
+        const both = restaurantLineEnabled;
+        const btn = (onClick, icon, label, bg, fg, shadow) => (
+          <button
+            onClick={onClick}
+            disabled={callActive}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl"
+            style={{
+              padding: '14px 8px', border: 'none', cursor: callActive ? 'default' : 'pointer',
+              background: bg, color: fg, minWidth: 0,
+              boxShadow: callActive ? 'none' : shadow,
+              opacity: callActive ? 0.5 : 1, transition: 'opacity 0.2s',
+            }}
+          >
+            <span className="material-symbols-outlined filled" style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
+            <span className={`text-sm font-extrabold uppercase ${both ? 'tracking-wider' : 'tracking-widest'}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+          </button>
+        );
+        const fo = btn(onCallFrontDesk, 'call',
+          callActive ? 'On a call…' : (both ? 'Front Desk' : 'Call Front Desk'),
+          'var(--danger)', '#fff', '0 6px 18px rgba(179,38,30,0.35)');
+        if (!both) return fo;
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            {fo}
+            {btn(onCallRestaurant, 'restaurant', 'Restaurant',
+              'var(--accent)', 'var(--accent-contrast)', '0 6px 18px rgb(var(--accent-rgb) / 0.35)')}
+          </div>
+        );
+      })()}
 
       {operationsEnabled && (
         <div className="grid grid-cols-2 gap-3">
