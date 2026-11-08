@@ -60,6 +60,15 @@ router.post('/to-room', auth, gate, async (req, res) => {
   } catch (err) { lines.sendError(res, err); }
 });
 
+// POST /api/calls/to-restaurant — the front desk calls the restaurant (migration 165)
+router.get('/restaurant-line', auth, gate, async (req, res) => {
+  try { res.json({ enabled: await lines.restaurantLineOn(req.propertyId) }); } catch (err) { lines.sendError(res, err); }
+});
+router.post('/to-restaurant', auth, gate, async (req, res) => {
+  try { res.status(201).json(await lines.placeToLine(req.propertyId, FD, 'restaurant', who(req))); }
+  catch (err) { lines.sendError(res, err); }
+});
+
 // POST /api/calls/:id/answer-from-room — room answers a staff-initiated call
 router.post('/:id/answer-from-room', authDisplay, gate, async (req, res) => {
   const { id } = req.params;
@@ -119,10 +128,10 @@ router.post('/:id/end-from-room', authDisplay, gate, async (req, res) => {
 });
 
 // POST /api/calls/:id/signal — relay a WebRTC message from staff -> room
-// Body: { roomId, payload }
+// Body: { roomId, payload } — no roomId: to the restaurant (line-to-line call)
 router.post('/:id/signal', auth, gate, async (req, res) => {
   try {
-    await lines.signalToRoom(req.propertyId, req.params.id, req.body.roomId, req.body.payload);
+    await lines.signal(req.propertyId, req.params.id, req.body.roomId, req.body.payload, FD);
     res.json({ ok: true });
   } catch (err) { lines.sendError(res, err); }
 });

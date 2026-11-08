@@ -22,6 +22,7 @@ Aplikasi **Front Desk Phone** membuat HP front desk berdering seperti telepon bi
 - **Kamar menelepon:** layar penuh "Room 104" dengan **Answer** dan **Not now**. *Not now* hanya mendiamkan HP ini.
 - Saat bicara: **Mute**, **Speaker**, dan tombol merah untuk menutup. Layar mati sendiri saat HP di telinga.
 - **Missed calls** dan **Call a room** ada di layar utama aplikasi, sama seperti di PC.
+- **Call the restaurant** (kalau saluran restoran menyala) membuat POS dan tablet restoran berdering. Kalau restoran menelepon, HP berdering dengan tulisan **Restaurant**.
 - Tombol Back menyembunyikan aplikasi; saluran tetap tersambung (lihat notifikasi "Front desk phone").
 
 ## Kalau HP hilang atau diganti

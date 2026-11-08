@@ -22,6 +22,7 @@ The **Front Desk Phone** app makes the front desk phone ring like a normal call 
 - **A room calls:** full screen "Room 104" with **Answer** and **Not now**. *Not now* silences this phone only.
 - During the call: **Mute**, **Speaker**, and the red button to hang up. The screen turns off at your ear.
 - **Missed calls** and **Call a room** are on the app's main screen, the same as on the PC.
+- **Call the restaurant** (when the restaurant line is on) rings the restaurant's POS and tablet. When the restaurant calls, the phone rings with **Restaurant**.
 - Back hides the app; the line stays connected (see the "Front desk phone" notification).
 
 ## Lost or replaced phone

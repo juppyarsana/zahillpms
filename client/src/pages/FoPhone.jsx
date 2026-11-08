@@ -43,6 +43,12 @@ async function api(method, path, body) {
 const hm = iso => new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' });
 const ago = iso => { const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`; };
 const HOW = { called_back: 'Called back', rang_again: 'Room called again', done: 'Marked done' };
+// A call from the restaurant line (migration 165) has no room: from the live
+// event / pending (internal) or from the native app (no roomId).
+const toCall = (e) => (e.internal || !e.roomId
+  ? { callId: e.callId, internal: true, unitName: e.fromLabel || 'Restaurant', guestName: e.staffName || null }
+  : { callId: e.callId, unitName: e.unitName, roomId: e.roomId, guestName: e.guestName });
+const who = (c) => (c.internal ? `🍽 ${c.unitName}` : `Room ${c.unitName}`);
 
 export default function FoPhone() {
   const [hasKey, setHasKey] = useState(() => !!getKey());
@@ -95,6 +101,7 @@ function Phone({ onUnpaired }) {
   const [rooms, setRooms] = useState(null);
   const [q, setQ] = useState('');
   const [error, setError] = useState('');
+  const [restaurantLine, setRestaurantLine] = useState(false);
 
   const activeRef = useRef(null); useEffect(() => { activeRef.current = active; }, [active]);
   const incomingRef = useRef(null); useEffect(() => { incomingRef.current = incoming; }, [incoming]);
@@ -108,7 +115,10 @@ function Phone({ onUnpaired }) {
   }, [onUnpaired]);
 
   const loadMissed = useCallback(() => api('GET', '/missed').then(setMissed).catch(() => {}), []);
-  const loadRooms = useCallback(() => api('GET', '/rooms').then(setRooms).catch(() => {}), []);
+  const loadRooms = useCallback(() => {
+    api('GET', '/rooms').then(setRooms).catch(() => {});
+    api('GET', '/restaurant-line').then(r => setRestaurantLine(!!r.enabled)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api('GET', '/me').then(setMe).catch(fail);
@@ -153,7 +163,7 @@ function Phone({ onUnpaired }) {
     if (e.type === 'incoming_call') {
       // Inside the app the phone's own full-screen ringing handles it.
       if (activeRef.current || APP) return;
-      setIncoming(prev => prev || { callId: e.callId, unitName: e.unitName, roomId: e.roomId, guestName: e.guestName });
+      setIncoming(prev => prev || toCall(e));
     } else if (e.type === 'signal' && e.payload?.kind === 'offer') {
       offers.current.set(e.callId, e.payload.sdp);
     } else if (e.type === 'signal' && e.payload?.kind === 'answer') {
@@ -198,7 +208,7 @@ function Phone({ onUnpaired }) {
     if (APP) return undefined;   // the app's service polls
     const id = setInterval(async () => {
       if (activeRef.current || incomingRef.current) return;
-      try { const p = await api('GET', '/pending'); if (p?.callId) setIncoming({ callId: p.callId, unitName: p.unitName, roomId: p.roomId, guestName: p.guestName }); } catch { /* next tick */ }
+      try { const p = await api('GET', '/pending'); if (p?.callId) setIncoming(toCall(p)); } catch { /* next tick */ }
     }, 10000);
     return () => clearInterval(id);
   }, []);
@@ -243,18 +253,21 @@ function Phone({ onUnpaired }) {
     if (!id) return;
     answeredFromUrl.current = true;
     window.history.replaceState(null, '', window.location.pathname);
-    answer({ callId: id, roomId: p.get('room'), unitName: p.get('unit') || '', guestName: p.get('guest') || null });
+    answer(toCall({ callId: id, roomId: p.get('room'), unitName: p.get('unit') || '', guestName: p.get('guest') || null }));
   }, [answer]);
   // The app can also hand over an answer while the page is open.
-  useEffect(() => { window.foPhoneAnswer = (id, roomId, unitName, guestName) => answer({ callId: id, roomId, unitName, guestName }); return () => { delete window.foPhoneAnswer; }; }, [answer]);
+  useEffect(() => { window.foPhoneAnswer = (id, roomId, unitName, guestName) => answer(toCall({ callId: id, roomId, unitName, guestName })); return () => { delete window.foPhoneAnswer; }; }, [answer]);
 
+  // `room` = a room, or { restaurant: true } for the restaurant line (migration 165).
   const callRoom = async (room) => {
     if (activeRef.current || incomingRef.current) return;
     setError('');
     try { await callClient.acquireMic(); } catch { callClient.close(); setError(MIC_BLOCKED); return; }
     let d;
-    try { d = await api('POST', '/to-room', { unit_id: room.id }); } catch (err) { callClient.close(); fail(err); return; }
-    setActive({ callId: d.callId, roomId: d.roomId, unitName: d.unitName, guestName: room.guest_name, status: 'calling' });
+    try { d = await api('POST', room.restaurant ? '/to-restaurant' : '/to-room', room.restaurant ? {} : { unit_id: room.id }); } catch (err) { callClient.close(); fail(err); return; }
+    setActive(room.restaurant
+      ? { callId: d.callId, internal: true, unitName: 'Restaurant', status: 'calling' }
+      : { callId: d.callId, roomId: d.roomId, unitName: d.unitName, guestName: room.guest_name, status: 'calling' });
     try {
       const offer = await callClient.createOffer({
         onIceCandidate: c => api('POST', `/${d.callId}/signal`, { roomId: d.roomId, payload: { kind: 'ice', candidate: c } }).catch(() => {}),
@@ -297,8 +310,8 @@ function Phone({ onUnpaired }) {
 
       {incoming && !active && (
         <div style={S.overlay}>
-          <div style={{ fontSize: 13, letterSpacing: 2, color: '#FCA5A5', fontWeight: 700 }}>ROOM CALLING</div>
-          <div style={{ fontSize: 46, fontWeight: 800, marginTop: 6 }}>Room {incoming.unitName}</div>
+          <div style={{ fontSize: 13, letterSpacing: 2, color: '#FCA5A5', fontWeight: 700 }}>{incoming.internal ? 'RESTAURANT CALLING' : 'ROOM CALLING'}</div>
+          <div style={{ fontSize: 46, fontWeight: 800, marginTop: 6 }}>{who(incoming)}</div>
           {incoming.guestName && <div style={{ fontSize: 18, opacity: 0.85 }}>{incoming.guestName}</div>}
           <div style={{ display: 'flex', gap: 40, marginTop: 50 }}>
             <button onClick={decline} style={{ ...S.round, background: '#DC2626' }} aria-label="Not now">✕</button>
@@ -313,7 +326,7 @@ function Phone({ onUnpaired }) {
           <div style={{ fontSize: 13, letterSpacing: 2, fontWeight: 700, color: active.status === 'connected' ? '#86EFAC' : active.status === 'failed' ? '#FCA5A5' : '#FDE68A' }}>
             {active.status === 'calling' ? 'CALLING…' : active.status === 'connecting' ? 'CONNECTING…' : active.status === 'connected' ? <>ON A CALL · <Timer /></> : active.status === 'failed' ? 'CALL FAILED' : 'CALL ENDED'}
           </div>
-          <div style={{ fontSize: 46, fontWeight: 800, marginTop: 6 }}>Room {active.unitName}</div>
+          <div style={{ fontSize: 46, fontWeight: 800, marginTop: 6 }}>{who(active)}</div>
           {active.guestName && <div style={{ fontSize: 18, opacity: 0.85 }}>{active.guestName}</div>}
           {active.error && <div style={{ color: '#FCA5A5', marginTop: 12 }}>{active.error}</div>}
           {['calling', 'connecting', 'connected'].includes(active.status) && (
@@ -332,17 +345,29 @@ function Phone({ onUnpaired }) {
           {open.map(c => (
             <div key={c.callId} style={S.missedRow}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 17 }}>Room {c.unitName}{c.guestName ? <span style={{ fontWeight: 400, color: '#6B7280' }}> · {c.guestName}</span> : null}</div>
+                <div style={{ fontWeight: 700, fontSize: 17 }}>{who(c)}{c.guestName ? <span style={{ fontWeight: 400, color: '#6B7280' }}> · {c.guestName}</span> : null}</div>
                 <div style={{ fontSize: 13, color: '#6B7280' }}>{hm(c.at)} · {ago(c.at)}</div>
               </div>
-              <button style={{ ...S.btn, ...S.primary }} onClick={() => { const r = (rooms || []).find(x => x.id === c.unitId); if (r) callRoom(r); }}>📞 Call back</button>
+              <button style={{ ...S.btn, ...S.primary }} onClick={() => { const r = c.internal ? { restaurant: true } : (rooms || []).find(x => x.id === c.unitId); if (r) callRoom(r); }}>📞 Call back</button>
               <button style={S.btn} onClick={() => done(c)}>Done</button>
             </div>
           ))}
           {handled.map(c => (
-            <div key={c.callId} style={{ fontSize: 13, color: '#9CA3AF', padding: '4px 0' }}>Room {c.unitName} · missed {hm(c.at)} — {HOW[c.handled.how]} {hm(c.handled.at)}{c.handled.by ? ` · ${c.handled.by}` : ''}</div>
+            <div key={c.callId} style={{ fontSize: 13, color: '#9CA3AF', padding: '4px 0' }}>{who(c)} · missed {hm(c.at)} — {HOW[c.handled.how]} {hm(c.handled.at)}{c.handled.by ? ` · ${c.handled.by}` : ''}</div>
           ))}
         </div>
+      )}
+
+      {restaurantLine && (
+        <button onClick={() => callRoom({ restaurant: true })} disabled={!!active}
+          style={{ ...S.card, width: 'calc(100% - 24px)', display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #E5E7EB', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer' }}>
+          <span style={{ fontSize: 26 }}>🍽</span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Call the restaurant</span>
+            <span style={{ display: 'block', fontSize: 12, color: '#6B7280' }}>Rings the restaurant's POS and tablet</span>
+          </span>
+          <span style={{ fontSize: 22 }}>📞</span>
+        </button>
       )}
 
       <div style={S.card}>

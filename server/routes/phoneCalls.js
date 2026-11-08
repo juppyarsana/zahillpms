@@ -9,6 +9,7 @@
 //   GET  /api/phone/rooms                  rooms that can be called + guest in them
 //   GET  /api/phone/missed                 missed calls of the last 24 h
 //   POST /api/phone/to-room                { unit_id }
+//   POST /api/phone/to-restaurant          the restaurant line (migration 165); GET /api/phone/restaurant-line { enabled }
 //   POST /api/phone/:id/answer | /end | /missed-done
 //   POST /api/phone/:id/signal             { roomId, payload }
 const router = require('express').Router();
@@ -62,11 +63,15 @@ router.post('/to-room', async (req, res) => {
   if (!req.body?.unit_id) return res.status(400).json({ error: 'unit_id required' });
   try { res.status(201).json(await lines.placeToRoom(req.propertyId, { unitId: req.body.unit_id }, line(req), who(req))); } catch (err) { lines.sendError(res, err); }
 });
+router.get('/restaurant-line', async (req, res) => { try { res.json({ enabled: await lines.restaurantLineOn(req.propertyId) }); } catch (err) { lines.sendError(res, err); } });
+router.post('/to-restaurant', async (req, res) => {
+  try { res.status(201).json(await lines.placeToLine(req.propertyId, line(req), 'restaurant', who(req))); } catch (err) { lines.sendError(res, err); }
+});
 router.post('/:id/answer', async (req, res) => { try { res.json(await lines.answer(req.propertyId, req.params.id, line(req), who(req))); } catch (err) { lines.sendError(res, err); } });
 router.post('/:id/end', async (req, res) => { try { await lines.end(req.propertyId, req.params.id, line(req)); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); } });
 router.post('/:id/missed-done', async (req, res) => { try { await lines.missedDone(req.propertyId, req.params.id, line(req), who(req)); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); } });
 router.post('/:id/signal', async (req, res) => {
-  try { await lines.signalToRoom(req.propertyId, req.params.id, req.body?.roomId, req.body?.payload); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); }
+  try { await lines.signal(req.propertyId, req.params.id, req.body?.roomId, req.body?.payload, line(req)); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); }
 });
 
 module.exports = router;

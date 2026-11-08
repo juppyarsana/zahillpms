@@ -48,8 +48,9 @@ class IncomingCallActivity : AppCompatActivity() {
       setBackgroundColor(Color.parseColor("#1F2937"))
       setPadding(0, 0, 0, (40 * dp).toInt())
     }
-    root.addView(text("ROOM CALLING THE FRONT DESK", 14f, Color.parseColor("#FCA5A5"), true))
-    root.addView(text("Room ${call.optString("unitName")}", 48f, Color.WHITE, true))
+    val internal = call.optBoolean("internal", false)
+    root.addView(text(if (internal) "THE RESTAURANT IS CALLING" else "ROOM CALLING THE FRONT DESK", 14f, Color.parseColor("#FCA5A5"), true))
+    root.addView(text(if (internal) call.optString("unitName") else "Room ${call.optString("unitName")}", 48f, Color.WHITE, true))
     val guest = call.optString("guestName")
     if (guest.isNotEmpty()) root.addView(text(guest, 20f, Color.parseColor("#D1D5DB")))
     val buttons = LinearLayout(this).apply {

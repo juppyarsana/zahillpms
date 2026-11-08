@@ -22,7 +22,7 @@ import { groupUnitsByType } from '../lib/roomTypeOrder';
 // (same visual language as the Dashboard's Live Unit Status board) plus a
 // search box fits everything on screen and tapping a tile calls directly.
 export default function CallRoomModal({ onClose }) {
-  const { callRoom, missed, refreshMissed } = useCall();
+  const { callRoom, missed, refreshMissed, restaurantLine } = useCall();
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [callingId, setCallingId] = useState(null);
@@ -65,6 +65,24 @@ export default function CallRoomModal({ onClose }) {
         </div>
         <div className="modal-body">
           <MissedCalls missed={missed} units={units} callingId={callingId} onCall={handleCall} onDone={markDone} />
+          {restaurantLine && (
+            <button
+              type="button"
+              disabled={callingId === 'restaurant'}
+              onClick={() => handleCall({ id: 'restaurant', restaurant: true })}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', marginBottom: 16,
+                borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface, #fff)', cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ fontSize: 22 }}>🍽</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>{callingId === 'restaurant' ? 'Calling the restaurant…' : 'Call the restaurant'}</span>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)' }}>Rings the restaurant's POS and tablet</span>
+              </span>
+              <span style={{ fontSize: 18 }}>📞</span>
+            </button>
+          )}
           {loading && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading rooms…</p>}
 
           {!loading && units.length === 0 && (
@@ -140,15 +158,16 @@ function MissedCalls({ missed, units, callingId, onCall, onDone }) {
         Missed calls{open.length ? ` · ${open.length} to call back` : ' · all called back'}
       </div>
       {open.map(c => {
-        const unit = units.find(u => u.id === c.unitId);
+        // A missed call from the restaurant (migration 165) is called back on its line.
+        const unit = c.internal ? { id: 'restaurant', restaurant: true } : units.find(u => u.id === c.unitId);
         return (
           <div key={c.callId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(220,38,38,0.06)', marginBottom: 6 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Room {c.unitName}{c.guestName ? <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {c.guestName}</span> : null}</div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>{c.internal ? '🍽 ' : 'Room '}{c.unitName}{c.guestName ? <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {c.guestName}</span> : null}</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{hm(c.at)} · {ago(c.at)}</div>
             </div>
-            <button className="btn btn-primary btn-sm" disabled={!unit || callingId === c.unitId} onClick={() => unit && onCall(unit)}>
-              {callingId === c.unitId ? 'Calling…' : '📞 Call back'}
+            <button className="btn btn-primary btn-sm" disabled={!unit || callingId === unit?.id} onClick={() => unit && onCall(unit)}>
+              {callingId === unit?.id ? 'Calling…' : '📞 Call back'}
             </button>
             <button className="btn btn-secondary btn-sm" title="Handled another way (the guest came to the desk…)" onClick={() => onDone(c)}>Done</button>
           </div>
@@ -161,7 +180,7 @@ function MissedCalls({ missed, units, callingId, onCall, onDone }) {
       )}
       {showHandled && handled.map(c => (
         <div key={c.callId} style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 2px' }}>
-          Room {c.unitName} · missed {hm(c.at)} — {HOW[c.handled.how]} {hm(c.handled.at)}{c.handled.by ? ` · ${c.handled.by}` : ''}
+          {c.internal ? '' : 'Room '}{c.unitName} · missed {hm(c.at)} — {c.internal && c.handled.how === 'rang_again' ? 'Called again' : HOW[c.handled.how]} {hm(c.handled.at)}{c.handled.by ? ` · ${c.handled.by}` : ''}
         </div>
       ))}
     </div>

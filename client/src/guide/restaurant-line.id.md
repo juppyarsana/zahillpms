@@ -15,6 +15,15 @@ Tamu bisa menelepon **restoran** langsung dari tablet kamar, dengan tombol **Cal
 - Layar yang tidak boleh berdering (misalnya di dapur): buka **Call a room** → hilangkan centang **Ring on this screen**.
 - Pertama kali, browser bertanya izin **mikrofon** → pilih **Allow**. Komputer POS butuh speaker dan mikrofon (atau headset).
 
+## Front desk ↔ restoran
+
+Front desk dan restoran bisa saling menelepon, seperti telepon internal.
+
+- **Front desk → restoran:** tombol 📞 (PMS) atau HP front desk → **Call the restaurant** di atas *Call a Room*. Semua layar restoran yang *Ring on this screen*-nya menyala akan berdering, dengan tulisan **Front desk calling** dan siapa yang menelepon.
+- **Restoran → front desk:** **📞 Call a room** di POS (atau tablet waiter) → **Call the front desk**. PC front desk dan HP front desk berdering, dengan tulisan **Restaurant calling**.
+- Layar pertama yang menjawab yang mendapat teleponnya; layar lain berhenti berdering. Mute dan Hang up seperti biasa.
+- Tidak dijawab dalam 45 detik → masuk ke daftar **Missed calls** pihak yang ditelepon sebagai *Restaurant* atau *Front Desk*, dengan **Call back**. Tidak ada pesan Telegram untuk ini.
+
 ## Panggilan tak terjawab
 
 Telepon yang tidak dijawab dalam 45 detik masuk ke daftar **Missed calls**, terpisah untuk front desk dan restoran:

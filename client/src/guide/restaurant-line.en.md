@@ -15,6 +15,15 @@ Guests can call the **restaurant** straight from the room tablet, with the **Cal
 - A screen that shouldn't ring (in the kitchen, say): open **Call a room** → untick **Ring on this screen**.
 - The first time, the browser asks for the **microphone** → choose **Allow**. The POS computer needs speakers and a microphone (or a headset).
 
+## Front desk ↔ restaurant
+
+The front desk and the restaurant can call each other, like an internal extension.
+
+- **Front desk → restaurant:** the 📞 button (PMS) or the front desk phone → **Call the restaurant** at the top of *Call a Room*. Every restaurant screen with *Ring on this screen* on rings, showing **Front desk calling** and who is calling.
+- **Restaurant → front desk:** **📞 Call a room** in the POS (or the waiter tablet) → **Call the front desk**. The front desk PCs and the front desk phone ring, showing **Restaurant calling**.
+- The first screen to answer gets the call; the others stop ringing. Mute and Hang up as usual.
+- Nobody answers within 45 seconds → it goes on the other side's **Missed calls** list as *Restaurant* or *Front Desk*, with **Call back**. No Telegram message for these.
+
 ## Missed calls
 
 A call nobody answers within 45 seconds goes on a **Missed calls** list, one for front desk and one for the restaurant:

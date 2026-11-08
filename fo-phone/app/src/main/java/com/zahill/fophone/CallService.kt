@@ -202,7 +202,8 @@ class CallService : Service() {
       .put("callId", call.optString("callId"))
       .put("roomId", call.optString("roomId"))
       .put("unitName", call.optString("unitName"))
-      .put("guestName", if (call.isNull("guestName")) "" else call.optString("guestName"))
+      .put("guestName", if (call.isNull("guestName")) (if (call.isNull("staffName")) "" else call.optString("staffName")) else call.optString("guestName"))
+      .put("internal", call.optBoolean("internal", false))
     ringingCall = c
     try {
       val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -214,7 +215,8 @@ class CallService : Service() {
     val full = Intent(this, IncomingCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
     val fullPi = PendingIntent.getActivity(this, 1, full, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     val stopPi = PendingIntent.getService(this, 2, Intent(this, CallService::class.java).setAction(ACTION_STOP_RING), PendingIntent.FLAG_IMMUTABLE)
-    val title = "Room ${c.optString("unitName")} is calling"
+    // The restaurant line calling the front desk has no room (server migration 165).
+    val title = if (c.optBoolean("internal")) "${c.optString("unitName")} is calling" else "Room ${c.optString("unitName")} is calling"
     val note = Notification.Builder(this, CH_CALLS)
       .setSmallIcon(R.drawable.ic_phone)
       .setContentTitle(title)

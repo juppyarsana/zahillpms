@@ -16,7 +16,8 @@
 //   POST /api/pos/calls/to-room              { unit_id | room_id, by }
 //   POST /api/pos/calls/:id/answer           { by }
 //   POST /api/pos/calls/:id/end
-//   POST /api/pos/calls/:id/signal           { roomId, payload }
+//   POST /api/pos/calls/:id/signal           { roomId, payload } (no roomId = to the front desk, line-to-line call)
+//   POST /api/pos/calls/to-front-desk        the restaurant calls the front desk (migration 165)
 const router = require('express').Router();
 const db = require('../db');
 const authPos = require('../middleware/authPos');
@@ -79,6 +80,11 @@ router.post('/to-room', async (req, res) => {
   catch (err) { lines.sendError(res, err); }
 });
 
+router.post('/to-front-desk', async (req, res) => {
+  try { res.status(201).json(await lines.placeToLine(req.propertyId, LINE, 'front_desk', by(req))); }
+  catch (err) { lines.sendError(res, err); }
+});
+
 router.post('/:id/answer', async (req, res) => {
   try { res.json(await lines.answer(req.propertyId, req.params.id, LINE, by(req))); } catch (err) { lines.sendError(res, err); }
 });
@@ -88,7 +94,7 @@ router.post('/:id/end', async (req, res) => {
 });
 
 router.post('/:id/signal', async (req, res) => {
-  try { await lines.signalToRoom(req.propertyId, req.params.id, req.body?.roomId, req.body?.payload); res.json({ ok: true }); }
+  try { await lines.signal(req.propertyId, req.params.id, req.body?.roomId, req.body?.payload, LINE); res.json({ ok: true }); }
   catch (err) { lines.sendError(res, err); }
 });
 

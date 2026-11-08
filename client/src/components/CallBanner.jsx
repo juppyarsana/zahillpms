@@ -1,6 +1,7 @@
 import { useCall } from '../context/CallContext';
 
 function callerLabel(call) {
+  if (call.internal) return call.unitName;   // 'Restaurant' (line-to-line call, migration 165)
   return call.guestName ? `${call.guestName} - ${call.unitName}` : `Room ${call.unitName}`;
 }
 
@@ -22,11 +23,14 @@ export default function CallBanner() {
             📞
           </div>
           <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#dc2626', marginBottom: 8 }}>
-            Incoming Call
+            {incomingCall.internal ? 'Restaurant calling' : 'Incoming Call'}
           </div>
-          <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 32 }}>
-            {callerLabel(incomingCall)}
+          <div style={{ fontSize: 24, fontWeight: 800, marginBottom: incomingCall.internal && incomingCall.staffName ? 6 : 32 }}>
+            {incomingCall.internal ? '🍽 Restaurant' : callerLabel(incomingCall)}
           </div>
+          {incomingCall.internal && incomingCall.staffName && (
+            <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 26 }}>{incomingCall.staffName}</div>
+          )}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
             <button
               className="btn btn-lg"

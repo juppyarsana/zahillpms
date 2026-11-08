@@ -29,6 +29,9 @@ export function CallProvider({ children }) {
   const refreshMissed = useCallback(() => {
     api.get('/api/calls/missed').then(r => setMissed(r.data)).catch(() => {});
   }, []);
+  // The restaurant line is on (migration 160): the front desk can call the
+  // restaurant and the restaurant can call here (migration 165).
+  const [restaurantLine, setRestaurantLine] = useState(false);
 
   const pendingOffers = useRef(new Map());   // callId -> offer sdp
   const pendingIce = useRef(new Map());      // callId -> [candidates]
@@ -110,7 +113,9 @@ export function CallProvider({ children }) {
       if (activeCallRef.current) return;
       // Also don't clobber an already-ringing incoming call this session
       // hasn't answered/dismissed yet — first one wins here too.
-      setIncomingCall(prev => prev || { callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName });
+      setIncomingCall(prev => prev || (msg.internal
+        ? { callId: msg.callId, internal: true, unitName: msg.fromLabel, staffName: msg.staffName }
+        : { callId: msg.callId, unitName: msg.unitName, roomId: msg.roomId, guestName: msg.guestName }));
     } else if (msg.type === 'signal' && msg.payload?.kind === 'offer') {
       pendingOffers.current.set(msg.callId, msg.payload.sdp);
     } else if (msg.type === 'signal' && msg.payload?.kind === 'answer') {
@@ -151,13 +156,23 @@ export function CallProvider({ children }) {
   }, [user, refreshMissed]);
 
   useEffect(() => {
+    if (!user) return undefined;
+    const load = () => api.get('/api/calls/restaurant-line').then(r => setRestaurantLine(!!r.data.enabled)).catch(() => setRestaurantLine(false));
+    load();
+    const id = setInterval(load, 300_000);
+    return () => clearInterval(id);
+  }, [user]);
+
+  useEffect(() => {
     if (!user) return;
     const id = setInterval(async () => {
       if (activeCallRef.current || incomingCallRef.current) return; // busy or already showing one
       try {
         const { data } = await api.get('/api/calls/pending');
         if (data && data.callId !== incomingCallRef.current?.callId) {
-          setIncomingCall({ callId: data.callId, unitName: data.unitName, roomId: data.roomId, guestName: data.guestName });
+          setIncomingCall(data.internal
+            ? { callId: data.callId, internal: true, unitName: data.fromLabel, staffName: data.staffName }
+            : { callId: data.callId, unitName: data.unitName, roomId: data.roomId, guestName: data.guestName });
         }
       } catch { /* best-effort — next tick retries */ }
     }, PENDING_POLL_MS);
@@ -180,7 +195,7 @@ export function CallProvider({ children }) {
       console.error('[Call] microphone unavailable:', err);
       callClient.close();
       setIncomingCall(prev => (prev?.callId === callId ? null : prev));
-      setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'failed', error: MIC_BLOCKED_MESSAGE });
+      setActiveCall({ ...call, status: 'failed', error: MIC_BLOCKED_MESSAGE });
       setTimeout(() => setActiveCall(prev => (prev?.callId === callId ? null : prev)), 6000);
       return;
     }
@@ -193,7 +208,7 @@ export function CallProvider({ children }) {
     }
 
     setIncomingCall(null);
-    setActiveCall({ callId, roomId: call.roomId, unitName: call.unitName, guestName: call.guestName, status: 'connecting' });
+    setActiveCall({ ...call, status: 'connecting' });
     // Bound the whole connect phase, not just ICE — covers a hang anywhere below.
     startConnectingTimeout(callId);
 
@@ -245,6 +260,8 @@ export function CallProvider({ children }) {
   // Staff places a call to a specific room. Mirrors the room's own outgoing
   // call flow (App.jsx's handlePlaceCall) — offer created immediately, mic
   // requested up front, connectionstatechange drives 'calling' -> 'connected'.
+  // `unit` = a room, or { restaurant: true } to call the restaurant line
+  // (migration 165: no room, the signal goes to the restaurant's screens).
   const callRoom = useCallback(async (unit) => {
     if (activeCallRef.current || incomingCall) throw new Error('Already on a call');
     // Microphone first, so a blocked mic never rings the room.
@@ -254,8 +271,13 @@ export function CallProvider({ children }) {
       callClient.close();
       throw new Error(MIC_BLOCKED_MESSAGE);
     }
-    const { data } = await api.post('/api/calls/to-room', { unitId: unit.id });
-    setActiveCall({ callId: data.callId, roomId: data.roomId, unitName: data.unitName, status: 'calling' });
+    let data;
+    try {
+      data = unit.restaurant
+        ? { ...(await api.post('/api/calls/to-restaurant')).data, internal: true, unitName: 'Restaurant' }
+        : (await api.post('/api/calls/to-room', { unitId: unit.id })).data;
+    } catch (err) { callClient.close(); throw err; }
+    setActiveCall({ callId: data.callId, roomId: data.roomId, unitName: data.unitName, internal: !!data.internal, status: 'calling' });
 
     try {
       const offer = await callClient.createOffer({
@@ -300,7 +322,7 @@ export function CallProvider({ children }) {
   }, []);
 
   return (
-    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute, callRoom, missed, refreshMissed }}>
+    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute, callRoom, missed, refreshMissed, restaurantLine }}>
       {children}
     </CallContext.Provider>
   );

@@ -231,7 +231,7 @@ export default function Today() {
   const [callErr, setCallErr] = useState('');
   const callBack = async (c) => {
     setCallErr('');
-    try { await call.callRoom({ id: c.unitId, name: c.unitName }); } catch (err) { setCallErr(err.response?.data?.error || err.message || 'Could not call the room'); }
+    try { await call.callRoom(c.internal ? { id: 'restaurant', restaurant: true } : { id: c.unitId, name: c.unitName }); } catch (err) { setCallErr(err.response?.data?.error || err.message || 'Could not call the room'); }
   };
   const missedDone = async (c) => {
     try { await api.post(`/api/calls/${c.callId}/missed-done`); call.refreshMissed(); } catch (err) { setCallErr(err.response?.data?.error || 'Could not save'); }
@@ -409,7 +409,7 @@ export default function Today() {
             return (
               <div key={`m${c.callId}`} className="today-need danger">
                 <span className="today-need-tag">Missed call</span>
-                <span className="today-need-text">Room <b>{c.unitName}</b>{c.guestName ? <> · {c.guestName}</> : null} called the front desk at {t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' })} ({mins < 60 ? `${mins} min ago` : `${Math.floor(mins / 60)} h ago`}) — nobody answered.</span>
+                <span className="today-need-text">{c.internal ? <>The <b>restaurant</b>{c.guestName ? <> ({c.guestName})</> : null}</> : <>Room <b>{c.unitName}</b>{c.guestName ? <> · {c.guestName}</> : null}</>} called the front desk at {t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' })} ({mins < 60 ? `${mins} min ago` : `${Math.floor(mins / 60)} h ago`}) — nobody answered.</span>
                 <button type="button" className="btn btn-sm btn-primary" disabled={!!call?.activeCall || !!call?.incomingCall} onClick={() => callBack(c)}>📞 Call back</button>
                 <button type="button" className="btn btn-sm btn-secondary" title="Handled another way (the guest came to the desk…)" onClick={() => missedDone(c)}>Done</button>
               </div>
