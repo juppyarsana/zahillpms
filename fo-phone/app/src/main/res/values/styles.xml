@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="maroon">#5B1A2E</color>
+  <color name="dark">#1F2937</color>
+
+  <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <item name="colorPrimary">@color/maroon</item>
+    <item name="colorPrimaryDark">@color/maroon</item>
+    <item name="android:statusBarColor">@color/maroon</item>
+  </style>
+
+  <style name="IncomingTheme" parent="Theme.AppCompat.NoActionBar">
+    <item name="android:windowBackground">@color/dark</item>
+    <item name="android:statusBarColor">@color/dark</item>
+  </style>
+</resources>

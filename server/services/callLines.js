@@ -208,6 +208,8 @@ function stream(req, res, key) {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   sse.addClient(key, res);
+  // Say hello at once: a proxy may hold the headers back until the first data.
+  try { res.write('data: {"type":"hello"}\n\n'); } catch {}
   // A real `data:` event (not an SSE comment) so the client can tell a dead link.
   const heartbeat = setInterval(() => { try { res.write('data: {"type":"heartbeat"}\n\n'); } catch {} }, 25_000);
   req.on('close', () => { clearInterval(heartbeat); sse.removeClient(key, res); });

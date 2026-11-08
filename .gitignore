@@ -75,3 +75,10 @@ tv-launcher/provision/state/
 tv-launcher/provision/rooms.csv
 tv-launcher/provision/apks/
 tv-launcher/setup-app/dist/
+fo-phone/.gradle/
+fo-phone/build/
+fo-phone/app/build/
+fo-phone/local.properties
+fo-phone/keystore.properties
+fo-phone/*.jks
+fo-phone/*.keystore

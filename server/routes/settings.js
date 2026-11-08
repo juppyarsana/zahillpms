@@ -71,6 +71,28 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
   }
 });
 
+// ── Front desk phones (migration 162) ──────────────────────────────────────
+const foPhones = () => require('../services/foPhones');
+router.get('/fo-phones', ownerOnly, async (req, res) => {
+  try { res.json(await foPhones().list(req.propertyId)); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/fo-phones', ownerOnly, async (req, res) => {
+  try { res.status(201).json(await foPhones().add(req.propertyId, req.body?.name, req.user.id)); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/fo-phones/:id/code', ownerOnly, async (req, res) => {
+  try {
+    const d = await foPhones().newPairCode(req.propertyId, req.params.id);
+    if (!d) return res.status(404).json({ error: 'Phone not found' });
+    res.json(d);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.delete('/fo-phones/:id', ownerOnly, async (req, res) => {
+  try {
+    if (!(await foPhones().remove(req.propertyId, req.params.id))) return res.status(404).json({ error: 'Phone not found' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Restaurant phone line (migration 160) ───────────────────────────────────
 // On: room tablets get "Call Restaurant", answered in the POS (routes/posCalls.js).
 router.get('/restaurant-line', ownerOnly, async (req, res) => {

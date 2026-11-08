@@ -61,7 +61,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => DEVICE_POLLING.test(req.originalUrl),
   keyGenerator: (req) => {
-    const h = req.headers['authorization'];
+    // The front desk phone's event stream carries its key in the URL (EventSource can't set headers).
+    const h = req.headers['authorization'] || (req.query && req.query.key ? 'key:' + req.query.key : null);
     return h ? 'tok:' + crypto.createHash('sha256').update(h).digest('hex') : 'ip:' + req.ip;
   },
 });
@@ -98,7 +99,14 @@ app.use('/api/admin', authSuperAdmin, require('./routes/admin'));
 
 // Core routes — no module guard (always on)
 app.use('/api/auth', require('./routes/auth'));
+// Pairing a front desk phone: failed codes only, per IP.
+app.use('/api/public/fo-phone/pair', rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many wrong codes — try again in 15 minutes' },
+}));
 app.use('/api/public', require('./routes/public'));
+// /api/phone — the front desk phone app (migration 162), its own key per phone.
+app.use('/api/phone', require('./routes/phoneCalls'));
 app.use('/api/units', require('./routes/units'));
 app.use('/api/room-types', require('./routes/roomTypes'));
 app.use('/api/users', require('./routes/users'));

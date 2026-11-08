@@ -17,6 +17,16 @@ router.post('/channex/webhook/:token', async (req, res) => {
 
 // GET /api/public/po/:token — a purchase order's PDF, for the supplier: the link
 // in the hotel's WhatsApp message (migration 151). The random token is the secret.
+// POST /api/public/fo-phone/pair { code, app_version } — the front desk phone
+// trades its pairing code (Settings → Front desk phones) for its key.
+router.post('/fo-phone/pair', async (req, res) => {
+  try {
+    const r = await require('../services/foPhones').pair(req.body?.code, req.body?.app_version);
+    if (!r) return res.status(400).json({ error: 'That code is wrong or has expired — make a new one in Settings → Front desk phones' });
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/po/:token', async (req, res) => {
   try {
     const r = await require('../services/poDocuments').publicPdf(req.params.token);

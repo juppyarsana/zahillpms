@@ -34,6 +34,7 @@ export const GROUPS = [
   ] },
   { label: { id: 'Operasional', en: 'Operations' }, chapters: [
     { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },
+    { id: 'fo-phone', icon: '📱', title: { id: 'HP front desk', en: 'Front desk phone' } },
     { id: 'restaurant-line', icon: '📞', title: { id: 'Telepon restoran dari kamar', en: 'Restaurant phone line' } },
     { id: 'room-service-alerts', icon: '🛎', title: { id: 'Pesanan room service di Telegram', en: 'Room service orders on Telegram' } },
     { id: 'lobby-tv', icon: '📺', title: { id: 'TV lobi & Guest Board', en: 'Lobby TV & Guest Board' } },

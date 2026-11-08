@@ -13,6 +13,8 @@ import AskFab from './components/AskFab';
 import { AskProvider } from './context/AskContext';
 import Login from './pages/Login';
 import RoomCheckPublic from './pages/RoomCheckPublic';
+import FoPhone from './pages/FoPhone';
+import SettingsFoPhones from './pages/SettingsFoPhones';
 import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import Ask from './pages/Ask';
@@ -310,6 +312,7 @@ export default function App() {
           <Route path="/login/:slug" element={<Login />} />
           {/* Room check from housekeeping's phone — no login, the link is the key (migration 091) */}
           <Route path="/room-check/:token" element={<RoomCheckPublic />} />
+          <Route path="/fo-phone" element={<FoPhone />} />
           <Route path="/admin" element={
             <RequireSuperAdmin>
               <AdminLayout>
@@ -375,6 +378,7 @@ export default function App() {
                   <Route path="/settings/communications" element={<RequireOwner><SettingsCommunications /></RequireOwner>} />
                   <Route path="/settings/reports" element={<RequireOwner><SettingsReports /></RequireOwner>} />
                   <Route path="/settings/channel-manager" element={<RequireOwner><RequireModule moduleName="channel_manager"><SettingsChannelManager /></RequireModule></RequireOwner>} />
+                  <Route path="/settings/fo-phones" element={<RequireOwner><SettingsFoPhones /></RequireOwner>} />
                   <Route path="/settings/room-tablets" element={<RequireMenu menuKey="room_tablets"><RoomTablets /></RequireMenu>} />
                   <Route path="/settings/room-controllers" element={<RequireMenu menuKey="room_controllers"><RequireModule moduleName="room_controller"><SettingsRoomControllers /></RequireModule></RequireMenu>} />
                   <Route path="/settings/board"   element={<RequireMenu menuKey="guest_board"><RequireModule moduleName="in_room_media"><SettingsBoardCards /></RequireModule></RequireMenu>} />

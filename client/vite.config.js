@@ -29,7 +29,7 @@ export default defineConfig({
             // the response to store it, but an SSE stream never completes, so that
             // throws "Failed to fetch" and kills the live connection. Must come
             // before the general /api/ rule below since Workbox matches in order.
-            urlPattern: ({ url }) => url.pathname.endsWith('/stream'),
+            urlPattern: ({ url }) => url.pathname.endsWith('/stream') || url.pathname.startsWith('/api/phone/'),
             handler: 'NetworkOnly',
           },
           {

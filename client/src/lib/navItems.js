@@ -110,6 +110,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0, otaSlow = 0 }) {
     { id: 'devices', label: 'Devices & guest screens', items: [
       // What guests see on the room tablets, room TVs and the lobby TV (moved from Operations).
       can('guest_board') && hasModule('in_room_media') && { to: '/settings/board', icon: '📋', label: 'Guest Board', hint: 'Cards, videos and music on the room tablets, room TVs and the lobby TV' },
+      isOwner && hasModule('calling') && { to: '/settings/fo-phones', icon: '📱', label: 'Front desk phones', hint: 'Phones that ring for room calls (Front Desk Phone app)' },
       can('room_tablets') && { to: '/settings/room-tablets', icon: '📶', label: 'Room Tablets', hint: 'WiFi, battery and connection history per room' },
       can('room_controllers') && hasModule('room_controller') && { to: '/settings/room-controllers', icon: '🎛️', label: 'Room Controllers', hint: 'Lights, AC and relays per room' },
     ] },
