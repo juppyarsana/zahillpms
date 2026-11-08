@@ -45,7 +45,7 @@ Untuk stok yang dibeli di pasar atau toko, tanpa purchase order. Perlu izin **Pu
 3. **Date bought** = tanggal di nota. **Receipt / nota number** kalau ada.
 4. **What it is for** (Food, Drinks, Guest supplies…) dan **Department** (terisi sendiri).
 5. Satu baris per barang: **stock item**, **berapa banyak** dan **harga yang dibayar** untuk baris itu, sesuai nota. Barang yang disimpan dalam g atau ml diketik dalam **kg atau L** (pilihan di sebelah kotaknya). Harga per satuan dihitung otomatis, dengan harga biasanya di sebelahnya (merah kalau 20% atau lebih di atasnya).
-   - Untuk dapur atau bar, pilih jenis **Restaurant (POS)**: barangnya menunggu konfirmasi chef di POS, lalu masuk ke stok restoran, bukan di PMS. Setelah POS menerimanya, pembelian ini tidak bisa di-void — chef membetulkan stok POS lewat stock opname. Kalau POS tidak bisa dihubungi, buka pembeliannya dan tekan **Send to the POS**.
+   - Untuk dapur atau bar, pilih jenis **Restaurant (POS)**: barangnya masuk ke **Main Store** seperti barang lain, lalu dikirim ke Kitchen / Resto lewat **[Stock](/stock) → Transfers → Move stock**, dan chef mengonfirmasinya di POS. Pembelian ini hanya bisa di-void selama gudang tempat barang itu masuk masih punya paling sedikit sejumlah yang dibeli.
 6. **The money**:
    - **Paid already** → pilih **Paid with** (Cash…). Otomatis masuk Expenses.
    - **Pay later** → harus pilih supplier. Tagihan dibuat di Payables, jatuh tempo sesuai termin supplier (atau ketik tanggalnya). Bayar di sana saat uangnya keluar.

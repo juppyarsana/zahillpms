@@ -240,7 +240,7 @@ export function BuyWithoutPoModal({ onClose, onSaved }) {
                   <select className="form-select" value={storeId} onChange={e => setStoreId(e.target.value)}>
                     {setup.stores.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
                   </select>
-                  <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Where the goods are put. Restaurant items go to the POS.</div>
+                  <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Where the goods are put. Restaurant items are kept here too, until moved to Kitchen / Resto.</div>
                 </div>
               )}
             </div>
@@ -389,6 +389,7 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
                       {it.pos_item_id && (it.pos_send_error
                         ? <div style={{ fontSize: 11, color: 'var(--danger, #b91c1c)' }}>Not sent to the POS: {it.pos_send_error}</div>
                         : it.handovers?.length ? <HandoverLines handovers={it.handovers} unit={it.unit_of_measure || it.unit} />
+                        : Number(it.stored_qty) > 0 ? <div style={{ fontSize: 11, color: '#6B7280' }}>Kept in {it.store_name || 'Main Store'} — move it with Stock → Transfers</div>
                         : Number(it.pos_sent_qty) >= Number(it.quantity) ? <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div> : null)}</td>
                     <td style={{ textAlign: 'right' }}>{it.product_id ? qtyText(it.quantity) : fmtQty(it.quantity, it.unit_of_measure)}</td>
                     <td style={{ textAlign: 'right' }}>{BIG_UNIT[it.unit_of_measure] ? `${fmtIDR(it.line_total / it.quantity * BIG_UNIT[it.unit_of_measure][1])} / ${BIG_UNIT[it.unit_of_measure][0]}` : fmtIDR(it.line_total / it.quantity)}</td>
@@ -423,7 +424,7 @@ export function DirectPurchaseDetail({ p, onClose, onVoided }) {
           </div>
         </div>
         <div className="modal-footer">
-          {!p.voided_at && p.items.some(it => it.pos_item_id && Number(it.pos_sent_qty) < Number(it.quantity)) && (
+          {!p.voided_at && p.items.some(it => it.pos_item_id && !(Number(it.stored_qty) > 0) && Number(it.pos_sent_qty) < Number(it.quantity)) && (
             <button className="btn btn-secondary" disabled={sending} onClick={async () => {
               setSending(true);
               try {

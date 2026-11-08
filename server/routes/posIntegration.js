@@ -288,6 +288,28 @@ router.get('/purchase-requests/on-order', prGate, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/pos/hotel-stock — restaurant items the hotel holds in its own
+// stores (Main Store…, migration 158), so the bar asks for a transfer instead
+// of buying more: { <pos item id>: { qty, stores: [{ name, qty }] } }
+router.get('/hotel-stock', prGate, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT rm.pos_item_id, st.name, ss.quantity FROM store_stock ss
+       JOIN raw_materials rm ON rm.id = ss.raw_material_id
+       JOIN stores st ON st.id = ss.store_id
+       WHERE ss.property_id = $1 AND rm.pos_item_id IS NOT NULL AND st.kind IN ('main', 'pms') AND ss.quantity > 0
+       ORDER BY st.sort_order`, [req.propertyId]);
+    const out = {};
+    for (const r of rows) {
+      const o = out[r.pos_item_id] || (out[r.pos_item_id] = { qty: 0, stores: [] });
+      const q = parseFloat(r.quantity) || 0;
+      o.qty = Math.round((o.qty + q) * 1000) / 1000;
+      o.stores.push({ name: r.name, qty: q });
+    }
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/pos/purchase-requests { client_ref, by, needed_by?, note?,
 //   lines: [{ pos_item_id?, description, unit, quantity, stock?, note? }] }
 // client_ref makes a retry safe (200 + replayed:true).

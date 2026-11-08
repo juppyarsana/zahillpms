@@ -10,7 +10,8 @@ Di bagian atas, pilih **Hotel stock** atau **Restaurant stock** (kalau aplikasi 
 
 Stok hotel disimpan per **gudang**: **Main Store**, **Engineering**, **Housekeeping** (owner bisa menambah atau mengganti nama lewat tombol **Stores**). **Kitchen** dan **Resto** adalah stok restoran, disimpan dan dihitung di aplikasi restoran (POS).
 
-- Barang yang dibeli masuk ke **Main Store**, kecuali dipilih gudang lain saat **Receive** PO atau **Buy without a PO** (*Into store*). Di jendela Receive, satu baris bisa dikirim ke gudang lain.
+- **Semua barang yang dibeli masuk ke gudang hotel dulu**: **Main Store**, kecuali dipilih gudang hotel lain saat **Receive** PO atau **Buy without a PO** (*Into store*). Kalau PO punya beberapa baris, tiap baris bisa diubah lewat **Change** di bawahnya. Kitchen dan Resto tidak bisa dipilih di sini.
+- **Barang restoran** (bahan dapur, minuman bar) juga masuk ke Main Store dan menunggu di sana sebagai stok hotel, sampai dipindahkan ke Kitchen atau Resto (lihat di bawah).
 - Di atas daftar barang, pilih **All stores** (total, dengan rincian per gudang di bawah jumlahnya) atau satu gudang (hanya yang ada di gudang itu).
 - **Adjust** selalu untuk satu gudang — pilih gudangnya di jendela Adjust.
 - **Stock opname** dihitung per gudang. Main Store menampilkan semua barang; gudang lain hanya barang yang pernah ada di sana. Satu gudang hanya bisa punya satu stock opname yang sedang dihitung.
@@ -27,7 +28,14 @@ Stok hotel disimpan per **gudang**: **Main Store**, **Engineering**, **Housekeep
 - Kepala Housekeeping / Engineering cukup diberi izin **Receive transfers** (Roles & Permissions → Operations): mereka hanya melihat tab Transfers dan bisa mengkonfirmasi.
 - Telegram *Stock moved between stores* memberi tahu saat barang dikirim dan saat yang datang kurang.
 
-Kitchen dan Resto (POS) belum bisa menerima transfer — akan datang berikutnya.
+### Mengirim barang restoran ke Kitchen / Resto
+
+**Stock → Transfers → + Move stock**, dari Main Store ke **Kitchen** atau **Resto** *(restaurant app)*. Hanya barang restoran yang bisa dikirim ke sana.
+
+- Transfernya langsung dikirim ke aplikasi restoran (POS). Chef atau resto menghitung yang datang di **POS → Inventory → Incoming** dan mengonfirmasinya; baru saat itu barangnya masuk ke stok restoran.
+- Kalau yang datang kurang, mereka mengetik jumlah yang datang dan alasannya di POS; sisanya kembali ke Main Store.
+- Kalau POS sedang tidak bisa dihubungi, transfernya tetap tersimpan dengan tanda **Not sent to the POS**: buka transfernya dan tekan **Send to the POS**.
+- **Cancel transfer** hanya bisa selama POS belum menerima barangnya. Setelah itu, koreksi dilakukan saat konfirmasi di POS.
 
 ## Adjust — satu barang, kejadian yang diketahui
 
@@ -86,7 +94,8 @@ Bahan dapur dan bar beserta perlengkapannya disimpan di **aplikasi restoran (POS
 - **Stock items** — setiap barang dengan sisanya (dalam kg / L), harga rata-rata dan nilainya. Klik barangnya untuk melihat **riwayatnya**: setiap penjualan (dengan nomor bill), pembelian, stock opname, bill yang diubah.
 - **Usage** — di antara dua stock opname chef: **by recipe** (yang seharusnya terpakai untuk menu yang terjual) dan **used** (awal + beli − akhir). **Selisihnya** adalah yang hilang saat dihitung — terbuang, porsi, resep yang salah. Tanyakan ke chef kalau ada angka merah yang besar.
 - **Buffet sarapan** tidak punya resep, jadi dapur mengetik bahan yang dimasak di POS: **Inventory → Kitchen use → Add kitchen use**. Satu lembar per hari per keperluan; buka lagi untuk menambah atau mengubah, dan stok bergerak sebesar selisihnya. Lembar terkunci setelah ada stock opname sesudahnya. Lembar buffet menunjukkan biaya per tamu. **Show All / Food / Drink** mempersempit daftar, jadi resto bisa memilih Drink dan tidak melihat item dapur; item bertanda Both muncul di keduanya. Tab **Usage** punya kolom *Kitchen use*.
-- Pembelian untuk restoran dilakukan di sini oleh purchasing (purchase request, PO, atau Bought without a PO dengan jenis *Restaurant (POS)*). Barangnya menunggu di Inventory → Incoming di POS dan masuk ke stok saat chef mengonfirmasi — chef tidak pernah menambah pembelian secara manual.
+- Pembelian untuk restoran dilakukan di sini oleh purchasing (purchase request, PO, atau Bought without a PO dengan jenis *Restaurant (POS)*). Barangnya masuk ke **Main Store** dulu, lalu dikirim ke Kitchen / Resto dengan **Move stock**. Di POS barangnya menunggu di Inventory → Incoming dan masuk ke stok saat chef mengonfirmasi — chef tidak pernah menambah pembelian secara manual.
+- Saat chef membuat **Request to buy** di POS, barang yang masih ada di Main Store ditunjukkan ("The hotel has N in Main Store"), jadi tidak perlu dibeli lagi — minta saja dikirim.
 
 ## Write-off di Telegram
 

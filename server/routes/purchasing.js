@@ -84,7 +84,7 @@ router.delete('/suppliers/:id', ownerOnly, async (req, res) => {
 router.get('/raw-materials', ownerOnly, async (req, res) => {
   try {
     const { rows } = await db.query(
-      'SELECT * FROM raw_materials WHERE property_id = $1 ORDER BY is_active DESC, name',
+      'SELECT * FROM raw_materials WHERE property_id = $1 AND pos_item_id IS NULL ORDER BY is_active DESC, name',   // restaurant items are bought as the POS item
       [req.propertyId]
     );
     res.json(rows);
@@ -293,8 +293,8 @@ router.get('/purchase-orders/export', ownerOnly, async (req, res) => {
 // other PMS stores. Kitchen / Resto stock is the POS's (POS lines go there).
 router.get('/stores', ownerOnly, async (req, res) => {
   try {
-    const stores = await require('../services/storeService').listStores(req.propertyId);
-    res.json(stores.filter(s => s.kind !== 'pos'));
+    // Kitchen / Resto too: a restaurant (POS) line can be received straight to them.
+    res.json(await require('../services/storeService').listStores(req.propertyId));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

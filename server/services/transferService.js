@@ -8,8 +8,14 @@
 //   cancel   — only while not confirmed: everything goes back.
 //
 // Every step is movements (reason 'transfer', reference_id = the transfer)
-// between stores, so the item's total never changes. PMS stores only for now;
-// Kitchen / Resto (POS) come in step 3.
+// between stores, so the item's total never changes.
+//
+// To Kitchen / Resto (step 3, migration 158): only restaurant items (the PMS
+// mirror of a POS item). After sending, each line goes to the POS as a
+// delivery waiting in Inventory -> Incoming (the kitchen handover, ref
+// 'tr:<line id>'); the chef's answer comes back through
+// POST /api/pos/purchase-handovers -> confirmFromPos. What arrived leaves the
+// PMS (the POS keeps it), the rest goes back to the sending store.
 const db = require('../db');
 const telegram = require('./telegramService');
 const storeSvc = require('./storeService');
@@ -39,8 +45,8 @@ async function move(client, propertyId, k, storeId, qty, transferId, note, userI
 
 // ── Reading ──
 const COLS = `t.id, t.transfer_no, t.status, t.note, t.sent_at, t.confirmed_at, t.cancelled_at, t.cancel_reason,
-  t.from_store_id, fs.name AS from_store, t.to_store_id, ts.name AS to_store,
-  su.name AS sent_by_name, cu.name AS confirmed_by_name, xu.name AS cancelled_by_name`;
+  t.from_store_id, fs.name AS from_store, t.to_store_id, ts.name AS to_store, ts.kind AS to_kind, ts.section AS to_section,
+  su.name AS sent_by_name, COALESCE(cu.name, t.confirmed_by_name) AS confirmed_by_name, xu.name AS cancelled_by_name`;
 const FROM = `FROM stock_transfers t JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
   LEFT JOIN users su ON su.id = t.sent_by LEFT JOIN users cu ON cu.id = t.confirmed_by LEFT JOIN users xu ON xu.id = t.cancelled_by`;
 
@@ -52,12 +58,14 @@ function shapeLine(l) {
     id: l.id, key: l.raw_material_id ? `rm:${l.raw_material_id}` : `p:${l.product_id}`, kind: l.raw_material_id ? 'rm' : 'p',
     description: l.description, unit: l.unit, sent, accepted, short: accepted != null ? r3(sent - accepted) : null,
     note: l.note, unit_cost: cost, value: cost != null ? Math.round(sent * cost * 100) / 100 : null,
+    pos_sent_at: l.pos_sent_at || null, pos_send_error: l.pos_send_error || null,
   };
 }
 function shape(t, lines) {
   const ls = lines.map(shapeLine);
   return {
-    ...t, no_text: transferNo(t.transfer_no), lines: ls,
+    ...t, no_text: transferNo(t.transfer_no), lines: ls, to_pos: t.to_kind === 'pos',
+    pos_unsent: t.to_kind === 'pos' && t.status === 'sent' ? ls.filter(l => !l.pos_sent_at).length : 0,
     items: ls.length, value: Math.round(ls.reduce((s, l) => s + (l.value || 0), 0) * 100) / 100,
     short_lines: ls.filter(l => l.short > 0).length,
   };
@@ -115,9 +123,10 @@ async function create(propertyId, body, user) {
     const a = await storeSvc.pmsStore(propertyId, body.from_store_id, client);
     if (a.error) { await client.query('ROLLBACK'); return a; }
     if (!body.to_store_id) { await client.query('ROLLBACK'); return fail(400, 'Choose where it goes'); }
-    const b = await storeSvc.pmsStore(propertyId, body.to_store_id, client);
+    const b = await storeSvc.anyStore(propertyId, body.to_store_id, client);
     if (b.error) { await client.query('ROLLBACK'); return b; }
     const from = a.store; const to = b.store;
+    const toPos = to.kind === 'pos';
     if (from.id === to.id) { await client.query('ROLLBACK'); return fail(400, 'Choose two different stores'); }
     const transit = await storeSvc.transitStoreId(propertyId, client);
 
@@ -126,9 +135,14 @@ async function create(propertyId, body, user) {
     const lines = [];
     for (const { k, qty } of [...wanted.values()].sort((x, y) => (x.k.id < y.k.id ? -1 : 1))) {
       const { rows: [row] } = await client.query(
-        `SELECT name, ${k.kind === 'rm' ? 'unit_of_measure' : `'pcs'`} AS unit, cost_per_unit FROM ${k.table} WHERE id = $1 AND property_id = $2 FOR UPDATE`,
+        `SELECT name, ${k.kind === 'rm' ? 'unit_of_measure' : `'pcs'`} AS unit, cost_per_unit, ${k.kind === 'rm' ? 'pos_item_id' : 'NULL::text AS pos_item_id'}
+         FROM ${k.table} WHERE id = $1 AND property_id = $2 FOR UPDATE`,
         [k.id, propertyId]);
       if (!row) { await client.query('ROLLBACK'); return fail(400, 'An item was not found'); }
+      if (toPos && !row.pos_item_id) {
+        await client.query('ROLLBACK');
+        return fail(400, `${row.name} is not a restaurant item — only the restaurant's (POS) items can go to ${to.name}`, 'NOT_POS_ITEM');
+      }
       const have = await storeSvc.storeQty(client, from.id, k.kind, k.id);
       if (have + 1e-9 < qty) {
         await client.query('ROLLBACK');
@@ -153,8 +167,120 @@ async function create(propertyId, body, user) {
     await client.query('COMMIT');
     transfer = await get(propertyId, t.id);
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+  if (transfer.to_pos) {
+    const pos = await sendToPos(propertyId, transfer.id);
+    transfer = await get(propertyId, transfer.id);
+    alertSent(propertyId, transfer, user).catch(() => {});
+    return { transfer, pos };
+  }
   alertSent(propertyId, transfer, user).catch(() => {});
   return { transfer };
+}
+
+// ── To the POS (Kitchen / Resto) ──
+// Each line not yet in the POS is sent as a delivery held for the chef. Never
+// throws: a line that could not be sent keeps pos_send_error and is sent again
+// with "Send to the POS" (the same ref is a replay on the POS side).
+async function sendToPos(propertyId, id) {
+  try { return await sendLines(propertyId, id); } catch (err) {
+    console.error('[POS transfer]', err.message);
+    return { sent: 0, failed: 1, error: err.message };
+  }
+}
+async function sendLines(propertyId, id) {
+  const { config, call } = require('./posRoomOrders');
+  const handover = require('./posHandover');
+  const { rows: lines } = await db.query(
+    `SELECT l.*, rm.pos_item_id, t.transfer_no, fs.name AS from_name, ts.section
+     FROM stock_transfer_lines l JOIN stock_transfers t ON t.id = l.transfer_id
+     JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
+     JOIN raw_materials rm ON rm.id = l.raw_material_id
+     WHERE t.id = $1 AND t.property_id = $2 AND ts.kind = 'pos' AND t.status = 'sent' AND l.pos_sent_at IS NULL`, [id, propertyId]);
+  if (!lines.length) return { sent: 0, failed: 0, error: null };
+  let cfg;
+  try { cfg = await config(propertyId); } catch (err) { cfg = {}; }
+  let sent = 0, failed = 0, lastError = null;
+  const booked = [];
+  for (const l of lines) {
+    let error = null;
+    if (!cfg.url || !cfg.key) error = 'The POS link is not set up (Property Details → POS Integration → Room tablet orders)';
+    else {
+      try {
+        const qty = num(l.sent_qty);
+        const unitCost = num(l.unit_cost);
+        const ref = `tr:${l.id}`;
+        const r = await call(cfg, 'POST', '/api/hotel/purchase-batches', {
+          ref, po_number: transferNo(l.transfer_no), supplier: `from ${l.from_name}`, from_store: true,
+          received_on: require('./roomChargeService').todayWITA(), by: 'Hotel store', section: l.section, handover: true,
+          items: [{ inventory_id: l.pos_item_id, qty, total_cost: Math.round(qty * unitCost * 100) / 100 }],
+        });
+        await handover.recordSent(propertyId, { transferLineId: l.id, ref, qty, unitCost, pending: !!r?.pending });
+        if (!r?.pending) booked.push(ref);   // a POS too old to hold goods booked them at once
+      } catch (err) { error = err.message; }
+    }
+    await db.query(
+      `UPDATE stock_transfer_lines SET pos_sent_at = CASE WHEN $2::text IS NULL THEN NOW() ELSE pos_sent_at END, pos_send_error = $2 WHERE id = $1`,
+      [l.id, error]);
+    if (error) { failed++; lastError = error; } else sent++;
+  }
+  for (const ref of booked) {
+    const { rows: [h] } = await db.query('SELECT sent_qty FROM pos_handovers WHERE ref = $1', [ref]);
+    await confirmFromPos(propertyId, { ref, accepted: num(h?.sent_qty), note: null, by: 'POS (no handover)', at: new Date(), force: true });
+  }
+  return { sent, failed, error: lastError };
+}
+
+// The chef / bar's answer for one line (posHandover.confirm hands it here).
+// What arrived leaves the PMS; the rest goes back to the sending store. The
+// transfer is confirmed once every line is answered. The same ref again
+// changes nothing.
+async function confirmFromPos(propertyId, { ref, accepted, note, by, at, force = false }) {
+  const client = await db.pool.connect();
+  let transfer, short = false;
+  try {
+    await client.query('BEGIN');
+    const { rows: [h] } = await client.query(
+      `SELECT h.*, l.transfer_id FROM pos_handovers h JOIN stock_transfer_lines l ON l.id = h.transfer_line_id
+       WHERE h.ref = $1 AND h.property_id = $2 FOR UPDATE OF h`, [ref, propertyId]);
+    if (!h) { await client.query('ROLLBACK'); return { status: 404, error: 'Delivery not found' }; }
+    if (h.confirmed_at && !force) { await client.query('ROLLBACK'); return { ok: true, replayed: true }; }
+    const { rows: [t] } = await client.query(
+      `SELECT t.*, fs.name AS from_name, ts.name AS to_name FROM stock_transfers t
+       JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
+       WHERE t.id = $1 FOR UPDATE OF t`, [h.transfer_id]);
+    const { rows: [l] } = await client.query('SELECT * FROM stock_transfer_lines WHERE id = $1 FOR UPDATE', [h.transfer_line_id]);
+    if (l.accepted_qty != null) { await client.query('COMMIT'); return { ok: true, replayed: true }; }
+    const sent = num(l.sent_qty);
+    if (accepted > sent + 0.0005) { await client.query('ROLLBACK'); return { status: 400, error: 'accepted_qty is more than was sent' }; }
+    const got = r3(Math.min(accepted, sent));
+    const left = r3(sent - got);
+    const k = lineKey(l);
+    await client.query(`SELECT 1 FROM ${k.table} WHERE id = $1 FOR UPDATE`, [k.id]);
+    const transit = await storeSvc.transitStoreId(propertyId, client);
+    const text = `${transferNo(t.transfer_no)} ${t.from_name} → ${t.to_name}`;
+    await move(client, propertyId, k, transit, -sent, t.id, `${text} — ${qtyText(got, l.unit)} taken in by ${by} (POS)`, null);
+    await move(client, propertyId, k, t.from_store_id, left, t.id, `${text} — ${qtyText(left, l.unit)} did not arrive, back here${note ? `: ${note}` : ''}`, null);
+    // What the POS took in has left the hotel's stock: the item's total (the sum of the
+    // PMS stores) goes down by it, or it would be counted here and in the POS.
+    if (got > 0) await client.query(`UPDATE ${k.table} SET stock_quantity = stock_quantity - $2 WHERE id = $1`, [k.id, got]);
+    await client.query('UPDATE stock_transfer_lines SET accepted_qty = $1, note = $2 WHERE id = $3', [got, note || null, l.id]);
+    if (!h.confirmed_at) {
+      await client.query('UPDATE pos_handovers SET accepted_qty = $2, note = $3, confirmed_by = $4, confirmed_at = $5 WHERE id = $1',
+        [h.id, got, note || null, String(by).slice(0, 120), at]);
+    }
+    const { rows: [open] } = await client.query(
+      'SELECT COUNT(*)::int AS n FROM stock_transfer_lines WHERE transfer_id = $1 AND accepted_qty IS NULL', [t.id]);
+    if (!open.n) {
+      await client.query(
+        `UPDATE stock_transfers SET status = 'confirmed', confirmed_at = $2, confirmed_by_name = $3 WHERE id = $1`,
+        [t.id, at, String(by).slice(0, 120)]);
+    }
+    short = left > 0;
+    await client.query('COMMIT');
+    transfer = await get(propertyId, t.id);
+  } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+  if (short) alertShort(propertyId, transfer, { name: by }).catch(() => {});
+  return { ok: true, replayed: false };
 }
 
 // ── Confirm ──
@@ -167,11 +293,15 @@ async function confirm(propertyId, id, body, user) {
   try {
     await client.query('BEGIN');
     const { rows: [t] } = await client.query(
-      `SELECT t.*, fs.name AS from_name, ts.name AS to_name FROM stock_transfers t
+      `SELECT t.*, fs.name AS from_name, ts.name AS to_name, ts.kind AS to_kind FROM stock_transfers t
        JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
        WHERE t.id = $1 AND t.property_id = $2 FOR UPDATE OF t`, [id, propertyId]);
     if (!t) { await client.query('ROLLBACK'); return fail(404, 'Transfer not found'); }
     if (t.status !== 'sent') { await client.query('ROLLBACK'); return fail(409, `${transferNo(t.transfer_no)} is already ${t.status}`, 'NOT_OPEN'); }
+    if (t.to_kind === 'pos') {
+      await client.query('ROLLBACK');
+      return fail(409, `${t.to_name} confirms it in the restaurant app (POS → Inventory → Incoming)`, 'POS_CONFIRMS');
+    }
     const transit = await storeSvc.transitStoreId(propertyId, client);
     const { rows: lines } = await client.query('SELECT * FROM stock_transfer_lines WHERE transfer_id = $1 ORDER BY raw_material_id, product_id', [id]);
     const text = `${transferNo(t.transfer_no)} ${t.from_name} → ${t.to_name}`;
@@ -214,13 +344,17 @@ async function cancel(propertyId, id, reason, user) {
   try {
     await client.query('BEGIN');
     const { rows: [t] } = await client.query(
-      `SELECT t.*, fs.name AS from_name, ts.name AS to_name FROM stock_transfers t
+      `SELECT t.*, fs.name AS from_name, ts.name AS to_name, ts.kind AS to_kind FROM stock_transfers t
        JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
        WHERE t.id = $1 AND t.property_id = $2 FOR UPDATE OF t`, [id, propertyId]);
     if (!t) { await client.query('ROLLBACK'); return fail(404, 'Transfer not found'); }
     if (t.status !== 'sent') { await client.query('ROLLBACK'); return fail(409, `${transferNo(t.transfer_no)} is already ${t.status}`, 'NOT_OPEN'); }
     const transit = await storeSvc.transitStoreId(propertyId, client);
     const { rows: lines } = await client.query('SELECT * FROM stock_transfer_lines WHERE transfer_id = $1 ORDER BY raw_material_id, product_id', [id]);
+    if (lines.some(l => l.pos_sent_at)) {
+      await client.query('ROLLBACK');
+      return fail(409, `${transferNo(t.transfer_no)} is already waiting in the restaurant app — ${t.to_name} confirms it there (0 if nothing came)`, 'IN_POS');
+    }
     const text = `${transferNo(t.transfer_no)} ${t.from_name} → ${t.to_name} cancelled: ${why}`;
     for (const l of lines) {
       const k = lineKey(l);
@@ -248,7 +382,8 @@ async function alertSent(propertyId, t, user) {
     `📦 <b>${e(t.no_text)}: ${e(t.from_store)} → ${e(t.to_store)}</b>`,
     ...linesText(t, e),
     t.note ? `Note: ${e(t.note)}` : '',
-    `${e(t.to_store)}: confirm what arrived in Stock → Transfers.`,
+    t.to_pos ? (t.pos_unsent ? '⚠️ Not sent to the restaurant app yet — press Send to the POS on the transfer.' : `${e(t.to_store)}: confirm what arrived in the POS, Inventory → Incoming.`)
+      : `${e(t.to_store)}: confirm what arrived in Stock → Transfers.`,
     `<i>sent by ${e(user.name || 'someone')}</i>`,
   ].filter(Boolean).join('\n'), { html: true });
 }
@@ -263,4 +398,4 @@ async function alertShort(propertyId, t, user) {
   ].join('\n'), { html: true });
 }
 
-module.exports = { list, get, openCount, create, confirm, cancel, transferNo };
+module.exports = { list, get, openCount, create, confirm, cancel, sendToPos, confirmFromPos, transferNo };

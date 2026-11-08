@@ -44,8 +44,11 @@ async function sendToPos(propertyId, poId) {
 
 async function send(propertyId, poId) {
   const { rows: lines } = await db.query(
-    `SELECT i.id, i.description, i.pos_item_id, i.quantity, i.unit_cost, i.line_total, i.received_quantity, i.pos_sent_qty,
-            po.po_number, COALESCE(s.name, po.bought_from) AS supplier, pr.section,
+    `SELECT i.id, i.description, i.pos_item_id, i.quantity, i.unit_cost, i.line_total, i.received_quantity, i.pos_sent_qty, i.stored_qty,
+            po.po_number, COALESCE(s.name, po.bought_from) AS supplier,
+            COALESCE((SELECT st.section FROM purchase_order_receipt_lines rl JOIN purchase_order_receipts r ON r.id = rl.receipt_id
+                      JOIN stores st ON st.id = rl.store_id
+                      WHERE rl.po_item_id = i.id AND st.kind = 'pos' ORDER BY r.created_at DESC LIMIT 1), pr.section) AS section,
             (SELECT to_char(MAX(r.received_on), 'YYYY-MM-DD') FROM purchase_order_receipts r WHERE r.purchase_order_id = po.id) AS received_on
      FROM purchase_order_items i
      JOIN purchase_orders po ON po.id = i.purchase_order_id
@@ -54,13 +57,13 @@ async function send(propertyId, poId) {
      LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
      WHERE i.purchase_order_id = $1 AND po.property_id = $2
        AND po.voided_at IS NULL
-       AND i.pos_item_id IS NOT NULL AND i.received_quantity > i.pos_sent_qty`, [poId, propertyId]);
+       AND i.pos_item_id IS NOT NULL AND i.received_quantity > i.pos_sent_qty + i.stored_qty`, [poId, propertyId]);
   if (!lines.length) return { sent: 0, failed: 0, error: null };
   let cfg;
   try { cfg = await config(propertyId); } catch (err) { cfg = {}; }
   let sent = 0, failed = 0, lastError = null;
   for (const l of lines) {
-    const qty = Math.round((num(l.received_quantity) - num(l.pos_sent_qty)) * 1000) / 1000;
+    const qty = Math.round((num(l.received_quantity) - num(l.pos_sent_qty) - num(l.stored_qty)) * 1000) / 1000;
     let error = null;
     if (!cfg.url || !cfg.key) error = NOT_LINKED;
     else {
@@ -76,8 +79,8 @@ async function send(propertyId, poId) {
       } catch (err) { error = err.message; }
     }
     await db.query(
-      `UPDATE purchase_order_items SET pos_sent_qty = CASE WHEN $2::text IS NULL THEN $3 ELSE pos_sent_qty END,
-              pos_send_error = $2 WHERE id = $1`, [l.id, error, l.received_quantity]);
+      `UPDATE purchase_order_items SET pos_sent_qty = CASE WHEN $2::text IS NULL THEN pos_sent_qty + $3 ELSE pos_sent_qty END,
+              pos_send_error = $2 WHERE id = $1`, [l.id, error, qty]);
     if (error) { failed++; lastError = error; } else sent++;
   }
   return { sent, failed, error: lastError };

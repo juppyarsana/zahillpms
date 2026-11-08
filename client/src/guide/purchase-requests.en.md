@@ -36,10 +36,11 @@ An item can go on more than one PO (split over suppliers). The request shows wha
 Receive the goods on the PO as usual (**Receive Items**), with the date and the surat jalan number. **🖨 Print checklist** on the PO gives a paper list without prices, split into hotel stock, Kitchen and Resto, for checking the delivery and handing goods over. Sending the PO to the supplier, closing a short delivery and the billing badges are explained in **[Buying: which page to use](/guide/purchasing)**.
 
 - **Hotel items** go into the PMS stock.
-- **Restaurant items** wait in the POS for the chef, and the PO shows **Waiting for kitchen**. The chef opens **Inventory → 📦 Incoming** in the POS, checks what came and confirms how much. Only what the chef confirms goes into the restaurant's stock, at the PO's price. The PMS stock is not touched.
-- If the kitchen confirms less, the PO line shows it in red, for example *Kitchen got 9 of 10 kg · 1 kg spoiled · short Rp 50.000*, and a Telegram message goes out. The supplier's bill does not change, because the hotel did receive it all.
+- **Restaurant items** go into **Main Store** too, and wait there as hotel stock. The PO line says they are kept in the hotel's store.
+- To give them to the kitchen or the bar: **[Stock](/stock) → Transfers → + Move stock**, from Main Store to Kitchen or Resto. The chef opens **Inventory → 📦 Incoming** in the POS, checks what came and confirms how much. Only what the chef confirms goes into the restaurant's stock, at the price paid.
+- If the kitchen confirms less, the rest goes back to Main Store with the reason, and a Telegram message goes out. The supplier's bill does not change, because the hotel did receive it all.
 - Goods not confirmed stay out of the restaurant's stock. Telegram reminds whoever has *Kitchen handover* ticked in **[Settings → Notifications](/settings/reports)**, after 3 hours by default, and never at night.
-- If the POS could not be reached, the PO line says *Not sent to the POS*. Press **Send to the POS** on the PO once it is back. Sending again never adds the goods twice.
+- If the POS could not be reached, the transfer says *Not sent to the POS*. Open it and press **Send to the POS** once the POS is back. Sending again never adds the goods twice.
 
 A request is **Received** by itself once everything on it has come in. If a supplier can't deliver the rest, purchasing closes the PO short (**Close – rest won't come**): the missing part shows as not ordered again on the request, to order from someone else. If something will not be bought, **Close** the request with the reason.
 

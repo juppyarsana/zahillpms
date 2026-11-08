@@ -15,7 +15,7 @@ const send = (res, r, ok = 200) => (r?.error ? res.status(r.status || 400).json(
 
 router.get('/setup', wrap(async (req, res) => {
   const list = await stores.listStores(req.propertyId);
-  res.json({ stores: list.filter(s => s.kind !== 'pos'), open: await svc.openCount(req.propertyId) });
+  res.json({ stores: list, open: await svc.openCount(req.propertyId) });   // Kitchen / Resto too: restaurant items go there
 }));
 // ?status=open | done | all, ?store=<id>
 router.get('/', wrap(async (req, res) => res.json(await svc.list(req.propertyId, { status: req.query.status || 'open', storeId: req.query.store || null }))));
@@ -27,6 +27,12 @@ router.get('/:id', wrap(async (req, res) => {
 router.post('/', sender, wrap(async (req, res) => send(res, await svc.create(req.propertyId, req.body || {}, req.user), 201)));
 // { lines: [{ line_id, accepted, note }] }
 router.post('/:id/confirm', wrap(async (req, res) => send(res, await svc.confirm(req.propertyId, req.params.id, req.body || {}, req.user))));
+router.post('/:id/pos-send', sender, wrap(async (req, res) => {
+  const t = await svc.get(req.propertyId, req.params.id);
+  if (!t) return res.status(404).json({ error: 'Transfer not found' });
+  const pos = await svc.sendToPos(req.propertyId, t.id);
+  res.json({ pos, transfer: await svc.get(req.propertyId, t.id) });
+}));
 router.post('/:id/cancel', sender, wrap(async (req, res) => send(res, await svc.cancel(req.propertyId, req.params.id, req.body?.reason, req.user))));
 
 module.exports = router;

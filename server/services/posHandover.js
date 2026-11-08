@@ -17,11 +17,13 @@ const handoversSql = item => `(SELECT COALESCE(json_agg(json_build_object(
   FROM pos_handovers h WHERE h.po_item_id = ${item}.id)`;
 
 // Written when the POS has taken a delivery. `pending` = it holds the goods for the chef.
-async function recordSent(propertyId, { poItemId, ref, qty, unitCost, pending }) {
+// A delivery is a PO line's (poItemId) or a transfer line's from Main Store
+// (transferLineId, migration 158).
+async function recordSent(propertyId, { poItemId = null, transferLineId = null, ref, qty, unitCost, pending }) {
   await db.query(
-    `INSERT INTO pos_handovers (property_id, po_item_id, ref, sent_qty, unit_cost, accepted_qty, confirmed_by, confirmed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (ref) DO NOTHING`,
-    [propertyId, poItemId, ref, qty, unitCost, pending ? null : qty, pending ? null : NO_HANDOVER, pending ? null : new Date()]);
+    `INSERT INTO pos_handovers (property_id, po_item_id, transfer_line_id, ref, sent_qty, unit_cost, accepted_qty, confirmed_by, confirmed_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (ref) DO NOTHING`,
+    [propertyId, poItemId, transferLineId, ref, qty, unitCost, pending ? null : qty, pending ? null : NO_HANDOVER, pending ? null : new Date()]);
 }
 
 // { ref, accepted_qty, note, by, confirmed_at } from the POS. The same ref again changes nothing.
@@ -33,6 +35,11 @@ async function confirm(propertyId, body) {
   const note = String(body?.note || '').trim().slice(0, 500) || null;
   const by = String(body?.by || 'Kitchen').slice(0, 120);
   const at = body?.confirmed_at && !Number.isNaN(Date.parse(body.confirmed_at)) ? new Date(body.confirmed_at) : new Date();
+  const { rows: [kind] } = await db.query(
+    'SELECT transfer_line_id FROM pos_handovers WHERE ref = $1 AND property_id = $2', [ref, propertyId]);
+  if (kind?.transfer_line_id) {
+    return require('./transferService').confirmFromPos(propertyId, { ref, accepted, note, by, at });
+  }
   const client = await db.pool.connect();
   let row;
   try {
@@ -86,14 +93,18 @@ async function remindAll(now = new Date()) {
   const hour = (now.getUTCHours() + 8) % 24;
   if (hour < 7 || hour >= 22) return 0;
   const { rows } = await db.query(
-    `SELECT h.id, h.property_id, h.sent_qty, h.sent_at, i.description, i.unit, po.po_number,
-            CASE pr.section WHEN 'kitchen' THEN 'Kitchen' WHEN 'resto' THEN 'Resto' END AS section
+    `SELECT h.id, h.property_id, h.sent_qty, h.sent_at, COALESCE(i.description, tl.description) AS description,
+            COALESCE(i.unit, tl.unit) AS unit, COALESCE(po.po_number, 'TR-' || lpad(t.transfer_no::text, 4, '0')) AS po_number,
+            CASE COALESCE(pr.section, ts.section) WHEN 'kitchen' THEN 'Kitchen' WHEN 'resto' THEN 'Resto' END AS section
      FROM pos_handovers h
      JOIN property_settings ps ON ps.property_id = h.property_id
-     JOIN purchase_order_items i ON i.id = h.po_item_id
-     JOIN purchase_orders po ON po.id = i.purchase_order_id
+     LEFT JOIN purchase_order_items i ON i.id = h.po_item_id
+     LEFT JOIN purchase_orders po ON po.id = i.purchase_order_id
      LEFT JOIN purchase_request_lines prl ON prl.id = i.request_line_id
      LEFT JOIN purchase_requests pr ON pr.id = prl.request_id
+     LEFT JOIN stock_transfer_lines tl ON tl.id = h.transfer_line_id
+     LEFT JOIN stock_transfers t ON t.id = tl.transfer_id
+     LEFT JOIN stores ts ON ts.id = t.to_store_id
      WHERE h.confirmed_at IS NULL
        AND h.sent_at <= $1::timestamptz - make_interval(hours => ps.kitchen_handover_reminder_hours)
        AND (h.last_reminded_at IS NULL OR h.last_reminded_at <= $1::timestamptz - make_interval(hours => ps.kitchen_handover_reminder_hours))
@@ -130,10 +141,12 @@ async function saveSettings(propertyId, body) {
 }
 
 // Delivered by purchasing before `at` but not yet in the POS stock at that moment.
+// Transfers from Main Store are left out: until confirmed they are still in the
+// PMS's "on the way" store, so the PMS stock value already counts them.
 async function waitingAt(propertyId, at) {
   const { rows: [r] } = await db.query(
     `SELECT COUNT(*)::int AS n, COALESCE(SUM(sent_qty * unit_cost), 0) AS value FROM pos_handovers
-     WHERE property_id = $1 AND sent_at < $2 AND (confirmed_at IS NULL OR confirmed_at >= $2)`, [propertyId, at]);
+     WHERE property_id = $1 AND po_item_id IS NOT NULL AND sent_at < $2 AND (confirmed_at IS NULL OR confirmed_at >= $2)`, [propertyId, at]);
   return { count: r.n, value: num(r.value) };
 }
 

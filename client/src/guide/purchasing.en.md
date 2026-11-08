@@ -45,7 +45,7 @@ For stock bought at the market or a shop, with no purchase order. You need **Pur
 3. **Date bought** = the date on the receipt. **Receipt / nota number** if it has one.
 4. **What it is for** (Food, Drinks, Guest supplies…) and the **Department** (fills itself in).
 5. One line per item: the **stock item**, **how many** and the **price paid** for that line, as on the receipt. Items kept in g or ml are typed in **kg or L** (switch next to the box). The price per unit is worked out, with the item's usual price next to it (red when it is 20% or more above).
-   - For the kitchen or bar, choose kind **Restaurant (POS)**: the goods wait in the POS for the chef to confirm, then go into the restaurant's stock, not the PMS. Once the POS has them the purchase can't be voided — the chef corrects the POS stock with a stock opname. If the POS couldn't be reached, open the purchase and press **Send to the POS**.
+   - For the kitchen or bar, choose kind **Restaurant (POS)**: the goods go into **Main Store** like everything else, then to Kitchen / Resto with **[Stock](/stock) → Transfers → Move stock**, where the chef confirms them in the POS. The purchase can be voided only while the store it went into still holds at least as many as were bought.
 6. **The money**:
    - **Paid already** → choose **Paid with** (Cash…). It goes into Expenses by itself.
    - **Pay later** → needs the supplier. A bill is made in Payables, due by the supplier's terms (or type a due date). Pay it there when the money goes out.

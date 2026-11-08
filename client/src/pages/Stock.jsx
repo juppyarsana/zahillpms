@@ -921,7 +921,8 @@ function StoresModal({ stores, onClose, onChanged }) {
 // Moving stock between stores (migration 157): Main Store sends, the receiving
 // store confirms what arrived; anything short goes back to the sender.
 
-const trStatus = t => t.status === 'sent' ? <span className="badge badge-amber">Waiting for {t.to_store}</span>
+const trStatus = t => t.status === 'sent'
+  ? (t.pos_unsent ? <span className="badge badge-red">Not sent to the POS</span> : <span className="badge badge-amber">Waiting for {t.to_store}{t.to_pos ? ' (POS)' : ''}</span>)
   : t.status === 'confirmed' ? <span className={`badge ${t.short_lines ? 'badge-red' : 'badge-green'}`}>{t.short_lines ? 'Arrived — some short' : 'Arrived'}</span>
   : <span className="badge badge-gray">Cancelled</span>;
 
@@ -947,7 +948,7 @@ function TransfersTab({ stores, storeId, canSend, onCount }) {
       </div>
       <p className="text-muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
         Items sent to another store leave the sending store at once and wait <b>on the way</b> until the receiving store confirms what arrived.
-        Anything that did not arrive goes back to the sending store.
+        Anything that did not arrive goes back to the sending store. Kitchen and Resto confirm in the restaurant app (POS → Inventory → Incoming).
       </p>
       {toast && <div className="alert alert-success"><div>{toast}</div></div>}
       <div className="card">
@@ -971,7 +972,9 @@ function TransfersTab({ stores, storeId, canSend, onCount }) {
         </div>
       </div>
       {sending && <SendTransferModal stores={stores} storeId={storeId} onClose={() => setSending(false)}
-        onSent={t => { setSending(false); load(); flash(`${t.no_text} sent to ${t.to_store} — waiting for them to confirm`); }} />}
+        onSent={(t, pos) => { setSending(false); load();
+          flash(t.to_pos && pos?.failed ? `${t.no_text} saved, but not sent to the POS: ${pos.error} — open it and press Send to the POS`
+            : `${t.no_text} sent to ${t.to_store} — waiting for them to confirm${t.to_pos ? ' in the POS' : ''}`); }} />}
       {openT && <TransferModal t={openT} canSend={canSend} onClose={() => setOpenT(null)}
         onChanged={(t, m) => { setOpenT(null); load(); flash(m); }} />}
     </div>
@@ -980,9 +983,12 @@ function TransfersTab({ stores, storeId, canSend, onCount }) {
 
 function SendTransferModal({ stores, storeId, onClose, onSent }) {
   const choices = pmsStores(stores);
+  // Kitchen / Resto (kept in the POS) take restaurant items only (migration 158).
+  const targets = stores.filter(s => s.is_active);
   const main = choices.find(s => s.kind === 'main');
   const [from, setFrom] = useState(storeId || main?.id || '');
   const [to, setTo] = useState(() => choices.find(s => s.id !== (storeId || main?.id))?.id || '');
+  const toPos = stores.find(s => s.id === to)?.kind === 'pos';
   const [items, setItems] = useState([]);
   const [lines, setLines] = useState([{ key: '', quantity: '' }]);
   const [note, setNote] = useState('');
@@ -992,16 +998,18 @@ function SendTransferModal({ stores, storeId, onClose, onSent }) {
     if (!from) return;
     api.get('/api/stock/items', { params: { store: from } }).then(r => setItems(r.data.filter(i => i.on_hand > 0))).catch(() => setItems([]));
   }, [from]);
+  const usable = toPos ? items.filter(i => i.pos_item_id) : items;
   const byKey = Object.fromEntries(items.map(i => [i.key, i]));
   const setLine = (n, patch) => setLines(ls => ls.map((l, i) => (i === n ? { ...l, ...patch } : l)));
+  const notRestaurant = l => toPos && byKey[l.key] && !byKey[l.key].pos_item_id;
   const over = l => byKey[l.key] && Number(l.quantity) > byKey[l.key].on_hand + 1e-9;
-  const ready = from && to && from !== to && lines.some(l => l.key && Number(l.quantity) > 0) && !lines.some(over);
+  const ready = from && to && from !== to && lines.some(l => l.key && Number(l.quantity) > 0) && !lines.some(over) && !lines.some(notRestaurant);
   async function send() {
     setBusy(true); setError('');
     try {
       const r = await api.post('/api/stock-transfers', { from_store_id: from, to_store_id: to, note,
         lines: lines.filter(l => l.key && Number(l.quantity) > 0).map(l => ({ key: l.key, quantity: Number(l.quantity) })) });
-      onSent(r.data.transfer);
+      onSent(r.data.transfer, r.data.pos);
     } catch (err) { setError(err.response?.data?.error || 'Could not send'); setBusy(false); }
   }
   return (
@@ -1016,16 +1024,17 @@ function SendTransferModal({ stores, storeId, onClose, onSent }) {
                 {choices.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
             <div className="form-group"><label className="form-label">To</label>
               <select className="form-select" value={to} onChange={e => setTo(e.target.value)}>
-                {choices.filter(s => s.id !== from).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                {targets.filter(s => s.id !== from).map(s => <option key={s.id} value={s.id}>{s.name}{s.kind === 'pos' ? ' (restaurant app)' : ''}</option>)}</select></div>
           </div>
           <div className="form-label">Items</div>
           {lines.map((l, n) => (
             <div key={n} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <ItemPicker value={l.key} onChange={v => setLine(n, { key: v })}
-                  placeholder={items.length ? 'Type to find the item…' : `Nothing in ${storeName(stores, from)}`}
-                  options={items.map(i => ({ value: i.key, label: i.name, hint: `${qty(i.on_hand, i.unit)} here` }))} />
+                  placeholder={usable.length ? 'Type to find the item…' : toPos ? `No restaurant items in ${storeName(stores, from)}` : `Nothing in ${storeName(stores, from)}`}
+                  options={usable.map(i => ({ value: i.key, label: i.name, hint: `${qty(i.on_hand, i.unit)} here` }))} />
                 {over(l) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Only {qty(byKey[l.key].on_hand, byKey[l.key].unit)} in {storeName(stores, from)}</div>}
+                {notRestaurant(l) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not a restaurant item — only the restaurant's (POS) items go to {storeName(stores, to)}</div>}
               </div>
               <input className="form-input" style={{ width: 100 }} type="number" min="0" step={byKey[l.key]?.kind === 'p' ? '1' : '0.001'} placeholder="Qty"
                 value={l.quantity} onChange={e => setLine(n, { quantity: e.target.value })} />
@@ -1036,7 +1045,9 @@ function SendTransferModal({ stores, storeId, onClose, onSent }) {
           <button className="btn btn-sm btn-secondary" onClick={() => setLines(ls => [...ls, { key: '', quantity: '' }])}>+ Add line</button>
           <div className="form-group" style={{ marginTop: 12 }}><label className="form-label">Note</label>
             <input className="form-input" value={note} onChange={e => setNote(e.target.value)} placeholder="optional — e.g. for the 2nd floor pantry" /></div>
-          <div className="text-muted" style={{ fontSize: 12 }}>The items leave {storeName(stores, from) || 'the store'} now and count in {storeName(stores, to) || 'the other store'} once it confirms what arrived.</div>
+          <div className="text-muted" style={{ fontSize: 12 }}>{toPos
+            ? `The items leave ${storeName(stores, from) || 'the store'} now and wait in the restaurant app (POS → Inventory → Incoming) until ${storeName(stores, to)} confirms what arrived; then they are in the POS's stock.`
+            : `The items leave ${storeName(stores, from) || 'the store'} now and count in ${storeName(stores, to) || 'the other store'} once it confirms what arrived.`}</div>
         </div>
         <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" disabled={busy || !ready} onClick={send}>Send to {storeName(stores, to) || '…'}</button></div>
@@ -1045,8 +1056,12 @@ function SendTransferModal({ stores, storeId, onClose, onSent }) {
   );
 }
 
-function TransferModal({ t, canSend, onClose, onChanged }) {
+function TransferModal({ t: start, canSend, onClose, onChanged }) {
+  const [t, setT] = useState(start);
   const open = t.status === 'sent';
+  // To Kitchen / Resto: they confirm in the POS, not here (migration 158).
+  const inPos = open && t.to_pos;
+  const anyInPos = t.lines.some(l => l.pos_sent_at);
   const [got, setGot] = useState(() => Object.fromEntries(t.lines.map(l => [l.id, String(l.sent)])));
   const [notes, setNotes] = useState({});
   const [cancelling, setCancelling] = useState(false);
@@ -1061,6 +1076,15 @@ function TransferModal({ t, canSend, onClose, onChanged }) {
       const r = await api.post(`/api/stock-transfers/${t.id}/confirm`, { lines: t.lines.map(l => ({ line_id: l.id, accepted: Number(got[l.id]), note: notes[l.id] || '' })) });
       onChanged(r.data.transfer, `${t.no_text} confirmed — in ${t.to_store}${r.data.transfer.short_lines ? '; what did not arrive is back in ' + t.from_store : ''}`);
     } catch (err) { setError(err.response?.data?.error || 'Could not confirm'); setBusy(false); }
+  }
+  async function resend() {
+    setBusy(true); setError('');
+    try {
+      const r = await api.post(`/api/stock-transfers/${t.id}/pos-send`);
+      setT(r.data.transfer);
+      if (r.data.pos?.failed) setError(`Still not sent: ${r.data.pos.error}`);
+    } catch (err) { setError(err.response?.data?.error || 'Could not send'); }
+    setBusy(false);
   }
   async function cancel() {
     setBusy(true); setError('');
@@ -1079,7 +1103,8 @@ function TransferModal({ t, canSend, onClose, onChanged }) {
         <div className="modal-body">
           {error && <div className="alert alert-error"><div>{error}</div></div>}
           {t.note && <div style={{ fontSize: 14, marginBottom: 10 }}>Note: {t.note}</div>}
-          {open && <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>{t.to_store}: count what arrived. If less came, type what came and why — the rest goes back to {t.from_store}.</div>}
+          {open && !inPos && <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>{t.to_store}: count what arrived. If less came, type what came and why — the rest goes back to {t.from_store}.</div>}
+          {inPos && <div className="text-muted" style={{ fontSize: 13, marginBottom: 10 }}>{t.to_store} confirms what arrived in the restaurant app (POS → Inventory → Incoming). What did not arrive comes back to {t.from_store} by itself.</div>}
           <div className="table-wrap">
             <table style={{ fontSize: 14, minWidth: 560 }}>
               <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Sent</th><th style={{ textAlign: 'right', width: 150 }}>Arrived</th><th>{open ? 'Why less (if less)' : 'Note'}</th></tr></thead>
@@ -1087,11 +1112,16 @@ function TransferModal({ t, canSend, onClose, onChanged }) {
                 <tr key={l.id}>
                   <td>{l.description}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{qty(l.sent, l.unit)}</td>
-                  <td style={{ textAlign: 'right' }}>{open ? (
+                  <td style={{ textAlign: 'right' }}>{inPos ? (
+                    l.accepted != null ? <span style={{ color: l.short > 0 ? 'var(--danger-text)' : undefined }}>{qty(l.accepted, l.unit)}</span>
+                      : l.pos_sent_at ? <span className="text-muted" style={{ fontSize: 13 }}>waiting in the POS</span>
+                      : <span style={{ fontSize: 13, color: 'var(--danger-text)' }}>not sent to the POS</span>
+                  ) : open ? (
                     <input className="form-input" type="number" min="0" max={l.sent} step={l.kind === 'p' ? '1' : '0.001'} style={{ width: 100, textAlign: 'right', height: 32 }}
                       value={got[l.id]} onChange={e => setGot(g => ({ ...g, [l.id]: e.target.value }))} />
                   ) : t.status === 'confirmed' ? <span style={{ color: l.short > 0 ? 'var(--danger-text)' : undefined }}>{qty(l.accepted, l.unit)}</span> : '—'}</td>
-                  <td>{open ? (shortOf(l) > 0 && <input className="form-input" style={{ height: 32 }} placeholder={`${qty(shortOf(l), l.unit)} short — why?`}
+                  <td>{inPos ? <span className="text-muted" style={{ fontSize: 13 }}>{l.pos_send_error && !l.pos_sent_at ? l.pos_send_error : l.note || ''}</span>
+                    : open ? (shortOf(l) > 0 && <input className="form-input" style={{ height: 32 }} placeholder={`${qty(shortOf(l), l.unit)} short — why?`}
                       value={notes[l.id] || ''} onChange={e => setNotes(nn => ({ ...nn, [l.id]: e.target.value }))} />)
                     : <span className="text-muted" style={{ fontSize: 13 }}>{l.note || ''}</span>}</td>
                 </tr>))}</tbody>
@@ -1103,10 +1133,11 @@ function TransferModal({ t, canSend, onClose, onChanged }) {
           )}
         </div>
         <div className="modal-footer">
-          {open && canSend && !cancelling && <button className="btn btn-secondary" onClick={() => setCancelling(true)}>Cancel transfer…</button>}
+          {open && canSend && !cancelling && !anyInPos && <button className="btn btn-secondary" onClick={() => setCancelling(true)}>Cancel transfer…</button>}
           {cancelling && <button className="btn btn-danger" disabled={busy || !reason.trim()} onClick={cancel}>Cancel {t.no_text}</button>}
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
-          {open && !cancelling && <button className="btn btn-primary" disabled={busy || bad} onClick={confirm}>Confirm what arrived</button>}
+          {inPos && canSend && t.pos_unsent > 0 && !cancelling && <button className="btn btn-primary" disabled={busy} onClick={resend}>Send to the POS</button>}
+          {open && !inPos && !cancelling && <button className="btn btn-primary" disabled={busy || bad} onClick={confirm}>Confirm what arrived</button>}
         </div>
       </div>
     </div>

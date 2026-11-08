@@ -470,8 +470,11 @@ async function setBillingDone(propertyId, poId, { reason, undo }, userId) {
 }
 
 // { received_on, delivery_note, store_id?, items: [{ item_id, receive_quantity, store_id? }] } —
-// store_id (a line's, else the receipt's, else Main Store) = the PMS store a
-// stocked line goes into. POS lines and free-text lines have no store.
+// store_id (a line's, else the receipt's, else Main Store) = the hotel store a
+// line goes into. Everything is received into a hotel store first (owner,
+// 2026-11-08): a restaurant (POS) line is kept there as its mirror stock item
+// (migration 158) and reaches Kitchen / Resto by a transfer. Free-text lines
+// have no store.
 // receive_quantity is the amount received THIS call (a delta), and can't be more
 // than is still to come. received_on is a record of when the goods came: stock
 // moves now, when this is entered.
@@ -483,6 +486,18 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedOn) || isNaN(Date.parse(receivedOn))) return { error: 'Date received must be a date' };
   if (receivedOn > today) return { error: 'Date received cannot be in the future' };
   const deliveryNote = String(body.delivery_note || '').trim().slice(0, 100) || null;
+
+  // Food / drink marks of the POS items, for a mirror item made below. Asked
+  // before the transaction; not reachable = the mirror counts as food.
+  let posKinds = new Map();
+  const { rows: [hasPos] } = await db.query(
+    'SELECT 1 FROM purchase_order_items WHERE purchase_order_id = $1 AND pos_item_id IS NOT NULL LIMIT 1', [poId]);
+  if (hasPos) {
+    try {
+      const inv = await require('./posPurchases').inventory(propertyId, { timeoutMs: POS_COST_TIMEOUT_MS });
+      posKinds = new Map(inv.items.map(i => [String(i.id), i.fnb_kind || null]));
+    } catch (err) { /* keep going */ }
+  }
 
   const client = await db.pool.connect();
   try {
@@ -527,23 +542,35 @@ async function receivePurchaseOrder(propertyId, poId, body, userId) {
       const delta = Math.min(requestedQty, outstanding);
       if (delta <= 0) continue;
       let store = null;
-      if (item.product_id || item.raw_material_id) {
+      if (item.product_id || item.raw_material_id || item.pos_item_id) {
         const s = await storeFor(req.store_id);
         if (s.error) { await client.query('ROLLBACK'); return s; }
         store = s.store;
+        if (store.kind === 'pos' && !item.pos_item_id) {
+          await client.query('ROLLBACK');
+          return { error: `${item.description}: ${store.name}'s stock is kept in the restaurant app (POS) — only restaurant items go there`, code: 'POS_STORE' };
+        }
       }
+      const toPos = item.pos_item_id && store.kind === 'pos';
       receivedNow.push({ id: item.id, description: item.description, delta, unit: item.unit_text, store_id: store?.id || null,
-        where: item.pos_item_id ? ' (for the restaurant)' : store && store.kind !== 'main' ? ` (into ${store.name})` : '' });
+        where: toPos ? ` (for ${store.name})` : store && (store.kind !== 'main' || item.pos_item_id) ? ` (into ${store.name})` : '' });
 
       await client.query(
         'UPDATE purchase_order_items SET received_quantity = received_quantity + $1 WHERE id = $2',
         [delta, item.id]
       );
 
-      // A POS line goes to the restaurant's stock after the commit (sendToPos);
-      // a free-text line is kept in no stock.
+      // A POS line for Kitchen / Resto goes to the restaurant's stock after the
+      // commit (sendToPos); into a PMS store it is kept as the mirror item. A
+      // free-text line is kept in no stock.
+      const unitCost = lineAmount(item) / parseFloat(item.quantity);
       if (item.product_id || item.raw_material_id) {
-        await addStock(client, propertyId, item, delta, lineAmount(item) / parseFloat(item.quantity), poId, userId, store.id);
+        await addStock(client, propertyId, item, delta, unitCost, poId, userId, store.id);
+      } else if (item.pos_item_id && !toPos) {
+        const mirrorId = await storeSvc.mirrorItem(client, propertyId,
+          { id: item.pos_item_id, name: item.description, unit: item.unit, fnb_kind: posKinds.get(String(item.pos_item_id)) });
+        await addStock(client, propertyId, { raw_material_id: mirrorId }, delta, unitCost, poId, userId, store.id);
+        await client.query('UPDATE purchase_order_items SET stored_qty = stored_qty + $1 WHERE id = $2', [delta, item.id]);
       }
     }
     if (!receivedNow.length) { await client.query('ROLLBACK'); return { error: 'Enter a quantity to receive for at least one item' }; }

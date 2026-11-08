@@ -49,10 +49,10 @@ function parseKey(key) {
 // ── The list ──
 const ITEMS_SQL = `
   SELECT 'rm:' || id AS key, 'rm' AS kind, id, name, unit_of_measure AS unit, COALESCE(category, 'other') AS category,
-         stock_quantity AS on_hand, cost_per_unit AS avg_cost, low_stock_threshold AS low_threshold, is_active
+         stock_quantity AS on_hand, cost_per_unit AS avg_cost, low_stock_threshold AS low_threshold, is_active, pos_item_id
   FROM raw_materials WHERE property_id = $1
   UNION ALL
-  SELECT 'p:' || id, 'p', id, name, 'pcs', category, stock_quantity, cost_per_unit, low_stock_threshold, COALESCE(is_available, true)
+  SELECT 'p:' || id, 'p', id, name, 'pcs', category, stock_quantity, cost_per_unit, low_stock_threshold, COALESCE(is_available, true), NULL
   FROM products WHERE property_id = $1 AND track_stock AND NOT COALESCE(per_night, false) AND NOT COALESCE(open_price, false)`;
 
 function shapeItem(r) {
@@ -61,7 +61,7 @@ function shapeItem(r) {
   return {
     key: r.key, kind: r.kind, id: r.id, name: r.name, unit: r.unit, category: r.category,
     category_label: r.kind === 'rm' ? (CATEGORY_LABEL[r.category] || 'Other') : (PRODUCT_CATEGORY_LABEL[r.category] || r.category),
-    kind_label: r.kind === 'rm' ? 'Stock item' : 'Sales item',
+    kind_label: r.pos_item_id ? 'Restaurant item' : r.kind === 'rm' ? 'Stock item' : 'Sales item', pos_item_id: r.pos_item_id || null,
     on_hand: onHand, avg_cost: avg, value: avg != null ? r2(onHand * avg) : null,
     low_threshold: r.low_threshold != null ? num(r.low_threshold) : null,
     low: r.low_threshold != null && onHand <= num(r.low_threshold), out: onHand <= 0, is_active: r.is_active,

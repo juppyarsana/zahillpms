@@ -36,10 +36,11 @@ Satu barang boleh masuk lebih dari satu PO (dibagi ke beberapa supplier). Permin
 Terima barang di PO seperti biasa (**Receive Items**).
 
 - **Barang hotel** masuk ke stok PMS.
-- **Barang restoran** menunggu chef di POS, dan PO bertanda **Waiting for kitchen**. Chef membuka **Inventory → 📦 Incoming** di POS, mengecek barang yang datang, lalu mengonfirmasi jumlahnya. Hanya yang dikonfirmasi chef yang masuk ke stok restoran, dengan harga PO. Stok PMS tidak berubah.
-- Jika dapur mengonfirmasi lebih sedikit, baris PO menampilkannya dengan warna merah, misalnya *Kitchen got 9 of 10 kg · 1 kg spoiled · short Rp 50.000*, dan pesan Telegram terkirim. Tagihan supplier tidak berubah, karena hotel memang menerima semuanya.
+- **Barang restoran** juga masuk ke **Main Store** dan menunggu di sana sebagai stok hotel. Baris PO menyebutkan barangnya disimpan di gudang hotel.
+- Untuk menyerahkannya ke dapur atau bar: **[Stock](/stock) → Transfers → + Move stock**, dari Main Store ke Kitchen atau Resto. Chef membuka **Inventory → 📦 Incoming** di POS, mengecek barang yang datang, lalu mengonfirmasi jumlahnya. Hanya yang dikonfirmasi chef yang masuk ke stok restoran, dengan harga belinya.
+- Jika dapur mengonfirmasi lebih sedikit, sisanya kembali ke Main Store dengan alasannya, dan pesan Telegram terkirim. Tagihan supplier tidak berubah, karena hotel memang menerima semuanya.
 - Barang yang belum dikonfirmasi tetap di luar stok restoran. Telegram mengingatkan yang mencentang *Kitchen handover* di **[Settings → Notifications](/settings/reports)**, setelah 3 jam secara default, dan tidak pernah pada malam hari.
-- Jika POS tidak bisa dihubungi, baris PO bertuliskan *Not sent to the POS*. Tekan **Send to the POS** di PO setelah POS menyala lagi. Mengirim ulang tidak pernah menambah barang dua kali.
+- Jika POS tidak bisa dihubungi, transfernya bertuliskan *Not sent to the POS*. Buka transfernya dan tekan **Send to the POS** setelah POS menyala lagi. Mengirim ulang tidak pernah menambah barang dua kali.
 
 **🖨 Print checklist** di PO memberi daftar kertas tanpa harga, terpisah untuk stok hotel, Kitchen, dan Resto, untuk mengecek barang dan serah terima. Saat menerima, isi juga tanggal dan nomor surat jalan. Cara mengirim PO ke supplier, menutup pengiriman yang kurang, dan tanda tagihan dijelaskan di **[Belanja: pakai halaman yang mana](/guide/purchasing)**.
 

@@ -563,7 +563,7 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
     }
   }
   // Restaurant lines received here but not yet in the POS's stock (it was down / not linked).
-  const unsent = po.items.some(it => it.pos_item_id && Number(it.received_quantity) > Number(it.pos_sent_qty));
+  const unsent = po.items.some(it => it.pos_item_id && Number(it.received_quantity) > Number(it.pos_sent_qty) + Number(it.stored_qty || 0));
   const [sending, setSending] = useState(false);
   async function sendToPos() {
     setSending(true);
@@ -632,13 +632,14 @@ function PODetailModal({ po, suppliers, products, materials, onClose, onStatus, 
                 <tr key={it.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '6px 4px' }}>
                     {it.description}{it.unit_of_measure && !it.product_id ? ` (${it.unit_of_measure})` : ''}
-                    {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="When received, waits for the kitchen to confirm in the POS, then goes to its stock">Restaurant</span>}
+                    {it.line_kind === 'pos' && <span className="badge badge-orange" style={{ marginLeft: 6 }} title="Received into Main Store (moved to Kitchen / Resto later), or straight to Kitchen / Resto, where it waits for them to confirm in the POS">Restaurant</span>}
                     {it.line_kind === 'text' && <span className="badge badge-gray" style={{ marginLeft: 6 }} title="Not kept in any stock">Not in stock</span>}
                     {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }} title="Asked for by this part of the restaurant">For {it.request_section}</span>}
                     {it.request_no_text && <Link to="/purchasing?tab=requests&view=requests" className="text-muted" style={{ marginLeft: 6, fontSize: 11 }}>{it.request_no_text}</Link>}
                     {it.line_kind === 'pos' && it.pos_send_error && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Not sent to the POS: {it.pos_send_error}</div>}
                     {it.line_kind === 'pos' && <HandoverLines handovers={it.handovers} unit={it.unit_of_measure} />}
-                    {it.line_kind === 'pos' && !it.pos_send_error && !it.handovers?.length && Number(it.received_quantity) > 0 && Number(it.pos_sent_qty) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
+                    {it.line_kind === 'pos' && Number(it.stored_qty) > 0 && <div style={{ fontSize: 11, color: '#6B7280' }}>{fmtQty(it.stored_qty, it.unit_of_measure)} kept in the hotel's store — move it with Stock → Transfers</div>}
+                    {it.line_kind === 'pos' && !it.pos_send_error && !it.handovers?.length && Number(it.pos_sent_qty) > 0 && Number(it.pos_sent_qty) + Number(it.stored_qty || 0) >= Number(it.received_quantity) && <div style={{ fontSize: 11, color: '#16A34A' }}>In the restaurant's stock</div>}
                     {Number(it.short_qty) > 0 && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>{it.product_id ? Number(it.short_qty) : fmtQty(it.short_qty, it.unit_of_measure)} not coming</div>}
                   </td>
                   <td style={{ textAlign: 'right', padding: '6px 4px' }}>{it.product_id ? it.quantity : fmtQty(it.quantity, it.unit_of_measure)}</td>
@@ -960,10 +961,14 @@ function ReceiveModal({ po, onClose, onDone }) {
   const [deliveryNote, setDeliveryNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  // Stores (migration 156): stocked lines go into Main Store unless another is picked.
-  const [stores, setStores] = useState([]);
+  // Stores (migration 156): stocked lines go into Main Store unless another
+  // hotel store is picked. Restaurant (POS) lines are kept there too and reach
+  // Kitchen / Resto by a transfer (migration 158; owner, 2026-11-08).
+  const [allStores, setStores] = useState([]);
+  const stores = allStores.filter(st => st.kind !== 'pos');
   const [storeId, setStoreId] = useState('');
   const [lineStore, setLineStore] = useState({});
+  const [changing, setChanging] = useState({});   // lines whose own store picker is open
   useEffect(() => {
     api.get('/api/purchasing/stores').then(r => {
       setStores(r.data);
@@ -971,14 +976,18 @@ function ReceiveModal({ po, onClose, onDone }) {
     }).catch(() => setStores([]));
   }, []);
   const stocked = it => !!(it.product_id || it.raw_material_id);
+  const hasStore = it => stocked(it) || it.line_kind === 'pos';
   const storeOf = it => lineStore[it.id] || storeId;
+  const storeById = id => allStores.find(st => st.id === id);
+  // A line gets its own store only when the delivery has 2+ lines kept in a store; then behind "Change".
+  const perLine = stores.length > 1 && outstanding.filter(hasStore).length > 1;
   const typed = it => toBase(amounts[it.id] || {}, unitOf(it), 'quantity', null).quantity || 0;
   const tooMany = it => typed(it) > leftOf(it) + 0.0005;
   const notWhole = it => it.product_id && !Number.isInteger(typed(it));
   const blocked = outstanding.some(it => tooMany(it) || notWhole(it));
 
   async function submit() {
-    const items = outstanding.map(it => ({ item_id: it.id, receive_quantity: typed(it), store_id: stocked(it) ? storeOf(it) || undefined : undefined }))
+    const items = outstanding.map(it => ({ item_id: it.id, receive_quantity: typed(it), store_id: hasStore(it) ? storeOf(it) || undefined : undefined }))
       .filter(i => i.receive_quantity > 0);
     if (items.length === 0) { setError('Enter a quantity to receive for at least one item'); return; }
     setSaving(true); setError('');
@@ -1008,12 +1017,12 @@ function ReceiveModal({ po, onClose, onDone }) {
               <input className="form-input" maxLength={100} value={deliveryNote} onChange={e => setDeliveryNote(e.target.value)} placeholder="optional" /></div>
           </div>
           {receivedOn < today && <div className="text-muted" style={{ fontSize: 12, marginBottom: 10 }}>The date is a record of when it came. The stock moves today, when you confirm.</div>}
-          {stores.length > 1 && outstanding.some(stocked) && (
+          {stores.length > 1 && outstanding.some(hasStore) && (
             <div className="form-group"><label className="form-label">Into store</label>
-              <select className="form-select" value={storeId} onChange={e => { setStoreId(e.target.value); setLineStore({}); }}>
+              <select className="form-select" value={storeId} onChange={e => { setStoreId(e.target.value); setLineStore({}); setChanging({}); }}>
                 {stores.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
               </select>
-              <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Where the goods are put. A line can go to another store below.</div></div>
+              <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>Where the goods are put.{perLine ? ' Change it under a line to put that line somewhere else.' : ''}</div></div>
           )}
           {outstanding.length === 0 ? (
             <div className="text-muted">Everything on this PO has already been received.</div>
@@ -1024,14 +1033,22 @@ function ReceiveModal({ po, onClose, onDone }) {
                 {it.request_section && <span className="badge badge-blue" style={{ marginLeft: 6 }}>For {it.request_section}</span>}
                 <div className="text-muted" style={{ fontSize: 11 }}>
                   outstanding {fmtQty(leftOf(it), unitOf(it))}
-                  {it.line_kind === 'pos' ? ' · to the restaurant stock (POS)' : it.line_kind === 'text' ? ' · not kept in stock' : ''}
+                  {it.line_kind === 'pos'
+                    ? ` · restaurant item, kept in ${storeById(storeOf(it))?.name || 'Main Store'} until moved to Kitchen / Resto`
+                    : it.line_kind === 'text' ? ' · not kept in stock' : ''}
                 </div>
-                {stocked(it) && stores.length > 1 && (
-                  <select className="form-select" style={{ height: 28, fontSize: 12, padding: '0 6px', marginTop: 4, width: 'auto' }}
+                {hasStore(it) && perLine && (changing[it.id] ? (
+                  <select className="form-select" autoFocus style={{ height: 28, fontSize: 12, padding: '0 6px', marginTop: 4, width: 'auto' }}
                     value={storeOf(it)} onChange={e => setLineStore(ls => ({ ...ls, [it.id]: e.target.value }))} aria-label={`Store for ${it.description}`}>
                     {stores.map(st => <option key={st.id} value={st.id}>→ {st.name}</option>)}
                   </select>
-                )}
+                ) : (
+                  <div style={{ fontSize: 12, marginTop: 2 }}>
+                    → {storeById(storeOf(it))?.name || 'Main Store'}{' '}
+                    <button type="button" className="btn-link" style={{ fontSize: 12, padding: 0, border: 0, background: 'none', color: 'var(--green-dark)', textDecoration: 'underline', cursor: 'pointer' }}
+                      onClick={() => setChanging(c => ({ ...c, [it.id]: true }))}>Change</button>
+                  </div>
+                ))}
                 {tooMany(it) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Only {fmtQty(leftOf(it), unitOf(it))} still to come</div>}
                 {!tooMany(it) && notWhole(it) && <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>Whole numbers only</div>}
               </div>

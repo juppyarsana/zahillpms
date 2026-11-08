@@ -73,7 +73,7 @@ async function setup(propertyId) {
     db.query(`SELECT id, name, payment_terms_days, default_category, default_department FROM suppliers
               WHERE property_id = $1 AND is_active ORDER BY name`, [propertyId]),
     db.query(`SELECT id, name, unit_of_measure, stock_quantity, cost_per_unit FROM raw_materials
-              WHERE property_id = $1 AND is_active ORDER BY name`, [propertyId]),
+              WHERE property_id = $1 AND is_active AND pos_item_id IS NULL ORDER BY name`, [propertyId]),
     db.query(`SELECT id, name, stock_quantity, cost_per_unit FROM products
               WHERE property_id = $1 AND track_stock AND NOT COALESCE(per_night, false) AND NOT COALESCE(open_price, false)
               ORDER BY name`, [propertyId]),
@@ -84,15 +84,15 @@ async function setup(propertyId) {
   try { pos = await posPurchases.inventory(propertyId); } catch (err) { pos = { linked: true, items: [], error: err.message }; }
   return {
     suppliers, materials, products, payment_methods: methods, pos,
-    stores: (await storeSvc.listStores(propertyId)).filter(st => st.kind !== 'pos'),
+    stores: (await storeSvc.listStores(propertyId)).filter(st => st.kind !== 'pos'),   // hotel stores only
     categories: COST_CATEGORIES.map(([key, label, , department]) => ({ key, label, department })),
     departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
     today: todayWITA(), closed_through: await closedThrough(propertyId),
   };
 }
 
-// "· into Housekeeping" when stocked lines went into a store other than Main Store.
-const intoText = v => (v.store && v.store.kind !== 'main' && v.items.some(i => !i.pos_item_id) ? ` · into ${v.store.name}` : '');
+// "· into Housekeeping" when the lines went into a store other than Main Store.
+const intoText = v => (v.store && v.store.kind !== 'main' ? ` · into ${v.store.name}` : '');
 
 // ── Checks the form ──
 async function clean(client, propertyId, body) {
@@ -110,7 +110,9 @@ async function clean(client, propertyId, body) {
     if (!supplier) return fail(400, 'Supplier not found');
   }
   const boughtFrom = supplier ? null : (String(body.bought_from || '').trim().slice(0, 200) || null);
-  // The PMS store the stocked lines go into (migration 156; empty = Main Store).
+  // The hotel store the lines go into (migration 156; empty = Main Store).
+  // Everything goes into a hotel store first (owner, 2026-11-08); a restaurant
+  // item is kept there as its mirror item (migration 158) until moved.
   const st = await storeSvc.pmsStore(propertyId, body.store_id, client);
   if (st.error) return st;
 
@@ -147,7 +149,8 @@ async function clean(client, propertyId, body) {
       const it = posItems.find(x => x.id === String(l.pos_item_id));
       if (!it) return fail(400, 'A restaurant item was not found in the POS');
       if (Math.abs(qty * 1000 - Math.round(qty * 1000)) > 1e-6) return fail(400, 'At most 3 decimals in how many');
-      items.push({ product_id: null, raw_material_id: null, pos_item_id: it.id, description: it.name, unit: it.unit || null, quantity: qty, amount: r2(amount) });
+      items.push({ product_id: null, raw_material_id: null, pos_item_id: it.id, description: it.name, unit: it.unit || null, quantity: qty, amount: r2(amount),
+        fnb_kind: it.fnb_kind || null });
     } else if (l.product_id) {
       if (!Number.isInteger(qty)) return fail(400, 'Sales items are counted in whole units');
       const { rows: [p] } = await client.query(
@@ -163,6 +166,8 @@ async function clean(client, propertyId, body) {
       items.push({ product_id: null, raw_material_id: m.id, description: m.name, unit: m.unit_of_measure, quantity: qty, amount: r2(amount) });
     }
   }
+  const notPos = st.store.kind === 'pos' ? items.find(i => !i.pos_item_id) : null;
+  if (notPos) return fail(400, `${notPos.description}: ${st.store.name}'s stock is kept in the restaurant app (POS) — only restaurant items go there`, 'POS_STORE');
   return { value: {
     day, supplier, bought_from: boughtFrom, pay, method, store: st.store, due_date: body.due_date || null, category: body.category,
     department: departmentFor(body.department, supplier?.default_department, body.category),
@@ -216,8 +221,16 @@ async function create(propertyId, body, user) {
         `INSERT INTO purchase_order_items (purchase_order_id, product_id, raw_material_id, pos_item_id, unit, description, quantity, unit_cost, received_quantity, line_total)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $7, $9)`,
         [po.id, it.product_id, it.raw_material_id, it.pos_item_id || null, it.pos_item_id ? it.unit : null, it.description, it.quantity, r2(unitCost), it.amount]);
-      if (it.pos_item_id) continue;   // sent to the POS after the commit
-      const { oldAvg } = await addStock(client, propertyId, it, it.quantity, unitCost, po.id, user.id, v.store.id);
+      if (it.pos_item_id && v.store.kind === 'pos') continue;   // sent to the POS after the commit
+      let target = it;
+      if (it.pos_item_id) {
+        const mirrorId = await storeSvc.mirrorItem(client, propertyId,
+          { id: it.pos_item_id, name: it.description, unit: it.unit, fnb_kind: it.fnb_kind });
+        target = { ...it, raw_material_id: mirrorId };
+        await client.query(
+          'UPDATE purchase_order_items SET stored_qty = $1 WHERE purchase_order_id = $2 AND pos_item_id = $3', [it.quantity, po.id, it.pos_item_id]);
+      }
+      const { oldAvg } = await addStock(client, propertyId, target, it.quantity, unitCost, po.id, user.id, v.store.id);
       if (oldAvg > 0) priceJumps.push({ ...it, unit_cost: unitCost, usual: oldAvg, pct: Math.round((unitCost / oldAvg - 1) * 100) });
     }
 
@@ -243,7 +256,7 @@ async function create(propertyId, body, user) {
       await logEvent(client, po.id, `Bought without a PO — to pay later, bill ${b.bill_no_text} in Payables${intoText(v)}`, user.id);
     }
     await client.query('COMMIT');
-    const posSync = v.items.some(i => i.pos_item_id) ? await posPurchases.sendToPos(propertyId, po.id) : null;
+    const posSync = v.store.kind === 'pos' && v.items.some(i => i.pos_item_id) ? await posPurchases.sendToPos(propertyId, po.id) : null;
     result = { purchase: await get(propertyId, po.id), money, pos_sync: posSync };
 
     // What the alert looks at — worked out now, sent after the commit.
@@ -324,10 +337,18 @@ async function voidPurchase(propertyId, poId, reason, user) {
     const note = `${po.po_number} voided: ${reason}`.slice(0, 500);
     for (const it of items) {
       const qty = num(it.received_quantity);
-      if (qty <= 0 || it.pos_item_id) continue;
+      if (qty <= 0) continue;
+      let rmId = it.raw_material_id;
+      if (it.pos_item_id) {   // a restaurant item kept in a PMS store comes back out of its mirror item
+        if (num(it.stored_qty) <= 0) continue;
+        const { rows: [m] } = await client.query(
+          'SELECT id FROM raw_materials WHERE property_id = $1 AND pos_item_id = $2', [propertyId, it.pos_item_id]);
+        if (!m) continue;
+        rmId = m.id;
+      }
       const cost = it.line_total != null ? num(it.line_total) / num(it.quantity) : num(it.unit_cost);
       const table = it.product_id ? 'products' : 'raw_materials';
-      const id = it.product_id || it.raw_material_id;
+      const id = it.product_id || rmId;
       const { rows: [row] } = await client.query(`SELECT stock_quantity, cost_per_unit FROM ${table} WHERE id = $1 FOR UPDATE`, [id]);
       const onHand = num(row.stock_quantity);
       // It comes back out of the store it went into.
@@ -439,9 +460,10 @@ async function get(propertyId, poId) {
   if (!r) return null;
   const [{ rows: items }, { rows: events }] = await Promise.all([
     db.query(`SELECT i.id, i.description, i.quantity, i.unit_cost, COALESCE(i.line_total, i.quantity * i.unit_cost) AS line_total,
-                     i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.pos_send_error, ${require('./posHandover').handoversSql('i')} AS handovers,
+                     i.product_id, i.raw_material_id, i.pos_item_id, i.pos_sent_qty, i.stored_qty, i.pos_send_error, ${require('./posHandover').handoversSql('i')} AS handovers,
                      (SELECT st.name FROM stores st WHERE st.id = (
-                        SELECT m.store_id FROM raw_material_movements m WHERE m.purchase_order_id = i.purchase_order_id AND m.raw_material_id = i.raw_material_id AND m.change_qty > 0
+                        SELECT m.store_id FROM raw_material_movements m WHERE m.purchase_order_id = i.purchase_order_id AND m.change_qty > 0
+                          AND (m.raw_material_id = i.raw_material_id OR m.raw_material_id IN (SELECT x.id FROM raw_materials x WHERE x.pos_item_id = i.pos_item_id))
                         UNION ALL SELECT m.store_id FROM stock_movements m WHERE m.purchase_order_id = i.purchase_order_id AND m.product_id = i.product_id AND m.change_qty > 0
                         LIMIT 1)) AS store_name,
                      COALESCE(rm.unit_of_measure, i.unit) AS unit_of_measure

@@ -16,7 +16,8 @@ const send = (res, r, ok = 200) => (r.error ? res.status(r.status || 400).json({
 
 router.get('/setup', canAsk, async (req, res) => {
   try {
-    const [items, onOrder] = await Promise.all([stock.listItems(req.propertyId), svc.onOrder(req.propertyId)]);
+    const [all, onOrder] = await Promise.all([stock.listItems(req.propertyId), svc.onOrder(req.propertyId)]);
+    const items = all.filter(i => !i.pos_item_id);   // restaurant items are asked for as the POS item
     res.json({
       departments: DEPARTMENTS.map(([key, label]) => ({ key, label })),
       items: items.map(i => ({ key: i.key, name: i.name, unit: i.unit, on_hand: i.on_hand, low: i.low, out: i.out, category_label: i.category_label,

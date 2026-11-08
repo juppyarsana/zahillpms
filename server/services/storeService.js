@@ -103,4 +103,39 @@ async function saveStore(propertyId, body, id = null) {
   return { stores: await listStores(propertyId, { inactive: true }) };
 }
 
-module.exports = { KIND_LABEL, mainStoreId, transitStoreId, listStores, pmsStore, storeQty, saveStore };
+// The PMS stock item that stands for a POS inventory item (migration 158), so
+// a PMS store can hold restaurant goods. Made the first time it is needed.
+// pos = { id, name, unit, fnb_kind? }; fnb_kind decides the cost category
+// (food / drinks — counted in Cost of sales — or supplies). Returns its id.
+const MIRROR_CATEGORY = { food: 'food', drink: 'drinks', both: 'food', other: 'supplies' };
+async function mirrorItem(q, propertyId, pos) {
+  const posId = String(pos.id).slice(0, 64);
+  const category = pos.fnb_kind ? MIRROR_CATEGORY[pos.fnb_kind] || 'food' : null;
+  const { rows: [had] } = await q.query(
+    'SELECT id FROM raw_materials WHERE property_id = $1 AND pos_item_id = $2', [propertyId, posId]);
+  if (had) {
+    if (category) await q.query('UPDATE raw_materials SET category = $2 WHERE id = $1 AND category IS DISTINCT FROM $2', [had.id, category]);
+    return had.id;
+  }
+  const { rows: [r] } = await q.query(
+    `INSERT INTO raw_materials (property_id, name, unit_of_measure, category, pos_item_id)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (property_id, pos_item_id) WHERE pos_item_id IS NOT NULL DO UPDATE SET name = raw_materials.name
+     RETURNING id`,
+    [propertyId, String(pos.name || 'Restaurant item').slice(0, 255), String(pos.unit || 'pcs').slice(0, 20), category || 'food', posId]);
+  return r.id;
+}
+
+// A store for receiving or moving restaurant goods: a PMS store keeps them as
+// the mirror item; Kitchen / Resto (kind pos) means "send to the POS".
+async function anyStore(propertyId, storeId, q = db) {
+  if (!storeId) return pmsStore(propertyId, null, q);
+  if (!UUID_RE.test(String(storeId))) return fail(400, 'Choose a store');
+  const { rows: [s] } = await q.query(
+    'SELECT id, name, kind, section, is_active FROM stores WHERE id = $1 AND property_id = $2', [storeId, propertyId]);
+  if (!s || s.kind === 'transit') return fail(400, 'Choose a store');
+  if (!s.is_active) return fail(400, `${s.name} is no longer used`, 'STORE_INACTIVE');
+  return { store: s };
+}
+
+module.exports = { KIND_LABEL, mainStoreId, transitStoreId, listStores, pmsStore, anyStore, storeQty, saveStore, mirrorItem };
