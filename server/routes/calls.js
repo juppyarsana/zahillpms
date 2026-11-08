@@ -155,6 +155,14 @@ router.get('/pending', auth, gate, async (req, res) => {
   } catch (err) { lines.sendError(res, err); }
 });
 
+// GET /api/calls/missed — the front desk's missed calls (last 24 h), POST …/:id/missed-done
+router.get('/missed', auth, gate, async (req, res) => {
+  try { res.json(await lines.missedCalls(req.propertyId, FD)); } catch (err) { lines.sendError(res, err); }
+});
+router.post('/:id/missed-done', auth, gate, async (req, res) => {
+  try { await lines.missedDone(req.propertyId, req.params.id, FD, who(req)); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); }
+});
+
 // GET /api/calls/room/:roomId/stream — SSE for the room tablet
 router.get('/room/:roomId/stream', authDisplay, gate, async (req, res) => {
   const { roomId } = req.params;

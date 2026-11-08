@@ -10,6 +10,7 @@ import UnitStatusBoard, { cleanAskedText } from '../components/UnitStatusBoard';
 import { useCheckInOut } from '../components/CheckInOutWindows';
 import LateArrivals from '../components/LateArrivals';
 import { useOtaToday } from '../components/OtaInbox';
+import { useCall } from '../context/CallContext';
 import { NoteReminders } from '../components/StaffNotes';
 import RegistrationCardModal from '../components/RegistrationCardModal';
 
@@ -224,6 +225,17 @@ export default function Today() {
   // Stays already over that never checked in, and today's OTA news — one line each in Needs you now.
   const neverArrived = summary?.today?.never_arrived || [];
   const ota = useOtaToday();
+  // Rooms that called the front desk and nobody answered (migration 161).
+  const call = useCall();
+  const missedOpen = hasModule('calling') ? (call?.missed?.calls || []).filter(c => !c.handled) : [];
+  const [callErr, setCallErr] = useState('');
+  const callBack = async (c) => {
+    setCallErr('');
+    try { await call.callRoom({ id: c.unitId, name: c.unitName }); } catch (err) { setCallErr(err.response?.data?.error || err.message || 'Could not call the room'); }
+  };
+  const missedDone = async (c) => {
+    try { await api.post(`/api/calls/${c.callId}/missed-done`); call.refreshMissed(); } catch (err) { setCallErr(err.response?.data?.error || 'Could not save'); }
+  };
   const otaActive = ota && (ota.new + ota.changed + ota.cancelled + ota.needs) > 0;
 
   const rows = lists ? (tab === 'in_house' ? lists.in_house : tab === 'departures' ? lists.departures : lists.arrivals) : [];
@@ -388,9 +400,22 @@ export default function Today() {
 
       {/* ── Needs you now — what used to be the Dashboard's banners (never-arrived
            bookings are already flagged by TodaySection) ── */}
-      {isToday && (overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0 || neverArrived.length > 0 || otaActive) && (
+      {isToday && (missedOpen.length > 0 || overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0 || neverArrived.length > 0 || otaActive) && (
         <div className="card today-needs">
           <div className="card-title">Needs you now</div>
+          {missedOpen.map(c => {
+            const t = new Date(c.at);
+            const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+            return (
+              <div key={`m${c.callId}`} className="today-need danger">
+                <span className="today-need-tag">Missed call</span>
+                <span className="today-need-text">Room <b>{c.unitName}</b>{c.guestName ? <> · {c.guestName}</> : null} called the front desk at {t.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Makassar' })} ({mins < 60 ? `${mins} min ago` : `${Math.floor(mins / 60)} h ago`}) — nobody answered.</span>
+                <button type="button" className="btn btn-sm btn-primary" disabled={!!call?.activeCall || !!call?.incomingCall} onClick={() => callBack(c)}>📞 Call back</button>
+                <button type="button" className="btn btn-sm btn-secondary" title="Handled another way (the guest came to the desk…)" onClick={() => missedDone(c)}>Done</button>
+              </div>
+            );
+          })}
+          {callErr && <div className="alert alert-error" style={{ margin: '6px 0' }}><div>{callErr}</div></div>}
           {overdue.map(o => (
             <div key={`o${o.id}`} className="today-need danger">
               <span className="today-need-tag">Overdue</span>

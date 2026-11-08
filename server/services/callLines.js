@@ -36,7 +36,12 @@ async function markMissed(callId) {
   if (!c) return;
   if (c.controller_id) sse.notify('room:' + c.controller_id, { type: 'missed', callId });
   sse.notify(channelFor(c.property_id, c.line), { type: 'missed', callId });
-  // A room the restaurant didn't answer: tell the restaurant on Telegram.
+  // A room nobody answered: on Telegram, so someone calls back.
+  if (c.line === 'front_desk' && c.direction === 'room_to_staff') {
+    require('./telegramService').sendAlertLocalized(c.property_id, ['alert_guest_requests'], lang => lang === 'id'
+      ? `📞 Panggilan tak terjawab — Kamar ${c.unit_name} menelepon front desk. Tolong telepon balik kamarnya.`
+      : `📞 Missed call — Room ${c.unit_name} called the front desk. Please call the room back.`).catch(() => {});
+  }
   if (c.line === 'restaurant' && c.direction === 'room_to_staff') {
     require('./telegramService').sendAlertLocalized(c.property_id, ['alert_room_service'], lang => lang === 'id'
       ? `📞 Panggilan tak terjawab — Kamar ${c.unit_name} menelepon restoran. Tolong telepon balik kamarnya.`
@@ -152,6 +157,49 @@ async function pending(propertyId, line) {
   return { callId: c.id, unitName: c.unit_name, roomId: c.room_id, guestName: await guestInRoom(c.unit_id), line };
 }
 
+// Missed calls of the last 24 hours on a line, newest first. A call is handled
+// once anyone talked to that room afterwards on this line (either direction),
+// or staff pressed Done. { open: n, calls: [{ callId, unitId, unitName, roomId,
+// guestName, at, handled: null | { how: 'talked' | 'done', at, by } }] }
+async function missedCalls(propertyId, line) {
+  const { rows } = await db.query(
+    `SELECT c.id, c.created_at, c.missed_done_at, c.missed_done_by_name, u.id AS unit_id, u.name AS unit_name, u.controller_id,
+            (SELECT g.name FROM bookings b JOIN guests g ON g.id = b.guest_id
+              WHERE b.unit_id = u.id AND b.status IN ('confirmed', 'checked_in')
+                AND b.check_in_date <= CURRENT_DATE AND b.check_out_date >= CURRENT_DATE
+              ORDER BY b.check_in_date DESC LIMIT 1) AS guest_name,
+            later.answered_at AS talked_at,
+            COALESCE(later.answered_by_name, au.name, later.initiated_by_name, iu.name) AS talked_by,
+            later.direction AS talked_direction
+     FROM calls c
+     JOIN units u ON u.id = c.unit_id
+     LEFT JOIN LATERAL (
+       SELECT c2.answered_at, c2.answered_by_name, c2.answered_by, c2.initiated_by, c2.initiated_by_name, c2.direction
+       FROM calls c2 WHERE c2.unit_id = c.unit_id AND c2.line = c.line AND c2.created_at > c.created_at AND c2.answered_at IS NOT NULL
+       ORDER BY c2.created_at LIMIT 1) later ON true
+     LEFT JOIN users au ON au.id = later.answered_by
+     LEFT JOIN users iu ON iu.id = later.initiated_by
+     WHERE u.property_id = $1 AND c.line = $2 AND c.status = 'missed' AND c.direction = 'room_to_staff'
+       AND c.created_at > NOW() - INTERVAL '24 hours'
+     ORDER BY c.created_at DESC LIMIT 50`, [propertyId, line]);
+  const calls = rows.map(r => ({
+    callId: r.id, unitId: r.unit_id, unitName: r.unit_name, roomId: r.controller_id, guestName: r.guest_name, at: r.created_at,
+    handled: r.talked_at ? { how: r.talked_direction === 'staff_to_room' ? 'called_back' : 'rang_again', at: r.talked_at, by: r.talked_by || null }
+      : r.missed_done_at ? { how: 'done', at: r.missed_done_at, by: r.missed_done_by_name } : null,
+  }));
+  return { open: calls.filter(c => !c.handled).length, calls };
+}
+
+async function missedDone(propertyId, callId, line, who) {
+  const { rows } = await db.query(
+    `UPDATE calls SET missed_done_at = NOW(), missed_done_by_name = $4
+     WHERE id = $1 AND line = $3 AND status = 'missed' AND missed_done_at IS NULL
+       AND unit_id IN (SELECT id FROM units WHERE property_id = $2) RETURNING id`,
+    [callId, propertyId, line, who.name || null]);
+  if (!rows[0]) throw new CallError(404, 'Missed call not found');
+  sse.notify(channelFor(propertyId, line), { type: 'missed_changed' });
+}
+
 // SSE stream for one line's staff screens.
 function stream(req, res, key) {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -170,5 +218,5 @@ function sendError(res, err) {
   res.status(500).json({ error: err.message });
 }
 
-module.exports = { CallError, placeFromRoom, placeToRoom, answer, end, signalToRoom, pending, stream, sendError,
+module.exports = { missedCalls, missedDone, CallError, placeFromRoom, placeToRoom, answer, end, signalToRoom, pending, stream, sendError,
    LINES, LINE_LABEL, RING_TIMEOUT_MS, channelFor, callInfo, clearRing, startRing, markMissed, restaurantLineOn, guestInRoom };

@@ -11,6 +11,8 @@
 //   GET  /api/pos/calls/pending              the oldest room call ringing the restaurant, or null
 //   GET  /api/pos/calls/turn-credentials     { iceServers }
 //   GET  /api/pos/calls/rooms                rooms that can be called (Room ID set) + guest in them
+//   GET  /api/pos/calls/missed               missed calls of the last 24 h { open, calls }
+//   POST /api/pos/calls/:id/missed-done      { by } — handled another way
 //   POST /api/pos/calls/to-room              { unit_id | room_id, by }
 //   POST /api/pos/calls/:id/answer           { by }
 //   POST /api/pos/calls/:id/end
@@ -61,6 +63,13 @@ router.get('/rooms', async (req, res) => {
        ORDER BY rt.sort_order NULLS LAST, u.name`, [req.propertyId]);
     res.json(rows);
   } catch (err) { lines.sendError(res, err); }
+});
+
+router.get('/missed', async (req, res) => {
+  try { res.json(await lines.missedCalls(req.propertyId, LINE)); } catch (err) { lines.sendError(res, err); }
+});
+router.post('/:id/missed-done', async (req, res) => {
+  try { await lines.missedDone(req.propertyId, req.params.id, LINE, by(req)); res.json({ ok: true }); } catch (err) { lines.sendError(res, err); }
 });
 
 router.post('/to-room', async (req, res) => {

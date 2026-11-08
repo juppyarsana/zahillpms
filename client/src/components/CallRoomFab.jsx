@@ -9,7 +9,7 @@ import CallRoomModal from './CallRoomModal';
 // nav list among the destination links.
 export default function CallRoomFab() {
   const { hasModule } = useAuth();
-  const { incomingCall, activeCall } = useCall();
+  const { incomingCall, activeCall, missed } = useCall();
   const [open, setOpen] = useState(false);
 
   if (!hasModule('calling') || incomingCall || activeCall) return null;
@@ -19,10 +19,11 @@ export default function CallRoomFab() {
       <button
         className="call-fab"
         onClick={() => setOpen(true)}
-        title="Call a Room"
+        title={missed.open ? `${missed.open} missed call${missed.open > 1 ? 's' : ''} — call back` : 'Call a Room'}
         aria-label="Call a Room"
       >
         📞
+        {missed.open > 0 && <span className="call-fab-badge">{missed.open}</span>}
       </button>
       {open && <CallRoomModal onClose={() => setOpen(false)} />}
     </>

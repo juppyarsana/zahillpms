@@ -15,6 +15,14 @@ Tamu bisa menelepon **restoran** langsung dari tablet kamar, dengan tombol **Cal
 - Layar yang tidak boleh berdering (misalnya di dapur): buka **Call a room** → hilangkan centang **Ring on this screen**.
 - Pertama kali, browser bertanya izin **mikrofon** → pilih **Allow**. Komputer POS butuh speaker dan mikrofon (atau headset).
 
-## Kalau tidak dijawab
+## Panggilan tak terjawab
 
-Setelah 45 detik tamu melihat "No one answered", dan grup Telegram **Room service orders** mendapat pesan "Panggilan tak terjawab" agar restoran menelepon balik kamarnya.
+Telepon yang tidak dijawab dalam 45 detik masuk ke daftar **Missed calls**, terpisah untuk front desk dan restoran:
+
+- **Front desk (PMS):** tombol 📞 di kanan bawah mendapat angka merah. Buka → **Missed calls** di atas daftar kamar: kamar, nama tamu, jam dan berapa lama yang lalu.
+- **Today:** setiap panggilan front desk yang belum ditelepon balik juga muncul di **Needs you now**, dengan **Call back** dan **Done**.
+- **Restoran (POS):** tombol **📞 Call a room** di atas menampilkan "1 missed". Buka → daftar yang sama.
+- **Call back** menelepon kamar itu. Begitu ada yang berbicara dengan kamar itu lagi (Anda menelepon balik, atau kamar menelepon lagi dan dijawab), panggilan hilang dari daftar dengan sendirinya.
+- **Done** kalau sudah diselesaikan dengan cara lain (misalnya tamu datang ke meja).
+- **Show handled** menunjukkan yang sudah selesai: siapa yang menelepon balik dan jam berapa. Daftar menyimpan 24 jam terakhir.
+- Telegram juga mengirim pesan "Panggilan tak terjawab" (front desk: **Guest requests**, restoran: **Room service orders**).

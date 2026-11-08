@@ -24,6 +24,11 @@ export function CallProvider({ children }) {
   const [incomingCall, setIncomingCall] = useState(null); // { callId, unitName, roomId }
   const [activeCall, setActiveCall] = useState(null);     // { callId, roomId, status: 'connecting'|'connected' }
   const [muted, setMuted] = useState(false);
+  // Missed calls of the last 24 h (migration 161) — the 📞 button's count and list.
+  const [missed, setMissed] = useState({ open: 0, calls: [] });
+  const refreshMissed = useCallback(() => {
+    api.get('/api/calls/missed').then(r => setMissed(r.data)).catch(() => {});
+  }, []);
 
   const pendingOffers = useRef(new Map());   // callId -> offer sdp
   const pendingIce = useRef(new Map());      // callId -> [candidates]
@@ -96,6 +101,7 @@ export function CallProvider({ children }) {
 
   const staffStreamUrl = user ? `/api/calls/staff/stream?token=${encodeURIComponent(localStorage.getItem('token'))}` : null;
   useResilientEventSource(staffStreamUrl, (msg) => {
+    if (['missed', 'missed_changed', 'call_taken', 'answered_from_room', 'ended'].includes(msg.type)) setTimeout(refreshMissed, 300);
     if (msg.type === 'incoming_call') {
       // Busy — already on a call, so don't hijack this session's screen
       // with a second incoming-call prompt (answering it would silently
@@ -137,6 +143,13 @@ export function CallProvider({ children }) {
   // that arrived while this session's push connection was silently dead
   // would otherwise just ring out unnoticed. Same guarantee the Room
   // Display state poll gives incoming staff-to-room calls.
+  useEffect(() => {
+    if (!user) return undefined;
+    refreshMissed();
+    const id = setInterval(refreshMissed, 60_000);
+    return () => clearInterval(id);
+  }, [user, refreshMissed]);
+
   useEffect(() => {
     if (!user) return;
     const id = setInterval(async () => {
@@ -287,7 +300,7 @@ export function CallProvider({ children }) {
   }, []);
 
   return (
-    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute, callRoom }}>
+    <CallContext.Provider value={{ incomingCall, activeCall, muted, answerCall, dismissIncoming, endCall, toggleMute, callRoom, missed, refreshMissed }}>
       {children}
     </CallContext.Provider>
   );

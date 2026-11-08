@@ -194,6 +194,11 @@ input, select, textarea { font-family: inherit; font-size: var(--text-base); }
   z-index: 150; /* under modals (200) and the phone menu (300) */
   transition: transform var(--transition), box-shadow var(--transition);
 }
+.call-fab-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 10px; background: #DC2626; color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; border: 2px solid #fff;
+}
 .call-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.32); }
 .call-fab:active { transform: translateY(0); }
 @media (max-width: 768px) {
