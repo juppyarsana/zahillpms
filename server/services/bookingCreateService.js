@@ -17,6 +17,7 @@ const agentService = require('./agentService');
 const agentBilling = require('./agentBillingService');
 const { occupiedUntilSql } = require('./occupancySql');
 const { otaCollects } = require('./otaCollect');
+const { recomputeBookingStatus } = require('./paymentStatusService');
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
@@ -120,7 +121,19 @@ async function createBooking(client, { propertyId, userId, input }) {
   if (balanceAmount > 0) {
     await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', balanceAmount]);
   }
+  // An OTA booking the OTA pays starts confirmed (nothing to collect).
+  booking.status = await confirmIfOtaPays(client, propertyId, booking);
   return { booking, unit: unitRows[0], guest: guestRows[0] };
+}
+
+// A booking the OTA pays (OTA source, nothing else set) owes the hotel nothing
+// from the guest, so it is confirmed from the start — same rule as
+// paymentStatusService. Any other booking keeps the status it was made with.
+async function confirmIfOtaPays(client, propertyId, booking) {
+  const { rows: [src] } = await client.query(
+    'SELECT is_ota FROM booking_sources WHERE id = $1 AND property_id = $2', [booking.source, propertyId]);
+  if (!otaCollects({ payment_collect: booking.payment_collect, source: booking.source, is_ota: src?.is_ota })) return booking.status;
+  return (await recomputeBookingStatus(client, booking.id)) || booking.status;
 }
 
 // 2+ rooms under one guest. `input` = the POST /api/bookings/group body.
@@ -283,6 +296,7 @@ async function createGroup(client, { propertyId, userId, input }) {
     if (!groupBilled && s.balanceShare > 0) {
       await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', s.balanceShare]);
     }
+    if (!groupBilled) booking.status = await confirmIfOtaPays(client, propertyId, booking);
     bookings.push(booking);
   }
   return { group, bookings };

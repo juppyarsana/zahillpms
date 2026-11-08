@@ -12,6 +12,8 @@
 // A room of a group billed as a whole (migration 097) has no deposit /
 // balance lines of its own: its status follows the GROUP's payments, so the
 // whole group is recomputed (recomputeGroupStatus).
+const { otaCollects } = require('./otaCollect');
+
 async function recomputeBookingStatus(client, bookingId) {
   const { rows: [grp] } = await client.query(
     `SELECT rg.id FROM bookings b JOIN reservation_groups rg ON rg.id = b.reservation_group_id
@@ -26,7 +28,10 @@ async function recomputeBookingStatus(client, bookingId) {
     [bookingId]
   );
   const { rows: [bkg] } = await client.query(
-    'SELECT status, deposit_amount, payment_collect FROM bookings WHERE id = $1',
+    `SELECT b.status, b.deposit_amount, b.payment_collect, b.source, bs.is_ota
+     FROM bookings b
+     LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+     WHERE b.id = $1`,
     [bookingId]
   );
   if (!bkg || !['pending', 'deposit_paid', 'confirmed'].includes(bkg.status)) return bkg?.status;
@@ -35,7 +40,9 @@ async function recomputeBookingStatus(client, bookingId) {
   // nothing for the room — confirmed. Its pending room line is what the OTA
   // still has to pay the hotel, not something to chase the guest for.
   // A virtual card the hotel charges itself ('vcc', migration 126) is the same: the OTA pays.
-  if (bkg.payment_collect === 'ota' || bkg.payment_collect === 'vcc') {
+  // Not set (typed by hand, imported) with an OTA source = the OTA pays too —
+  // the same rule as check-in, check-out and the booking page (otaCollect.js).
+  if (otaCollects(bkg)) {
     if (bkg.status !== 'confirmed') {
       await client.query("UPDATE bookings SET status = 'confirmed', updated_at = NOW() WHERE id = $1", [bookingId]);
     }
