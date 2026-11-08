@@ -61,7 +61,11 @@ function parseRevision(raw) {
     ota: (a.ota_name || '').trim() || 'Channel manager',
     code: a.ota_reservation_code || a.unique_id || '',
     currency: a.currency || 'IDR',
-    collect: a.payment_collect === 'property' ? 'property' : a.payment_collect === 'ota' ? 'ota' : null,
+    // An OTA that pays with a virtual card the hotel charges itself (Booking.com)
+    // still says "ota" — the card in `guarantee` makes it 'vcc' (migration 126).
+    collect: a.payment_collect === 'property' ? 'property'
+      : a.payment_collect === 'ota' ? (a.guarantee?.is_virtual ? 'vcc' : 'ota') : null,
+    vccFrom: vccChargeFrom(a),
     paymentType: a.payment_type || null,
     notes: (a.notes || '').trim(),
     arrivalHour: a.arrival_hour || null,
@@ -201,16 +205,43 @@ async function note(client, bookingId, text) {
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)', [bookingId, text.slice(0, 1000)]);
 }
 
+// The first day the hotel may charge an OTA's virtual card: the card's own
+// effective date, else the date in the OTA's note ("… tagih mulai tanggal
+// 2026-11-07" / "charge from 2026-11-07"). null when neither says.
+function vccChargeFrom(a) {
+  const g = a.guarantee;
+  if (!g?.is_virtual) return null;
+  const d = g.meta?.virtual_card_effective_date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d || '')) return d;
+  const m = /(?:tanggal|from|mulai)\s+(\d{4}-\d{2}-\d{2})/i.exec(a.notes || '');
+  return m ? m[1] : null;
+}
+
+// After who collects is saved: a virtual card also gets its charge-from date,
+// then the status follows (OTA-paid = confirmed).
+async function afterCollect(client, bookingId, r) {
+  if (r.collect === 'vcc') {
+    await client.query("UPDATE bookings SET vcc_charge_from = COALESCE($2::date, vcc_charge_from) WHERE id = $1 AND payment_collect = 'vcc'",
+      [bookingId, r.vccFrom]);
+  }
+  return recomputeBookingStatus(client, bookingId);
+}
+
 // What a booking saves as who collects: the OTA's own answer, or — when it
 // gives none — the hotel collects (the industry default, Channex's own
 // reading of an empty value): front desk asks the guest rather than the hotel
 // waiting for money no one will send. The To check point says to look.
 const bookingCollect = r => r.collect || 'property';
+const collectText = r => (r.collect === 'property' ? 'the hotel collects'
+  : r.collect === 'ota' ? `paid to ${r.ota}`
+  : r.collect === 'vcc' ? `paid by ${r.ota} with a virtual card the hotel charges${r.vccFrom ? ` from ${r.vccFrom}` : ''}`
+  : 'who collects not given — treated as paid at the hotel');
 
 function collectPoint(r) {
   if (r.collect === 'property') {
     return `Guest pays at the hotel (${r.ota}${r.paymentType ? ` · ${r.paymentType.replace(/_/g, ' ')}` : ''}) — collect the room price, it is not paid by ${r.ota}`;
   }
+  if (r.collect === 'vcc') return `${r.ota} pays with a virtual card — charge it on the EDC${r.vccFrom ? ` from ${r.vccFrom}` : ''} (card in the ${r.ota} extranet) and record it with OTA virtual card; nothing to collect from the guest`;
   if (!r.collect) return `${r.ota} did not say who collects the money, so the PMS treats the room as paid at the hotel — check the reservation on ${r.ota} and change it in Edit Details if ${r.ota} collects`;
   return null;
 }
@@ -261,7 +292,7 @@ async function linkExisting(client, propertyId, r, rooms, same) {
               to_check = COALESCE(to_check, '[]'::jsonb) || $3::jsonb, to_check_done_at = NULL, to_check_done_by = NULL
         WHERE id = $1`, [b.id, bookingCollect(r), JSON.stringify(points)]);
     await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by ${how}; not booked again.`);
-    await recomputeBookingStatus(client, b.id);
+    await afterCollect(client, b.id, r);
   }
   return {
     result: 'applied', bookingIds: same.map(s => s.b.id), channelBookingId: cb.id,
@@ -339,10 +370,10 @@ async function createFromRevision(client, propertyId, r, L) {
     if (!p.plan) points.push(`The ${r.ota} rate plan is not linked to a meal plan in the PMS — meal plan set to ${defaultPlan?.name || 'the default'}; check it`);
     if (!(p.room.amount > 0)) points.push(`No price came from ${r.ota} — set it with Edit Price`);
     await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb WHERE id = $1', [b.id, bookingCollect(r), JSON.stringify(points)]);
-    await recomputeBookingStatus(client, b.id);
+    await afterCollect(client, b.id, r);
     await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
       [cb.id, p.room.id, b.id]);
-    await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${r.collect === 'property' ? 'the hotel collects' : r.collect === 'ota' ? `paid to ${r.ota}` : 'who collects not given — treated as paid at the hotel'}.`);
+    await note(client, b.id, `Booked on ${r.ota} via the channel manager (reservation ${r.code}${guest.matched ? '' : ', new guest'}). ${fmtIDR(p.room.amount)}, ${collectText(r)}.`);
   }
   const rooms_ = picked.map(p => p.unit.name).join(', ');
   return {
@@ -350,7 +381,7 @@ async function createFromRevision(client, propertyId, r, L) {
     message: `Booked ${rooms_} · ${guest.name}${guest.matched ? '' : ' (new guest)'}`,
     alert: { title: `New ${r.ota} booking`, guest: guest.name, rooms: picked.map(p => p.unit.name), checkIn: picked[0].room.ci, checkOut: picked[picked.length - 1].room.co,
       guests: picked.reduce((s, p) => s + p.room.adults, 0), total: picked.reduce((s, p) => s + p.room.amount, 0),
-      extra: r.collect === 'property' ? 'The hotel collects the payment' : r.collect === 'ota' ? `Paid to ${r.ota}` : null },
+      extra: r.collect === 'property' ? 'The hotel collects the payment' : r.collect === 'ota' ? `Paid to ${r.ota}` : r.collect === 'vcc' ? `${r.ota} virtual card — charge it${r.vccFrom ? ` from ${r.vccFrom}` : ''}` : null },
   };
 }
 
@@ -449,7 +480,7 @@ async function moveByCode(client, propertyId, r, stays, rooms, L) {
     const [b] = left.splice(i, 1);
     await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, b.id]);
     await client.query('UPDATE bookings SET payment_collect = COALESCE(payment_collect, $2) WHERE id = $1', [b.id, bookingCollect(r)]);
-    await recomputeBookingStatus(client, b.id);
+    await afterCollect(client, b.id, r);
     await pointAt(client, b.id, `${r.ota} ${r.code} came through the channel manager and was matched to this booking by reservation code; its changes now apply here`);
     await note(client, b.id, `Linked to ${r.ota} reservation ${r.code} (channel manager) — matched by reservation code.`);
   }
@@ -650,7 +681,7 @@ async function applyChange(client, propertyId, r, cb, L) {
         const cp = collectPoint(r); if (cp) points.push(cp);
         await client.query('UPDATE bookings SET payment_collect = $2, to_check = $3::jsonb, reservation_group_id = $4 WHERE id = $1',
           [made.booking.id, bookingCollect(r), JSON.stringify(points), cb.reservation_group_id]);
-        await recomputeBookingStatus(client, made.booking.id);
+        await afterCollect(client, made.booking.id, r);
         await client.query('INSERT INTO channel_booking_rooms (channel_booking_id, external_room_id, booking_id) VALUES ($1, $2, $3)', [cb.id, room.id, made.booking.id]);
         await note(client, made.booking.id, `Room added on ${r.ota} via the channel manager (reservation ${r.code}). ${fmtIDR(room.amount)}.`);
         changes.push(`room ${unit.name} added`); touched.push(made.booking.id);
@@ -667,12 +698,12 @@ async function applyChange(client, propertyId, r, cb, L) {
       const ids = mapped.map(m => m.booking_id).filter(Boolean);
       await client.query('UPDATE bookings SET payment_collect = $2 WHERE id = ANY($1::uuid[])', [ids, bookingCollect(r)]);
       for (const id of ids) {
-        await recomputeBookingStatus(client, id);
-        await note(client, id, `${r.ota} changed who collects the money: ${r.collect === 'property' ? 'the hotel collects now' : r.collect === 'ota' ? `paid to ${r.ota} now` : 'not given — the hotel collects'} (channel manager, reservation ${r.code}).`);
+        await afterCollect(client, id, r);
+        await note(client, id, `${r.ota} changed who collects the money: ${collectText(r)} now (channel manager, reservation ${r.code}).`);
       }
-      const cp = collectPoint(r);
+      const cp = r.collect === 'vcc' ? null : collectPoint(r);
       if (cp) problems.push(cp);
-      else changes.push(`paid to ${r.ota} now — nothing to collect from the guest`);
+      else changes.push(r.collect === 'vcc' ? collectText(r) : `paid to ${r.ota} now — nothing to collect from the guest`);
       touched.push(...ids);
     }
   }
