@@ -191,6 +191,8 @@ app.use('/api/resto', require('./routes/resto'));
 
 // /api/pos — external POS integration (charge-to-room). authPos (per-property
 // pos_api_key) + moduleGuard('pos_integration') applied per-route inside.
+// /api/pos/calls — the restaurant phone line for the POS (migration 160), before /api/pos.
+app.use('/api/pos/calls', require('./routes/posCalls'));
 app.use('/api/pos', require('./routes/posIntegration'));
 // /api/restaurant — the Restaurant page (POS sessions, kitchen, room charges).
 // auth + moduleGuard('pos_integration') + Restaurant permission, inside.

@@ -180,7 +180,7 @@ export default function App() {
       // needing callState as a fetchState dependency.
       if (data.incomingCall && callIdRef.current !== data.incomingCall.callId) {
         callIdRef.current = data.incomingCall.callId;
-        setCallState({ status: 'incoming', callId: data.incomingCall.callId, staffName: data.incomingCall.staffName });
+        setCallState({ status: 'incoming', callId: data.incomingCall.callId, staffName: data.incomingCall.staffName, line: data.incomingCall.line });
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Connection error');
@@ -296,7 +296,7 @@ export default function App() {
     if (msg.type === 'incoming_call_from_staff') {
       if (callIdRef.current) return; // already on/ringing a call — ignore
       callIdRef.current = msg.callId;
-      setCallState({ status: 'incoming', callId: msg.callId, staffName: msg.staffName });
+      setCallState({ status: 'incoming', callId: msg.callId, staffName: msg.staffName, line: msg.line });
       return;
     }
 
@@ -313,8 +313,10 @@ export default function App() {
     }
   });
 
-  const handlePlaceCall = useCallback(async () => {
+  // line: 'front_desk' or 'restaurant' (migration 160 — the restaurant answers in the POS).
+  const handlePlaceCall = useCallback(async (line) => {
     if (callState.status !== 'idle') return;
+    const ln = line === 'restaurant' ? 'restaurant' : 'front_desk';
     // Microphone first: if it's blocked, don't ring the front desk at all.
     try {
       await callClient.acquireMic();
@@ -326,9 +328,9 @@ export default function App() {
       return;
     }
     try {
-      const { data } = await api.post('/calls', { roomId });
+      const { data } = await api.post('/calls', { roomId, line: ln });
       callIdRef.current = data.callId;
-      setCallState({ status: 'calling', callId: data.callId });
+      setCallState({ status: 'calling', callId: data.callId, line: ln });
 
       const offer = await callClient.createOffer({
         onIceCandidate: (candidate) => {
@@ -337,7 +339,7 @@ export default function App() {
         onConnectionStateChange: (connState) => {
           if (connState === 'connected' && callIdRef.current === data.callId) {
             clearConnectingTimeout();
-            setCallState({ status: 'connected', callId: data.callId });
+            setCallState(prev => ({ ...prev, status: 'connected', callId: data.callId }));
           } else if (['failed', 'disconnected', 'closed'].includes(connState) && callIdRef.current === data.callId) {
             endCallLocally('failed', CONNECT_FAILED_MESSAGE);
           }
@@ -492,7 +494,7 @@ export default function App() {
           onOpenRoomCheck={() => setShowRoomCheck(true)}
           onRefresh={fetchState}
           onDebugClick={handleDebugClick}
-          onCallFrontDesk={handlePlaceCall}
+          onCallFrontDesk={() => handlePlaceCall('front_desk')}
           callActive={callState.status !== 'idle'}
         />
         {showDebugMenu && (
@@ -536,13 +538,15 @@ export default function App() {
         activitiesEnabled={state.activitiesEnabled}
         roomControllerEnabled={state.roomControllerEnabled}
         callingEnabled={state.callingEnabled}
+        restaurantLineEnabled={state.restaurantLineEnabled}
+        onCallRestaurant={() => handlePlaceCall('restaurant')}
         operationsEnabled={state.operationsEnabled}
         dndTaskId={state.dnd ? state.dnd.task_id : null}
         roomCheck={state.roomCheck}
         onOpenRoomCheck={() => setShowRoomCheck(true)}
         onRefresh={fetchState}
         onDebugClick={handleDebugClick}
-        onCallFrontDesk={handlePlaceCall}
+        onCallFrontDesk={() => handlePlaceCall('front_desk')}
         callActive={callState.status !== 'idle'}
         alarmTime={alarmTime}
         alarmEnabled={alarmEnabled}

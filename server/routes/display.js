@@ -169,7 +169,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
     // showing anything. This is the same "state poll doubles as a
     // guarantee" pattern the `message` field above already uses.
     const { rows: incomingCallRows } = await db.query(
-      `SELECT c.id, u_staff.name AS staff_name
+      `SELECT c.id, COALESCE(u_staff.name, c.initiated_by_name) AS staff_name, c.line
        FROM calls c
        LEFT JOIN users u_staff ON u_staff.id = c.initiated_by
        WHERE c.unit_id = $1 AND c.status = 'ringing' AND c.direction = 'staff_to_room'
@@ -189,7 +189,7 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       cards: cardRows,
       message: messageRows[0] || null,
       dnd: dndRows[0] ? { task_id: dndRows[0].id } : null,
-      incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name } : null,
+      incomingCall: incomingCallRows[0] ? { callId: incomingCallRows[0].id, staffName: incomingCallRows[0].staff_name, line: incomingCallRows[0].line } : null,
       weather,
       property: propertyRows[0] || null,
       tv,
@@ -200,6 +200,8 @@ router.get('/room/:roomId/state', authDisplay, async (req, res) => {
       activitiesEnabled: enabledModules.get('activities') || false,
       roomControllerEnabled: enabledModules.get('room_controller') || false,
       callingEnabled: enabledModules.get('calling') || false,
+      // A second button, "Call Restaurant" (migration 160): answered in the POS.
+      restaurantLineEnabled: await require('../services/callLines').restaurantLineOn(unit.property_id),
       operationsEnabled: enabledModules.get('operations') || false,
       // Room check / minibar (migration 091): the tablet shows a discreet
       // Housekeeping entry when the property has a PIN (never sent here), and
@@ -586,6 +588,8 @@ router.post('/room/:roomId/order', authDisplay, async (req, res, next) => {
       note: note || '',
       payment: ['room', 'cash', 'card'].includes(req.body.payment) ? req.body.payment : 'room',
     });
+    // Telegram to the restaurant, and reminders while it waits (migration 159).
+    if (!r.replayed) require('../services/roomServiceAlerts').placed(req.propertyId, r, stay);
     res.status(r.replayed ? 200 : 201).json({ ok: true, total: r.total, payment: r.payment || 'room',
       status: r.status === 'pending' ? 'pending_confirmation' : 'accepted' });
   } catch (err) { posFail(res, err); }

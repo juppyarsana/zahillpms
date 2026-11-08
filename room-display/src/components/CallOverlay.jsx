@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 
 export default function CallOverlay({ callState, onCancel, onAnswer, onHangup, onMuteToggle, muted }) {
   const { status, error } = callState;
+  const who = callState.line === 'restaurant' ? 'Restaurant' : 'Front Desk';
   if (!status || status === 'idle') return null;
 
   if (status === 'missed' || status === 'ended' || status === 'failed') {
@@ -32,7 +33,7 @@ export default function CallOverlay({ callState, onCancel, onAnswer, onHangup, o
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2" style={{ color: 'var(--danger)' }}>Incoming Call</p>
-            <h1 className="text-2xl font-extralight text-ink">Front Desk</h1>
+            <h1 className="text-2xl font-extralight text-ink">{who}</h1>
           </div>
           <div className="flex gap-4">
             <button onClick={onAnswer} style={{ ...btnStyle(false), background: '#16a34a' }}>
@@ -57,7 +58,7 @@ export default function CallOverlay({ callState, onCancel, onAnswer, onHangup, o
           <span className="material-symbols-outlined text-accent" style={{ fontSize: 48 }}>call</span>
         </div>
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2 text-accent">Front Desk</p>
+          <p className="text-xs font-bold uppercase tracking-[0.3em] mb-2 text-accent">{who}</p>
           <h1 className="text-2xl font-extralight text-ink">
             {status === 'calling' ? 'Calling…' : status === 'connecting' ? 'Connecting…' : 'Connected'}
           </h1>

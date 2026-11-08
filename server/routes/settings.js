@@ -71,6 +71,21 @@ router.post('/pos-api-key/regenerate', ownerOnly, async (req, res) => {
   }
 });
 
+// ── Restaurant phone line (migration 160) ───────────────────────────────────
+// On: room tablets get "Call Restaurant", answered in the POS (routes/posCalls.js).
+router.get('/restaurant-line', ownerOnly, async (req, res) => {
+  try {
+    const { rows: [r] } = await db.query('SELECT restaurant_line FROM property_settings WHERE property_id = $1', [req.propertyId]);
+    res.json({ enabled: !!r?.restaurant_line, working: await require('../services/callLines').restaurantLineOn(req.propertyId) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.put('/restaurant-line', ownerOnly, async (req, res) => {
+  try {
+    await db.query('UPDATE property_settings SET restaurant_line = $2 WHERE property_id = $1', [req.propertyId, !!req.body?.enabled]);
+    res.json({ enabled: !!req.body?.enabled, working: await require('../services/callLines').restaurantLineOn(req.propertyId) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Room tablet orders through the POS (migration 094) ──────────────────────
 // The POS's address + the key the POS made for the hotel (POS Setup → Room
 // service). The key is write-only: only its last 4 characters come back.

@@ -20,7 +20,7 @@ const EXPLORE_TABS = [
   { key: 'property', icon: 'spa',         label: 'Resort'     },
 ];
 
-export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, operationsEnabled, dndTaskId, onRefresh, onDebugClick, onCallFrontDesk, callActive, alarmTime, alarmEnabled, onSetAlarm }) {
+export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking, relays, controller, property, roomId, online = true, weather, cards = [], orderingEnabled, activitiesEnabled, roomControllerEnabled, callingEnabled, restaurantLineEnabled, onCallRestaurant, operationsEnabled, dndTaskId, onRefresh, onDebugClick, onCallFrontDesk, callActive, alarmTime, alarmEnabled, onSetAlarm }) {
   // Only show explore tabs that have cards
   const visibleExploreTabs = EXPLORE_TABS.filter(t => cards.some(c => c.category === t.key));
 
@@ -135,6 +135,7 @@ export default function GuestScreen({ roomCheck, onOpenRoomCheck, unit, booking,
               operationsEnabled={operationsEnabled}
               dndTaskId={dndTaskId}
               callingEnabled={callingEnabled} onCallFrontDesk={onCallFrontDesk} callActive={callActive}
+              restaurantLineEnabled={restaurantLineEnabled} onCallRestaurant={onCallRestaurant}
               alarmTime={alarmTime} alarmEnabled={alarmEnabled} onSetAlarm={onSetAlarm}
             />
             <HomeWelcome booking={booking} weather={weather} property={property} />

@@ -161,6 +161,15 @@ function registerJobs() {
 
   console.log('[Jobs] Smart Reports scheduled — Daily Close 03:30, Morning Brief 07:00, Tomorrow Preview 19:00, Weekly Mon 08:00, Monthly 1st 08:00 WITA');
 
+  // Room tablet orders still not accepted in the POS (services/roomServiceAlerts.js).
+  cron.schedule('* * * * *', async () => {
+    try {
+      await require('../services/roomServiceAlerts').checkAll();
+    } catch (err) {
+      console.error('[Jobs] Room service reminder failed:', err.message);
+    }
+  });
+
   // Restaurant goods still waiting for the chef (services/posHandover.js) — quiet at night.
   cron.schedule('*/15 * * * *', async () => {
     try {

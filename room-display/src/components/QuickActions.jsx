@@ -8,7 +8,7 @@ import AlarmTimePicker, { formatDisplay } from './AlarmTimePicker';
 // sidebar rail.
 export default function QuickActions({
   roomId, operationsEnabled, serverDndTaskId,
-  callingEnabled, onCallFrontDesk, callActive,
+  callingEnabled, onCallFrontDesk, callActive, restaurantLineEnabled, onCallRestaurant,
   alarmTime, alarmEnabled, onSetAlarm,
 }) {
   const dndStorageKey = `dndTaskId:${roomId}`;
@@ -85,7 +85,23 @@ export default function QuickActions({
           }}
         >
           <span className="material-symbols-outlined filled" style={{ fontSize: 22 }}>call</span>
-          <span className="text-sm font-extrabold uppercase tracking-widest">{callActive ? 'Calling…' : 'Call Front Desk'}</span>
+          <span className="text-sm font-extrabold uppercase tracking-widest">{callActive ? 'On a call…' : 'Call Front Desk'}</span>
+        </button>
+      )}
+      {callingEnabled && restaurantLineEnabled && (
+        <button
+          onClick={onCallRestaurant}
+          disabled={callActive}
+          className="w-full flex items-center justify-center gap-2.5 rounded-2xl"
+          style={{
+            padding: '14px 0', border: 'none', cursor: callActive ? 'default' : 'pointer',
+            background: 'var(--accent)', color: 'var(--accent-contrast)',
+            boxShadow: callActive ? 'none' : '0 6px 18px rgb(var(--accent-rgb) / 0.35)',
+            opacity: callActive ? 0.5 : 1, transition: 'opacity 0.2s',
+          }}
+        >
+          <span className="material-symbols-outlined filled" style={{ fontSize: 22 }}>restaurant</span>
+          <span className="text-sm font-extrabold uppercase tracking-widest">Call Restaurant</span>
         </button>
       )}
 

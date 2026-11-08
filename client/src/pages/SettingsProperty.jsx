@@ -353,6 +353,7 @@ function PosIntegrationCard() {
       )}
       {error && <div className="alert alert-error" style={{ marginTop: 8 }}>{error}</div>}
       <PosRoomOrders />
+      <RestaurantLine />
     </div>
   );
 }
@@ -422,6 +423,35 @@ function PosRoomOrders() {
         {cfg.key_set && cfg.url ? 'Linked — the room tablet orders from the POS (POS Integration must be on for this property).' : 'Not linked — the room tablet uses the PMS food menu.'}
       </div>
       {msg && <div className={`alert ${msg.ok ? 'alert-success' : 'alert-error'}`} style={{ marginTop: 8 }}><div>{msg.text}</div></div>}
+    </div>
+  );
+}
+
+// Restaurant phone line (migration 160): room tablets get "Call Restaurant",
+// answered in the POS (ringing on every POS screen, first to answer takes it).
+function RestaurantLine() {
+  const [cfg, setCfg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get('/api/settings/restaurant-line').then(r => setCfg(r.data)).catch(() => setCfg(false)); }, []);
+  if (!cfg) return null;
+  const toggle = async (enabled) => {
+    setBusy(true);
+    try { setCfg((await api.put('/api/settings/restaurant-line', { enabled })).data); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', marginTop: 18, paddingTop: 14 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>Restaurant phone line</div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
+        Room tablets get a second button, <b>Call Restaurant</b>. The call rings on the POS screens and the restaurant
+        answers it there; the restaurant can also call a room from the POS. Calls to the front desk are unchanged.
+      </p>
+      <label className="flex gap-2 items-center" style={{ fontSize: 14 }}>
+        <input type="checkbox" checked={cfg.enabled} disabled={busy} onChange={e => toggle(e.target.checked)} />
+        Rooms can call the restaurant
+      </label>
+      {cfg.enabled && !cfg.working && (
+        <div className="alert alert-error" style={{ marginTop: 8 }}><div>Not working yet: the Calling and POS Integration modules must both be on for this property.</div></div>
+      )}
     </div>
   );
 }
