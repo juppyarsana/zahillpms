@@ -90,17 +90,22 @@ router.put('/:id', auth, requireRole('owner'), async (req, res) => {
     await client.query('BEGIN');
     const { rows: [current] } = await client.query('SELECT * FROM activities WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]);
     if (!current) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Activity not found' }); }
+    // These three can be cleared (blank = unlimited capacity / no duration /
+    // no description): sent = saved as sent, left out = unchanged. COALESCE
+    // used to keep the old value whenever blank was sent.
+    const keep = (k, v) => (k in req.body ? (v === '' || v == null ? null : v) : current[k]);
     const vs = activitiesService.cleanVendorSettings(req.body, current);
     if (vs.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: vs.error }); }
     const { rows } = await client.query(
       `UPDATE activities SET
         name = COALESCE($1, name), category = COALESCE($2, category),
-        price = COALESCE($3, price), description = COALESCE($4, description),
-        duration_minutes = COALESCE($5, duration_minutes), capacity_per_slot = COALESCE($6, capacity_per_slot),
+        price = COALESCE($3, price), description = $4,
+        duration_minutes = $5, capacity_per_slot = $6,
         is_available = COALESCE($7, is_available), tax_mode = COALESCE($10, tax_mode),
         tax_base = $11, charge_service = $12, vendor_treatment = COALESCE($13, vendor_treatment)
        WHERE id = $8 AND property_id = $9 RETURNING *`,
-      [name, category, price, description, duration_minutes, capacity_per_slot, is_available, req.params.id, req.propertyId, tax_mode ?? null,
+      [name, category, price, keep('description', description), keep('duration_minutes', duration_minutes),
+       keep('capacity_per_slot', capacity_per_slot), is_available, req.params.id, req.propertyId, tax_mode ?? null,
        vs.value.tax_base, vs.value.charge_service, vs.value.vendor_treatment ?? null]
     );
     if (vs.value.vendors) {
