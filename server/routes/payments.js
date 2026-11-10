@@ -197,7 +197,12 @@ async function refundable(bookingId, propertyId) {
   if (!b) return null;
   const { rows: [r] } = await db.query(
     "SELECT COALESCE(SUM(amount), 0)::float AS received FROM payments WHERE booking_id = $1 AND status = 'received'", [bookingId]);
-  if (['cancelled', 'no_show'].includes(b.status)) return { status: b.status, received: r.received, amount: Math.max(0, round2(r.received)) };
+  if (['cancelled', 'no_show'].includes(b.status)) {
+    // Everything received, less a no-show / late-cancellation fee the hotel keeps (migration 166;
+    // computeProforma of a dead booking is its real lines only).
+    const fee = round2((await computeProforma(bookingId, propertyId)).total);
+    return { status: b.status, received: r.received, bill: fee, amount: Math.max(0, round2(r.received - fee)) };
+  }
   const est = await computeProforma(bookingId, propertyId);
   const owed = est.group ? est.group.own_total : est.total;
   // bill = what the whole stay comes to — shown when there is no credit, so

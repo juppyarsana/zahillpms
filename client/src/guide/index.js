@@ -26,6 +26,7 @@ export const GROUPS = [
     { id: 'ota-bookings', icon: '🌐', title: { id: 'Booking dari OTA', en: 'Bookings from the OTAs' } },
     { id: 'extras-payments', icon: '💳', title: { id: 'Extras: bayar sebagian & pindah tagihan', en: 'Extras: paying in parts & transferring the bill' } },
     { id: 'agent-payments', icon: '🧾', title: { id: 'Pembayaran dari agen', en: 'Payments from agents' } },
+    { id: 'noshow-fee', icon: '🚫', title: { id: 'Biaya no-show & pembatalan terlambat', en: 'No-show & late-cancellation fees' } },
     { id: 'ota-payments', icon: '🏦', title: { id: 'Pembayaran dari OTA', en: 'Payments from the OTAs' } },
   ] },
   { label: { id: 'Sales', en: 'Sales' }, chapters: [

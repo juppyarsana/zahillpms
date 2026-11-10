@@ -125,7 +125,12 @@ async function collectPosts(propertyId, from, to) {
   const P = [from, to, propertyId];
   const inRange = d => d >= from && d <= to;
   const chargeDay = `COALESCE(fc.service_date, ${dayOf('fc.posted_at')})`;
-  const arrivalSql = bookingCol => `(SELECT MIN(${dayOf('cr.checkin_time')}) FROM checkin_records cr WHERE cr.booking_id = ${bookingCol})`;
+  // The day a guest 'arrived' for deposits vs guest ledger: the check-in day — or, for a
+  // no-show / cancelled booking that carries a fee (migration 166), the day the fee counts,
+  // so what was paid before it moves from Advance deposits to the Guest ledger that day.
+  const arrivalSql = bookingCol => `COALESCE((SELECT MIN(${dayOf('cr.checkin_time')}) FROM checkin_records cr WHERE cr.booking_id = ${bookingCol}),
+     (SELECT MIN(COALESCE(nf.service_date, ${dayOf('nf.posted_at')})) FROM folio_charges nf
+        WHERE nf.booking_id = ${bookingCol} AND nf.type = 'noshow_fee' AND nf.is_voided = false))`;
   const groupArrivalSql = groupCol => `(SELECT MIN(${dayOf('cr.checkin_time')}) FROM checkin_records cr
      JOIN bookings gb ON gb.id = cr.booking_id WHERE gb.reservation_group_id = ${groupCol})`;
 
@@ -350,6 +355,7 @@ async function collectPosts(propertyId, from, to) {
         if (c.type === 'room') parts = [['revenue.room', net]];
         else if (c.type === 'fnb') parts = [['revenue.fnb_package', net]];
         else if (c.type === 'activity') parts = [['revenue.activities', net]];
+        else if (c.type === 'noshow_fee') parts = [['revenue.noshow', net]];
         else if (c.type === 'addon') {
           const meal = Math.min(num(c.addon_meal), net);
           const cat = EXTRA_CATEGORIES.includes(c.addon_category) ? c.addon_category : 'room_addon';
@@ -677,6 +683,7 @@ async function buildJournal(propertyId, from, to, { withDetail = false } = {}) {
     ['Extras', credited(k => k.startsWith('revenue.extra.')), report.ancillary_revenue],
     ['Activities', credited(k => k === 'revenue.activities'), report.activity_revenue],
     ['Meeting room & events', credited(k => k === 'revenue.events'), report.event_revenue || 0],
+    ['No-show & cancellation fees', credited(k => k === 'revenue.noshow'), report.noshow_revenue || 0],
   ].map(([label, journal, reports]) => ({ label, journal, reports: round2(reports), difference: round2(journal - reports) }));
 
   const result = {

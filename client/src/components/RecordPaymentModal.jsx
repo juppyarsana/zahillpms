@@ -44,7 +44,8 @@ export default function RecordPaymentModal({ booking, estimate, onClose, onPaid,
   const [evDue, evSel, setEvSel] = useEventsDue(`/api/folio/${booking.id}/events-due`);
 
   const roomLines = (booking.payments || [])
-    .filter(p => ['deposit', 'balance'].includes(p.type) && p.status === 'pending' && parseFloat(p.amount) > 0)
+    // A no-show / cancelled booking owes no room money — only its fee (an extras line).
+    .filter(p => !['cancelled', 'no_show'].includes(booking.status) && ['deposit', 'balance'].includes(p.type) && p.status === 'pending' && parseFloat(p.amount) > 0)
     .sort((a, b) => (a.type === b.type ? new Date(a.created_at) - new Date(b.created_at) : a.type === 'deposit' ? -1 : 1));   // deposit first
   const extrasFree = booking.complimentary_scope === 'all';
   // What can be paid as items: unpaid extras on the folio, and per-night

@@ -152,6 +152,7 @@ router.put('/:id/reinstate', auth, canCorrect, correction(async (client, b, { re
     return { error: `Room ${b.unit_name} is now booked for ${taken} on these dates — it can't be reinstated in this room`, code: 'ROOM_TAKEN' };
   }
   await client.query("UPDATE bookings SET status = 'pending', updated_at = NOW() WHERE id = $1", [b.id]);
+  await require('../services/noShowFeeService').voidLiveFees(client, b.id, userId, 'the booking was reinstated');
   if (b.reservation_group_id) {
     await client.query(
       "UPDATE reservation_groups SET status = 'active', updated_at = NOW() WHERE id = $1 AND property_id = $2 AND status = 'cancelled'",

@@ -55,7 +55,7 @@ function lineOf(account) {
 // A posting with no account chosen yet: its line guessed from the journal key,
 // so the P&L still adds up (and warns).
 function lineOfKey(key) {
-  if (key === 'revenue.room') return { type: 'revenue', line: 'rev.rooms' };
+  if (key === 'revenue.room' || key === 'revenue.noshow') return { type: 'revenue', line: 'rev.rooms' };
   if (key.startsWith('revenue.fnb')) return { type: 'revenue', line: 'rev.fnb' };
   if (key.startsWith('revenue.')) return { type: 'revenue', line: 'rev.other' };
   if (key === 'commission.expense') return { type: 'expense', line: 'dept.rooms' };

@@ -213,7 +213,10 @@ async function lockPaymentBooking(client, bookingId, propertyId) {
      WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [bookingId, propertyId]);
   if (!booking) return { status: 404, error: 'Booking not found' };
   if (['cancelled', 'no_show'].includes(booking.status)) {
-    return { status: 409, error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` };
+    // Only a no-show / late-cancellation fee (migration 166) can still be paid.
+    const { rows: [fee] } = await client.query(
+      "SELECT 1 FROM folio_charges WHERE booking_id = $1 AND type = 'noshow_fee' AND is_voided = false LIMIT 1", [bookingId]);
+    if (!fee) return { status: 409, error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` };
   }
   return { booking };
 }

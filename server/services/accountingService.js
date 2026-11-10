@@ -26,6 +26,7 @@ const MAP_KEYS = [
   ['revenue.extra.merchandise', 'Extras — merchandise', 'Revenue', '430-35-001'],
   ['revenue.extra.minibar', 'Extras — minibar', 'Revenue', '410-21-201'],
   ['revenue.extra.other', 'Extras — other', 'Revenue', '470-60-001'],
+  ['revenue.noshow', 'No-show & late-cancellation fees (kept apart from room nights)', 'Revenue', '400-11-002'],
   ['revenue.activities', 'Activities', 'Revenue', '430-31-001'],
   ['revenue.events', 'Meeting room & events (venue hire and other event lines)', 'Revenue', '410-22-001'],
   ['tax.service', 'Service charge collected', 'Service charge & tax', '250-00-001'],

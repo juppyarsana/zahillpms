@@ -35,6 +35,7 @@ import { lineShown, includesText, shownTotal, shownAmount, priceFactor } from '.
 import { otaName, otaPaysRoom, roomPending, COLLECT_OPTIONS } from '../lib/otaDue';
 import { propertyToday, PROPERTY_TZ } from '../lib/propertyTime';
 import StaffNotes from '../components/StaffNotes';
+import NoShowFeeModal, { FeePicker, feePayload, feeValid } from '../components/NoShowFee';
 const STATUS_BADGE = { confirmed: 'green', deposit_paid: 'amber', pending: 'amber', checked_in: 'blue', checked_out: 'gray', cancelled: 'red', no_show: 'red' };
 const STATUS_LABEL = { confirmed: 'Confirmed', deposit_paid: 'Deposit Paid', pending: 'Pending', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled', no_show: 'No Show' };
 // bookings.folio_status — set when a city-ledger stay is checked out billed
@@ -237,7 +238,8 @@ export default function BookingDetail() {
   const [groupMove, setGroupMove] = useState(null);   // 'join' | 'leave'
   const [voidingCharge, setVoidingCharge] = useState(null);   // folio line
   const [correcting, setCorrecting] = useState(null);   // { step, title, text, confirmLabel }
-  const [cancelling, setCancelling] = useState(null);   // { reason, sure, busy, error }
+  const [cancelling, setCancelling] = useState(null);   // { reason, sure, busy, error, fee }
+  const [feeWin, setFeeWin] = useState(null);   // 'noshow' | 'add' — no-show / late-cancellation fee window
   const [agentFix, setAgentFix] = useState(null);       // { agent (picker value), bill, reason, busy, error }
   const { callRoom } = useCall();
   const [booking, setBooking] = useState(null);
@@ -565,12 +567,12 @@ export default function BookingDetail() {
   // Cancel Booking: a window with the booking spelled out, a required reason
   // and a tick box — never a one-click confirm.
   function cancel() {
-    setCancelling({ reason: '', sure: false, busy: false, error: '' });
+    setCancelling({ reason: '', sure: false, busy: false, error: '', fee: { mode: 'none', amount: '' } });
   }
   async function doCancel() {
     setCancelling(c => ({ ...c, busy: true, error: '' }));
     try {
-      await api.delete(`/api/bookings/${id}`, { data: { reason: cancelling.reason.trim() } });
+      await api.delete(`/api/bookings/${id}`, { data: { reason: cancelling.reason.trim(), fee: feePayload(cancelling.fee) } });
       setCancelling(null);
       setFolio(null);
       setEstimate(null);
@@ -835,15 +837,8 @@ export default function BookingDetail() {
     }
   }
 
-  async function markNoShow() {
-    if (!confirm('Mark this booking as a no-show? The guest never checked in.')) return;
-    try {
-      await api.put(`/api/bookings/${id}/no-show`);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Failed to mark as no-show');
-    }
-  }
+  // Mark No-Show opens a window: the fee (none / first night / whole stay / an amount) is chosen there.
+  function markNoShow() { setFeeWin('noshow'); }
 
   async function undoNoShow() {
     if (!confirm('Put this booking back? Use this when the guest did arrive (or is still coming). The status goes back to Pending / Deposit Paid / Confirmed from its payments.')) return;
@@ -955,6 +950,8 @@ export default function BookingDetail() {
   // buttons instead, and Download earns its own always-visible button since
   // it's a different kind of action (produces a guest-facing document).
   const modifyItems = [
+    ['no_show', 'cancelled'].includes(booking.status) && !booking.noshow_fee &&
+      { label: booking.status === 'cancelled' ? 'Add late-cancellation fee' : 'Add no-show fee', icon: '💰', onClick: () => setFeeWin('add'), hint: 'Charge (or record what the OTA pays for) a room the hotel held' },
     booking.status === 'no_show' &&
       { label: 'Undo No-Show', icon: '↩️', onClick: undoNoShow, hint: 'The guest did arrive — put the booking back' },
     canCorrect && booking.status === 'checked_out' && !['invoiced', 'paid'].includes(booking.folio_status) &&
@@ -1026,8 +1023,12 @@ export default function BookingDetail() {
   // "Estimated Balance Due"). Not shown for cancelled / no-show, nor when the
   // estimate isn't available (Financial module off).
   const headerBalance = (() => {
-    if (!estimate || ['cancelled', 'no_show'].includes(booking.status)) return null;
+    if (!estimate || (['cancelled', 'no_show'].includes(booking.status) && !booking.noshow_fee)) return null;
     const due = parseFloat(estimate.balance_due) || 0;
+    if (['cancelled', 'no_show'].includes(booking.status)) {
+      if (due < 1) return { value: 'Fee paid', sub: booking.noshow_fee?.description };
+      return { value: fmtIDR(due), sub: booking.noshow_fee?.description };
+    }
     if (booking.folio_status) return { value: 'On agent bill', sub: booking.agent_name || undefined };
     // OTA booking: its open room lines are the OTA's to pay, not the guest's (lib/otaDue).
     if (otaOpen > 0.5) {
@@ -1122,7 +1123,10 @@ export default function BookingDetail() {
 
       {booking.status === 'no_show' && (
         <div className="alert alert-warn mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div>Marked <b>no-show</b>. Did the guest arrive after all? Put the booking back, then check them in and take payment as usual.</div>
+          <div>
+            Marked <b>no-show</b>. Did the guest arrive after all? Put the booking back, then check them in and take payment as usual.
+            {booking.noshow_fee && <div style={{ marginTop: 4 }}>💰 <b>{booking.noshow_fee.description}</b> — {fmtIDR(booking.noshow_fee.amount)} before service &amp; tax{booking.noshow_fee.paid ? ' · paid' : ' · not paid yet (Folio tab → Record Payment)'}.</div>}
+          </div>
           <button className="btn btn-sm btn-primary" onClick={undoNoShow}>↩ Undo No-Show</button>
         </div>
       )}
@@ -1564,7 +1568,7 @@ export default function BookingDetail() {
                       Projected for the whole stay: posted + not posted yet − paid. Use this to know what the guest actually still owes.
                     </div>
                   )}
-                  {parseFloat(estimate.balance_due) > 0 && !['cancelled', 'no_show'].includes(booking.status) && (
+                  {parseFloat(estimate.balance_due) > 0 && (!['cancelled', 'no_show'].includes(booking.status) || booking.noshow_fee) && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
                   )}
                 </div>
@@ -1938,6 +1942,11 @@ export default function BookingDetail() {
         </div>
       )}
 
+      {feeWin && (
+        <NoShowFeeModal booking={{ ...booking, id }} kind={feeWin} onClose={() => setFeeWin(null)}
+          onDone={() => { setFeeWin(null); setFolio(null); setEstimate(null); load(); }} />
+      )}
+
       {cancelling && (() => {
         const received = (booking.payments || []).filter(p => p.status === 'received').reduce((s, p) => s + parseFloat(p.amount), 0);
         return (
@@ -1965,6 +1974,10 @@ export default function BookingDetail() {
                   </div>
                 </div>
                 <div className="form-group">
+                  <label className="form-label">Late-cancellation fee</label>
+                  <FeePicker bookingId={booking.id} value={cancelling.fee} onChange={fee => setCancelling(c => ({ ...c, fee }))} />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Reason (required — goes into Edit History)</label>
                   <input className="form-input" autoFocus value={cancelling.reason} placeholder="e.g. guest cancelled by phone"
                     onChange={e => setCancelling(c => ({ ...c, reason: e.target.value }))} />
@@ -1976,7 +1989,7 @@ export default function BookingDetail() {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setCancelling(null)}>Keep the booking</button>
-                <button className="btn btn-danger" onClick={doCancel} disabled={cancelling.busy || !cancelling.sure || !cancelling.reason.trim()}>
+                <button className="btn btn-danger" onClick={doCancel} disabled={cancelling.busy || !cancelling.sure || !cancelling.reason.trim() || !feeValid(cancelling.fee)}>
                   {cancelling.busy ? 'Cancelling…' : 'Cancel booking'}
                 </button>
               </div>

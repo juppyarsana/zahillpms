@@ -342,7 +342,7 @@ async function loadFolio(bookingId, propertyId, conn = db) {
 // from the rate plan alone. Never writes to folio_charges — read-only.
 async function computeProforma(bookingId, propertyId) {
   const bookingQ = db.query(
-    `SELECT b.id, b.check_in_date, b.check_out_date, b.total_amount, b.discount_amount,
+    `SELECT b.id, b.status, b.check_in_date, b.check_out_date, b.total_amount, b.discount_amount,
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
             g.name as guest_name, u.name as unit_name,
@@ -445,7 +445,10 @@ async function computeProforma(bookingId, propertyId) {
     quantity: a.num_participants, unit_price: a.unit_price, amount: round2(parseFloat(a.total_amount)),
     service_date: ymd(a.scheduled_date), tax_mode: a.tax_mode || 'added',
   }));
-  const charges = [...projectedCharges, ...addonCharges, ...extraCharges, ...activityCharges];
+  // A no-show / cancelled booking has no stay to project: what it owes is its
+  // real lines only (a no-show / late-cancellation fee, migration 166).
+  const dead = ['no_show', 'cancelled'].includes(booking.status);
+  const charges = dead ? [...extraCharges] : [...projectedCharges, ...addonCharges, ...extraCharges, ...activityCharges];
   const complimentary_extras = markComplimentary(booking, charges);
 
   const rates = billRates(booking, settings);

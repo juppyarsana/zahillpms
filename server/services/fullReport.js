@@ -220,6 +220,8 @@ async function buildFullReport(propertyId, from, to) {
       vendor_share: activityVendorShare, hotel_share: r2(base.activity_revenue - activityVendorShare) },
     // Meeting room & events (migration 106): venue hire + other lines of confirmed events.
     events: { total: r2(base.event_revenue || 0), by_event: eventsByName },
+    // No-show & late-cancellation fees (migration 166): not room nights, so not in Rooms / ADR.
+    noshow: { total: r2(base.noshow_revenue || 0), count: base.noshow_count || 0 },
     total: r2(base.total_revenue),
     complimentary: { nights: base.comp_nights, value: r2(base.comp_value) },
   };
@@ -286,7 +288,7 @@ async function buildFullReport(propertyId, from, to) {
   // changed mid-period isn't re-applied, and extras paid directly were
   // taxed at the rate of their sale day.
   const ps = settingsRows[0] || {};
-  const taxableNet = base.room_revenue + base.fnb_revenue + base.ancillary_revenue + actAddedNet + (base.event_revenue || 0);
+  const taxableNet = base.room_revenue + base.fnb_revenue + base.ancillary_revenue + actAddedNet + (base.event_revenue || 0) + (base.noshow_revenue || 0);
   const t = computeFolioTotals(taxableNet, ps.tax_rate, ps.service_charge_rate);
   const pendingBy = Object.fromEntries(owedGuests.map(g => [g.stage, { bookings: parseInt(g.bookings), amount: r2(g.amount) }]));
   const agentRows = agents.filter(a => a.total_outstanding > 0.004 || a.unpaid_commission > 0.004)

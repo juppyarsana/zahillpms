@@ -1446,7 +1446,10 @@ router.get('/:id', auth, async (req, res) => {
       WHERE b.property_id = $1 AND (b.id = $2 OR b.split_from_booking_id = $3)
       ORDER BY b.check_in_date`, [req.propertyId, booking.split_from_booking_id || null, booking.id]);
     const linked_events = await linkedEvents(req.propertyId, { bookingId: booking.id });
-    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests, split_links, linked_events });
+    // The live no-show / late-cancellation fee (migration 166), if any.
+    const { rows: [noshow_fee] } = ['no_show', 'cancelled'].includes(booking.status) ? await db.query(
+      "SELECT id, description, amount, service_date, paid_payment_id IS NOT NULL AS paid FROM folio_charges WHERE booking_id = $1 AND type = 'noshow_fee' AND is_voided = false LIMIT 1", [booking.id]) : { rows: [] };
+    res.json({ ...booking, payments, notes, checkin_record: checkin_record || null, group, events, night_prices, to_check_points, to_check_bucket, other_guests, split_links, linked_events, noshow_fee: noshow_fee || null });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3176,23 +3179,69 @@ router.put('/:id/change-room', auth, async (req, res) => {
 });
 
 // PUT /api/bookings/:id/no-show
+// No-show / late-cancellation fee (migration 166): { mode: 'none' | 'first_night' |
+// 'whole_stay' | 'custom', amount? } in the body's `fee`. 'none' / absent = no fee.
+const noShowFee = require('../services/noShowFeeService');
+const parseFee = f => (f && f.mode && f.mode !== 'none' ? { mode: f.mode, amount: f.amount } : null);
+function feeError(res, err) {
+  if (err instanceof noShowFee.FeeError) return res.status(err.status).json({ error: err.message, code: err.code });
+  return res.status(500).json({ error: err.message });
+}
+
 router.put('/:id/no-show', auth, async (req, res) => {
+  const fee = parseFee(req.body?.fee);
+  const client = await db.pool.connect();
   try {
-    const { rows: [booking] } = await db.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    await client.query('BEGIN');
+    const { rows: [booking] } = await client.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]);
+    if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
     if (!['pending', 'deposit_paid', 'confirmed'].includes(booking.status)) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: `Cannot mark as no-show — booking status is ${booking.status}` });
     }
-    const { rows } = await db.query(
+    const { rows } = await client.query(
       "UPDATE bookings SET status = 'no_show', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
       [req.params.id, req.propertyId]
     );
-    await roomCharge.voidAll(db, req.params.id, req.user.id);
-    await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+    await roomCharge.voidAll(client, req.params.id, req.user.id);
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
       [req.params.id, 'Marked no-show.', req.user.id]);
-    res.json(rows[0]);
+    let posted = null;
+    if (fee) posted = await noShowFee.postFee(client, req.propertyId, req.params.id, { ...fee, kind: 'no_show', userId: req.user.id });
+    await client.query('COMMIT');
+    res.json({ ...rows[0], fee: posted });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query('ROLLBACK').catch(() => {});
+    feeError(res, err);
+  } finally {
+    client.release();
+  }
+});
+
+// GET /api/bookings/:id/noshow-fee/quote — what the fee window offers (first night,
+// whole stay, all-in), and whether this booking can carry a fee.
+router.get('/:id/noshow-fee/quote', auth, async (req, res) => {
+  try { res.json(await noShowFee.quote(req.propertyId, req.params.id)); } catch (err) { feeError(res, err); }
+});
+
+// POST /api/bookings/:id/noshow-fee { mode, amount?, reason } — a fee on a booking that is
+// ALREADY marked no-show / cancelled (e.g. the OTA pays the first night afterwards).
+router.post('/:id/noshow-fee', auth, async (req, res) => {
+  const fee = parseFee(req.body);
+  const reason = String(req.body?.reason || '').trim().slice(0, 300);
+  if (!fee) return res.status(400).json({ error: 'Choose the fee: first night, whole stay or an amount', code: 'BAD_MODE' });
+  if (!reason) return res.status(400).json({ error: 'A reason is required to add a fee afterwards', code: 'REASON_REQUIRED' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const posted = await noShowFee.postFee(client, req.propertyId, req.params.id, { ...fee, userId: req.user.id, reason });
+    await client.query('COMMIT');
+    res.status(201).json(posted);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    feeError(res, err);
+  } finally {
+    client.release();
   }
 });
 
@@ -3231,6 +3280,7 @@ async function undoNoShowTx(client, bookingId, propertyId, userId, note) {
     }
   }
   await client.query("UPDATE bookings SET status = 'pending', updated_at = NOW() WHERE id = $1", [b.id]);
+  await require('../services/noShowFeeService').voidLiveFees(client, b.id, userId, 'the no-show was undone');
   const status = await recomputeBookingStatus(client, b.id);
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
     [b.id, `${note || 'No-show undone'} — status back to ${status.replace('_', ' ')}.`, userId]);
@@ -3479,24 +3529,35 @@ router.delete('/:id', auth, async (req, res) => {
     // A reason every time, and only a booking that hasn't arrived (it used to
     // cancel anything, a checked-in or checked-out stay included).
     if (!String(req.body?.reason || '').trim()) return res.status(400).json({ error: 'A reason is required to cancel a booking', code: 'REASON_REQUIRED' });
-    const { rows: [cur] } = await db.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
-    if (!cur) return res.status(404).json({ error: 'Booking not found' });
-    if (!['pending', 'deposit_paid', 'confirmed'].includes(cur.status)) {
-      return res.status(409).json({ error: cur.status === 'checked_in' ? 'This guest is checked in — check them out (or undo the check-in) instead' : `This booking is already ${cur.status.replace('_', ' ')}`, code: 'NOT_CANCELLABLE' });
-    }
-    const { rows } = await db.query(
-      "UPDATE bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
-      [req.params.id, req.propertyId]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Booking not found' });
-    await roomCharge.voidAll(db, req.params.id, req.user.id);
-    // Optional reason (e.g. after a complimentary request was declined) → Edit History.
-    const reason = String(req.body?.reason || '').trim();
-    if (reason) {
-      await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+    const fee = parseFee(req.body?.fee);
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: [cur] } = await client.query('SELECT status FROM bookings WHERE id = $1 AND property_id = $2 FOR UPDATE', [req.params.id, req.propertyId]);
+      if (!cur) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+      if (!['pending', 'deposit_paid', 'confirmed'].includes(cur.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: cur.status === 'checked_in' ? 'This guest is checked in — check them out (or undo the check-in) instead' : `This booking is already ${cur.status.replace('_', ' ')}`, code: 'NOT_CANCELLABLE' });
+      }
+      const { rows } = await client.query(
+        "UPDATE bookings SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND property_id = $2 RETURNING *",
+        [req.params.id, req.propertyId]
+      );
+      await roomCharge.voidAll(client, req.params.id, req.user.id);
+      // The reason (required above) → Edit History.
+      const reason = String(req.body?.reason || '').trim();
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
         [req.params.id, `Booking cancelled. Reason: ${reason}`.slice(0, 1000), req.user.id]);
+      let posted = null;
+      if (fee) posted = await noShowFee.postFee(client, req.propertyId, req.params.id, { ...fee, kind: 'cancellation', userId: req.user.id });
+      await client.query('COMMIT');
+      res.json({ ...rows[0], fee: posted });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      return feeError(res, err);
+    } finally {
+      client.release();
     }
-    res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

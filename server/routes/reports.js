@@ -143,6 +143,17 @@ const EVENT_SQL = `
     AND c.service_date BETWEEN $1::date AND $2::date
   GROUP BY c.service_date`;
 
+// No-show / late-cancellation fees (migration 166): the NET amount of each live fee line
+// on the day it counts (a no-show: the arrival day). Kept apart from room revenue — not a
+// room night, so occupancy / ADR / RevPAR do not move — but in the total.
+const NOSHOW_SQL = `
+  SELECT COALESCE(fc.service_date, (fc.posted_at AT TIME ZONE 'Asia/Makassar')::date) AS day,
+         COALESCE(SUM(fc.amount), 0) AS net, COUNT(*) AS fees
+  FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id
+  WHERE b.property_id = $3 AND fc.type = 'noshow_fee' AND fc.is_voided = false
+    AND COALESCE(fc.service_date, (fc.posted_at AT TIME ZONE 'Asia/Makassar')::date) BETWEEN $1::date AND $2::date
+  GROUP BY 1`;
+
 async function getReport(propertyId, from, to) {
     // Room / F&B revenue, bookings, and nights are all night-based: a
     // booking contributes only the nights that actually fall in the
@@ -238,6 +249,7 @@ async function getReport(propertyId, from, to) {
     GROUP BY 1
   `, [from, to, propertyId]);
   const eventsQ = db.query(EVENT_SQL, [from, to, propertyId]);
+  const noshowQ = db.query(NOSHOW_SQL, [from, to, propertyId]);
   const expensesDailyQ = db.query(`
     SELECT day AS date, COALESCE(SUM(amount), 0) AS amount
     FROM ${COSTS_SQL} c
@@ -277,7 +289,11 @@ async function getReport(propertyId, from, to) {
   const [{ rows: ancDaily }, { rows: expDaily }, { rows: addonDaily }, { rows: actDaily }, { rows: posDaily }] =
     await Promise.all([ancillaryDailyQ, expensesDailyQ, addonDailyQ, activityDailyQ, posSessionsQ]);
   const { rows: eventDaily } = await eventsQ;
+  const { rows: noshowDaily } = await noshowQ;
+  const noshowRev = noshowDaily.reduce((sum, r) => sum + parseFloat(r.net), 0);
+  const noshowCount = noshowDaily.reduce((sum, r) => sum + parseInt(r.fees), 0);
   const dayKey = d => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
+  const noshowByDay = new Map(noshowDaily.map(r => [dayKey(r.day), parseFloat(r.net)]));
   const ancByDay = new Map(ancDaily.map(r => [dayKey(r.date), r]));
   const addonByDay = new Map(addonDaily.map(r => [dayKey(r.date), r]));
   const expByDay = new Map(expDaily.map(r => [dayKey(r.date), parseFloat(r.amount)]));
@@ -298,7 +314,8 @@ async function getReport(propertyId, from, to) {
     d.ancillary_revenue = (sa ? parseFloat(sa.amount) : 0) + (ad ? parseFloat(ad.extra) : 0);
     d.activity_revenue = actByDay.get(dayKey(d.date)) || 0;
     d.event_revenue = evd ? parseFloat(evd.venue) : 0;
-    d.total_revenue = parseFloat(d.room_revenue) + d.fnb_revenue + d.ancillary_revenue + d.activity_revenue + d.event_revenue;
+    d.noshow_revenue = noshowByDay.get(dayKey(d.date)) || 0;
+    d.total_revenue = parseFloat(d.room_revenue) + d.fnb_revenue + d.ancillary_revenue + d.activity_revenue + d.event_revenue + d.noshow_revenue;
     d.expenses = expByDay.get(dayKey(d.date)) || 0;
   }
 
@@ -311,7 +328,7 @@ async function getReport(propertyId, from, to) {
   const fnbRev = fnbRatePlan + fnbExtras + fnbOutlets;
   const ancRev = parseFloat(ancillary.ancillary_revenue) + parseFloat(addon.extra);
   const activityRev = parseFloat(activity.revenue);
-  const totalRevenue = roomRev + fnbRev + ancRev + activityRev + eventRev;
+  const totalRevenue = roomRev + fnbRev + ancRev + activityRev + eventRev + noshowRev;
   const expensesTotal = parseFloat(expenses.total);
   return {
     from, to,
@@ -329,6 +346,9 @@ async function getReport(propertyId, from, to) {
     // Meeting room & events: venue hire and other lines of confirmed events
     // (their restaurant bills are in F&B outlets).
     event_revenue: round2(eventRev),
+    // No-show & late-cancellation fees (NET), on the day they count.
+    noshow_revenue: round2(noshowRev),
+    noshow_count: noshowCount,
     total_revenue: totalRevenue,
     expenses_total: expensesTotal,
     net_income: totalRevenue - expensesTotal,

@@ -78,7 +78,7 @@ async function buildRevenue(propertyId, month, { today = todayWITA() } = {}) {
       { label: 'Breakfast with extra beds', amount: r2(rv.fnb.extras) },
       { label: 'Restaurant & POS', amount: r2(rv.fnb.outlets) },
     ].filter(x => Math.abs(x.amount) > 0.004) },
-    { key: 'other', label: 'Extras, activities & events', amount: otherTotal, parts: [
+    { key: 'other', label: 'Extras, activities, events & fees', amount: otherTotal, parts: [
       ...rv.extras.by_category.map(c => ({ label: c.label, amount: r2(c.amount) })),
       ...(rv.activities.total ? [{ label: `Activities (${rv.activities.bookings} booked)`, amount: r2(rv.activities.total) }] : []),
       ...(rv.events.total ? [{ label: 'Meeting room & events', amount: r2(rv.events.total) }] : []),
@@ -105,7 +105,7 @@ async function buildRevenue(propertyId, month, { today = todayWITA() } = {}) {
       date: ymd(d.date),
       rooms: r2(parseFloat(d.room_revenue)),
       fnb: r2(d.fnb_revenue),
-      other: r2((d.ancillary_revenue || 0) + (d.activity_revenue || 0) + (d.event_revenue || 0)),
+      other: r2((d.ancillary_revenue || 0) + (d.activity_revenue || 0) + (d.event_revenue || 0) + (d.noshow_revenue || 0)),
       total: r2(d.total_revenue),
       nights: parseInt(d.nights_sold, 10) || 0,
     })),

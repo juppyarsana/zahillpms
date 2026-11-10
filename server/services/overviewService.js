@@ -175,7 +175,7 @@ async function buildOverview(propertyId, { today = todayWITA() } = {}) {
   const dayFigures = (r, money, made) => r && {
     revenue: r2(r.total_revenue),
     rooms: r2(r.room_revenue), fnb: r2(r.fnb_revenue),
-    other: r2(r.ancillary_revenue + r.activity_revenue + (r.event_revenue || 0)),
+    other: r2(r.ancillary_revenue + r.activity_revenue + (r.event_revenue || 0) + (r.noshow_revenue || 0)),
     room_nights: r.total_nights,
     occupancy: sell > 0 ? Math.round((r.total_nights / sell) * 100) : 0,
     adr: r.paid_nights > 0 ? r2(r.room_revenue / r.paid_nights) : 0,
