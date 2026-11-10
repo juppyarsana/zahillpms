@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import { TripVendorsEditor, useVendorChoices, vendorPayload } from './TripVendors';
 
 // New Activity Booking — shared by the Activities page and the reservation's
 // Activities tab ("+ Book activity"). With `reservation` the guest is fixed
@@ -49,6 +50,9 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [price, setPrice] = useState('');        // '' = the Catalog price
+  const [vendorRows, setVendorRows] = useState([]);
+  const choices = useVendorChoices();
   const set = patch => setForm(f => ({ ...f, ...patch }));
 
   useEffect(() => { api.get('/api/activities').then(r => setActivities(r.data.filter(a => a.is_available))); }, []);
@@ -78,7 +82,14 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
 
   const activity = activities.find(a => a.id === form.activity_id);
   const pax = parseInt(form.num_participants) || 0;
-  const net = activity ? parseFloat(activity.price) * pax : 0;
+  const catalogNet = activity ? parseFloat(activity.price) * pax : 0;
+  const typedPrice = price !== '' && parseFloat(price) > 0;
+  const net = typedPrice ? parseFloat(price) : catalogNet;
+  // A new activity starts from its Catalog vendors and price.
+  useEffect(() => {
+    setPrice('');
+    setVendorRows((activity?.default_vendor_ids || []).map(id => ({ supplier_id: id, amount: '' })));
+  }, [form.activity_id]); // eslint-disable-line react-hooks/exhaustive-deps
   const paidNow = !!form.payment_method && form.payment_method !== 'room_charge';
   const mode = activity?.tax_mode || 'added';
   const scRate = parseFloat(branding?.service_charge_rate || 0);
@@ -92,9 +103,12 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
   async function save() {
     if (!form.activity_id || !form.scheduled_date) { setError('Activity and date are required'); return; }
     if (pax < 1) { setError('At least 1 participant'); return; }
+    if (price !== '' && !(parseFloat(price) > 0)) { setError('Type the price for this trip, or leave it empty for the Catalog price'); return; }
     setError(''); setSaving(true);
     try {
-      const { data } = await api.post('/api/activities/bookings', form);
+      const { data } = await api.post('/api/activities/bookings', {
+        ...form, vendors: vendorPayload(vendorRows), ...(typedPrice ? { total_amount: parseFloat(price) } : {}),
+      });
       onDone?.(data);
     } catch (err) {
       setError(err?.response?.data?.error || 'Could not create booking');
@@ -126,7 +140,25 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
             </div>
             <div className="form-group"><label className="form-label">Time</label><input className="form-input" type="time" value={form.scheduled_time} onChange={e => set({ scheduled_time: e.target.value })} /></div>
           </div>
-          <div className="form-group"><label className="form-label">Participants</label><input className="form-input" type="number" min="1" value={form.num_participants} onChange={e => set({ num_participants: e.target.value })} style={{ width: 100 }} /></div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Participants</label><input className="form-input" type="number" min="1" value={form.num_participants} onChange={e => set({ num_participants: e.target.value })} style={{ width: 100 }} /></div>
+            {activity && (
+              <div className="form-group"><label className="form-label">Price for this trip</label>
+                <input className="form-input" type="number" min="0" value={price} onChange={e => setPrice(e.target.value)}
+                  placeholder={Math.round(catalogNet).toString()} />
+                <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                  {typedPrice
+                    ? <>Catalog: {fmtIDR(catalogNet)} · <a href="#" onClick={e => { e.preventDefault(); setPrice(''); }}>use it</a></>
+                    : <>Catalog price {fmtIDR(activity.price)} × {pax || 0}. Type another if it was agreed differently.</>}
+                </div>
+              </div>
+            )}
+          </div>
+          {activity && (
+            <div className="form-group"><label className="form-label">Vendor (who runs this trip)</label>
+              <TripVendorsEditor rows={vendorRows} onChange={setVendorRows} choices={choices} activity={activity} pax={pax} />
+            </div>
+          )}
 
           {!reservation && (
             <div className="form-group">
@@ -181,7 +213,7 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
 
           {activity && pax > 0 && (
             <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, fontSize: 13 }}>
-              <div className="flex-between"><span>{activity.name} × {pax}</span><span>{fmtIDR(net)}</span></div>
+              <div className="flex-between"><span>{activity.name} × {pax}{typedPrice ? ' (price typed)' : ''}</span><span>{fmtIDR(net)}</span></div>
               {paidNow && sc > 0 && <div className="flex-between text-muted"><span>Service charge ({scRate}%)</span><span>{fmtIDR(sc)}</span></div>}
               {paidNow && tax > 0 && <div className="flex-between text-muted"><span>Tax ({taxRate}%)</span><span>{fmtIDR(tax)}</span></div>}
               <div className="flex-between" style={{ fontWeight: 700, marginTop: 4 }}>

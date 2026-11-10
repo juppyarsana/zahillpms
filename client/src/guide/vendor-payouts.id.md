@@ -19,7 +19,12 @@ Satu aktivitas bisa punya lebih dari satu vendor (misalnya jeep + guide).
 
 ## 2. Booking trip
 
-Booking aktivitas seperti biasa (Activities → New Booking, atau tab Activities di reservasi). Jumlah untuk tiap vendor terisi sendiri. Untuk tamu tidak ada yang berubah.
+Booking aktivitas seperti biasa (Activities → New Booking, atau tab Activities di reservasi).
+
+- **Price for this trip** awalnya kosong, artinya harga Catalog × jumlah peserta. Kalau harganya disepakati lain di lapangan, ketik harganya. Harga yang diketik pada tamu menginap tercatat di Edit History.
+- **Vendor (who runs this trip)** awalnya berisi vendor dari Catalog. Operator bisa bergantian, jadi ganti ke operator yang benar-benar jalan: pilih vendor lain, ✕ untuk menghapus, *+ Add vendor…* untuk vendor kedua. Vendor dari Catalog dapat jumlah sesuai Catalog; vendor lain muncul di *Harga yang belum diisi* untuk accounting. Jumlahnya hanya terlihat dan bisa diketik oleh owner dan staff dengan izin *Vendor prices & payouts*.
+
+**Trip sudah terlanjur dibooking?** Di halaman Activities atau tab Activities di reservasi, tekan **+ Vendor** (belum ada vendor) atau **Vendor** pada trip itu untuk menambah atau mengganti operatornya. Vendor yang sudah dibayar untuk trip itu tidak bisa dihapus.
 
 Trip berhutang ke vendor begitu statusnya **Confirmed** atau **Completed**. Kalau **cancelled** atau **no-show**, vendor tidak dibayar, kecuali Anda centang *the vendor is still owed this amount (a fee)* di trip itu.
 

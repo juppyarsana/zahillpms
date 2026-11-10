@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
+import TripVendorsModal from '../components/TripVendors';
 
 const CATEGORIES = ['tour', 'transport', 'wellness', 'other'];
 const CAT_ICONS = { tour: '🥾', transport: '🚐', wellness: '🧘', other: '📦' };
@@ -32,6 +33,7 @@ export default function Activities() {
   const [activities, setActivities] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [payingActivity, setPayingActivity] = useState(null);
+  const [vendorsFor, setVendorsFor] = useState(null);
   const [summary, setSummary] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -192,7 +194,7 @@ export default function Activities() {
                     <tr key={b.id}>
                       <td>{String(b.scheduled_date).slice(0, 10)}{b.scheduled_time ? ` ${b.scheduled_time.slice(0, 5)}` : ''}</td>
                       <td style={{ fontWeight: 600 }}>{CAT_ICONS[b.activity_category]} {b.activity_name}</td>
-                      <td>{b.room_guest_name || b.guest_name || '—'}{b.unit_name ? ` (${b.unit_name})` : ''}</td>
+                      <td>{b.room_guest_name || b.guest_name || '—'}{b.unit_name ? ` (${b.unit_name})` : ''}{b.vendor_names && <div className="text-muted" style={{ fontSize: 11 }}>Vendor: {b.vendor_names}</div>}</td>
                       <td>{b.num_participants}</td>
                       <td>
                         {fmtIDR(activityPaidTotal(b))}
@@ -205,6 +207,9 @@ export default function Activities() {
                           {b.status === 'confirmed' && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'completed')}>Complete</button>}
                           {b.status === 'confirmed' && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'no_show')}>No-show</button>}
                           {['requested', 'confirmed'].includes(b.status) && <button className="btn btn-sm btn-secondary" onClick={() => setBookingStatus(b, 'cancelled')}>Cancel</button>}
+                          {!['cancelled', 'no_show'].includes(b.status) && (
+                            <button className="btn btn-sm btn-secondary" onClick={() => setVendorsFor(b)} title="Who runs this trip — for Vendor payouts">{b.vendor_names ? 'Vendor' : '+ Vendor'}</button>
+                          )}
                           {!b.payment_method && !['cancelled', 'no_show'].includes(b.status) && (
                             <button className="btn btn-sm btn-primary" onClick={() => setPayingActivity(b)} title="Booked as not paid yet — charge it to the room or record it paid">Take payment</button>
                           )}
@@ -366,6 +371,10 @@ export default function Activities() {
       {payingActivity && (
         <ActivityPaymentModal activityBooking={payingActivity} onClose={() => setPayingActivity(null)}
           onDone={() => { setPayingActivity(null); loadBookings(); loadSummary(); }} />
+      )}
+      {vendorsFor && (
+        <TripVendorsModal activityBooking={vendorsFor} onClose={() => setVendorsFor(null)}
+          onDone={() => { setVendorsFor(null); loadBookings(); }} />
       )}
       {bookingModal && (
         <ActivityBookingModal onClose={() => setBookingModal(false)}

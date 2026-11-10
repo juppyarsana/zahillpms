@@ -19,7 +19,12 @@ An activity can have more than one vendor (e.g. jeep + guide).
 
 ## 2. Booking the trip
 
-Book the activity as usual (Activities → New Booking, or the reservation's Activities tab). Each vendor's amount for that trip is filled in automatically. Nothing changes for the guest.
+Book the activity as usual (Activities → New Booking, or the reservation's Activities tab).
+
+- **Price for this trip** starts empty, which means the Catalog price × participants. If the price was agreed differently on the day, type it. A typed price on a stay is written to its Edit History.
+- **Vendor (who runs this trip)** starts with the activity's Catalog vendors. Operators take turns, so change it to the one actually going: pick another vendor, ✕ to take one off, *+ Add vendor…* for a second one. A vendor from the Catalog gets its Catalog amount; another one shows under *Prices to set* for accounting. Only the owner and staff with the *Vendor prices & payouts* permission see and type the amounts.
+
+**Trip already booked?** On the Activities page or the reservation's Activities tab, press **+ Vendor** (no vendor yet) or **Vendor** on the trip to add or change who ran it. A vendor already paid for the trip can't be taken off.
 
 A trip is owed to the vendor once it is **Confirmed** or **Completed**. When it is **cancelled** or a **no-show**, the vendor is owed nothing, unless you tick *the vendor is still owed this amount (a fee)* on the trip.
 

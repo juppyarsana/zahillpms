@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const activityBookingService = require('../services/activityBookingService');
 const activitiesService = require('../services/activitiesService');
+const vendorPayoutService = require('../services/vendorPayoutService');
 const PDFDocument = require('pdfkit');
 const { drawDocumentHeader } = require('../services/pdfHeader');
 const { renderActivityReceipt } = require('../services/activityReceiptPdf');
@@ -21,6 +22,11 @@ router.get('/', auth, async (req, res) => {
   query += ' ORDER BY sort_order, name';
   try {
     const { rows } = await db.query(query, params);
+    // Which vendors each activity starts with (names only, for the booking
+    // window); prices only for the owner / `vendors` permission.
+    const { rows: defaults } = await db.query(
+      'SELECT activity_id, supplier_id FROM activity_vendors WHERE property_id = $1 ORDER BY sort_order, created_at', [req.propertyId]);
+    for (const a of rows) a.default_vendor_ids = defaults.filter(v => v.activity_id === a.id).map(v => v.supplier_id);
     if (canVendors(req) && rows.length) {
       const { rows: vendors } = await db.query(
         `SELECT av.activity_id, av.supplier_id, av.price_mode, av.price, s.name AS supplier_name
@@ -29,6 +35,18 @@ router.get('/', auth, async (req, res) => {
       for (const a of rows) a.vendors = vendors.filter(v => v.activity_id === a.id);
     }
     res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/activities/vendor-choices — the tour / transport vendors front desk
+// can pick for a trip, and whether this user may see / type vendor prices.
+router.get('/vendor-choices', auth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT id, name FROM suppliers WHERE property_id = $1 AND provides_services AND is_active ORDER BY name', [req.propertyId]);
+    res.json({ vendors: rows, can_prices: canVendors(req) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -105,7 +123,9 @@ router.get('/bookings', auth, async (req, res) => {
   const { date, status, booking_id } = req.query;
   let query = `
     SELECT ab.*, a.name AS activity_name, a.category AS activity_category,
-           b.id AS room_booking_id, g.name AS room_guest_name, u.name AS unit_name
+           b.id AS room_booking_id, g.name AS room_guest_name, u.name AS unit_name,
+           (SELECT string_agg(s.name, ', ' ORDER BY s.name) FROM activity_booking_vendors bv
+              JOIN suppliers s ON s.id = bv.supplier_id WHERE bv.activity_booking_id = ab.id) AS vendor_names
     FROM activity_bookings ab
     JOIN activities a ON a.id = ab.activity_id
     LEFT JOIN bookings b ON b.id = ab.booking_id
@@ -149,7 +169,7 @@ router.get('/bookings/summary', auth, requireRole('owner'), async (req, res) => 
 // POST /api/activities/bookings — staff desk booking (auto-confirmed)
 router.post('/bookings', auth, async (req, res) => {
   const { activity_id, booking_id, guest_name, guest_phone, scheduled_date, scheduled_time,
-    num_participants, payment_method, pickup_location, notes } = req.body;
+    num_participants, payment_method, pickup_location, notes, total_amount, vendors } = req.body;
   if (!activity_id || !scheduled_date) return res.status(400).json({ error: 'activity_id and scheduled_date required' });
   try {
     const result = await activityBookingService.createBooking(req.propertyId, {
@@ -157,6 +177,7 @@ router.post('/bookings', auth, async (req, res) => {
       scheduledDate: scheduled_date, scheduledTime: scheduled_time, numParticipants: num_participants,
       paymentMethod: payment_method, pickupLocation: pickup_location, notes,
       bookedVia: 'staff', createdBy: req.user.id, autoConfirm: true,
+      totalOverride: total_amount, vendorChoice: Array.isArray(vendors) ? vendors : undefined, canVendorPrices: canVendors(req),
     });
     if (result.code === 'CAPACITY_FULL') return res.status(409).json({ error: result.error, code: result.code });
     // Any other coded error is a validation failure (bad/missing payment
@@ -165,6 +186,32 @@ router.post('/bookings', auth, async (req, res) => {
     if (result.code) return res.status(400).json({ error: result.error, code: result.code });
     if (result.error) return res.status(404).json({ error: result.error });
     res.status(201).json(result.booking);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/activities/bookings/:id/vendors — who runs this trip (amounts only
+// for the owner / `vendors` permission).
+router.get('/bookings/:id/vendors', auth, async (req, res) => {
+  try {
+    const lines = await vendorPayoutService.linesForBooking(req.propertyId, req.params.id);
+    const show = canVendors(req);
+    res.json(lines.map(l => ({
+      id: l.id, supplier_id: l.supplier_id, supplier_name: l.supplier_name, paid_any: l.paid > 0.004,
+      ...(show ? { amount: l.amount, paid: l.paid } : {}),
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/activities/bookings/:id/vendors { vendors: [{ supplier_id, amount? }] }
+router.put('/bookings/:id/vendors', auth, async (req, res) => {
+  try {
+    const r = await vendorPayoutService.setTripVendors(req.propertyId, req.params.id, req.body?.vendors, canVendors(req), req.user.id);
+    if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
+    res.json(r);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

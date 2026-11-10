@@ -26,6 +26,7 @@ import RecordPaymentModal from '../components/RecordPaymentModal';
 import TransferBillModal, { transferableLines } from '../components/TransferBillModal';
 import ActivityBookingModal, { activityPaidTotal } from '../components/ActivityBookingModal';
 import ActivityPaymentModal from '../components/ActivityPaymentModal';
+import TripVendorsModal from '../components/TripVendors';
 import BookingAgentFields from '../components/BookingAgentFields';
 import { CITY_LEDGER, HAS_COMMISSION, commissionText, AGENT_SOURCE_TYPES, agentBody, agentValueFromBooking, agentRoleLabel } from '../lib/agents';
 import { checkinTemplate, checkoutTemplate } from '../lib/messageTemplates';
@@ -309,6 +310,7 @@ export default function BookingDetail() {
   const [folioLoading, setFolioLoading] = useState(false);
   const [estimate, setEstimate] = useState(null);
   const [payingActivity, setPayingActivity] = useState(null);
+  const [vendorsFor, setVendorsFor] = useState(null);
   // Folio "+ Add item" — the same window as "Extras for this stay" (Sales items
   // charged to the room; no free-text folio charges since migration 077).
   const [addingItem, setAddingItem] = useState(false);
@@ -1784,10 +1786,14 @@ export default function BookingDetail() {
                   <div style={{ fontWeight: 600 }}>{ab.activity_name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {String(ab.scheduled_date).slice(0, 10)}{ab.scheduled_time ? ` ${ab.scheduled_time.slice(0, 5)}` : ''} · {ab.num_participants} pax
+                    {ab.vendor_names ? ` · vendor: ${ab.vendor_names}` : ''}
                     {' · '}{ab.payment_method === 'room_charge' ? 'charged to room' : ab.payment_method ? `paid · ${paymentMethods.find(m => m.id === ab.payment_method)?.label || ab.payment_method}` : 'not paid yet'}
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
+                  {!['cancelled', 'no_show'].includes(ab.status) && (
+                            <button className="btn btn-sm btn-secondary" onClick={() => setVendorsFor(ab)} title="Who runs this trip — for Vendor payouts">{ab.vendor_names ? 'Vendor' : '+ Vendor'}</button>
+                          )}
                   {!ab.payment_method && !['cancelled', 'no_show'].includes(ab.status) && (
                     <button className="btn btn-sm btn-primary" onClick={() => setPayingActivity({ ...ab, booking_id: ab.booking_id || booking.id })}>Take payment</button>
                   )}
@@ -1803,6 +1809,11 @@ export default function BookingDetail() {
       {payingActivity && (
         <ActivityPaymentModal activityBooking={payingActivity} onClose={() => setPayingActivity(null)}
           onDone={() => { setPayingActivity(null); loadActivityBookings(); loadFolio(); load(); }} />
+      )}
+
+      {vendorsFor && (
+        <TripVendorsModal activityBooking={vendorsFor} onClose={() => setVendorsFor(null)}
+          onDone={() => { setVendorsFor(null); loadActivityBookings(); }} />
       )}
 
       {bookingActivity && (

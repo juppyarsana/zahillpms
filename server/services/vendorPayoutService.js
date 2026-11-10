@@ -5,7 +5,7 @@
 // NULL until someone types it when the vendor is priced per trip by hand.
 const db = require('../db');
 const { round2 } = require('./folioService');
-const { recomputeTaxes } = require('./activityBookingService');
+const { recomputeTaxes, tripVendorLines } = require('./activityBookingService');
 
 // The one rule for "this vendor line is owed" (journal, reports, this page).
 const OWED_SQL = `(bv.amount IS NOT NULL AND (ab.status IN ('confirmed', 'completed')
@@ -242,6 +242,62 @@ async function removeLine(propertyId, lineId, userId) {
   });
 }
 
+// Front desk sets who runs one trip (operators take turns; the day's operator
+// can change). choice = [{ supplier_id, amount? }]: vendors left out are taken
+// off (refused once a payout covers them), new ones start at their Catalog
+// price or "to set", one already on the trip keeps its amount unless the owner
+// / `vendors` permission typed another.
+async function setTripVendors(propertyId, abId, choice, canPrices, userId) {
+  if (!Array.isArray(choice)) return fail('Choose the vendors');
+  return tx(async client => {
+    const { rows: [ab] } = await client.query(
+      `SELECT ab.*, a.name AS activity_name FROM activity_bookings ab JOIN activities a ON a.id = ab.activity_id
+       WHERE ab.id = $1 AND ab.property_id = $2 FOR UPDATE OF ab`, [abId, propertyId]);
+    if (!ab) return fail('Activity booking not found', 404);
+    const picked = await tripVendorLines(client, propertyId, ab.activity_id, ab.num_participants, choice, canPrices);
+    if (picked.error) return fail(picked.error, 400, { code: picked.code });
+    const { rows: current } = await client.query(
+      `SELECT bv.*, s.name AS supplier_name, ${PAID_SQL} AS paid,
+              (SELECT COUNT(*) FROM vendor_payout_allocations x WHERE x.booking_vendor_id = bv.id)::int AS allocations
+       FROM activity_booking_vendors bv JOIN suppliers s ON s.id = bv.supplier_id
+       WHERE bv.activity_booking_id = $1 FOR UPDATE OF bv`, [abId]);
+    const typed = id => {
+      const c = choice.find(x => x && x.supplier_id === id);
+      return canPrices && c && c.amount !== undefined && c.amount !== null && c.amount !== '';
+    };
+    const changes = [];
+    for (const line of current) {
+      if (picked.lines.some(l => l.supplier_id === line.supplier_id)) continue;
+      if (line.allocations > 0) return fail(`${line.supplier_name} is already paid for this trip — they can't be taken off. Void the payout first.`, 409, { code: 'PAID' });
+      await client.query('DELETE FROM activity_booking_vendors WHERE id = $1', [line.id]);
+      changes.push(`${line.supplier_name} off`);
+    }
+    for (const l of picked.lines) {
+      const line = current.find(c => c.supplier_id === l.supplier_id);
+      const { rows: [s] } = await client.query('SELECT name FROM suppliers WHERE id = $1', [l.supplier_id]);
+      if (!line) {
+        await client.query(
+          `INSERT INTO activity_booking_vendors (property_id, activity_booking_id, supplier_id, amount, edited_by, edited_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`, [propertyId, abId, l.supplier_id, l.amount, userId || null]);
+        changes.push(`${s.name} ${fmt(l.amount)}`);
+      } else if (typed(l.supplier_id)) {
+        const before = line.amount == null ? null : num(line.amount);
+        if (before === l.amount) continue;
+        if (num(line.paid) > 0.004 && l.amount < num(line.paid) - 0.004) {
+          return fail(`Rp ${Math.round(num(line.paid)).toLocaleString('id-ID')} is already paid to ${s.name} for this trip — the amount can't be lower.`, 409, { code: 'PAID' });
+        }
+        await client.query('UPDATE activity_booking_vendors SET amount = $1, edited_by = $2, edited_at = NOW() WHERE id = $3', [l.amount, userId || null, line.id]);
+        changes.push(`${s.name} ${fmt(before)} → ${fmt(l.amount)}`);
+      }
+    }
+    if (changes.length) {
+      await recomputeTaxes(client, abId);
+      await noteOnStay(client, ab, `Vendors for ${ab.activity_name}: ${changes.join('; ')}`, userId);
+    }
+    return { ok: true, changed: changes.length };
+  });
+}
+
 // ── Payouts ──
 
 // { supplier_id, paid_on, method, reference, notes, allocations: [{ line_id, amount }] }
@@ -377,5 +433,5 @@ function renderSlip(doc, p) {
 
 module.exports = {
   OWED_SQL, listVendors, otherSuppliers, saveVendor, removeVendor, listTrips, linesForBooking,
-  updateLine, addLine, removeLine, createPayout, voidPayout, listPayouts, payoutDetail, renderSlip, payoutNo,
+  updateLine, addLine, removeLine, setTripVendors, createPayout, voidPayout, listPayouts, payoutDetail, renderSlip, payoutNo,
 };

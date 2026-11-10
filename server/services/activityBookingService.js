@@ -48,6 +48,34 @@ function vendorAmount(v, participants) {
   if (v.price_mode === 'typed' || v.price == null) return null;
   return round2(parseFloat(v.price) * (v.price_mode === 'per_person' ? participants : 1));
 }
+// The vendor lines for one trip. choice undefined = the activity's own
+// vendors from the Catalog at their Catalog price (tablet bookings, older
+// screens). choice = [{ supplier_id, amount? }] = the vendors front desk
+// picked (operators take turns; [] = no vendor): a vendor also in the Catalog
+// starts at its Catalog price, another at "to set"; a typed amount counts only
+// for the owner / `vendors` permission (vendor prices are theirs).
+async function tripVendorLines(client, propertyId, activityId, participants, choice, canPrices) {
+  const { rows: defaults } = await client.query(
+    'SELECT supplier_id, price_mode, price FROM activity_vendors WHERE activity_id = $1 ORDER BY sort_order, created_at', [activityId]);
+  if (!Array.isArray(choice)) return { lines: defaults.map(v => ({ supplier_id: v.supplier_id, amount: vendorAmount(v, participants) })) };
+  const lines = [];
+  for (const c of choice) {
+    if (!c || !c.supplier_id || lines.some(l => l.supplier_id === c.supplier_id)) continue;
+    const { rows: [s] } = await client.query(
+      'SELECT id FROM suppliers WHERE id = $1 AND property_id = $2 AND provides_services', [c.supplier_id, propertyId]);
+    if (!s) return { error: 'Choose a tour / transport vendor', code: 'BAD_VENDOR' };
+    const def = defaults.find(d => d.supplier_id === s.id);
+    let amount = def ? vendorAmount(def, participants) : null;
+    if (canPrices && c.amount !== undefined && c.amount !== null && c.amount !== '') {
+      const a = parseFloat(c.amount);
+      if (!(a >= 0) || a > 1e12) return { error: 'Type the amount for the vendor', code: 'BAD_VENDOR_AMOUNT' };
+      amount = round2(a);
+    }
+    lines.push({ supplier_id: s.id, amount });
+  }
+  return { lines };
+}
+
 // What the guest pays: the price, plus service + tax only when they're added on top.
 function amountPaid(ab) {
   const extra = ab.tax_mode === 'added' ? (parseFloat(ab.service_charge_amount) || 0) + (parseFloat(ab.tax_amount) || 0) : 0;
@@ -67,6 +95,7 @@ function amountPaid(ab) {
 async function createBooking(propertyId, {
   activityId, bookingId, guestName, guestPhone, scheduledDate, scheduledTime,
   numParticipants, paymentMethod, pickupLocation, notes, bookedVia, createdBy, autoConfirm,
+  totalOverride, vendorChoice, canVendorPrices,
 }) {
   const client = await db.pool.connect();
   try {
@@ -117,17 +146,32 @@ async function createBooking(propertyId, {
       }
     }
 
-    const unitPrice = parseFloat(activity.price);
-    const totalAmount = unitPrice * participants;
+    // Staff may type the price of this trip (it depends on the day in the
+    // field); the Catalog price x participants is only the suggestion. Never
+    // passed by the guest tablet route.
+    const catalogTotal = round2(parseFloat(activity.price) * participants);
+    let totalAmount = catalogTotal;
+    if (totalOverride !== undefined && totalOverride !== null && totalOverride !== '') {
+      const t = parseFloat(totalOverride);
+      if (!(t > 0) || t > 1e12) {
+        await client.query('ROLLBACK');
+        return { error: 'Type the price for this trip', code: 'BAD_PRICE' };
+      }
+      totalAmount = round2(t);
+    }
+    const unitPrice = round2(totalAmount / participants);
     const status = autoConfirm ? 'confirmed' : 'requested';
     // Service charge + tax by the activity's tax_mode (migration 078, see
     // activityTaxes). total_amount is always price × participants.
     const { rows: [ps] } = await client.query('SELECT tax_rate, service_charge_rate FROM property_settings WHERE property_id = $1', [propertyId]);
     const taxMode = activity.tax_mode || 'added';
     // The vendors of the activity and what this trip owes each (migration 140).
-    const { rows: vendors } = await client.query(
-      'SELECT supplier_id, price_mode, price FROM activity_vendors WHERE activity_id = $1 ORDER BY sort_order, created_at', [activityId]);
-    const vendorLines = vendors.map(v => ({ supplier_id: v.supplier_id, amount: vendorAmount(v, participants) }));
+    const picked = await tripVendorLines(client, propertyId, activityId, participants, vendorChoice, canVendorPrices);
+    if (picked.error) {
+      await client.query('ROLLBACK');
+      return picked;
+    }
+    const vendorLines = picked.lines;
     const taxOpts = {
       chargeService: activity.charge_service !== false, base: activity.tax_base || 'full',
       vendorTotal: vendorLines.reduce((s, v) => s + (v.amount || 0), 0),
@@ -150,6 +194,13 @@ async function createBooking(propertyId, {
       await client.query(
         'INSERT INTO activity_booking_vendors (property_id, activity_booking_id, supplier_id, amount) VALUES ($1, $2, $3, $4)',
         [propertyId, booking.id, v.supplier_id, v.amount]);
+    }
+
+    if (booking.booking_id && totalAmount !== catalogTotal) {
+      const { rows: [a] } = await client.query('SELECT name FROM activities WHERE id = $1', [activityId]);
+      const rp = v => `Rp ${Math.round(v).toLocaleString('id-ID')}`;
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [booking.booking_id, `Activity ${a?.name || ''} booked at ${rp(totalAmount)} (Catalog ${rp(catalogTotal)})`.slice(0, 500), createdBy || null]);
     }
 
     let result = booking;
@@ -298,4 +349,4 @@ async function setPayment(propertyId, id, paymentMethod, actorUserId) {
   }
 }
 
-module.exports = { createBooking, setStatus, setPayment, activityTaxes, amountPaid, recomputeTaxes };
+module.exports = { tripVendorLines, createBooking, setStatus, setPayment, activityTaxes, amountPaid, recomputeTaxes };
