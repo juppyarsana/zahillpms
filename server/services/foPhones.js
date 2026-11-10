@@ -2,7 +2,11 @@
 // Owner: add a phone → a pairing code (8 characters, 30 minutes); the phone
 // sends it once to POST /api/public/fo-phone/pair and gets its own key. Only
 // sha256(key) is stored. A request from the phone carries the key as
-// "Authorization: Bearer <key>" (or ?key= for the event stream).
+// "Authorization: Bearer <key>". The browser's EventSource can't set headers,
+// so the event stream there uses a short-lived one-time ticket (?ticket=, from
+// POST /api/phone/stream-ticket) instead of putting the key in the URL, where
+// it would end up in access logs. ?key= is still read for the stream only, for
+// phone apps installed before tickets (remove once they are updated).
 const crypto = require('crypto');
 const db = require('../db');
 
@@ -69,15 +73,36 @@ async function pair(code, appVersion) {
   return { key, device: { id: r.id, name: r.name, line: r.line }, property: { name: p?.name || null } };
 }
 
-// Middleware: Bearer <key> or ?key=. Sets req.propertyId, req.device.
+// One-time stream tickets: ticket → { deviceId, expires }. In memory on
+// purpose — a ticket lives 60 s and only opens one stream.
+const TICKET_MS = 60000;
+const tickets = new Map();
+function issueStreamTicket(deviceId) {
+  const now = Date.now();
+  for (const [t, v] of tickets) if (v.expires < now) tickets.delete(t);
+  const t = crypto.randomBytes(24).toString('hex');
+  tickets.set(t, { deviceId, expires: now + TICKET_MS });
+  return t;
+}
+function takeStreamTicket(t) {
+  const v = tickets.get(String(t));
+  if (!v) return null;
+  tickets.delete(String(t));
+  return v.expires >= Date.now() ? v.deviceId : null;
+}
+
+// Middleware: Bearer <key>, or ?ticket= / legacy ?key= on the event stream
+// only. Sets req.propertyId, req.device.
 const lastSeenWrite = new Map();   // device id → last time last_seen_at was written
 async function authDevice(req, res, next) {
-  const key = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || String(req.query.key || '');
-  if (!key) return res.status(401).json({ error: 'Unauthorized' });
+  const isStream = req.method === 'GET' && req.path === '/stream';
+  const key = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim() || (isStream ? String(req.query.key || '') : '');
+  const ticketDevice = !key && isStream && req.query.ticket ? takeStreamTicket(req.query.ticket) : null;
+  if (!key && !ticketDevice) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const { rows: [d] } = await db.query(
       `SELECT d.id, d.property_id, d.name, d.line FROM call_devices d JOIN properties p ON p.id = d.property_id
-       WHERE d.key_hash = $1 AND d.removed_at IS NULL AND p.is_active`, [hash(key)]);
+       WHERE ${ticketDevice ? 'd.id = $1' : 'd.key_hash = $1'} AND d.removed_at IS NULL AND p.is_active`, [ticketDevice || hash(key)]);
     if (!d) return res.status(401).json({ error: 'This phone was removed or its key changed — pair it again', code: 'DEVICE_UNKNOWN' });
     req.propertyId = d.property_id;
     req.device = d;
@@ -90,4 +115,4 @@ async function authDevice(req, res, next) {
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-module.exports = { list, add, newPairCode, remove, pair, authDevice, hash };
+module.exports = { list, add, newPairCode, remove, pair, authDevice, hash, issueStreamTicket };

@@ -247,7 +247,11 @@ async function removeLine(propertyId, lineId, userId) {
 // off (refused once a payout covers them), new ones start at their Catalog
 // price or "to set", one already on the trip keeps its amount unless the owner
 // / `vendors` permission typed another.
-async function setTripVendors(propertyId, abId, choice, canPrices, userId) {
+// A trip that is under way or done (its day is today or past, or it is
+// completed) is "ongoing": changing its vendors needs a reason (REASON_REQUIRED),
+// written to the stay's Edit History. Trips still to come change freely.
+async function setTripVendors(propertyId, abId, choice, canPrices, userId, reason) {
+  reason = String(reason || '').trim().slice(0, 300);
   if (!Array.isArray(choice)) return fail('Choose the vendors');
   return tx(async client => {
     const { rows: [ab] } = await client.query(
@@ -265,6 +269,15 @@ async function setTripVendors(propertyId, abId, choice, canPrices, userId) {
       const c = choice.find(x => x && x.supplier_id === id);
       return canPrices && c && c.amount !== undefined && c.amount !== null && c.amount !== '';
     };
+    const ongoing = ab.status === 'completed' || String(ab.scheduled_date).slice(0, 10) <= require('./roomChargeService').todayWITA();
+    if (ongoing && !reason) {
+      const differs = current.some(c => !picked.lines.some(l => l.supplier_id === c.supplier_id))
+        || picked.lines.some(l => {
+          const c = current.find(x => x.supplier_id === l.supplier_id);
+          return !c || (typed(l.supplier_id) && (c.amount == null ? null : num(c.amount)) !== l.amount);
+        });
+      if (differs) return fail('This trip is already under way or done — say why the vendors change.', 400, { code: 'REASON_REQUIRED' });
+    }
     const changes = [];
     for (const line of current) {
       if (picked.lines.some(l => l.supplier_id === line.supplier_id)) continue;
@@ -292,7 +305,7 @@ async function setTripVendors(propertyId, abId, choice, canPrices, userId) {
     }
     if (changes.length) {
       await recomputeTaxes(client, abId);
-      await noteOnStay(client, ab, `Vendors for ${ab.activity_name}: ${changes.join('; ')}`, userId);
+      await noteOnStay(client, ab, `Vendors for ${ab.activity_name}: ${changes.join('; ')}${ongoing ? ` (trip already under way or done — reason: ${reason})` : ''}`, userId);
     }
     return { ok: true, changed: changes.length };
   });

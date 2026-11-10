@@ -92,6 +92,8 @@ export default function TripVendorsModal({ activityBooking, onClose, onDone }) {
   const [activity, setActivity] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [needReason, setNeedReason] = useState(false);
+  const [reason, setReason] = useState('');
   const ab = activityBooking;
 
   useEffect(() => {
@@ -104,9 +106,11 @@ export default function TripVendorsModal({ activityBooking, onClose, onDone }) {
   async function save() {
     setError(''); setSaving(true);
     try {
-      await api.put(`/api/activities/bookings/${ab.id}/vendors`, { vendors: vendorPayload(rows) });
+      await api.put(`/api/activities/bookings/${ab.id}/vendors`, { vendors: vendorPayload(rows), ...(reason.trim() ? { reason: reason.trim() } : {}) });
       onDone?.();
     } catch (err) {
+      // A trip that is under way or done: the change needs a reason.
+      if (err?.response?.data?.code === 'REASON_REQUIRED') setNeedReason(true);
       setError(err?.response?.data?.error || 'Could not save');
     } finally {
       setSaving(false);
@@ -129,10 +133,16 @@ export default function TripVendorsModal({ activityBooking, onClose, onDone }) {
           {rows == null ? <div className="text-muted">Loading…</div> : (
             <TripVendorsEditor rows={rows} onChange={setRows} choices={choices} activity={activity} pax={ab.num_participants} />
           )}
+          {needReason && (
+            <div className="form-group" style={{ marginTop: 10 }}>
+              <label className="form-label">Why is the vendor changing? (the trip is already under way or done)</label>
+              <textarea className="form-input" rows={2} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. the booked operator cancelled, another one drove the guests" />
+            </div>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={saving || rows == null} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
+          <button className="btn btn-primary" disabled={saving || rows == null || (needReason && !reason.trim())} onClick={save}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>

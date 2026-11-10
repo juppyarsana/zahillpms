@@ -308,9 +308,14 @@ async function recordPayment(propertyId, body, userId) {
       if (!a.bill_id || seen.has(a.bill_id)) { await client.query('ROLLBACK'); return fail(400, 'Each bill once'); }
       seen.add(a.bill_id);
       if (!(amount > 0)) continue;
+      // Lock the bill first, THEN read what is paid: in one statement the paid
+      // total is read before the lock is won and can be stale (two payments at
+      // once would both pass the balance check).
+      const locked = await client.query('SELECT id FROM supplier_bills WHERE id = $1 AND property_id = $2 FOR UPDATE', [a.bill_id, propertyId]);
+      if (!locked.rows[0]) { await client.query('ROLLBACK'); return fail(400, 'A bill is not this supplier\'s'); }
       const { rows: [b] } = await client.query(
         `SELECT b.id, b.bill_no, b.supplier_id, b.is_voided, b.total, ${PAID_SQL} AS paid
-         FROM supplier_bills b WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE`, [a.bill_id, propertyId]);
+         FROM supplier_bills b WHERE b.id = $1 AND b.property_id = $2`, [a.bill_id, propertyId]);
       if (!b || b.supplier_id !== supplierId) { await client.query('ROLLBACK'); return fail(400, 'A bill is not this supplier\'s'); }
       if (b.is_voided) { await client.query('ROLLBACK'); return fail(409, `${billNo(b.bill_no)} is voided`, 'VOIDED'); }
       const balance = r2(num(b.total) - num(b.paid));

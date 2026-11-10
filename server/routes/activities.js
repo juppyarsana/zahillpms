@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
+const requireOwnerOrMenu = require('../middleware/requireOwnerOrMenu');
 const activityBookingService = require('../services/activityBookingService');
 const activitiesService = require('../services/activitiesService');
 const vendorPayoutService = require('../services/vendorPayoutService');
@@ -57,7 +58,7 @@ router.get('/vendor-choices', auth, async (req, res) => {
 // (all-in price) / 'none' (no service charge or tax).
 const TAX_MODES = ['added', 'included', 'none'];
 
-router.post('/', auth, requireRole('owner'), async (req, res) => {
+router.post('/', auth, requireOwnerOrMenu('activities'), async (req, res) => {
   const { name, category, price, description, duration_minutes, capacity_per_slot, tax_mode } = req.body;
   if (!name || price === undefined) return res.status(400).json({ error: 'name and price required' });
   if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
@@ -82,7 +83,7 @@ router.post('/', auth, requireRole('owner'), async (req, res) => {
 });
 
 // PUT /api/activities/:id
-router.put('/:id', auth, requireRole('owner'), async (req, res) => {
+router.put('/:id', auth, requireOwnerOrMenu('activities'), async (req, res) => {
   const { name, category, price, description, duration_minutes, capacity_per_slot, is_available, tax_mode } = req.body;
   if (tax_mode !== undefined && !TAX_MODES.includes(tax_mode)) return res.status(400).json({ error: `tax_mode must be one of ${TAX_MODES.join(', ')}` });
   const client = await db.pool.connect();
@@ -214,7 +215,7 @@ router.get('/bookings/:id/vendors', auth, async (req, res) => {
 // PUT /api/activities/bookings/:id/vendors { vendors: [{ supplier_id, amount? }] }
 router.put('/bookings/:id/vendors', auth, async (req, res) => {
   try {
-    const r = await vendorPayoutService.setTripVendors(req.propertyId, req.params.id, req.body?.vendors, canVendors(req), req.user.id);
+    const r = await vendorPayoutService.setTripVendors(req.propertyId, req.params.id, req.body?.vendors, canVendors(req), req.user.id, req.body?.reason);
     if (r.error) return res.status(r.status || 400).json({ error: r.error, code: r.code });
     res.json(r);
   } catch (err) {

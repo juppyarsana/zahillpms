@@ -208,13 +208,20 @@ async function note(client, bookingId, text) {
 // The first day the hotel may charge an OTA's virtual card: the card's own
 // effective date, else the date in the OTA's note ("… tagih mulai tanggal
 // 2026-11-07" / "charge from 2026-11-07"). null when neither says.
+// Only a real calendar day counts: a note saying 2026-02-30 would make the
+// date cast in the database throw and roll back the whole booking.
+function realDay(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return null;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === s ? s : null;
+}
 function vccChargeFrom(a) {
   const g = a.guarantee;
   if (!g?.is_virtual) return null;
-  const d = g.meta?.virtual_card_effective_date;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d || '')) return d;
+  const eff = realDay(g.meta?.virtual_card_effective_date);
+  if (eff) return eff;
   const m = /(?:tanggal|from|mulai)\s+(\d{4}-\d{2}-\d{2})/i.exec(a.notes || '');
-  return m ? m[1] : null;
+  return m ? realDay(m[1]) : null;
 }
 
 // After who collects is saved: a virtual card also gets its charge-from date,

@@ -187,14 +187,23 @@ function Phone({ onUnpaired }) {
 
   // The event stream (reconnects; 40 s without a heartbeat = dead).
   useEffect(() => {
-    let es = null, last = Date.now(), stopped = false, retry = 1000, t = null;
+    let es = null, last = Date.now(), stopped = false, retry = 1000, t = null, seq = 0;
+    const retryLater = () => { if (!stopped) { clearTimeout(t); t = setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); } };
     const connect = () => {
       es?.close();
-      es = new EventSource(`/api/phone/stream?key=${encodeURIComponent(getKey())}`);
+      const attempt = ++seq;
+      last = Date.now();
+      // The key never goes in the URL (access logs): a one-time ticket opens the stream.
+      api('POST', '/stream-ticket').then(({ ticket }) => {
+        if (!stopped && attempt === seq) open(ticket);
+      }).catch(() => { if (!stopped && attempt === seq) { setOnline(false); retryLater(); } });
+    };
+    const open = (ticket) => {
+      es = new EventSource(`/api/phone/stream?ticket=${encodeURIComponent(ticket)}`);
       last = Date.now();
       es.onopen = () => { setOnline(true); retry = 1000; };
       es.onmessage = (m) => { last = Date.now(); setOnline(true); let d; try { d = JSON.parse(m.data); } catch { return; } if (d.type !== 'heartbeat') handle(d); };
-      es.onerror = () => { setOnline(false); es.close(); if (!stopped) { clearTimeout(t); t = setTimeout(connect, retry); retry = Math.min(retry * 2, 15000); } };
+      es.onerror = () => { setOnline(false); es.close(); retryLater(); };
     };
     connect();
     const watch = setInterval(() => { if (Date.now() - last > 40000) { setOnline(false); connect(); } }, 5000);

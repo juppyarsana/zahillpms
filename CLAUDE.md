@@ -1036,7 +1036,9 @@ See `server/.env.example` for the full current list (kept up to date — check t
 
 ## Pending on the next production deploy
 
-> Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
+> Things that are NOT automatic. When the owner says they are deploying / releasing to `main`, read this list out first, and remove an item once it is done on production.
+
+- **Audit fixes 2026-11-10 (on `dev`, not released):** (1) OTA virtual-card dates are only used when they are real calendar days (`channelBookings.realDay`; migration 164 edited the same way, harmless to re-run); (2) `payablesService.recordPayment` locks a bill before reading what is paid; (3) a line-to-line call hung up by the caller while ringing is `missed`, not `ended` (`callLines.end`); (4) activities Catalog add/edit = owner or the `activities` menu; changing the vendors of a trip that is today / past / completed needs a reason (`REASON_REQUIRED`, `setTripVendors`) — to let front desk add vendors and pay them, tick *Vendor prices & payouts* on the FO role; (5) rate limit: only the Authorization header picks a bucket (the `?key=` branch is gone) and `/api/phone/stream` is exempt like `/api/display`; (6) the front desk phone stream opens with a one-time ticket (`POST /api/phone/stream-ticket` → `?ticket=`), the Android app sends the key as a header (`fo-phone/` CallService.kt — **rebuild and reinstall the APK**; old apps still work through `?key=` on the stream only, remove that fallback in `foPhones.authDevice` once all phones are updated).
 
 - **Vendor + price per activity trip (no migration) — on `dev`, not released.** By hand afterwards: Michael Moss's jeep (9 Nov) → Activities → **+ Vendor** → Kintamani Jeep Tour → accounting sets the amount on Vendor payouts → Trips. Owner: Catalog → Edit each jeep activity → add the usual operator(s) and check *Service charge* / *Tax on* with accounting (all three Zahill jeeps are tax on full price with service inside). Tell FO: Guide → *Bayar vendor tur & transport* → pick the operator and type the price when booking.
 

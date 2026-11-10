@@ -4,10 +4,19 @@
 -- desk was never told to charge the card. They become 'vcc' with the card's
 -- first charge day (services/channelBookings.js now does this for new ones).
 -- Stays not yet checked out only; a note goes in each booking's Edit History.
+-- A date typed in an OTA's note may not be a real day (2026-02-30): such a
+-- value is treated as "not known" instead of aborting the migration.
+CREATE FUNCTION pg_temp.safe_day(t text) RETURNS date AS $$
+BEGIN
+  IF t IS NULL OR t !~ '^\d{4}-\d{2}-\d{2}$' THEN RETURN NULL; END IF;
+  RETURN t::date;
+EXCEPTION WHEN others THEN RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
 WITH card AS (
   SELECT DISTINCT ON (bid) bid, ota_name,
          NULLIF(r.raw->'attributes'->'guarantee'->'meta'->>'virtual_card_effective_date', '') AS eff,
-         substring(r.raw->'attributes'->>'notes' FROM '(?:tanggal|from|mulai)\s+(\d{4}-\d{2}-\d{2})') AS from_note
+         substring(r.raw->'attributes'->>'notes' FROM '(?i)(?:tanggal|from|mulai)\s+(\d{4}-\d{2}-\d{2})') AS from_note
   FROM channel_revisions r, unnest(r.booking_ids) AS bid
   WHERE (r.raw->'attributes'->'guarantee'->>'is_virtual') = 'true'
     AND r.raw->'attributes'->>'payment_collect' = 'ota'
@@ -16,7 +25,7 @@ WITH card AS (
   UPDATE bookings b
   SET payment_collect = 'vcc',
       vcc_charge_from = COALESCE(b.vcc_charge_from,
-        CASE WHEN card.eff ~ '^\d{4}-\d{2}-\d{2}$' THEN card.eff::date ELSE card.from_note::date END),
+        COALESCE(pg_temp.safe_day(card.eff), pg_temp.safe_day(card.from_note))),
       updated_at = NOW()
   FROM card
   WHERE b.id = card.bid AND b.payment_collect = 'ota'

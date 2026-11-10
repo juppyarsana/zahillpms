@@ -53,7 +53,10 @@ const crypto = require('crypto');
 // the stream carries its token in the URL, so it fell in the shared per-IP
 // bucket, and 33 tablets reconnecting on bad WiFi could use that up for
 // everyone behind the hotel's IP.
-const DEVICE_POLLING = /^\/api\/(display|kitchen|calls\/room)\//;
+// The front desk phones' event stream (/api/phone/stream) is one long
+// connection that reconnects by itself; it carries no Authorization header
+// (ticket in the URL), so it would otherwise fall in the shared per-IP bucket.
+const DEVICE_POLLING = /^\/api\/(display|kitchen|calls\/room|phone\/stream)(\/|\?|$)/;
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3000,
@@ -61,8 +64,10 @@ const limiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => DEVICE_POLLING.test(req.originalUrl),
   keyGenerator: (req) => {
-    // The front desk phone's event stream carries its key in the URL (EventSource can't set headers).
-    const h = req.headers['authorization'] || (req.query && req.query.key ? 'key:' + req.query.key : null);
+    // Only the Authorization header picks a bucket. (A ?key= value used to
+    // count too: anyone could add a random one to every request and get a
+    // fresh bucket each time, so the per-IP limit never applied.)
+    const h = req.headers['authorization'];
     return h ? 'tok:' + crypto.createHash('sha256').update(h).digest('hex') : 'ip:' + req.ip;
   },
 });

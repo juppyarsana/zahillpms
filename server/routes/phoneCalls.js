@@ -3,7 +3,8 @@
 // the PMS screens: a call rings the PCs and the phones, first to answer wins.
 //
 //   GET  /api/phone/me                     { device, property, calling }
-//   GET  /api/phone/stream?key=            SSE: incoming_call, signal, call_taken, ended, missed, answered_from_room, missed_changed
+//   POST /api/phone/stream-ticket          { ticket }: one-time, 60 s, opens one stream (the key stays out of URLs / logs)
+//   GET  /api/phone/stream?ticket=         SSE: incoming_call, signal, call_taken, ended, missed, answered_from_room, missed_changed
 //   GET  /api/phone/pending                a room call ringing the front desk now, or null
 //   GET  /api/phone/turn-credentials       { iceServers }
 //   GET  /api/phone/rooms                  rooms that can be called + guest in them
@@ -14,7 +15,7 @@
 //   POST /api/phone/:id/signal             { roomId, payload }
 const router = require('express').Router();
 const db = require('../db');
-const { authDevice } = require('../services/foPhones');
+const { authDevice, issueStreamTicket } = require('../services/foPhones');
 const lines = require('../services/callLines');
 const { getTurnCredentials } = require('../services/turnCredentials');
 
@@ -43,6 +44,7 @@ router.use(async (req, res, next) => {
   } catch (err) { lines.sendError(res, err); }
 });
 
+router.post('/stream-ticket', (req, res) => res.json({ ticket: issueStreamTicket(req.device.id) }));
 router.get('/stream', (req, res) => lines.stream(req, res, lines.channelFor(req.propertyId, line(req))));
 router.get('/pending', async (req, res) => { try { res.json(await lines.pending(req.propertyId, line(req))); } catch (err) { lines.sendError(res, err); } });
 router.get('/turn-credentials', (req, res) => { const c = getTurnCredentials(req.propertyId); res.json({ iceServers: c ? [c] : [] }); });

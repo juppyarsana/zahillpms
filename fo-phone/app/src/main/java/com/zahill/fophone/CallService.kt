@@ -18,7 +18,6 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -111,8 +110,9 @@ class CallService : Service() {
       val key = Prefs.key(this)
       if (key.isEmpty()) { stopSelf(); return }
       try {
-        val c = URL("$server/api/phone/stream?key=" + URLEncoder.encode(key, "UTF-8")).openConnection() as HttpURLConnection
+        val c = URL("$server/api/phone/stream").openConnection() as HttpURLConnection
         conn = c
+        c.setRequestProperty("Authorization", "Bearer $key")   // never in the URL (access logs)
         c.connectTimeout = 15000
         c.readTimeout = 60000          // the server sends a heartbeat every 25 s
         c.setRequestProperty("Accept", "text/event-stream")

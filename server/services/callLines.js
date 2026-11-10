@@ -156,6 +156,20 @@ async function answer(propertyId, callId, line, who) {
 }
 
 async function end(propertyId, callId, line) {
+  // The caller of a line-to-line call hanging up while it still rings is a
+  // missed call for the other line (same as when it rings out), not "ended" —
+  // otherwise the other side has no call-back entry. The receiving line
+  // declining stays "ended".
+  const { rows: [gaveUp] } = await db.query(
+    `UPDATE calls SET status = 'missed', ended_at = NOW()
+     WHERE id = $1 AND status = 'ringing' AND direction = 'staff_to_staff' AND property_id = $2 AND line = $3
+     RETURNING id`, [callId, propertyId, line]);
+  if (gaveUp) {
+    clearRing(callId);
+    const m = await callInfo(callId);
+    if (m) notifyLines(m, { type: 'missed', callId });
+    return;
+  }
   const { rows: [call] } = await db.query(
     `UPDATE calls SET status = 'ended', ended_at = NOW()
      WHERE id = $1 AND status IN ('ringing', 'answered')

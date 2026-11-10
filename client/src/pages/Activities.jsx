@@ -24,6 +24,8 @@ function fmtIDR(n) { return 'Rp ' + Math.round(Number(n || 0)).toLocaleString('i
 export default function Activities() {
   const { user, can, hasModule } = useAuth();
   const isOwner = user?.role === 'owner';
+  // The catalog (add / edit activities): owner or anyone with the Activities menu.
+  const canCatalog = can('activities');
   // Vendor prices (migration 140): owner or the `vendors` permission.
   const seesVendors = can('vendors');
   const [vendorList, setVendorList] = useState([]);
@@ -230,7 +232,7 @@ export default function Activities() {
 
       {tab === 'catalog' && (
         <div>
-          {isOwner && (
+          {canCatalog && (
             <div className="flex" style={{ justifyContent: 'flex-end', marginBottom: 12 }}>
               <button className="btn btn-primary" onClick={openAddActivity}>+ Add Activity</button>
             </div>
@@ -238,7 +240,7 @@ export default function Activities() {
           <div className="card">
             <div className="table-wrap">
               <table style={{ minWidth: 640 }}>
-                <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Capacity/Slot</th><th>Available</th>{isOwner && <th></th>}</tr></thead>
+                <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Capacity/Slot</th><th>Available</th>{canCatalog && <th></th>}</tr></thead>
                 <tbody>
                   {activities.map(a => (
                     <tr key={a.id}>
@@ -252,7 +254,7 @@ export default function Activities() {
                       <td>{a.duration_minutes ? `${a.duration_minutes} min` : '—'}</td>
                       <td>{a.capacity_per_slot ?? 'Unlimited'}</td>
                       <td><span className={`badge badge-${a.is_available ? 'green' : 'gray'}`}>{a.is_available ? 'Yes' : 'No'}</span></td>
-                      {isOwner && <td><button className="btn btn-sm btn-secondary" onClick={() => openEditActivity(a)}>Edit</button></td>}
+                      {canCatalog && <td><button className="btn btn-sm btn-secondary" onClick={() => openEditActivity(a)}>Edit</button></td>}
                     </tr>
                   ))}
                   {activities.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 24 }}>No activities yet</td></tr>}
