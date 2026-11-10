@@ -1026,6 +1026,7 @@ export default function BookingDetail() {
     if (!estimate || (['cancelled', 'no_show'].includes(booking.status) && !booking.noshow_fee)) return null;
     const due = parseFloat(estimate.balance_due) || 0;
     if (['cancelled', 'no_show'].includes(booking.status)) {
+      if (booking.folio_status) return { value: `On ${booking.agent_name || 'the agent'}'s account`, sub: booking.noshow_fee?.description };
       if (due < 1) return { value: 'Fee paid', sub: booking.noshow_fee?.description };
       return { value: fmtIDR(due), sub: booking.noshow_fee?.description };
     }
@@ -1125,7 +1126,7 @@ export default function BookingDetail() {
         <div className="alert alert-warn mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div>
             Marked <b>no-show</b>. Did the guest arrive after all? Put the booking back, then check them in and take payment as usual.
-            {booking.noshow_fee && <div style={{ marginTop: 4 }}>💰 <b>{booking.noshow_fee.description}</b> — {fmtIDR(booking.noshow_fee.amount)} before service &amp; tax{booking.noshow_fee.paid ? ' · paid' : ' · not paid yet (Folio tab → Record Payment)'}.</div>}
+            {booking.noshow_fee && <div style={{ marginTop: 4 }}>💰 <b>{booking.noshow_fee.description}</b> — {fmtIDR(booking.noshow_fee.amount)} before service &amp; tax{booking.folio_status ? ` · on ${booking.agent_name || 'the agent'}'s account in Receivables — paid by its payout, nothing to collect from the guest` : booking.noshow_fee.paid ? ' · paid' : ' · not paid yet (Folio tab → Record Payment)'}.</div>}
           </div>
           <button className="btn btn-sm btn-primary" onClick={undoNoShow}>↩ Undo No-Show</button>
         </div>
@@ -1568,7 +1569,7 @@ export default function BookingDetail() {
                       Projected for the whole stay: posted + not posted yet − paid. Use this to know what the guest actually still owes.
                     </div>
                   )}
-                  {parseFloat(estimate.balance_due) > 0 && (!['cancelled', 'no_show'].includes(booking.status) || booking.noshow_fee) && (
+                  {parseFloat(estimate.balance_due) > 0 && (!['cancelled', 'no_show'].includes(booking.status) || (booking.noshow_fee && !booking.folio_status)) && (
                     <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} onClick={openRecordPayment}>💳 Record Payment</button>
                   )}
                 </div>

@@ -51,9 +51,13 @@ export function FeePicker({ bookingId, value, onChange, allowNone = true, onQuot
   return (
     <div>
       {!q.can_charge && <div className="alert alert-warning" style={{ marginBottom: 8 }}><div>{q.blocked_reason}</div></div>}
-      {q.ota_collects ? (
+      {q.billed_to ? (
+        <div className="alert alert-info" style={{ marginBottom: 8 }}><div>
+          <b>{q.billed_to} pays this fee, not the guest.</b> It goes onto {q.billed_to}'s account in Receivables and is settled with its payout (OTA payouts → Record payout). Usually the first night, if the no-show was reported to the OTA in time — check its extranet for what it pays.
+        </div></div>
+      ) : q.ota_collects ? (
         <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-          {q.source_label || 'The OTA'} collected the money, so it is the one that pays this fee under its policy — usually the first night, if the no-show was reported to it in time. Record its payout under Record Payment when it arrives.
+          {q.source_label || 'The OTA'} collected the money, so it is the one that pays this fee under its policy.
         </div>
       ) : (
         <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>

@@ -128,8 +128,8 @@ async function load(propertyId, date, { userId = null } = {}) {
   const { rows: billed } = await db.query(`
     SELECT b.id AS booking_id, b.bill_tax_rate, b.bill_service_charge_rate, u.name AS room, g.name AS guest,
            COALESCE(a.name, 'No agent') AS agent, ai.invoice_number,
-           cr.checkout_by AS user_id, us.name AS user_name,
-           to_char(cr.checkout_time AT TIME ZONE ${TZ}, 'HH24:MI') AS time,
+           COALESCE(cr.checkout_by, nf.posted_by) AS user_id, us.name AS user_name,
+           to_char(COALESCE(cr.checkout_time, nf.posted_at) AT TIME ZONE ${TZ}, 'HH24:MI') AS time,
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                      WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
            COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
@@ -138,13 +138,18 @@ async function load(propertyId, date, { userId = null } = {}) {
     FROM bookings b
     JOIN units u ON u.id = b.unit_id
     JOIN guests g ON g.id = b.guest_id
-    JOIN checkin_records cr ON cr.booking_id = b.id
+    LEFT JOIN checkin_records cr ON cr.booking_id = b.id
+    -- a no-show / cancelled booking whose fee is on the agent's account (migration 166): its day is the fee's day
+    LEFT JOIN LATERAL (SELECT f.posted_by, f.posted_at, COALESCE(f.service_date, (f.posted_at AT TIME ZONE ${TZ})::date) AS fee_day
+                       FROM folio_charges f WHERE f.booking_id = b.id AND f.type = 'noshow_fee' AND f.is_voided = false
+                       ORDER BY f.posted_at LIMIT 1) nf ON b.status IN ('no_show', 'cancelled')
     LEFT JOIN agents a ON a.id = b.agent_id
     LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id
-    LEFT JOIN users us ON us.id = cr.checkout_by
-    WHERE b.property_id = $1 AND b.folio_status IS NOT NULL AND b.status = 'checked_out'
-      AND (cr.checkout_time AT TIME ZONE ${TZ})::date = $2::date
-    ORDER BY cr.checkout_time`, [propertyId, date]);
+    LEFT JOIN users us ON us.id = COALESCE(cr.checkout_by, nf.posted_by)
+    WHERE b.property_id = $1 AND b.folio_status IS NOT NULL
+      AND ((b.status = 'checked_out' AND (cr.checkout_time AT TIME ZONE ${TZ})::date = $2::date)
+        OR (b.status IN ('no_show', 'cancelled') AND nf.fee_day = $2::date))
+    ORDER BY COALESCE(cr.checkout_time, nf.posted_at)`, [propertyId, date]);
   for (const r of billed) {
     const rates = billRates(r, settings || {});
     // what went onto the agent's bill: the rest after money already received (folioService.agentDue)

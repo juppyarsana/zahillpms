@@ -95,7 +95,7 @@ const PAID_AT_DESK_SQL = `(fc.paid_payment_id IS NOT NULL
 // OTA's account (agent_type 'ota', migration 126) only the room and meal plan —
 // the guest pays extras at the hotel, whatever is still unpaid stays the guest's.
 // A travel agent or company that pays later is billed the extras too.
-const AGENT_BILLABLE_LINE_SQL = `(NOT ${PAID_AT_DESK_SQL} AND (fc.type IN ('room', 'fnb')
+const AGENT_BILLABLE_LINE_SQL = `(NOT ${PAID_AT_DESK_SQL} AND (fc.type IN ('room', 'fnb', 'noshow_fee')
     OR NOT EXISTS (SELECT 1 FROM bookings ob JOIN agents oa ON oa.id = ob.agent_id
                    WHERE ob.id = fc.booking_id AND oa.agent_type = 'ota')))`;
 // Billed to an agent (city ledger) = what is still owed on the stay: the
@@ -313,7 +313,7 @@ async function loadFolio(bookingId, propertyId, conn = db) {
   // What an agent can be billed / paid commission on: everything except
   // extras the guest already paid at the desk (see PAID_AT_DESK_SQL).
   const agent_billable_total = chargeTotals(
-    billable.filter(c => !c.paid_at_desk && (booking.agent_type !== 'ota' || c.type === 'room' || c.type === 'fnb')),
+    billable.filter(c => !c.paid_at_desk && (booking.agent_type !== 'ota' || c.type === 'room' || c.type === 'fnb' || c.type === 'noshow_fee')),
     rates.tax_rate, rates.service_charge_rate
   ).total;
 

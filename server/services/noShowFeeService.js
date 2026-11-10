@@ -15,6 +15,13 @@
 //     an OTA's payout / virtual card); voided with a reason like any folio line.
 // Payments, the room's own pending deposit / balance lines and the booking
 // status are not touched.
+//
+// WHO PAYS: when an OTA collected the guest's money (or the booking is billed to
+// an agent on city ledger) the fee is NOT the guest's to pay — it goes onto that
+// OTA's / agent's account in Receivables (bookings.folio_status = 'pending_agent_invoice',
+// agent made / linked if the booking has none), exactly like the room money still
+// owed at check-out, and is settled by the OTA's payout. Otherwise (guest pays at
+// the hotel) front desk takes it with Record Payment.
 const db = require('../db');
 const { round2, computeFolioTotals, stayNights, nightlyAmount, billRates } = require('./folioService');
 const { roomNightAmounts, loadNightRates } = require('./nightRates');
@@ -22,6 +29,9 @@ const { basisFrom } = require('./priceBasis');
 const { fitToGross } = require('./bookingPriceService');
 const roomCharge = require('./roomChargeService');
 const { otaCollects } = require('./otaCollect');
+const { ensureOtaAgent } = require('./agentService');
+
+const CITY_LEDGER = ['city_ledger', 'city_ledger_payment', 'commission_and_city_ledger'];
 
 class FeeError extends Error {
   constructor(status, message, code) { super(message); this.status = status; this.code = code; }
@@ -40,7 +50,7 @@ async function loadBooking(client, propertyId, bookingId, lock = false) {
             b.reservation_group_id, b.folio_status,
             bs.is_ota, bs.label AS source_label,
             ps.tax_rate, ps.service_charge_rate, ps.prices_include_tax,
-            ag.payment_status AS agent_billing, rg.group_billing,
+            ag.payment_status AS agent_billing, ag.agent_type, ag.name AS agent_name, b.agent_id, rg.group_billing,
             u.name AS unit_name, g.name AS guest_name
      FROM bookings b
      JOIN property_settings ps ON ps.property_id = b.property_id
@@ -86,15 +96,25 @@ async function quote(propertyId, bookingId) {
     typed_as: basis.include ? 'all_in' : 'before_tax',
     ota_collects: otaCollects(b),
     source_label: b.source_label || null,
+    // The fee goes onto this account in Receivables instead of the guest's folio balance.
+    billed_to: accountOf(b) ? (b.agent_name || b.source_label || 'the OTA') : null,
     can_charge: !refusal(b),
     blocked_reason: refusal(b),
   };
 }
 
+// The fee goes on an account in Receivables (not the guest's balance): an OTA that collected
+// the money, or an agent billed on city ledger — unless the guest pays at the hotel.
+function accountOf(b) {
+  const guestPaysOta = b.payment_collect === 'property' && b.agent_type === 'ota';
+  if (guestPaysOta) return false;
+  const otaPays = otaCollects(b) && (!b.agent_id || b.agent_type === 'ota');
+  return otaPays || (!!b.agent_id && CITY_LEDGER.includes(b.agent_billing));
+}
+
 // Why a fee can't be posted on this booking (null = fine).
 function refusal(b) {
   if (b.complimentary_scope) return 'This stay is complimentary — there is nothing to charge';
-  if (b.agent_billing === 'city_ledger') return "This booking is billed to its agent — a no-show fee on an agent's bill is not supported yet";
   if (b.group_billing) return 'This room is on a group bill — put the fee on the group another way';
   return null;
 }
@@ -141,11 +161,24 @@ async function postFee(client, propertyId, bookingId, { mode, amount, kind, user
     `UPDATE bookings SET bill_tax_rate = COALESCE(bill_tax_rate, $2), bill_service_charge_rate = COALESCE(bill_service_charge_rate, $3), updated_at = NOW() WHERE id = $1`,
     [bookingId, rates.tax_rate, rates.service_charge_rate]);
   const allIn = computeFolioTotals(net, rates.tax_rate, rates.service_charge_rate).total;
+  // Onto the OTA's / agent's account in Receivables when it is theirs to pay.
+  let billedTo = null;
+  if (accountOf(b)) {
+    let agentId = b.agent_id, agentName = b.agent_name;
+    if (!agentId) {   // an OTA collected the money and the booking has no agent yet: make / link the OTA's account
+      const ota = await ensureOtaAgent(client, propertyId, b.source_label || b.source);
+      if (ota) { agentId = ota.id; agentName = ota.name; await client.query('UPDATE bookings SET agent_id = $1 WHERE id = $2', [ota.id, bookingId]); }
+    }
+    if (agentId) {
+      await client.query("UPDATE bookings SET folio_status = 'pending_agent_invoice', updated_at = NOW() WHERE id = $1 AND folio_status IS NULL", [bookingId]);
+      billedTo = agentName;
+    }
+  }
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
     bookingId,
-    `${k.label} charged: ${what}, Rp ${Math.round(allIn).toLocaleString('id-ID')} incl. service & tax (dated ${day}).${reason ? ` Reason: ${reason}` : ''}`.slice(0, 1000),
+    `${k.label} charged: ${what}, Rp ${Math.round(allIn).toLocaleString('id-ID')} incl. service & tax (dated ${day}).${billedTo ? ` Put on ${billedTo}'s account in Receivables — paid by its payout, not by the guest.` : ''}${reason ? ` Reason: ${reason}` : ''}`.slice(0, 1000),
     userId || null]);
-  return { id: line.id, description, net, all_in: allIn, day };
+  return { id: line.id, description, net, all_in: allIn, day, billed_to: billedTo };
 }
 
 // A booking that is live again (no-show undone, cancellation reinstated) must not keep
@@ -156,6 +189,8 @@ async function voidLiveFees(client, bookingId, userId, why) {
     `UPDATE folio_charges SET is_voided = true, voided_by = $2, voided_at = NOW()
      WHERE booking_id = $1 AND type = 'noshow_fee' AND is_voided = false
      RETURNING description, amount, paid_payment_id`, [bookingId, userId || null]);
+  // A live booking is not billed to an agent yet (check-out does that): take the mark the fee put there off.
+  if (rows.length) await client.query("UPDATE bookings SET folio_status = NULL, updated_at = NOW() WHERE id = $1 AND folio_status = 'pending_agent_invoice'", [bookingId]);
   for (const f of rows) {
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [
       bookingId,

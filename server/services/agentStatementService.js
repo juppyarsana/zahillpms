@@ -68,7 +68,9 @@ async function bookingLedger(propertyId, { agentId } = {}) {
      LEFT JOIN agent_invoices ai ON ai.id = b.agent_invoice_id
      WHERE b.property_id = $1
        AND b.folio_status IN ('pending_agent_invoice','invoiced')
-       AND b.status NOT IN ('cancelled','no_show')
+       AND (b.status NOT IN ('cancelled','no_show')
+            -- a no-show / late-cancellation fee put on the agent's account (migration 166)
+            OR EXISTS (SELECT 1 FROM folio_charges nf WHERE nf.booking_id = b.id AND nf.type = 'noshow_fee' AND nf.is_voided = false))
        ${agentFilter}
      ORDER BY b.check_out_date, b.id`,
     params

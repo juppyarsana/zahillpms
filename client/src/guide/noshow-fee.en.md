@@ -23,9 +23,9 @@ Open the booking → ⋮ → **Add no-show fee** (or **Add late-cancellation fee
 
 ## Taking the payment
 
-- **Folio** tab → **Record Payment** → tick the fee line → choose the method (e.g. the OTA's bank transfer) → save.
-- For an OTA: record it when the OTA's money arrives. If the OTA pays less, type what arrived — the rest stays owed (or void the fee line with a reason).
-- Money **already received** on that booking counts. If it is more than the fee, the difference can be given back with **Refund**.
+**Booked through an OTA that collected the money (e.g. Agoda), or billed to an agent:** the fee is **not the guest's to pay**. It goes by itself onto that OTA's / agent's **account in Receivables** (the booking shows *On Agoda's account*), and you record it with the OTA's payout like any other stay: **OTA payouts → Record payout**, tick the booking, enter the amount that reached the bank (the commission kept back fills itself in). Don't use Record Payment for it.
+
+**Paid at the hotel (direct, or an OTA booking the guest pays at the hotel):** **Folio** tab → **Record Payment** → tick the fee line → choose the method → save. Money **already received** on that booking counts; if it is more than the fee, give the difference back with **Refund**.
 
 ## Wrong? Take the fee off
 
@@ -36,4 +36,4 @@ Open the booking → ⋮ → **Add no-show fee** (or **Add late-cancellation fee
 
 - Reports: a **No-show & cancellation fees** line in Revenue, the Excel, the PDF, Daily Close, Weekly and Monthly.
 - Journal: Dr Guest ledger / Cr **No-show & Cancellation Revenue (400-11-002)** + service + tax, on the day the fee counts. On the P&L it shows under **Rooms**.
-- Not available for bookings billed to an agent (city ledger), a group billed as one bill, or a complimentary stay.
+- Not available for a group billed as one bill or a complimentary stay.

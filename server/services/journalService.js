@@ -248,7 +248,7 @@ async function collectPosts(propertyId, from, to) {
     // Billed to an agent at check-out (same amount as the Cashier Closing's "Agent ledger").
     db.query(`
       SELECT b.bill_tax_rate, b.bill_service_charge_rate, u.name AS room, g.name AS guest, COALESCE(a.name, 'No agent') AS agent,
-             ${ymd(dayOf('cr.checkout_time'))} AS day,
+             ${ymd('COALESCE(' + dayOf('cr.checkout_time') + ', nf.fee_day)')} AS day,
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
                        WHERE fc.booking_id = b.id AND fc.is_voided = false AND fc.tax_mode = 'added' AND ${AGENT_BILLABLE_LINE_SQL}), 0) AS charge_subtotal,
              COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc
@@ -257,10 +257,14 @@ async function collectPosts(propertyId, from, to) {
       FROM bookings b
       JOIN units u ON u.id = b.unit_id
       JOIN guests g ON g.id = b.guest_id
-      JOIN checkin_records cr ON cr.booking_id = b.id
+      LEFT JOIN checkin_records cr ON cr.booking_id = b.id
+      -- a no-show / cancelled booking whose fee is on the agent's account (migration 166): its day is the fee's day
+      LEFT JOIN LATERAL (SELECT MIN(COALESCE(f.service_date, ${dayOf('f.posted_at')})) AS fee_day FROM folio_charges f
+                          WHERE f.booking_id = b.id AND f.type = 'noshow_fee' AND f.is_voided = false) nf ON b.status IN ('no_show', 'cancelled')
       LEFT JOIN agents a ON a.id = b.agent_id
-      WHERE b.property_id = $3 AND b.folio_status IS NOT NULL AND b.status = 'checked_out'
-        AND ${dayOf('cr.checkout_time')} BETWEEN $1::date AND $2::date`, P),
+      WHERE b.property_id = $3 AND b.folio_status IS NOT NULL
+        AND ((b.status = 'checked_out' AND ${dayOf('cr.checkout_time')} BETWEEN $1::date AND $2::date)
+          OR (b.status IN ('no_show', 'cancelled') AND nf.fee_day BETWEEN $1::date AND $2::date))`, P),
     db.query(`
       SELECT ac.amount, ${ymd(dayOf('ac.computed_at'))} AS day, COALESCE(ag.name, 'Agent') AS agent, u.name AS room, g.name AS guest
       FROM agent_commissions ac

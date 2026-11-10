@@ -23,9 +23,9 @@ Buka booking → ⋮ → **Add no-show fee** (atau **Add late-cancellation fee**
 
 ## Menerima pembayarannya
 
-- Tab **Folio** → **Record Payment** → centang baris biaya → pilih metode (mis. transfer dari OTA) → simpan.
-- Untuk OTA: catat saat uang dari OTA masuk. Kalau OTA membayar lebih sedikit, ketik jumlah yang masuk dan sisanya tetap terutang (atau void baris biaya dengan alasan).
-- Uang yang **sudah diterima sebelumnya** di booking itu ikut dihitung. Kalau lebih besar dari biaya, selisihnya bisa dikembalikan lewat **Refund**.
+**Booking lewat OTA yang menagih uang tamu (mis. Agoda), atau ditagihkan ke agen:** biaya ini **bukan untuk dibayar tamu**. Biaya otomatis masuk ke **akun OTA / agen itu di Receivables** (booking menampilkan *On Agoda's account*), dan dicatat bersama payout OTA seperti stay lainnya: **OTA payouts → Record payout**, centang booking, isi jumlah yang masuk ke bank (komisi yang ditahan terisi otomatis). Jangan pakai Record Payment untuk ini.
+
+**Dibayar di hotel (direct, atau booking OTA yang dibayar tamu di hotel):** tab **Folio** → **Record Payment** → centang baris biaya → pilih metode → simpan. Uang yang **sudah diterima sebelumnya** di booking itu ikut dihitung; kalau lebih besar dari biaya, kembalikan selisihnya lewat **Refund**.
 
 ## Salah? Batalkan biayanya
 
@@ -36,4 +36,4 @@ Buka booking → ⋮ → **Add no-show fee** (atau **Add late-cancellation fee**
 
 - Laporan: baris **No-show & cancellation fees** di Revenue, Excel, PDF, Daily Close, Weekly dan Monthly.
 - Jurnal: Dr Guest ledger / Cr **No-show & Cancellation Revenue (400-11-002)** + service + tax, pada hari biaya itu dicatat. Di P&L tampil di baris **Rooms**.
-- Tidak tersedia untuk booking yang ditagihkan ke agen (city ledger), grup yang ditagih sebagai satu bill, dan stay complimentary.
+- Tidak tersedia untuk grup yang ditagih sebagai satu bill dan stay complimentary.
