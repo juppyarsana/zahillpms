@@ -396,7 +396,8 @@ export default function Reports() {
             { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, ...group },
             ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${num(ev.pax)} pax`].filter(Boolean).join(' · '), amount: ev.amount, ...sub })),
           ] : []),
-          ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, ...group }] : []),
+          ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, ...group },
+            ...(rev.noshow?.by_fee || []).map(f => ({ item: `${f.room} · ${f.guest}`, detail: [f.kind, f.source, f.day, f.who_pays].filter(Boolean).join(' · '), amount: f.amount, ...sub }))] : []),
         ];
         const natRows = allNationalities ? rooms.by_nationality : rooms.by_nationality.slice(0, 10);
         const owed = money.owed_now;
@@ -514,9 +515,11 @@ export default function Reports() {
                   { key: 'revenue', label: 'Revenue', align: 'right', render: r => fmtIDR(r.revenue) },
                   { key: 'adr', label: 'ADR', align: 'right', render: r => fmtIDR(r.adr) },
                   { key: 'share', label: 'Share', render: r => <ShareBar pct={r.share} color={SOURCE_COLORS[channels.indexOf(r) % SOURCE_COLORS.length]} /> },
+                  ...(channels.some(c => c.noshow_fees) ? [{ key: 'noshow_fees', label: 'No-show fees', align: 'right', render: r => (r.noshow_fees ? fmtIDR(r.noshow_fees) : '') }] : []),
                 ]}
                 footer={{ source: 'Total', bookings: channels.reduce((s, r) => s + r.bookings, 0), nights: num(channels.reduce((s, r) => s + r.nights, 0)),
-                  revenue: fmtIDR(channels.reduce((s, r) => s + r.revenue, 0)) }} />
+                  revenue: fmtIDR(channels.reduce((s, r) => s + r.revenue, 0)),
+                  ...(channels.some(c => c.noshow_fees) ? { noshow_fees: fmtIDR(channels.reduce((s, r) => s + (r.noshow_fees || 0), 0)) } : {}) }} />
               {agents.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <TableCard title="By agent / company" rows={agents}

@@ -125,7 +125,8 @@ function buildReportPdf(report, property) {
         { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, _group: true },
         ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${num(ev.pax)} pax`].filter(Boolean).join(' · '), amount: ev.amount, _indent: true })),
       ] : []),
-      ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, _group: true }] : []),
+      ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, _group: true },
+        ...(rev.noshow?.by_fee || []).map(f => ({ item: `${f.room} · ${f.guest}`, detail: [f.kind, f.source, f.day, f.who_pays].filter(Boolean).join(' · '), amount: f.amount, _indent: true }))] : []),
     ], { total: { item: 'Total revenue', amount: total } });
     if (rev.complimentary.nights > 0 || rev.complimentary.value > 0) {
       doc.font('Helvetica').fontSize(8.5).fillColor('#374151')
@@ -182,8 +183,9 @@ function buildReportPdf(report, property) {
     table([
       { label: 'Source', w: 0.3, key: 'source' }, { label: 'Bookings', w: 0.11, align: 'right', get: r => num(r.bookings) },
       { label: 'Nights', w: 0.1, align: 'right', get: r => num(r.nights) }, { label: 'Revenue', w: 0.19, align: 'right', get: r => fmtIDR(r.revenue) },
-      { label: 'ADR', w: 0.17, align: 'right', get: r => (r.adr === '' ? '' : fmtIDR(r.adr)) }, { label: 'Share', w: 0.13, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
-    ], channels, { total: { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0), revenue: chTotal, adr: '', share: '' } });
+      { label: 'ADR', w: 0.13, align: 'right', get: r => (r.adr === '' ? '' : fmtIDR(r.adr)) }, { label: 'Share', w: 0.1, align: 'right', get: r => (r.share === '' ? '' : pct(r.share)) },
+      { label: 'No-show fees', w: 0.14, align: 'right', get: r => (r.noshow_fees ? fmtIDR(r.noshow_fees) : '') },
+    ], channels, { total: { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0), revenue: chTotal, adr: '', share: '', noshow_fees: channels.reduce((s, c) => s + (c.noshow_fees || 0), 0) } });
     if (agents.length) {
       subheading('By agent / company', 'Stays with an agent on the booking. Share = of all stay revenue. Commission = posted at check-out in this period.', Math.min(agents.length + 2, 12));
       table([

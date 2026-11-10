@@ -93,7 +93,8 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
       { item: 'Meeting room & events', detail: plural(rev.events.by_event.length, 'event'), amount: rev.events.total, _group: true },
       ...rev.events.by_event.map(ev => ({ item: ev.name, detail: [ev.customer, `${ev.pax} pax`].filter(Boolean).join(' · '), amount: ev.amount, _indent: true })),
     ] : []),
-    ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, _group: true }] : []),
+    ...(rev.noshow?.total ? [{ item: 'No-show & cancellation fees', detail: plural(rev.noshow.count, 'fee'), amount: rev.noshow.total, _group: true },
+      ...(rev.noshow?.by_fee || []).map(f => ({ item: `${f.room} · ${f.guest}`, detail: [f.kind, f.source, f.day, f.who_pays].filter(Boolean).join(' · '), amount: f.amount, _indent: true }))] : []),
   ].map(r => ({ ...r, share: share(r.amount) }));
   table(ws1, 'Revenue breakdown', [
     { header: 'Item', key: 'item' }, { header: 'Detail', key: 'detail' },
@@ -154,9 +155,10 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     { header: 'Source', key: 'source' }, { header: 'Bookings', key: 'bookings', fmt: INT, align: 'right' },
     { header: 'Nights', key: 'nights', fmt: INT, align: 'right' }, { header: 'Revenue (Rp)', key: 'revenue', fmt: IDR, align: 'right' },
     { header: 'ADR (Rp)', key: 'adr', fmt: IDR, align: 'right' }, { header: 'Share (%)', key: 'share', fmt: PCT, align: 'right' },
+    { header: 'No-show & cancellation fees (Rp)', key: 'noshow_fees', fmt: IDR, align: 'right' },
   ], channels, { source: 'Total', bookings: channels.reduce((s, c) => s + c.bookings, 0), nights: channels.reduce((s, c) => s + c.nights, 0),
-    revenue: chTotal, share: chTotal ? 100 : 0 },
-  'Revenue = room + meals in the rate plan for the nights in this period.');
+    revenue: chTotal, share: chTotal ? 100 : 0, noshow_fees: channels.reduce((s, c) => s + (c.noshow_fees || 0), 0) },
+  'Revenue = room + meals in the rate plan for the nights in this period. No-show & cancellation fees are kept apart (not stay revenue) — the bookings are listed on the Revenue sheet.');
   if (agents.length) {
     table(ws3, 'By agent / company', [
       { header: 'Agent', key: 'agent' }, { header: 'Bookings', key: 'bookings', fmt: INT, align: 'right' },
@@ -264,7 +266,8 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
     const rs = detail.reservations;
     const ws7 = wb.addWorksheet('Reservations', { views: [{ state: 'frozen', ySplit: 6, xSplit: 2 }] });
     titleBlock(ws7, 'Reservations', meta);
-    const bsum = k => rs.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    // Totals count stays only: a no-show / cancelled row is not a stay (it carries just its fee).
+    const bsum = k => rs.reduce((s, r) => s + (['no_show', 'cancelled'].includes(r.status) && k !== 'noshow_fee' ? 0 : (Number(r[k]) || 0)), 0);
     table(ws7, null, [
       { header: 'Booking', key: 'ref' }, { header: 'Guest', key: 'guest' }, { header: 'Nationality', key: 'nationality' },
       { header: 'Room', key: 'room' }, { header: 'Room type', key: 'room_type' },
@@ -273,15 +276,16 @@ async function buildReportXlsx(report, { propertyName, detail } = {}) {
       { header: 'Guests', key: 'guests', fmt: INT, align: 'right' }, { header: 'Source', key: 'source' }, { header: 'Rate plan', key: 'rate_plan' },
       { header: 'Status', key: 'status' }, { header: 'Price as booked (Rp, incl. tax)', key: 'price', fmt: IDR, align: 'right' },
       { header: 'Discount (Rp)', key: 'discount', fmt: IDR, align: 'right' }, { header: 'Room, net (Rp)', key: 'room_revenue', fmt: IDR, align: 'right' },
-      { header: 'Meals, net (Rp)', key: 'meal_revenue', fmt: IDR, align: 'right' }, { header: 'Room payments received (Rp)', key: 'paid', fmt: IDR, align: 'right' },
+      { header: 'Meals, net (Rp)', key: 'meal_revenue', fmt: IDR, align: 'right' }, { header: 'No-show / cancellation fee, net (Rp)', key: 'noshow_fee', fmt: IDR, align: 'right' },
+      { header: 'Room payments received (Rp)', key: 'paid', fmt: IDR, align: 'right' },
       { header: 'Room payments pending (Rp)', key: 'pending', fmt: IDR, align: 'right' }, { header: 'Billing', key: 'billing' },
       { header: 'Group (booked by)', key: 'group' }, { header: 'Booked on', key: 'booked_on', fmt: DATE },
     ], rs.map(r => ({ ...r, check_in: xlDate(r.check_in), check_out: xlDate(r.check_out), booked_on: xlDate(r.booked_on), status: r.status.replace('_', ' ') })),
     { ref: 'Total', nights: bsum('nights'), nights_in_period: bsum('nights_in_period'), guests: bsum('guests'), price: bsum('price'), discount: bsum('discount'),
-      room_revenue: bsum('room_revenue'), meal_revenue: bsum('meal_revenue'), paid: bsum('paid'), pending: bsum('pending') },
-    "One row per reservation with at least one night in the period (not cancelled / no-show). Amounts are for the whole stay, which can run outside the period; payments are the room's deposit / balance lines (extras are on each folio).",
+      room_revenue: bsum('room_revenue'), meal_revenue: bsum('meal_revenue'), noshow_fee: bsum('noshow_fee'), paid: bsum('paid'), pending: bsum('pending') },
+    "One row per reservation with at least one night in the period, plus a no-show / cancelled booking whose fee is dated in the period (no nights, no room revenue — only its fee). Amounts are for the whole stay, which can run outside the period; payments are the room's deposit / balance lines (extras are on each folio).",
     { filter: true });
-    widths(ws7, [11, 24, 14, 10, 14, 13, 13, 8, 10, 8, 16, 18, 12, 18, 14, 16, 15, 18, 18, 14, 22, 13]);
+    widths(ws7, [11, 24, 14, 10, 14, 13, 13, 8, 10, 8, 16, 18, 12, 18, 14, 16, 15, 20, 18, 18, 14, 22, 13]);
   }
 
   for (const ws of wb.worksheets) ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };

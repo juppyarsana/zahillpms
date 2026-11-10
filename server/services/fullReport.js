@@ -212,6 +212,25 @@ async function buildFullReport(propertyId, from, to) {
     GROUP BY e.id, a.name ORDER BY SUM(c.amount) DESC`, P);
   const eventsByName = eventRows.map(e => ({ name: `#${e.event_no} ${e.name}`, customer: e.customer, pax: parseInt(e.pax), amount: r2(parseFloat(e.amount)) }));
 
+  // No-show & late-cancellation fees (migration 166): one row per live fee line dated in the period, so the
+  // line in Revenue can be traced to its booking (and the account that pays it).
+  const { rows: feeRows } = await db.query(`
+    SELECT b.id AS booking_id, b.status, u.name AS room, g.name AS guest, COALESCE(bs.label, b.source) AS source,
+           to_char(COALESCE(fc.service_date, (fc.posted_at AT TIME ZONE 'Asia/Makassar')::date), 'YYYY-MM-DD') AS day,
+           fc.description, fc.amount, b.folio_status, ag.name AS agent_name, (fc.paid_payment_id IS NOT NULL) AS paid
+    FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id
+    JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+    LEFT JOIN booking_sources bs ON bs.id = b.source AND bs.property_id = b.property_id
+    LEFT JOIN agents ag ON ag.id = b.agent_id
+    WHERE b.property_id = $3 AND fc.type = 'noshow_fee' AND fc.is_voided = false
+      AND COALESCE(fc.service_date, (fc.posted_at AT TIME ZONE 'Asia/Makassar')::date) BETWEEN $1::date AND $2::date
+    ORDER BY day, u.name`, P);
+  const noshowFees = feeRows.map(f => ({
+    ref: bookingRef(f.booking_id), booking_id: f.booking_id, room: f.room, guest: f.guest, source: f.source, day: f.day,
+    kind: f.status === 'cancelled' ? 'Late cancellation' : 'No-show', description: f.description, amount: r2(f.amount),
+    who_pays: f.folio_status ? `${f.agent_name || 'Agent'} (account in Receivables)` : f.paid ? 'Guest (paid)' : 'Guest (to collect)',
+  }));
+
   const revenue = {
     room: r2(base.room_revenue),
     fnb: { total: r2(base.fnb_revenue), ...base.fnb_breakdown },
@@ -221,7 +240,7 @@ async function buildFullReport(propertyId, from, to) {
     // Meeting room & events (migration 106): venue hire + other lines of confirmed events.
     events: { total: r2(base.event_revenue || 0), by_event: eventsByName },
     // No-show & late-cancellation fees (migration 166): not room nights, so not in Rooms / ADR.
-    noshow: { total: r2(base.noshow_revenue || 0), count: base.noshow_count || 0 },
+    noshow: { total: r2(base.noshow_revenue || 0), count: base.noshow_count || 0, by_fee: noshowFees },
     total: r2(base.total_revenue),
     complimentary: { nights: base.comp_nights, value: r2(base.comp_value) },
   };
@@ -273,6 +292,13 @@ async function buildFullReport(propertyId, from, to) {
       room_revenue: r2(r.room_revenue), adr: parseInt(r.paid_nights) ? r2(r.room_revenue / r.paid_nights) : 0,
       share: stayTotal ? Math.round((rev / stayTotal) * 1000) / 10 : 0 };
   }).sort((a, b) => b.revenue - a.revenue);
+  // No-show / cancellation fees by source (migration 166): a source with only a fee still gets its row.
+  const feeBySource = new Map();
+  for (const f of noshowFees) feeBySource.set(f.source, r2((feeBySource.get(f.source) || 0) + f.amount));
+  for (const c of channels) c.noshow_fees = r2(feeBySource.get(c.source) || 0);
+  for (const [source, amount] of feeBySource) {
+    if (!channels.some(c => c.source === source)) channels.push({ source, bookings: 0, nights: 0, revenue: 0, room_revenue: 0, adr: 0, share: 0, noshow_fees: r2(amount) });
+  }
   // Agents (084): share of all stay revenue (room + rate-plan meals), like channels.
   const agents_rows = byAgent.map(r => {
     const rev = parseFloat(r.room_revenue) + parseFloat(r.meal_revenue);
@@ -405,6 +431,7 @@ async function buildDetailRows(propertyId, from, to) {
              COALESCE(b.fnb_revenue, 0) AS meal_revenue, b.complimentary_scope,
              to_char((b.created_at AT TIME ZONE 'Asia/Makassar')::date, 'YYYY-MM-DD') AS booked_on,
              pg.name AS group_booker, b.folio_status,
+             COALESCE((SELECT SUM(fc.amount) FROM folio_charges fc WHERE fc.booking_id = b.id AND fc.type = 'noshow_fee' AND fc.is_voided = false), 0) AS noshow_fee,
              COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.status = 'received' AND p.type IN ('deposit', 'balance')), 0) AS paid,
              COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.booking_id = b.id AND p.status = 'pending' AND p.type IN ('deposit', 'balance')), 0) AS pending
       FROM bookings b
@@ -415,8 +442,11 @@ async function buildDetailRows(propertyId, from, to) {
       LEFT JOIN rate_plans rp ON rp.id = b.rate_plan_id
       LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
       LEFT JOIN guests pg ON pg.id = rg.primary_guest_id
-      WHERE b.property_id = $3 AND b.status NOT IN ('cancelled', 'no_show')
-        AND b.check_in_date <= $2::date AND b.check_out_date > $1::date
+      WHERE b.property_id = $3
+        AND ((b.status NOT IN ('cancelled', 'no_show') AND b.check_in_date <= $2::date AND b.check_out_date > $1::date)
+          -- a no-show / cancelled booking carrying a fee dated in the period (migration 166)
+          OR EXISTS (SELECT 1 FROM folio_charges nf WHERE nf.booking_id = b.id AND nf.type = 'noshow_fee' AND nf.is_voided = false
+                       AND COALESCE(nf.service_date, (nf.posted_at AT TIME ZONE 'Asia/Makassar')::date) BETWEEN $1::date AND $2::date))
       ORDER BY b.check_in_date, u.name`, P),
   ]);
   return {
@@ -429,9 +459,12 @@ async function buildDetailRows(propertyId, from, to) {
     })),
     reservations: reservations.map(b => ({
       ref: bookingRef(b.id), guest: b.guest, nationality: b.nationality, room: b.room, room_type: b.room_type,
-      check_in: b.check_in, check_out: b.check_out, nights: parseInt(b.nights), nights_in_period: parseInt(b.nights_in_period),
+      check_in: b.check_in, check_out: b.check_out, nights: parseInt(b.nights), nights_in_period: ['no_show', 'cancelled'].includes(b.status) ? 0 : parseInt(b.nights_in_period),
       guests: parseInt(b.num_guests) || 0, source: b.source, rate_plan: b.rate_plan, status: b.status,
-      price: r2(b.total_amount), discount: r2(b.discount), room_revenue: r2(b.room_revenue), meal_revenue: r2(b.meal_revenue),
+      // A no-show / cancelled booking is not a stay: no nights, no room or meal revenue — only its fee.
+      price: r2(b.total_amount), discount: r2(b.discount),
+      room_revenue: ['no_show', 'cancelled'].includes(b.status) ? 0 : r2(b.room_revenue), meal_revenue: ['no_show', 'cancelled'].includes(b.status) ? 0 : r2(b.meal_revenue),
+      noshow_fee: r2(b.noshow_fee),
       paid: r2(b.paid), pending: r2(b.pending),
       billing: b.complimentary_scope ? 'Complimentary' : b.folio_status ? 'Agent billed' : '',
       group: b.group_booker || '', booked_on: b.booked_on,
