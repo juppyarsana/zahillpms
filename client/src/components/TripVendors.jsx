@@ -48,13 +48,13 @@ export function TripVendorsEditor({ rows, onChange, choices, activity, pax }) {
             ) : (
               <select className="form-select" style={{ flex: 1 }} value={r.supplier_id}
                 onChange={e => set(i, { supplier_id: e.target.value, amount: '' })}>
-                <option value={r.supplier_id}>{name(r.supplier_id)}</option>
+                {r.supplier_id ? <option value={r.supplier_id}>{name(r.supplier_id)}</option> : <option value="">Select vendor…</option>}
                 {free.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             )}
             {can_prices && (
               <input className="form-input" type="number" min="0" style={{ width: 140 }}
-                value={r.amount} disabled={r.locked}
+                value={r.amount} disabled={r.locked || !r.supplier_id}
                 placeholder={cat != null ? Math.round(cat).toString() : 'to set'}
                 title="What the hotel owes this vendor for the trip. Empty = Catalog price, or to set later"
                 onChange={e => set(i, { amount: e.target.value })} />
@@ -80,7 +80,7 @@ export function TripVendorsEditor({ rows, onChange, choices, activity, pax }) {
 }
 
 // Payload for the server: amount only when typed.
-export const vendorPayload = rows => rows.map(r => ({
+export const vendorPayload = rows => rows.filter(r => r.supplier_id).map(r => ({
   supplier_id: r.supplier_id, ...(r.amount !== '' && r.amount != null ? { amount: r.amount } : {}),
 }));
 

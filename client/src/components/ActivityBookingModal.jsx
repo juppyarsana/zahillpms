@@ -88,7 +88,11 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
   // A new activity starts from its Catalog vendors and price.
   useEffect(() => {
     setPrice('');
-    setVendorRows((activity?.default_vendor_ids || []).map(id => ({ supplier_id: id, amount: '' })));
+    // One empty "Select vendor…" row when the activity has Catalog vendors:
+    // front desk picks who actually runs this trip (the Catalog list is only
+    // where the choice starts), instead of every Catalog vendor being booked
+    // when one is forgotten. ✕ takes the row off for a trip the hotel runs itself.
+    setVendorRows((activity?.default_vendor_ids || []).length ? [{ supplier_id: '', amount: '' }] : []);
   }, [form.activity_id]); // eslint-disable-line react-hooks/exhaustive-deps
   const paidNow = !!form.payment_method && form.payment_method !== 'room_charge';
   const mode = activity?.tax_mode || 'added';
@@ -104,6 +108,7 @@ export default function ActivityBookingModal({ reservation, onClose, onDone }) {
     if (!form.activity_id || !form.scheduled_date) { setError('Activity and date are required'); return; }
     if (pax < 1) { setError('At least 1 participant'); return; }
     if (price !== '' && !(parseFloat(price) > 0)) { setError('Type the price for this trip, or leave it empty for the Catalog price'); return; }
+    if (vendorRows.some(r => !r.supplier_id)) { setError('Select the vendor who runs this trip, or take the empty vendor row off with ✕'); return; }
     setError(''); setSaving(true);
     try {
       const { data } = await api.post('/api/activities/bookings', {
