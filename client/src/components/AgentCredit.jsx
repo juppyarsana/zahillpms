@@ -9,7 +9,7 @@ import { Shell, Reason, MethodSelect } from './PaymentCorrections';
 // another stay of the same agent or refund it. Server: services/agentCredit.js.
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
-const fmtDay = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+const fmtDay = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Makassar' }) : '';   // hotel time
 const today = () => new Date().toLocaleDateString('en-CA');
 
 export function useAgentCredit(agentId) {
@@ -59,7 +59,7 @@ export function UseCreditModal({ agentId, item, target, onClose, onDone }) {
       </button>
     </>}>
       <div style={{ fontSize: 13, marginBottom: 12 }}>
-        From cancelled room <b>{item.room}</b> ({item.guest}{item.group_name ? ` · ${item.group_name}` : ''}) —{' '}
+        From cancelled room <b>{item.room}</b> ({item.guest}{item.group_name && item.group_name !== item.guest ? ` · ${item.group_name}` : ''}) —{' '}
         <b>{fmtIDR(item.usable)}</b> can be used
         {item.usable < item.available && <span className="text-muted"> ({fmtIDR(item.available - item.usable)} more was paid in a way that can only be refunded)</span>}.
       </div>
@@ -180,7 +180,7 @@ export function AgentCreditCard({ agentId, target, onChanged, compact }) {
             <div style={{ flex: '1 1 240px', minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>
                 <Link to={`/reservations/${it.booking_id}`}>Room {it.room} · {it.guest}</Link>
-                {it.group_name && <span className="text-muted" style={{ fontWeight: 400 }}> · {it.group_name}</span>}
+                {it.group_name && it.group_name !== it.guest && <span className="text-muted" style={{ fontWeight: 400 }}> · {it.group_name}</span>}
               </div>
               <div className="text-muted" style={{ fontSize: 12 }}>
                 Cancelled {fmtDay(it.cancelled_on)} · paid {it.payments.map(p => `${fmtDay(p.received_on)} ${p.method_label}${p.reference ? ` (${p.reference})` : ''}`).join(', ') || '—'}

@@ -205,7 +205,7 @@ async function useCredit(propertyId, userId, { fromBookingId, toBookingId, amoun
       used.push(`${rp(take)} (${p.method_label})`);
     }
 
-    const note = `Agent credit ${rp(amount)} — ${used.join(' + ')}`;
+    const note = used.length === 1 ? `Agent credit ${used[0]}` : `Agent credit ${rp(amount)} — ${used.join(' + ')}`;
     const ev = (bid, text) => client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)', [bid, text.slice(0, 1000), userId]);
     await ev(from.id, `${note} used on room ${to.unit_name} (${to.guest_name}). Reason: ${reason}`);
     await ev(to.id, `${note} from cancelled room ${from.unit_name} (${from.guest_name}) paid this stay. Reason: ${reason}`);
