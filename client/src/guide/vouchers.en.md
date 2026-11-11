@@ -71,6 +71,8 @@ After its **last valid day** has passed, the voucher becomes **Expired** by itse
 
 ## 6. Exceptions (owner / Corrections permission)
 
+**Cancelling a voucher:** choose what happens to the money: *the hotel keeps it as income*, *the money goes back to the buyer* (type the amount and how), or **Entered by mistake — nothing was really paid**. The last one takes the sale out of the books as if it never happened (not in the Cashier Closing, the Daily Close or the journal). The voucher stays in the list as cancelled with your reason, so you can see why its number is used.
+
 Open the voucher (click its row):
 
 - **Extend…** — move the last day, with a reason. Only for a voucher that has not expired.

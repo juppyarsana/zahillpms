@@ -565,10 +565,10 @@ async function collectPosts(propertyId, from, to) {
     const [{ rows: vSold }, { rows: vVoid }, { rows: vExp }] = await Promise.all([
       db.query(`SELECT v.voucher_no, v.buyer_name, v.payment_method, v.liability_amount, v.fee_amount, v.sold_total, v.reference,
                        ${ymd(dayOf('v.received_at'))} AS day
-                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND ${dayOf('v.received_at')} BETWEEN $1::date AND $2::date`, P),
+                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND v.void_kind IS DISTINCT FROM 'mistake' AND ${dayOf('v.received_at')} BETWEEN $1::date AND $2::date`, P),
       db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, v.refunded_amount, v.refund_method, v.void_reason,
                        ${ymd(dayOf('v.voided_at'))} AS day
-                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND v.status = 'voided' AND ${dayOf('v.voided_at')} BETWEEN $1::date AND $2::date`, P),
+                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND v.void_kind IS DISTINCT FROM 'mistake' AND v.status = 'voided' AND ${dayOf('v.voided_at')} BETWEEN $1::date AND $2::date`, P),
       db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, ${ymd('v.expired_on')} AS day
                 FROM vouchers v WHERE v.property_id = $3 AND v.status = 'expired' AND v.expired_on BETWEEN $1::date AND $2::date`, P),
     ]);

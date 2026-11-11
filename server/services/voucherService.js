@@ -569,7 +569,7 @@ async function releasedVoucherOn(client, bookingId) {
 
 // ── Exceptions (owner or corrections) ──
 
-async function voidVoucher(propertyId, id, { reason, refund_amount, refund_method } = {}, userId) {
+async function voidVoucher(propertyId, id, { reason, refund_amount, refund_method, mistake } = {}, userId) {
   const why = String(reason || '').trim();
   if (!why) return fail('A reason is required to cancel a voucher', 400, { code: 'REASON_REQUIRED' });
   return tx(async client => {
@@ -580,6 +580,8 @@ async function voidVoucher(propertyId, id, { reason, refund_amount, refund_metho
     if (v.status === 'voided') return fail('This voucher is already cancelled.', 409);
     if (v.status === 'expired') return fail('This voucher has expired — its value was already taken as income.', 409);
     const refund = round2(num(refund_amount));
+    const isMistake = !!mistake && !v.is_free && !v.charged_booking_id;   // a free / room-charged voucher has no sale money to take out
+    if (isMistake && refund > 0) return fail('Entered by mistake means no money was paid, so there is nothing to give back. Choose a refund instead, or type 0.', 400);
     if (v.charged_booking_id && refund > 0) return fail('This voucher was charged to a room — nothing was paid for it here. Cancelling takes it off the bill; if the guest already paid, give the money back with ⋮ → Refund on the reservation.', 400);
     if (refund < 0 || refund > num(v.sold_total) + num(v.fee_amount) + 0.004) return fail('The refund can\'t be more than was paid for it');
     let method = null;
@@ -590,13 +592,15 @@ async function voidVoucher(propertyId, id, { reason, refund_amount, refund_metho
       method = pm.id;
     }
     await client.query(
-      `UPDATE vouchers SET status = 'voided', void_reason = $2, voided_by = $3, voided_at = NOW(), refunded_amount = $4, refund_method = $5, updated_at = NOW()
-       WHERE id = $1`, [id, why.slice(0, 500), userId || null, refund, method]);
+      `UPDATE vouchers SET status = 'voided', void_reason = $2, voided_by = $3, voided_at = NOW(), refunded_amount = $4, refund_method = $5,
+              void_kind = $6, updated_at = NOW()
+       WHERE id = $1`, [id, why.slice(0, 500), userId || null, refund, method, isMistake ? 'mistake' : null]);
     if (v.charged_booking_id) {
       await client.query('UPDATE folio_charges SET is_voided = true, voided_by = $2, voided_at = NOW() WHERE id = $1 AND is_voided = false', [v.charge_id, userId || null]);
       await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
         [v.charged_booking_id, `Voucher ${voucherNo(v.voucher_no)} cancelled — taken off the bill. Reason: ${why}`.slice(0, 1000), userId || null]);
     }
+    if (isMistake) { await logEvent(client, id, 'voided', `${why} — entered by mistake, nothing was paid: taken out of the books`, userId); return { ok: true, mistake: true }; }
     await logEvent(client, id, 'voided', `${why}${refund ? ` — ${rp(refund)} given back (${method})` : ' — no money given back'}`, userId);
     return { ok: true };
   });
@@ -645,8 +649,8 @@ async function report(propertyId, { from, to } = {}) {
     db.query(`SELECT to_char(expires_on, 'YYYY-MM') AS month, COUNT(*)::int AS n, SUM(liability_amount) AS amount FROM vouchers
               WHERE property_id = $1 AND status = 'active' AND NOT is_free GROUP BY 1 ORDER BY 1`, [propertyId]),
     db.query(`SELECT
-        COUNT(*) FILTER (WHERE sold_on BETWEEN $2::date AND $3::date AND NOT is_free)::int AS sold_n,
-        COALESCE(SUM(sold_total) FILTER (WHERE sold_on BETWEEN $2::date AND $3::date), 0) AS sold_amount,
+        COUNT(*) FILTER (WHERE sold_on BETWEEN $2::date AND $3::date AND NOT is_free AND void_kind IS DISTINCT FROM 'mistake')::int AS sold_n,
+        COALESCE(SUM(sold_total) FILTER (WHERE sold_on BETWEEN $2::date AND $3::date AND void_kind IS DISTINCT FROM 'mistake'), 0) AS sold_amount,
         COUNT(*) FILTER (WHERE sold_on BETWEEN $2::date AND $3::date AND is_free)::int AS free_given_n,
         COUNT(*) FILTER (WHERE redeemed_at IS NOT NULL AND (redeemed_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date)::int AS redeemed_n,
         COALESCE(SUM(liability_amount) FILTER (WHERE redeemed_at IS NOT NULL AND (redeemed_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date), 0) AS redeemed_amount,

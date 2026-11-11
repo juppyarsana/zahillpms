@@ -399,6 +399,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
   const [action, setAction] = useState(null);       // 'void' | 'extend'
   const [refund, setRefund] = useState('');
   const [refundMethod, setRefundMethod] = useState('');
+  const [voidMode, setVoidMode] = useState('keep');     // keep (the hotel keeps the money) | refund | mistake (entered by mistake, nothing paid)
   const [extendTo, setExtendTo] = useState('');
   const load = useCallback(() => api.get(`/api/vouchers/${id}`).then(r => setV(r.data)).catch(e => setError(errText(e))), [id]);
   useEffect(() => { load(); }, [load]);
@@ -428,7 +429,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
           <Row k={v.is_free ? 'Given' : 'Sold'} v={v.is_free ? `${fmtDate(v.sold_on)}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}` : `${fmtDate(v.sold_on)} · ${v.charged_room ? `charged to room ${v.charged_room} (${v.charged_guest})` : (v.payment_label || v.payment_method)}${v.reference ? ` · ${v.reference}` : ''}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}`} />
           <Row k="Valid until" v={fmtDate(v.expires_on)} />
           {v.booking_id && <Row k="Booking" v={<a href={`/reservations/${v.booking_id}`} onClick={e => { e.preventDefault(); navigate(`/reservations/${v.booking_id}`); }}>{v.booking_guest} · {v.booking_unit} · {fmtDate(v.check_in_date)} → {fmtDate(v.check_out_date)}</a>} />}
-          {v.status === 'voided' && <Row k="Cancelled" v={`${v.void_reason || ''}${v.refunded_amount ? ` · ${idr(v.refunded_amount)} given back` : ' · no money given back'}`} />}
+          {v.status === 'voided' && <Row k="Cancelled" v={`${v.void_reason || ''}${v.void_kind === 'mistake' ? ' · entered by mistake, nothing was paid' : v.refunded_amount ? ` · ${idr(v.refunded_amount)} given back` : ' · no money given back'}`} />}
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, margin: '8px 0 4px' }}>History</div>
         {(v.events || []).map((e, i) => (
@@ -438,7 +439,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
         ))}
       </div>
       <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
-        {canException && v.status === 'active' && <button className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => { setRefund(''); setRefundMethod(methods[0]?.id || ''); setAction('void'); }}>Cancel voucher…</button>}
+        {canException && v.status === 'active' && <button className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => { setRefund(''); setVoidMode('keep'); setRefundMethod(methods[0]?.id || ''); setAction('void'); }}>Cancel voucher…</button>}
         {canException && ['active', 'reserved'].includes(v.status) && <button className="btn btn-secondary" onClick={() => { setExtendTo(''); setAction('extend'); }}>Extend…</button>}
         {v.status !== 'voided' && !v.is_free && !v.charged_room && <button className="btn btn-secondary" title={v.purchase_id ? 'One receipt for every voucher bought together' : ''} onClick={() => openPdf(`/api/vouchers/${v.id}/receipt`, `receipt-${v.voucher_label}.pdf`).catch(e => setError(errText(e)))}>🖨 Receipt</button>}
         {v.status !== 'voided' && <button className="btn btn-primary" onClick={() => openPdf(`/api/vouchers/${v.id}/pdf`, `voucher-${v.voucher_label}.pdf`).catch(e => setError(errText(e)))}>⬇ PDF</button>}
@@ -447,17 +448,25 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
         <ReasonModal title={`Cancel ${v.voucher_label}`} danger confirmLabel="Cancel voucher" placeholder="Why is it cancelled?"
           onClose={() => setAction(null)}
           onConfirm={async reason => {
-            await api.post(`/api/vouchers/${v.id}/void`, { reason, refund_amount: refund === '' ? 0 : refund, refund_method: refundMethod });
+            await api.post(`/api/vouchers/${v.id}/void`, voidMode === 'mistake' ? { reason, mistake: true } : { reason, refund_amount: voidMode === 'refund' && refund !== '' ? refund : 0, refund_method: refundMethod });
             setAction(null); load(); onChanged();
           }}>
           {v.is_free ? <div>The free voucher can't be used any more. No money is involved.</div> : v.charged_room ? <div>The voucher can't be used any more and its line comes off the bill of room {v.charged_room} ({v.charged_guest}). If the guest already paid that bill, give the money back with ⋮ → Refund on the reservation.</div> : <>
-            <div>The voucher can't be used any more. If the money goes back to the buyer, type the amount and how; if not, the hotel keeps it as income.</div>
-            <div className="form-row" style={{ marginTop: 10 }}>
-              <input className="form-input" type="number" min="0" placeholder="Money given back (Rp)" value={refund} onChange={e => setRefund(e.target.value)} />
-              <select className="form-select" value={refundMethod} onChange={e => setRefundMethod(e.target.value)}>
-                {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-            </div>
+            <div>The voucher can't be used any more. What happens to the money?</div>
+            <select className="form-select" style={{ marginTop: 10 }} value={voidMode} onChange={e => setVoidMode(e.target.value)}>
+              <option value="keep">The buyer is not paid back — the hotel keeps it as income</option>
+              <option value="refund">The money goes back to the buyer</option>
+              <option value="mistake">Entered by mistake — nothing was really paid</option>
+            </select>
+            {voidMode === 'refund' && (
+              <div className="form-row" style={{ marginTop: 10 }}>
+                <input className="form-input" type="number" min="0" placeholder="Money given back (Rp)" value={refund} onChange={e => setRefund(e.target.value)} />
+                <select className="form-select" value={refundMethod} onChange={e => setRefundMethod(e.target.value)}>
+                  {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+            )}
+            {voidMode === 'mistake' && <div className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>The sale is taken out of the books as if it never happened: not in the Cashier Closing, the Daily Close or the journal. The voucher stays listed as cancelled with your reason.</div>}
           </>}
         </ReasonModal>
       )}

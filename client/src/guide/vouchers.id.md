@@ -71,6 +71,8 @@ Setelah **hari terakhir berlaku** lewat, voucher otomatis menjadi **Expired** (t
 
 ## 6. Pengecualian (owner / izin Corrections)
 
+**Membatalkan voucher:** pilih apa yang terjadi pada uangnya: *hotel menyimpannya sebagai pendapatan*, *uang dikembalikan ke pembeli* (isi jumlah dan caranya), atau **Salah input — tidak ada uang yang dibayar**. Pilihan terakhir mengeluarkan penjualan itu dari pembukuan seolah-olah tidak pernah terjadi (tidak muncul di Cashier Closing, Daily Close, maupun jurnal). Voucher tetap ada di daftar sebagai dibatalkan beserta alasannya, jadi nomornya yang terpakai tetap bisa dijelaskan.
+
 Buka vouchernya (klik barisnya):
 
 - **Extend…** — perpanjang hari terakhir, dengan alasan. Hanya untuk voucher yang belum kedaluwarsa.
