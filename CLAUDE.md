@@ -1288,6 +1288,27 @@ Every TV's address and state, the to-do list and the Google TV setup steps: `tv-
 
 **Still open after these steps:** drop the temporary `birdnest_old` database and `~/birdnest-old.dump` on the server (`sudo -u postgres dropdb birdnest_old`); Birdnest's 3 OTA payments never marked received in the old app (Joddy Febiantara Hatta 2× Rp 278.000 Agoda, Dwi Putra Nugraha Rp 361.250 Booking.com); 5 no-shows / cancellations with money received (refund or keep); the possible double jeep sale; Traveloka 302889 still to be made non-refundable in its extranet. The old app on `103.247.10.184` is no longer used for bookings.
 
+## Session log — 2026-11-11 (vouchers, laptop)
+
+> What was built and changed in this session. `main` = `dev` = 915516c. **Deployed to production by the owner** (they ran the scripts below on the server). Details of each feature are in "Vouchers" in the Frontend section.
+
+**Built and released (all on `main`):**
+- Vouchers Phase 1 + free vouchers (migrations 167, 168) — committed and released this session (were uncommitted before).
+- **Voucher PDF redesigned** as a landscape ticket (page 1 ticket with the property's name / `app_color`, QR + code on a tear-off stub; page 2 how to redeem, rules, terms, hotel contact). Design mock-up canvas: https://claude.ai/artifact/EJbmWbbSruNqrmGzfKrHKN (name on it = Zahill Kintamani Resort).
+- **Several vouchers at once** (`quantity` 1-20) and **charged to a room's folio** (migration 169): folio line type `voucher`, no service / tax, a liability (Dr Guest ledger · Cr 250-00-005), not revenue; in a group billed as a whole it follows the group's setting like any extra.
+- **Voucher types by staff:** new permission `voucher_types` (Roles & Permissions → Sales; needs `vouchers` too).
+- **Receipt** (migration 170): one receipt per purchase for vouchers sold together (`purchase_id`), or per voucher.
+- **Cancelled as a mistake** (migration 171, `void_kind`): the sale leaves the books, the voucher stays listed as cancelled.
+- Sell window: error now shown above the buttons (a refused sale looked like "nothing happened").
+
+**Maintenance scripts added (`server/maintenance/`, all dry run by default):** `refreshVoucherTerms.js` (put a type's current terms onto vouchers already sold), `linkVoucherPurchase.js` (vouchers sold one by one share one receipt), `markVouchersMistake.js` (take mistaken sales out of the books, never deletes).
+
+**Found on production (read-only):** V-0001 to V-0008 (Imigrasi, 9 Nov, bank transfer, Rp 1.000.000 each) were test sales cancelled on 11 Nov with no refund, which booked Rp 8.000.000 as Voucher Breakage Income; V-0009 to V-0013 (5 paid, active); V-0014 to V-0016 charged to room 208 (a group room, billed as a whole, mode everything). The owner ran `markVouchersMistake.js` on V-0001 to V-0008 afterwards ("I think it worked" — **not re-verified by me**). No accounting day is closed on production. **To keep:** the 8 vouchers stay in the Vouchers list as cancelled so the missing numbers can be explained.
+
+**Access:** the owner made a full-access SSH key on this laptop, `~/.ssh/zahill_admin` (public half added to `/root/.ssh/authorized_keys` on the production server, no restrictions); the old `id_ed25519` is the read-only database tunnel key (see memory). Command on Windows cmd: `ssh -i "%USERPROFILE%\.ssh\zahill_admin" -o IdentitiesOnly=yes root@103.253.212.23` (`$env:USERPROFILE` only works in PowerShell). Optional `Host zahill` entry for `~/.ssh/config` was given.
+
+**Still open for vouchers:** switch the Vouchers module on for Zahill, tick Vouchers / Voucher types / Corrections / Complimentary for the right roles, make the first voucher type with the terms, the accountant's answers (liability until used, breakage taxable?, booking a room-charged voucher as a liability at the charge, revenue by the night), what FO's "2%" was, a real Telegram approval for free vouchers. Not clicked through in a browser: the Sell window (room charge), the new cancel window, the Receipt buttons, the staff Voucher types tab. **Local dev note:** port 4000 on this laptop keeps ghost sockets (FIN_WAIT_1) after a server is killed, so a new server may fail with EADDRINUSE — use another port (`PORT=4001`) or wait.
+
 ## Open Decisions (not yet final — context for whoever picks this up next)
 
 - ~~**Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner...~~ **Decided (2026-08-14): the product name is HALF.** See the domain/tenancy note under "What this is" above for the working domain (`half.kdai.cloud`) and architecture. Actual rename across code/docs/infra is still pending — see that note for what's not done yet.
