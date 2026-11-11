@@ -65,7 +65,8 @@ async function collected(propertyId, from, to = from) {
       -- Vouchers sold (migration 167): the money comes in at the sale; a voucher cancelled with a refund goes back out
       SELECT v.payment_method, v.sold_total + v.fee_amount
       FROM vouchers v
-      WHERE v.property_id = $1 AND (v.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
+      WHERE v.property_id = $1 AND v.charged_booking_id IS NULL   -- charged to a room: the money comes with the bill
+        AND (v.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
       UNION ALL
       SELECT v.refund_method, -v.refunded_amount
       FROM vouchers v

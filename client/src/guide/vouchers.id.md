@@ -6,7 +6,7 @@ Halamannya: **[Sales → Vouchers](/vouchers)**. Perlu izin **Vouchers** (owner 
 
 > **Menjual voucher bukan pendapatan.** Uangnya diterima, tapi hotel masih berhutang satu paket menginap. Pendapatan baru tercatat malam demi malam saat tamu menginap, seperti booking biasa.
 
-## 1. Membuat jenis voucher (owner, sekali saja)
+## 1. Membuat jenis voucher (owner atau staf dengan izin *Voucher types*)
 
 1. **Vouchers → Voucher types → New voucher type**.
 2. Isi nama, jumlah malam, tipe kamar, meal plan, maksimal tamu, harga, dan berlaku berapa bulan.
@@ -25,6 +25,15 @@ Perubahan jenis voucher **tidak mengubah voucher yang sudah terjual** — aturan
 3. **Sell voucher** → muncul kodenya. Tekan **⬇ Voucher PDF** dan berikan ke pembeli.
 
 Uang yang diterima muncul di **Cashier Closing** hari itu (metode sesuai yang dipilih) dan di Daily Close.
+
+## Beberapa voucher sekaligus, atau ditagihkan ke kamar
+
+- **Jumlah:** di jendela Sell, *How many* membuat sampai 20 voucher sejenis sekaligus, masing-masing dengan kode dan PDF sendiri.
+- **Tagihkan ke kamar (dibayar bersama tagihan):** pilih *Payment → Charge to a room*, lalu cari reservasinya (sudah dibooking atau sedang menginap). Voucher langsung terbit dan **satu baris per voucher masuk ke folio tamu**, tanpa service charge dan pajak. Hari itu tidak ada uang yang diterima: tamu membayarnya bersama sisa tagihan (Record Payment, atau saat check-out), seperti extras lain. Di pembukuan ini adalah hutang hotel (liability), bukan pendapatan.
+- Boleh dicampur: tamu yang mau 8 voucher, jual 5 sebagai *Paid now* dan 3 sebagai *Charge to a room*.
+- Voucher yang ditagihkan ke kamar **dibatalkan di halaman Vouchers** (owner atau izin Corrections): barisnya hilang dari tagihan. Kalau tamu sudah membayar tagihannya, kembalikan uangnya lewat ⋮ → Refund di reservasi. Barisnya tidak bisa di-void atau dipindah dari tab Folio.
+- Tidak bisa untuk menginap yang ditagih ke agen, menginap complimentary untuk semuanya, atau kamar di tagihan grup yang mencakup semuanya. Jendelanya akan memberi tahu, dan pembayaran diterima sekarang.
+- Voucher yang ditagihkan ke kamar bisa dipakai sebelum tamu membayar tagihan, jadi pastikan tagihan sudah lunas sebelum check-out.
 
 ## 3. Booking dengan kode voucher
 

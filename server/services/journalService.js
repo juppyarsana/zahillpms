@@ -364,6 +364,7 @@ async function collectPosts(propertyId, from, to) {
         else if (c.type === 'fnb') parts = [['revenue.fnb_package', net]];
         else if (c.type === 'activity') parts = [['revenue.activities', net]];
         else if (c.type === 'noshow_fee') parts = [['revenue.noshow', net]];
+        else if (c.type === 'voucher') parts = [['voucher.liability', net]];   // charged to the room (migration 169): a liability, not revenue
         else if (c.type === 'addon') {
           const meal = Math.min(num(c.addon_meal), net);
           const cat = EXTRA_CATEGORIES.includes(c.addon_category) ? c.addon_category : 'room_addon';
@@ -564,10 +565,10 @@ async function collectPosts(propertyId, from, to) {
     const [{ rows: vSold }, { rows: vVoid }, { rows: vExp }] = await Promise.all([
       db.query(`SELECT v.voucher_no, v.buyer_name, v.payment_method, v.liability_amount, v.fee_amount, v.sold_total, v.reference,
                        ${ymd(dayOf('v.received_at'))} AS day
-                FROM vouchers v WHERE v.property_id = $3 AND ${dayOf('v.received_at')} BETWEEN $1::date AND $2::date`, P),
+                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND ${dayOf('v.received_at')} BETWEEN $1::date AND $2::date`, P),
       db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, v.refunded_amount, v.refund_method, v.void_reason,
                        ${ymd(dayOf('v.voided_at'))} AS day
-                FROM vouchers v WHERE v.property_id = $3 AND v.status = 'voided' AND ${dayOf('v.voided_at')} BETWEEN $1::date AND $2::date`, P),
+                FROM vouchers v WHERE v.property_id = $3 AND v.charged_booking_id IS NULL AND v.status = 'voided' AND ${dayOf('v.voided_at')} BETWEEN $1::date AND $2::date`, P),
       db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, ${ymd('v.expired_on')} AS day
                 FROM vouchers v WHERE v.property_id = $3 AND v.status = 'expired' AND v.expired_on BETWEEN $1::date AND $2::date`, P),
     ]);

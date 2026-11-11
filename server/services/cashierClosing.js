@@ -34,7 +34,7 @@ async function load(propertyId, date, { userId = null } = {}) {
       SELECT v.payment_method, v.sold_total + v.fee_amount, v.reference, v.snapshot->>'name', 'voucher', v.received_at, v.sold_by,
              NULL, 'V-' || lpad(v.voucher_no::text, 4, '0'), COALESCE(v.buyer_name, 'Buyer'), NULL
       FROM vouchers v
-      WHERE v.property_id = $1 AND (v.received_at AT TIME ZONE ${TZ})::date = $2::date
+      WHERE v.property_id = $1 AND v.charged_booking_id IS NULL AND (v.received_at AT TIME ZONE ${TZ})::date = $2::date
       UNION ALL
       SELECT v.refund_method, -v.refunded_amount, v.reference, v.void_reason, 'voucher_refund', v.voided_at, v.voided_by,
              NULL, 'V-' || lpad(v.voucher_no::text, 4, '0'), COALESCE(v.buyer_name, 'Buyer'), NULL

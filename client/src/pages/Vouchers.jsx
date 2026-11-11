@@ -36,6 +36,7 @@ export default function Vouchers() {
   const { user, can } = useAuth();
   const isOwner = user?.role === 'owner';
   const canException = isOwner || can('corrections');
+  const canTypes = isOwner || can('voucher_types');
   const [tab, setTab] = useState('vouchers');
   const [selling, setSelling] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -54,12 +55,12 @@ export default function Vouchers() {
         </div>
       </div>
       <div className="tab-bar">
-        {[['vouchers', 'Vouchers'], ...(isOwner ? [['types', 'Voucher types']] : []), ['report', 'Report']].map(([k, l]) => (
+        {[['vouchers', 'Vouchers'], ...(canTypes ? [['types', 'Voucher types']] : []), ['report', 'Report']].map(([k, l]) => (
           <button key={k} className={`tab-bar-item${tab === k ? ' active' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       {tab === 'vouchers' && <VoucherList version={version} onOpen={setOpenId} onChanged={refresh} />}
-      {tab === 'types' && isOwner && <Types />}
+      {tab === 'types' && canTypes && <Types />}
       {tab === 'report' && <Report version={version} onOpen={id => { setOpenId(id); }} />}
       {selling && <SellModal onClose={() => setSelling(false)} onSold={id => { setSelling(false); refresh(); if (id) setOpenId(id); }} />}
       {openId && <VoucherModal id={openId} canException={canException} onClose={() => setOpenId(null)} onChanged={refresh} />}
@@ -163,6 +164,11 @@ function SellModal({ onClose, onSold }) {
   const [paidOn, setPaidOn] = useState(propertyToday());
   const [reference, setReference] = useState('');
   const [free, setFree] = useState(false);
+  const [qty, setQty] = useState(1);
+  const [payMode, setPayMode] = useState('now');      // 'now' | 'room' (charged to a reservation's folio)
+  const [resv, setResv] = useState(null);             // the reservation it is charged to
+  const [resvInput, setResvInput] = useState('');
+  const [resvResults, setResvResults] = useState([]);
   const [scope, setScope] = useState('room_meals');
   const [freeReason, setFreeReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -173,6 +179,18 @@ function SellModal({ onClose, onSold }) {
 
   useEffect(() => { api.get('/api/vouchers/templates').then(r => { setTypes(r.data); if (r.data.length === 1) setTypeId(r.data[0].id); }).catch(e => setError(errText(e))); }, []);
   useEffect(() => { if (!method && methods.length) setMethod(methods[0].id); }, [methods.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Search a reservation to charge to (booked or in house).
+  useEffect(() => {
+    const q = resvInput.trim();
+    if (payMode !== 'room' || resv || !q) { setResvResults([]); return undefined; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.get('/api/bookings', { params: { q } }).then(r => {
+        if (!cancelled) setResvResults((r.data || []).filter(b => ['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status)).slice(0, 8));
+      }).catch(() => {});
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [resvInput, payMode, resv]);
   // While waiting for an approver, watch the request.
   useEffect(() => {
     if (!waiting) return undefined;
@@ -192,12 +210,15 @@ function SellModal({ onClose, onSold }) {
     if (!t) { setError('Choose the voucher type'); return; }
     if (!buyer) { setError(free ? 'Who is it for? Pick a guest or type a new one' : 'Who is buying it? Pick a guest or type a new one'); return; }
     if (free && freeReason.trim().length < 3) { setError('Give a reason for the free voucher'); return; }
+    if (!free && payMode === 'room' && !resv) { setError('Choose the reservation to charge it to'); return; }
     setBusy(true); setError('');
     try {
       const who = buyer.guest_id ? { buyer_guest_id: buyer.guest_id } : { buyer_name: buyer.new_guest.name, buyer_phone: buyer.new_guest.whatsapp };
       const body = free
         ? { free: true, template_id: t.id, recipient_name: recipient, buyer_email: buyerEmail, free_scope: scope, free_reason: freeReason, ...who }
-        : { template_id: t.id, recipient_name: recipient, payment_method: method, received_on: paidOn, reference, buyer_email: buyerEmail, ...who };
+        : payMode === 'room'
+          ? { template_id: t.id, recipient_name: recipient, charge_booking_id: resv.id, quantity: qty, buyer_email: buyerEmail, ...who }
+          : { template_id: t.id, recipient_name: recipient, payment_method: method, received_on: paidOn, reference, buyer_email: buyerEmail, quantity: qty, ...who };
       const { data, status } = await api.post('/api/vouchers', body);
       if (status === 202 && data.request) setWaiting(data.request); else setDone(data);
     } catch (e) { setError(errText(e)); }
@@ -234,15 +255,22 @@ function SellModal({ onClose, onSold }) {
   if (done) {
     return (
       <div className="modal-backdrop"><div className="modal" style={{ maxWidth: 480, width: '100%' }}>
-        <div className="modal-header"><div className="modal-title">{free || done.approved_by ? 'Free voucher given' : 'Voucher sold'}</div><button className="btn btn-icon" onClick={() => onSold(done.id)}>✕</button></div>
+        <div className="modal-header"><div className="modal-title">{free || done.approved_by ? 'Free voucher given' : (done.vouchers?.length > 1 ? `${done.vouchers.length} vouchers sold` : 'Voucher sold')}</div><button className="btn btn-icon" onClick={() => onSold(done.id)}>✕</button></div>
         <div className="modal-body" style={{ textAlign: 'center' }}>
-          <div className="text-muted" style={{ fontSize: 12 }}>{done.voucher_no}{done.approved_by ? ` · approved by ${done.approved_by}` : ''}</div>
-          <div style={{ fontFamily: 'monospace', fontSize: 28, fontWeight: 700, letterSpacing: 1, margin: '8px 0' }}>{done.pretty_code}</div>
+          {done.charged_to && <div className="alert alert-info" style={{ marginBottom: 10, textAlign: 'left' }}><div>Charged to <b>room {done.charged_to.room}</b> ({done.charged_to.guest}): <b>{idr(done.charged_to.total)}</b> added to the folio, with no service charge or tax. The guest pays it with the bill.</div></div>}
+          {(done.vouchers?.length > 1 ? done.vouchers : [done]).map(v => (
+            <div key={v.id} style={{ margin: '6px 0 12px' }}>
+              <div className="text-muted" style={{ fontSize: 12 }}>{v.voucher_no}{done.approved_by ? ` · approved by ${done.approved_by}` : ''}</div>
+              <div style={{ fontFamily: 'monospace', fontSize: done.vouchers?.length > 1 ? 22 : 28, fontWeight: 700, letterSpacing: 1, margin: '4px 0' }}>{v.pretty_code}</div>
+              {done.vouchers?.length > 1 && <button className="btn btn-sm btn-secondary" onClick={() => openPdf(`/api/vouchers/${v.id}/pdf`, `voucher-${v.voucher_no}.pdf`).catch(e => setError(errText(e)))}>⬇ PDF</button>}
+            </div>
+          ))}
+          {error && <div className="text-danger" style={{ fontSize: 12 }}>{error}</div>}
           <div className="text-muted" style={{ fontSize: 13 }}>Give the guest the PDF — it has the code, what it covers and the terms.</div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => onSold(done.id)}>Done</button>
-          <button className="btn btn-primary" onClick={() => openPdf(`/api/vouchers/${done.id}/pdf`, `voucher-${done.voucher_no}.pdf`).catch(e => setError(errText(e)))}>⬇ Voucher PDF</button>
+          {!(done.vouchers?.length > 1) && <button className="btn btn-primary" onClick={() => openPdf(`/api/vouchers/${done.id}/pdf`, `voucher-${done.voucher_no}.pdf`).catch(e => setError(errText(e)))}>⬇ Voucher PDF</button>}
         </div>
       </div></div>
     );
@@ -255,7 +283,7 @@ function SellModal({ onClose, onSold }) {
         {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}><div>{error}</div></div>}
         <div className="form-group"><label className="form-label">Voucher type *</label>
           <select className="form-select" value={typeId} onChange={e => setTypeId(e.target.value)}>
-            <option value="">{types ? (types.length ? 'Choose…' : 'No voucher types yet — the owner adds them under Voucher types') : 'Loading…'}</option>
+            <option value="">{types ? (types.length ? 'Choose…' : 'No voucher types yet — add them under Voucher types (owner or staff with that permission)') : 'Loading…'}</option>
             {(types || []).map(x => <option key={x.id} value={x.id}>{x.name} — {idr(x.price)}</option>)}
           </select>
           {t && <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
@@ -290,28 +318,70 @@ function SellModal({ onClose, onSold }) {
         </div>
         {!free && <>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Paid with *</label>
-              <select className="form-select" value={method} onChange={e => setMethod(e.target.value)}>
-                {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-            </div>
-            <div className="form-group"><label className="form-label">Day paid</label><input className="form-input" type="date" max={propertyToday()} value={paidOn} onChange={e => setPaidOn(e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">How many</label>
+              <input className="form-input" type="number" min="1" max="20" value={qty} onChange={e => setQty(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))} /></div>
+            <div className="form-group"><label className="form-label">Payment *</label>
+              <select className="form-select" value={payMode} onChange={e => { setPayMode(e.target.value); setError(''); }}>
+                <option value="now">Paid now</option>
+                <option value="room">Charge to a room (paid with the bill)</option>
+              </select></div>
           </div>
-          <div className="form-group"><label className="form-label">Reference</label><input className="form-input" value={reference} onChange={e => setReference(e.target.value)} placeholder="Transfer / slip number (optional)" /></div>
+          {payMode === 'room' ? (
+            <div className="form-group"><label className="form-label">Reservation to charge *</label>
+              {resv ? (
+                <div className="flex items-center gap-2" style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>{resv.guest_name} · room {resv.unit_name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{String(resv.check_in_date).slice(0, 10)} → {String(resv.check_out_date).slice(0, 10)} · {String(resv.status).replace('_', ' ')}</div>
+                  </div>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setResv(null); setResvInput(''); }}>✕ Change</button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <input className="form-input" value={resvInput} onChange={e => setResvInput(e.target.value)} placeholder="Search a reservation by guest name…" />
+                  {resvInput && (
+                    <div className="card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, maxHeight: 220, overflowY: 'auto', padding: 4, marginTop: 2 }}>
+                      {resvResults.length === 0 ? <div style={{ padding: 8, fontSize: 13, color: 'var(--text-muted)' }}>No matching booked or in-house reservation.</div>
+                        : resvResults.map(b => (
+                          <div key={b.id} onClick={() => setResv(b)} style={{ padding: 8, cursor: 'pointer', borderRadius: 4 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{b.guest_name} · room {b.unit_name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{String(b.check_in_date).slice(0, 10)} → {String(b.check_out_date).slice(0, 10)} · {String(b.status).replace('_', ' ')}</div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : <>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Paid with *</label>
+                <select className="form-select" value={method} onChange={e => setMethod(e.target.value)}>
+                  {methods.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group"><label className="form-label">Day paid</label><input className="form-input" type="date" max={propertyToday()} value={paidOn} onChange={e => setPaidOn(e.target.value)} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">Reference</label><input className="form-input" value={reference} onChange={e => setReference(e.target.value)} placeholder="Transfer / slip number (optional)" /></div>
+          </>}
         </>}
         {t && !free && (
           <div style={{ background: 'var(--cream)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, fontSize: 13 }}>
-            <div className="flex-between"><span>{t.name}</span><span>{idr(t.price)}</span></div>
-            {fee > 0 && <div className="flex-between text-muted"><span>{t.fee_label || 'Fee'} ({t.fee_pct}%)</span><span>{idr(fee)}</span></div>}
-            <div className="flex-between" style={{ fontWeight: 700, marginTop: 4 }}><span>To collect now</span><span>{idr(t.price + fee)}</span></div>
-            <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>The money is held until the guest stays — it is not revenue today. A voucher carries no service charge or tax.</div>
+            <div className="flex-between"><span>{t.name}{qty > 1 ? ` × ${qty}` : ''}</span><span>{idr(t.price * qty)}</span></div>
+            {payMode === 'now' && fee > 0 && <div className="flex-between text-muted"><span>{t.fee_label || 'Fee'} ({t.fee_pct}%)</span><span>{idr(fee * qty)}</span></div>}
+            <div className="flex-between" style={{ fontWeight: 700, marginTop: 4 }}><span>{payMode === 'room' ? 'Added to the room bill' : 'To collect now'}</span><span>{idr(payMode === 'room' ? t.price * qty : (t.price + fee) * qty)}</span></div>
+            <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              {payMode === 'room'
+                ? 'The voucher is issued now and the amount goes on the guest\'s folio with no service charge or tax. It is not revenue — the money is held until the stay. The guest pays it with the rest of the bill.'
+                : 'The money is held until the guest stays — it is not revenue today. A voucher carries no service charge or tax.'}
+            </div>
           </div>
         )}
       </div>
       <div className="modal-footer">
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !t || !buyer || (!free && !method)} onClick={sell}>
-          {busy ? 'Saving…' : free ? (direct ? 'Give free voucher' : 'Ask for approval') : 'Sell voucher'}
+        <button className="btn btn-primary" disabled={busy || !t || !buyer || (!free && payMode === 'now' && !method) || (!free && payMode === 'room' && !resv)} onClick={sell}>
+          {busy ? 'Saving…' : free ? (direct ? 'Give free voucher' : 'Ask for approval') : payMode === 'room' ? (qty > 1 ? `Charge ${qty} vouchers to the room` : 'Charge voucher to the room') : (qty > 1 ? `Sell ${qty} vouchers` : 'Sell voucher')}
         </button>
       </div>
     </div></div>
@@ -354,7 +424,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
             : <Row k="Price" v={`${idr(v.price)}${v.fee_amount ? ` + fee ${idr(v.fee_amount)}` : ''}`} />}
           <Row k={v.is_free ? 'Given to' : 'Bought by'} v={`${v.buyer_name || '—'}${v.buyer_email ? ` · ${v.buyer_email}` : ''}${v.buyer_phone ? ` · ${v.buyer_phone}` : ''}`} />
           <Row k="For" v={v.recipient_name || '—'} />
-          <Row k={v.is_free ? 'Given' : 'Sold'} v={v.is_free ? `${fmtDate(v.sold_on)}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}` : `${fmtDate(v.sold_on)} · ${v.payment_label || v.payment_method}${v.reference ? ` · ${v.reference}` : ''}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}`} />
+          <Row k={v.is_free ? 'Given' : 'Sold'} v={v.is_free ? `${fmtDate(v.sold_on)}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}` : `${fmtDate(v.sold_on)} · ${v.charged_room ? `charged to room ${v.charged_room} (${v.charged_guest})` : (v.payment_label || v.payment_method)}${v.reference ? ` · ${v.reference}` : ''}${v.sold_by_name ? ` · by ${v.sold_by_name}` : ''}`} />
           <Row k="Valid until" v={fmtDate(v.expires_on)} />
           {v.booking_id && <Row k="Booking" v={<a href={`/reservations/${v.booking_id}`} onClick={e => { e.preventDefault(); navigate(`/reservations/${v.booking_id}`); }}>{v.booking_guest} · {v.booking_unit} · {fmtDate(v.check_in_date)} → {fmtDate(v.check_out_date)}</a>} />}
           {v.status === 'voided' && <Row k="Cancelled" v={`${v.void_reason || ''}${v.refunded_amount ? ` · ${idr(v.refunded_amount)} given back` : ' · no money given back'}`} />}
@@ -378,7 +448,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
             await api.post(`/api/vouchers/${v.id}/void`, { reason, refund_amount: refund === '' ? 0 : refund, refund_method: refundMethod });
             setAction(null); load(); onChanged();
           }}>
-          {v.is_free ? <div>The free voucher can't be used any more. No money is involved.</div> : <>
+          {v.is_free ? <div>The free voucher can't be used any more. No money is involved.</div> : v.charged_room ? <div>The voucher can't be used any more and its line comes off the bill of room {v.charged_room} ({v.charged_guest}). If the guest already paid that bill, give the money back with ⋮ → Refund on the reservation.</div> : <>
             <div>The voucher can't be used any more. If the money goes back to the buyer, type the amount and how; if not, the hotel keeps it as income.</div>
             <div className="form-row" style={{ marginTop: 10 }}>
               <input className="form-input" type="number" min="0" placeholder="Money given back (Rp)" value={refund} onChange={e => setRefund(e.target.value)} />
@@ -406,7 +476,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
 }
 const Row = ({ k, v }) => <div style={{ display: 'flex', gap: 10, padding: '3px 0', fontSize: 13 }}><div className="text-muted" style={{ width: 90, flexShrink: 0 }}>{k}</div><div style={{ flex: 1 }}>{v}</div></div>;
 
-// ── Voucher types (owner) ──
+// ── Voucher types (owner or the Voucher types permission) ──
 
 const EMPTY_TYPE = { name: '', description: '', nights: 2, room_type_id: '', rate_plan_id: '', max_guests: 2, price: '', validity_months: 12, terms: '',
   blackout: [], allowed_weekdays: [], min_notice_days: 0, no_show_consumes: true, transferable: true, is_active: true, fee_label: '', fee_pct: '', fee_payer: 'guest' };

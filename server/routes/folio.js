@@ -151,7 +151,7 @@ router.get('/:bookingId', auth, async (req, res) => {
               (s.order_source = 'external_pos') AS pos_bill, s.pos_void_sent_at, s.pos_void_error
          FROM folio_charges fc LEFT JOIN users u ON u.id = fc.voided_by
          LEFT JOIN sales s ON s.id = fc.sale_id
-        WHERE fc.booking_id = $1 AND fc.is_voided = true AND fc.type NOT IN ('room', 'fnb', 'addon')
+        WHERE fc.booking_id = $1 AND fc.is_voided = true AND fc.type NOT IN ('room', 'fnb', 'addon', 'voucher')
         ORDER BY fc.voided_at DESC`,
       [booking.id]
     );
@@ -213,9 +213,9 @@ async function lockPaymentBooking(client, bookingId, propertyId) {
      WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [bookingId, propertyId]);
   if (!booking) return { status: 404, error: 'Booking not found' };
   if (['cancelled', 'no_show'].includes(booking.status)) {
-    // Only a no-show / late-cancellation fee (migration 166) can still be paid.
+    // Only a no-show / late-cancellation fee (migration 166) or a voucher charged to the room (169) can still be paid.
     const { rows: [fee] } = await client.query(
-      "SELECT 1 FROM folio_charges WHERE booking_id = $1 AND type = 'noshow_fee' AND is_voided = false LIMIT 1", [bookingId]);
+      "SELECT 1 FROM folio_charges WHERE booking_id = $1 AND type IN ('noshow_fee', 'voucher') AND is_voided = false LIMIT 1", [bookingId]);
     if (!fee) return { status: 409, error: `Cannot take a payment — booking is ${booking.status.replace('_', '-')}` };
   }
   return { booking };
@@ -568,7 +568,7 @@ router.get('/payment/:paymentId/receipt', auth, async (req, res) => {
 // amounts, the sale and the reports stay as they were; the line says where it
 // came from. Moving it back to that room clears the mark.
 const TRANSFER_OPEN = ['pending', 'deposit_paid', 'confirmed', 'checked_in'];
-const TRANSFERABLE_SQL = `fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon') AND fc.addon_id IS NULL AND NOT ${PAID_AT_DESK_SQL}`;
+const TRANSFERABLE_SQL = `fc.is_voided = false AND fc.type NOT IN ('room', 'fnb', 'addon', 'voucher') AND fc.addon_id IS NULL AND NOT ${PAID_AT_DESK_SQL}`;
 
 // GET /api/folio/:bookingId/transfer-targets — stays whose dates touch this one.
 router.get('/:bookingId/transfer-targets', auth, async (req, res) => {
@@ -736,6 +736,10 @@ router.delete('/charge/:id', auth, async (req, res) => {
   const reason = String(req.body?.reason || '').trim().slice(0, 300);
   if (!reason) return res.status(400).json({ error: 'A reason is required to void a charge', code: 'REASON_REQUIRED' });
   try {
+    const { rows: [vl] } = await db.query(
+      `SELECT 1 FROM folio_charges fc JOIN bookings b ON b.id = fc.booking_id
+       WHERE fc.id = $1 AND b.property_id = $2 AND fc.type = 'voucher' AND fc.is_voided = false`, [req.params.id, req.propertyId]);
+    if (vl) return res.status(409).json({ error: 'This line is a voucher charged to the room — cancel the voucher on the Vouchers page (Vouchers → the voucher → Cancel voucher)', code: 'VOUCHER_LINE' });
     const { rows: [charge] } = await db.query(
       `UPDATE folio_charges SET is_voided = true, voided_by = $1, voided_at = NOW()
        WHERE id = $2
@@ -806,7 +810,8 @@ router.post('/charge/:id/restore', auth, async (req, res) => {
     const refuse = (status, error, code) => client.query('ROLLBACK').then(() => res.status(status).json({ error, code }));
     if (!charge) return refuse(404, 'Charge not found');
     if (!charge.is_voided) return refuse(409, 'This line is already on the folio', 'NOT_VOIDED');
-    if (['room', 'fnb', 'addon'].includes(charge.type)) {
+    if (charge.type === 'voucher') return refuse(409, 'This line is a voucher charged to the room — cancel the voucher on the Vouchers page', 'VOUCHER_LINE');
+    if (['room', 'fnb', 'addon', 'voucher'].includes(charge.type)) {
       return refuse(409, 'Room, meal and per-night extra lines are posted by the system — change the dates or the stay\'s extras instead', 'SYSTEM_LINE');
     }
     if (['cancelled', 'no_show'].includes(charge.booking_status)) return refuse(409, 'This booking is cancelled', 'BOOKING_CANCELLED');

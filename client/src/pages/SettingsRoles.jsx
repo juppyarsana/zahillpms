@@ -31,6 +31,7 @@ export const MENU_DEFS = [
   // Vouchers: sell a voucher, look one up, print it. Voucher types are owner only;
   // cancelling or extending one needs Corrections.
   { key: 'vouchers',         label: 'Vouchers (sell, look up, print)', group: 'Sales' },
+  { key: 'voucher_types',    label: 'Voucher types (create and edit — needs Vouchers too)', group: 'Sales' },
   // The Ask page: ask by voice or typing. It only answers from the pages this
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },

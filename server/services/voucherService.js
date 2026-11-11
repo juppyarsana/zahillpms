@@ -233,12 +233,17 @@ async function insertVoucher(client, propertyId, t, { buyer, amounts: a, payment
 const issued = row => ({ id: row.id, voucher_no: voucherNo(row.voucher_no), code: row.code, pretty_code: prettyCode(row.code) });
 
 // { template_id, buyer_guest_id | buyer_name (+ email, phone), recipient_name, payment_method, received_on?, reference }
+// Optional: `quantity` (1-20, several vouchers of the type at once) and `charge_booking_id`
+// (migration 169: charge them to that reservation's folio instead of taking payment now).
 async function sell(propertyId, body, userId) {
   return tx(async client => {
     const t = await loadSellableTemplate(client, propertyId, body.template_id);
     if (!t) return fail('Choose a voucher type');
     const buyer = await resolveBuyer(client, propertyId, body);
     if (buyer.error) return buyer;
+    const qty = body.quantity == null || body.quantity === '' ? 1 : Number(body.quantity);
+    if (!Number.isInteger(qty) || qty < 1 || qty > 20) return fail('How many vouchers? Choose 1 to 20');
+    if (body.charge_booking_id) return chargeToRoom(client, propertyId, t, buyer, body, qty, userId);
     const methodId = String(body.payment_method || '');
     const { rows: [pm] } = await client.query(
       `SELECT id FROM payment_methods WHERE id = $1 AND property_id = $2 AND is_active AND id NOT IN ('ota_managed', 'voucher')`, [methodId, propertyId]);
@@ -247,11 +252,50 @@ async function sell(propertyId, body, userId) {
     const receivedOn = body.received_on ? String(body.received_on) : today;
     if (!YMD.test(receivedOn) || receivedOn > today) return fail('The day it was paid can\'t be in the future');
     const a = saleAmounts(t);
-    const row = await insertVoucher(client, propertyId, t, { buyer, amounts: a, paymentMethod: pm.id, receivedOn, reference: body.reference, userId });
-    if (!row) return fail('Could not make a code — try again', 500);
-    await logEvent(client, row.id, 'sold', `Sold ${rp(a.price)} (${t.name}) paid by ${pm.id}${a.fee ? `, plus ${t.fee_label || 'fee'} ${rp(a.fee)}` : ''}`, userId);
-    return issued(row);
+    const rows = [];
+    for (let i = 0; i < qty; i++) {
+      const row = await insertVoucher(client, propertyId, t, { buyer, amounts: a, paymentMethod: pm.id, receivedOn, reference: body.reference, userId });
+      if (!row) return fail('Could not make a code — try again', 500);
+      await logEvent(client, row.id, 'sold', `Sold ${rp(a.price)} (${t.name}) paid by ${pm.id}${a.fee ? `, plus ${t.fee_label || 'fee'} ${rp(a.fee)}` : ''}`, userId);
+      rows.push(row);
+    }
+    return { ...issued(rows[0]), vouchers: rows.map(issued) };
   });
+}
+
+// Charged to a reservation's folio (migration 169): the voucher is issued at once, the folio gets one
+// line per voucher (type 'voucher', no service charge or tax) that the guest pays with the bill.
+// In the books it is a liability, not revenue; no money is recorded until the guest pays.
+async function chargeToRoom(client, propertyId, t, buyer, body, qty, userId) {
+  const { rows: [b] } = await client.query(
+    `SELECT b.id, b.status, b.complimentary_scope, b.folio_status, b.agent_id, ag.agent_type, ag.payment_status,
+            rg.group_billing, rg.billing_mode, g.name AS guest, u.name AS room
+     FROM bookings b JOIN guests g ON g.id = b.guest_id JOIN units u ON u.id = b.unit_id
+     LEFT JOIN agents ag ON ag.id = b.agent_id LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
+     WHERE b.id = $1 AND b.property_id = $2 FOR UPDATE OF b`, [body.charge_booking_id, propertyId]);
+  if (!b) return fail('Reservation not found', 404);
+  if (!['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status)) return fail(`Can't charge to room ${b.room} — the booking is ${String(b.status).replace('_', ' ')}`, 409, { code: 'BOOKING_CLOSED' });
+  if (b.folio_status || (b.agent_id && b.agent_type !== 'ota' && String(b.payment_status || '').startsWith('city_ledger'))) return fail("This stay is billed to an agent — a voucher can't be added to the agent's bill. Take the payment now instead.", 409, { code: 'AGENT_BILLED' });
+  if (b.complimentary_scope === 'all') return fail('This stay is complimentary for everything — a voucher charged to it would be free. Take the payment now instead.', 409, { code: 'COMPLIMENTARY' });
+  if (b.group_billing && b.billing_mode === 'everything') return fail("This room is on a group bill that covers everything — a voucher would go on the group's bill. Take the payment now instead.", 409, { code: 'GROUP_BILL' });
+  const today = todayWITA();
+  const a = { ...saleAmounts(t), fee: 0 };       // a card / QRIS fee is for money paid now, not a room charge
+  const rows = [];
+  for (let i = 0; i < qty; i++) {
+    const row = await insertVoucher(client, propertyId, t, { buyer, amounts: a, paymentMethod: null, receivedOn: today, reference: null, userId });
+    if (!row) return fail('Could not make a code — try again', 500);
+    const label = voucherNo(row.voucher_no);
+    const { rows: [line] } = await client.query(
+      `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, service_date, tax_mode, posted_by)
+       VALUES ($1, 'voucher', $2, 1, $3, $3, $4, 'none', $5) RETURNING id`,
+      [b.id, `Voucher ${label} — ${t.name}`.slice(0, 200), a.price, today, userId || null]);
+    await client.query('UPDATE vouchers SET charged_booking_id = $2, charge_id = $3 WHERE id = $1', [row.id, b.id, line.id]);
+    await logEvent(client, row.id, 'sold', `Sold ${rp(a.price)} (${t.name}) — charged to room ${b.room} (${b.guest}), paid with the bill`, userId);
+    await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+      [b.id, `Voucher ${label} (${t.name}, ${rp(a.price)}) charged to the room — no service charge or tax.`, userId || null]);
+    rows.push(row);
+  }
+  return { ...issued(rows[0]), vouchers: rows.map(issued), charged_to: { booking_id: b.id, room: b.room, guest: b.guest, total: round2(a.price * qty) } };
 }
 
 // ── Free (complimentary) vouchers (migration 168) ──
@@ -310,12 +354,16 @@ const LIST_SQL = `
   SELECT v.*, t.name AS template_name,
          COALESCE(v.snapshot->>'name', t.name) AS name, v.snapshot->>'room_type_name' AS room_type_name,
          pm.label AS payment_label,
+         cu.name AS charged_room, cg.name AS charged_guest,
          bg.name AS booking_guest, bu.name AS booking_unit, b.check_in_date, b.check_out_date, b.status AS booking_status,
          us.name AS sold_by_name
   FROM vouchers v
   LEFT JOIN voucher_templates t ON t.id = v.template_id
   LEFT JOIN payment_methods pm ON pm.id = v.payment_method AND pm.property_id = v.property_id
   LEFT JOIN bookings b ON b.id = v.booking_id
+  LEFT JOIN bookings cb ON cb.id = v.charged_booking_id
+  LEFT JOIN units cu ON cu.id = cb.unit_id
+  LEFT JOIN guests cg ON cg.id = cb.guest_id
   LEFT JOIN guests bg ON bg.id = b.guest_id
   LEFT JOIN units bu ON bu.id = b.unit_id
   LEFT JOIN users us ON us.id = v.sold_by`;
@@ -531,6 +579,7 @@ async function voidVoucher(propertyId, id, { reason, refund_amount, refund_metho
     if (v.status === 'voided') return fail('This voucher is already cancelled.', 409);
     if (v.status === 'expired') return fail('This voucher has expired — its value was already taken as income.', 409);
     const refund = round2(num(refund_amount));
+    if (v.charged_booking_id && refund > 0) return fail('This voucher was charged to a room — nothing was paid for it here. Cancelling takes it off the bill; if the guest already paid, give the money back with ⋮ → Refund on the reservation.', 400);
     if (refund < 0 || refund > num(v.sold_total) + num(v.fee_amount) + 0.004) return fail('The refund can\'t be more than was paid for it');
     let method = null;
     if (refund > 0) {
@@ -542,6 +591,11 @@ async function voidVoucher(propertyId, id, { reason, refund_amount, refund_metho
     await client.query(
       `UPDATE vouchers SET status = 'voided', void_reason = $2, voided_by = $3, voided_at = NOW(), refunded_amount = $4, refund_method = $5, updated_at = NOW()
        WHERE id = $1`, [id, why.slice(0, 500), userId || null, refund, method]);
+    if (v.charged_booking_id) {
+      await client.query('UPDATE folio_charges SET is_voided = true, voided_by = $2, voided_at = NOW() WHERE id = $1 AND is_voided = false', [v.charge_id, userId || null]);
+      await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
+        [v.charged_booking_id, `Voucher ${voucherNo(v.voucher_no)} cancelled — taken off the bill. Reason: ${why}`.slice(0, 1000), userId || null]);
+    }
     await logEvent(client, id, 'voided', `${why}${refund ? ` — ${rp(refund)} given back (${method})` : ' — no money given back'}`, userId);
     return { ok: true };
   });

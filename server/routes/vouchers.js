@@ -19,9 +19,13 @@ const send = (res, r, ok = 200) => (r && r.error ? res.status(r.status || 400).j
 const canException = req => req.user.role === 'owner' || (Array.isArray(req.user.allowed_menus) && req.user.allowed_menus.includes('corrections'));
 const exceptionOnly = (req, res, next) => (canException(req) ? next() : res.status(403).json({ error: 'Only the owner or staff with the Corrections permission can do this' }));
 
-router.get('/templates', wrap(async (req, res) => res.json(await svc.listTemplates(req.propertyId, { all: req.user.role === 'owner' && req.query.all === '1' }))));
-router.post('/templates', requireRole('owner'), wrap(async (req, res) => send(res, await svc.saveTemplate(req.propertyId, req.body || {}), 201)));
-router.put('/templates/:id', requireRole('owner'), wrap(async (req, res) => send(res, await svc.saveTemplate(req.propertyId, req.body || {}, req.params.id))));
+// Voucher types: the owner, or staff with the Voucher types permission (on top of Vouchers).
+const canTypes = req => req.user.role === 'owner' || (Array.isArray(req.user.allowed_menus) && req.user.allowed_menus.includes('voucher_types'));
+const typesOnly = (req, res, next) => (canTypes(req) ? next() : res.status(403).json({ error: 'Only the owner or staff with the Voucher types permission can do this' }));
+
+router.get('/templates', wrap(async (req, res) => res.json(await svc.listTemplates(req.propertyId, { all: canTypes(req) && req.query.all === '1' }))));
+router.post('/templates', typesOnly, wrap(async (req, res) => send(res, await svc.saveTemplate(req.propertyId, req.body || {}), 201)));
+router.put('/templates/:id', typesOnly, wrap(async (req, res) => send(res, await svc.saveTemplate(req.propertyId, req.body || {}, req.params.id))));
 
 router.get('/', wrap(async (req, res) => res.json(await svc.list(req.propertyId, req.query))));
 router.get('/report', wrap(async (req, res) => res.json(await svc.report(req.propertyId, req.query))));
