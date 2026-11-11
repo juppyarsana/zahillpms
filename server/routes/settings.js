@@ -494,14 +494,28 @@ router.post('/payment-methods', auth, async (req, res) => {
 
 router.put('/payment-methods/:id', auth, async (req, res) => {
   const { label, is_active, sort_order } = req.body;
+  // Bank fee % and days until the bank pays (migration 172): owner only
+  let fee = null, settle = null;
+  if (req.user.role === 'owner') {
+    if (req.body.fee_percent !== undefined) {
+      fee = Number(req.body.fee_percent);
+      if (!(fee >= 0 && fee <= 20)) return res.status(400).json({ error: 'Fee must be between 0 and 20 %' });
+    }
+    if (req.body.settle_days !== undefined) {
+      settle = parseInt(req.body.settle_days, 10);
+      if (!(settle >= 0 && settle <= 14)) return res.status(400).json({ error: 'Days until the bank pays must be between 0 and 14' });
+    }
+  }
   try {
     const { rows } = await db.query(
       `UPDATE payment_methods SET
         label      = COALESCE($1, label),
         is_active  = COALESCE($2, is_active),
-        sort_order = COALESCE($3, sort_order)
+        sort_order = COALESCE($3, sort_order),
+        fee_percent = COALESCE($6, fee_percent),
+        settle_days = COALESCE($7, settle_days)
        WHERE id = $4 AND property_id = $5 RETURNING *`,
-      [label, is_active ?? null, sort_order ?? null, req.params.id, req.propertyId]
+      [label, is_active ?? null, sort_order ?? null, req.params.id, req.propertyId, fee, settle]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Method not found' });
     res.json(rows[0]);

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const EDITING_NONE = null;
 
@@ -45,6 +46,7 @@ function SourceAgentFields({ form, set }) {
 
 export default function Settings() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const { sources, paymentMethods, reload } = useSettings();
 
   const [editingId, setEditingId] = useState(EDITING_NONE); // 'source:direct' | 'method:cash'
@@ -64,7 +66,7 @@ export default function Settings() {
       f.publish_rate = item.publish_rate !== false;
       setEditForm(f);
     } else {
-      setEditForm({ label: item.label, sort_order: item.sort_order });
+      setEditForm({ label: item.label, sort_order: item.sort_order, fee_percent: item.fee_percent ?? 0, settle_days: item.settle_days ?? 0 });
     }
     setError('');
   }
@@ -290,6 +292,22 @@ export default function Settings() {
                       onChange={e => setEdit('sort_order', parseInt(e.target.value) || 0)} style={{ maxWidth: 80 }} />
                   </div>
                 </div>
+                {user?.role === 'owner' && (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Bank fee (%)</label>
+                      <input className="form-input" type="number" min="0" max="20" step="0.01" value={editForm.fee_percent ?? 0}
+                        onChange={e => setEdit('fee_percent', e.target.value)} style={{ maxWidth: 110 }} />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>For QRIS / card: the bank keeps this share. Used by Accounting → Bank check.</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Bank pays after (days)</label>
+                      <input className="form-input" type="number" min="0" max="14" value={editForm.settle_days ?? 0}
+                        onChange={e => setEdit('settle_days', e.target.value)} style={{ maxWidth: 110 }} />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>0 = same day, 1 = next day (weekends move to Monday).</div>
+                    </div>
+                  </div>
+                )}
                 {error && <div className="alert alert-error" style={{ marginBottom: 8 }}>{error}</div>}
                 <div className="flex gap-2">
                   <button className="btn btn-primary btn-sm" onClick={saveEdit}>Save</button>

@@ -191,6 +191,26 @@ router.get('/discounts/xlsx', wrap(async (req, res) => {
   res.send(Buffer.from(buf));
 }));
 
+// Bank check: money in and out per account, for the bank statement
+const bankCheck = require('../services/bankCheck');
+router.get('/bank-check', wrap(async (req, res) => {
+  const p = discountPeriod(req, res);
+  if (p) reply(res, await bankCheck.build(req.propertyId, p.from, p.to));
+}));
+router.get('/bank-check/xlsx', wrap(async (req, res) => {
+  const p = discountPeriod(req, res);
+  if (!p) return;
+  const d = await bankCheck.build(req.propertyId, p.from, p.to);
+  if (d.error) return res.status(d.status || 400).json({ error: d.error });
+  const { rows: [prop] } = await db.query(
+    `SELECT COALESCE(NULLIF(ps.property_name, ''), pr.name) AS name
+     FROM properties pr LEFT JOIN property_settings ps ON ps.property_id = pr.id WHERE pr.id = $1`, [req.propertyId]);
+  const buf = await bankCheck.buildXlsx(d, (prop && prop.name) || 'Property');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="bank-check-${p.from}_to_${p.to}.xlsx"`);
+  res.send(Buffer.from(buf));
+}));
+
 // Food & drink by the inventory method (migration 148)
 const costOfSales = require('../services/costOfSales');
 router.get('/cost-of-sales', wrap(async (req, res) => reply(res, await costOfSales.view(req.propertyId, req.query.month, todayWITA()))));

@@ -53,6 +53,7 @@ export const GROUPS = [
     { id: 'restaurant-report', icon: '🍽', title: { id: 'Laporan restoran', en: 'Restaurant report' } },
     { id: 'profit-and-loss', icon: '📊', title: { id: 'Laba Rugi (Profit & Loss)', en: 'Profit & Loss' } },
     { id: 'cost-of-sales', icon: '🍽', title: { id: 'Cost of sales: makanan & minuman lewat persediaan', en: 'Cost of sales: food & drink through inventory' } },
+    { id: 'bank-check', icon: '🏦', title: { id: 'Cek bank: cocokkan dengan rekening koran', en: 'Bank check: match against the bank statement' } },
     { id: 'journal-entries', icon: '✍', title: { id: 'Jurnal manual, neraca & neraca saldo', en: 'Journal entries, balance sheet & trial balance' } },
   ] },
   { label: { id: 'Pengaturan', en: 'Settings' }, chapters: [

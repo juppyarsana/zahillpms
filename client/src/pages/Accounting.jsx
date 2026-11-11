@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { EntriesTab, BalanceSheetTab, TrialBalanceTab } from './accounting/LedgerTabs';
 import CostOfSalesTab from './accounting/CostOfSalesTab';
 import DiscountsTab from './accounting/DiscountsTab';
+import BankCheckTab from './accounting/BankCheckTab';
 
 const idr = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const amt = n => (n ? Math.round(Number(n)).toLocaleString('id-ID') : '');
@@ -32,6 +33,7 @@ const TABS = [
   { key: 'cogs', label: 'Cost of sales' },
   { key: 'pl', label: 'Profit & Loss' },
   { key: 'discounts', label: 'Discounts' },
+  { key: 'bank', label: 'Bank check' },
   { key: 'bs', label: 'Balance sheet' },
   { key: 'tb', label: 'Trial balance' },
   { key: 'accounts', label: 'Accounts' },
@@ -53,7 +55,7 @@ export default function Accounting() {
           <button key={t.key} className={`tab-bar-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
-      {tab === 'journal' ? <JournalTab /> : tab === 'entries' ? <EntriesTab /> : tab === 'cogs' ? <CostOfSalesTab /> : tab === 'pl' ? <PlTab /> : tab === 'discounts' ? <DiscountsTab />
+      {tab === 'journal' ? <JournalTab /> : tab === 'entries' ? <EntriesTab /> : tab === 'cogs' ? <CostOfSalesTab /> : tab === 'pl' ? <PlTab /> : tab === 'discounts' ? <DiscountsTab /> : tab === 'bank' ? <BankCheckTab />
         : tab === 'bs' ? <BalanceSheetTab /> : tab === 'tb' ? <TrialBalanceTab /> : <AccountsTab />}
     </div>
   );

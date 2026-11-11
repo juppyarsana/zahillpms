@@ -122,7 +122,7 @@ async function load(propertyId, date, { userId = null } = {}) {
   }
 
   const all = rows.map(r => ({
-    method: r.method_label,
+    method: r.method_label, method_id: r.method || null,
     // the time is only shown when the payment was recorded on this same day
     time: r.kind === 'agent' ? null : (r.recorded_on === date ? r.time : null),
     recorded_on: r.recorded_on && r.recorded_on !== date && r.kind !== 'agent' ? r.recorded_on : null,
