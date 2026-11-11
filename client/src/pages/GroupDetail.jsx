@@ -742,9 +742,14 @@ export default function GroupDetail() {
             <div className="flex-between" style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6, marginBottom: 6 }}>
               <span>Net Total</span><span>{fmtIDR(rollup.net_amount)}</span>
             </div>
-            <div className="flex-between" style={{ fontSize: 13, marginBottom: 4 }}>
-              <span className="text-muted">Paid</span><span>{fmtIDR(rollup.paid_amount)}</span>
+            <div className="flex-between" style={{ fontSize: 13, marginBottom: rollup.held_on_cancelled > 0 ? 0 : 4 }}>
+              <span className="text-muted">Paid</span><span>{fmtIDR(rollup.paid_amount + (rollup.held_on_cancelled || 0))}</span>
             </div>
+            {rollup.held_on_cancelled > 0 && (
+              <div className="flex-between text-muted" style={{ fontSize: 12, margin: '0 0 4px 12px' }}>
+                <span>of which received on cancelled room{rollup.cancelled_count === 1 ? '' : 's'} — held, not part of the total</span><span>{fmtIDR(rollup.held_on_cancelled)}</span>
+              </div>
+            )}
             <div className="flex-between" style={{ fontWeight: 700, fontSize: 16 }}>
               <span>Balance Due</span>
               <span style={{ color: rollup.balance_due > 0 ? 'var(--color-danger, #dc2626)' : 'var(--color-success, #16a34a)' }}>
@@ -776,18 +781,18 @@ export default function GroupDetail() {
                 </div>
               </div>
             )}
-            {rollup.paid_on_cancelled > 0 && (() => {
+            {rollup.held_on_cancelled > 0 && (() => {
               const agentId = (bookings || []).find(b => b.agent_id)?.agent_id;
               return agentId ? (
                 <div style={{ marginTop: 8 }}>
                   <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                    {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room. It isn't counted above — it is held as credit for the agent:
+                    {fmtIDR(rollup.held_on_cancelled)} was received on a cancelled room. It is in Paid above, but the cancelled room is not billed — the money is held as credit for the agent:
                   </div>
                   <AgentCreditCard agentId={agentId} compact onChanged={load} />
                 </div>
               ) : (
                 <div className="alert alert-error" style={{ fontSize: 12, marginTop: 8 }}>
-                  {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
+                  {fmtIDR(rollup.held_on_cancelled)} was received on a cancelled room. It is in Paid above but the room is not billed — refund it or move it to another booking (⋮ on the payment) by hand.
                 </div>
               );
             })()}

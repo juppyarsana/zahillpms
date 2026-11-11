@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const requireRole = require('../middleware/role');
 const { recomputeBookingStatus, recomputeGroupStatus } = require('../services/paymentStatusService');
 const groupBilling = require('../services/groupBilling');
+const agentCredit = require('../services/agentCredit');
 const agentBilling = require('../services/agentBillingService');
 const agentService = require('../services/agentService');
 const { PUBLISH_RATE_SQL, ARRANGED_BY_SQL } = require('../services/publishRate');
@@ -1360,6 +1361,8 @@ router.get('/group/:groupId', auth, async (req, res) => {
         // A group billed as a whole: its payments against its bill.
         paid_amount: bill ? bill.received : round2(paidAmount),
         paid_on_cancelled: bill ? 0 : round2(paidOnCancelled),
+        // Money still held on the group's cancelled rooms (after a fee kept / refunds / credit used) — shown as part of Paid.
+        held_on_cancelled: bill ? 0 : (await agentCredit.heldForGroup(req.propertyId, group.id)).held,
         bill_total: bill ? bill.total : round2(netAmount),
         balance_due: bill ? bill.balance_due : round2(netAmount - paidAmount),
         status_breakdown: statusBreakdown,

@@ -78,6 +78,27 @@ async function summary(propertyId) {
   return out.sort((a, b) => b.total - a.total);
 }
 
+// Money still held on the cancelled / no-show rooms of ONE group (agent or not; never an OTA's):
+// the group page's "Paid" and the printed pro forma show it, so the money the agent really sent
+// is visible next to the total of the rooms that remain.
+async function heldForGroup(propertyId, groupId) {
+  const { rows } = await db.query(
+    `SELECT b.id, b.property_id, b.status, b.reservation_group_id, u.name AS room, g.name AS guest, pg.name AS group_name,
+            COALESCE((SELECT max(e.created_at) FROM booking_events e WHERE e.booking_id = b.id AND e.note ILIKE 'Booking cancelled%'), b.updated_at) AS cancelled_on,
+            ag.name AS agent_name
+       FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
+       LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
+       LEFT JOIN guests pg ON pg.id = rg.primary_guest_id
+       LEFT JOIN agents ag ON ag.id = b.agent_id
+      WHERE b.property_id = $1 AND b.reservation_group_id = $2 AND b.status IN ('cancelled', 'no_show')
+        AND COALESCE(ag.agent_type, '') <> 'ota'
+        AND EXISTS (SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.status = 'received' AND p.amount > 0)
+      ORDER BY u.name`, [propertyId, groupId]);
+  const items = [];
+  for (const b of rows) { const it = await itemOf(b); if (it) items.push({ ...it, agent_name: b.agent_name || null }); }
+  return { held: round2(items.reduce((s, i) => s + i.available, 0)), items };
+}
+
 // The agent's stays that can take credit: not cancelled / no-show, still owing something.
 async function targetsFor(propertyId, agentId) {
   const { rows } = await db.query(
@@ -199,4 +220,4 @@ async function useCredit(propertyId, userId, { fromBookingId, toBookingId, amoun
   }
 }
 
-module.exports = { creditFor, summary, targetsFor, useCredit };
+module.exports = { creditFor, summary, targetsFor, useCredit, heldForGroup };

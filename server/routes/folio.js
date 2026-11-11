@@ -1562,6 +1562,22 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     }
     grandLine('Estimated Balance Due', settings?.prices_include_tax ? whole(grand.balance_due) : fmtIDR(grand.balance_due), { bold: true });
 
+    // Money already received for a room of this group that was then cancelled: not part of the total above,
+    // but the payer should see where it is (held for later use or to be given back).
+    const held = await require('../services/agentCredit').heldForGroup(req.propertyId, group.id);
+    if (held.held >= 1) {
+      const rooms = held.items.map(i => i.room).join(', ');
+      const who = held.items.find(i => i.agent_name)?.agent_name;
+      doc.moveDown(0.3);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#047857')
+        .text(`${who ? `Credit held for ${who}` : 'Held on cancelled room'}${held.items.length ? ` (cancelled room ${rooms})` : ''}`, 50, doc.y, { width: 400, align: 'right' });
+      doc.text(fmtIDR(held.held), 460, doc.y - 12, { width: 90, align: 'right' });
+      doc.font('Helvetica').fontSize(8).fillColor('#777')
+        .text('Received for a room that was cancelled — kept for use on another stay or to be given back. Not part of the total above.', 50, doc.y + 2, { width: 500, align: 'right' });
+      doc.fillColor('#000');
+      doc.moveDown(0.8);
+    }
+
     if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
     doc.moveDown(footer ? 1.5 : 2);
     doc.fontSize(9).fillColor('#888').font('Helvetica').text('Thank you for staying with us', 50, undefined, { align: 'center', width: 500 });
