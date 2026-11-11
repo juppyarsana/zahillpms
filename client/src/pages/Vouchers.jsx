@@ -281,7 +281,6 @@ function SellModal({ onClose, onSold }) {
     <div className="modal-backdrop"><div className="modal" style={{ maxWidth: 560, width: '100%' }}>
       <div className="modal-header"><div className="modal-title">{free ? 'Give a free voucher' : 'Sell a voucher'}</div><button className="btn btn-icon" onClick={onClose}>✕</button></div>
       <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto' }}>
-        {error && <div className="alert alert-danger" style={{ marginBottom: 10 }}><div>{error}</div></div>}
         <div className="form-group"><label className="form-label">Voucher type *</label>
           <select className="form-select" value={typeId} onChange={e => setTypeId(e.target.value)}>
             <option value="">{types ? (types.length ? 'Choose…' : 'No voucher types yet — add them under Voucher types (owner or staff with that permission)') : 'Loading…'}</option>
@@ -379,6 +378,7 @@ function SellModal({ onClose, onSold }) {
           </div>
         )}
       </div>
+      {error && <div className="alert alert-danger" style={{ margin: '0 20px 10px' }}><div>{error}</div></div>}
       <div className="modal-footer">
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !t || !buyer || (!free && payMode === 'now' && !method) || (!free && payMode === 'room' && !resv)} onClick={sell}>
