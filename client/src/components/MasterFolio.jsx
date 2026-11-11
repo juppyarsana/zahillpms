@@ -164,6 +164,46 @@ function PaymentsReceived({ rooms, groupPayments }) {
 
 const STATUS = { pending: 'Pending', deposit_paid: 'Deposit paid', confirmed: 'Confirmed', checked_in: 'Checked in', checked_out: 'Checked out' };
 
+
+// Cancelled / no-show rooms: not billed and in no total, shown apart so the figures reconcile —
+// what each was booked for, when / why it was cancelled and what became of the money.
+function CancelledRooms({ est }) {
+  const rooms = est.cancelled_rooms || [];
+  if (!rooms.length) return null;
+  const held = est.held_on_cancelled || 0;
+  const day = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Makassar' }) : '';
+  const stay = (ymd, withYear) => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' }); };
+  return (
+    <div style={{ margin: '16px 0', padding: '12px 14px', border: '1px dashed var(--border-strong, #cbd5e1)', borderRadius: 10, background: 'var(--bg-subtle, #f8fafc)' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>
+        Cancelled rooms — not billed, not in the total
+      </div>
+      {rooms.map(r => (
+        <div key={r.booking_id} style={{ padding: '6px 0', borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 13 }}>
+            <b>{r.room}</b>
+            <span className="text-muted"> · {stay(r.check_in)} – {stay(r.check_out, true)} · booked {fmtIDR(r.booked_price)} · {r.status === 'no_show' ? 'no-show' : 'cancelled'} {day(r.cancelled_on)}{r.reason ? ` (${r.reason})` : ''}</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--color-success, #047857)' }}>
+            {[
+              r.held > 0 && `${fmtIDR(r.held)} held as credit${r.agent_name ? ` for ${r.agent_name}` : ''}`,
+              r.refunded > 0 && `${fmtIDR(r.refunded)} refunded`,
+              r.fee > 0 && `cancellation fee ${fmtIDR(r.fee)} kept by the hotel`,
+            ].filter(Boolean).join(' · ') || 'no payment received'}
+          </div>
+        </div>
+      ))}
+      {held >= 1 && (
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)', maxWidth: 420, marginLeft: 'auto' }}>
+          <div className="flex-between" style={{ fontSize: 13, marginBottom: 3 }}><span className="text-muted">Received for the rooms above</span><span>{fmtIDR(est.received)}</span></div>
+          <div className="flex-between" style={{ fontSize: 13, marginBottom: 3 }}><span className="text-muted">Held as credit (cancelled rooms)</span><span>{fmtIDR(held)}</span></div>
+          <div className="flex-between" style={{ fontSize: 13, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 4 }}><span>Total received for the group</span><span>{fmtIDR(est.received + held)}</span></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MasterFolio({ folio, onRecordGroupPayment }) {
   const est = folio.estimate;
   if (!est) return null;
@@ -305,6 +345,8 @@ export default function MasterFolio({ folio, onRecordGroupPayment }) {
       })}
 
       <PaymentsReceived rooms={est.rooms} groupPayments={gb?.payments || []} />
+
+      <CancelledRooms est={est} />
 
       <div style={{ maxWidth: 420, marginLeft: 'auto', marginTop: 8 }}>
         {!rates.prices_include_tax && hasTaxRates && (<>

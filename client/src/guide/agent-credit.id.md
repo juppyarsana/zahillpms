@@ -15,7 +15,7 @@ Booking → ⋮ → **Cancel Booking**, dengan alasan (misalnya "cancel by agent
 - **Receivables → halaman agen:** kartu **Credit held** di atas — tiap kamar yang dibatalkan, untuk siapa, kapan dibatalkan, bagaimana dan kapan dibayar, dan jumlahnya.
 - **Halaman grup** (kalau ada kamar grup yang dibatalkan) dan **booking lain dari agen yang sama** menampilkan kartu yang sama.
 
-> Di halaman grup, **Paid** sudah termasuk uang yang diterima untuk kamar yang dibatalkan, dengan baris yang menyebut berapa yang ditahan. **Total** dan **Balance Due** tetap untuk kamar yang masih ada. Pro forma grup juga mencetak baris *Credit held for the agent (cancelled room …)* supaya agen bisa melihat ke mana pembayarannya.
+> Di halaman grup, **Paid** sudah termasuk uang yang diterima untuk kamar yang dibatalkan, dengan baris yang menyebut berapa yang ditahan. **Total** dan **Balance Due** tetap untuk kamar yang masih ada. Pro forma grup dan Master Folio juga menampilkan kotak **Cancelled rooms — not billed, not in the total**: tiap kamar yang dibatalkan dengan tanggalnya, harga booking, kapan dan kenapa dibatalkan, dan apa yang terjadi dengan uangnya (ditahan sebagai kredit, di-refund, atau ada biaya yang diambil). Di bawahnya, *Money received for the group* mencocokkan transfer agen: kamar di atas + kredit yang ditahan = total yang mereka bayar.
 
 ## 3. Pakai kredit untuk menginap lain
 

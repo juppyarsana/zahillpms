@@ -78,25 +78,43 @@ async function summary(propertyId) {
   return out.sort((a, b) => b.total - a.total);
 }
 
-// Money still held on the cancelled / no-show rooms of ONE group (agent or not; never an OTA's):
-// the group page's "Paid" and the printed pro forma show it, so the money the agent really sent
-// is visible next to the total of the rooms that remain.
-async function heldForGroup(propertyId, groupId) {
+// The cancelled / no-show rooms of ONE group, for the printed pro forma and the Master Folio: each room
+// with what it was booked for, when / why it was cancelled and what became of the money — kept apart from
+// every total, so the figures stay clear (rooms billed vs. money held). Not for an OTA's rooms: their
+// money is the guest's and goes back by Refund.
+async function cancelledRoomsOfGroup(propertyId, groupId) {
   const { rows } = await db.query(
-    `SELECT b.id, b.property_id, b.status, b.reservation_group_id, u.name AS room, g.name AS guest, pg.name AS group_name,
+    `SELECT b.id, b.property_id, b.status, u.name AS room, g.name AS guest, ag.name AS agent_name, ag.agent_type,
+            to_char(b.check_in_date, 'YYYY-MM-DD') AS check_in, to_char(b.check_out_date, 'YYYY-MM-DD') AS check_out,
+            (b.total_amount - COALESCE(b.discount_amount, 0))::float AS booked_price,
             COALESCE((SELECT max(e.created_at) FROM booking_events e WHERE e.booking_id = b.id AND e.note ILIKE 'Booking cancelled%'), b.updated_at) AS cancelled_on,
-            ag.name AS agent_name
+            (SELECT substring(e.note from 'Reason: (.*)$') FROM booking_events e WHERE e.booking_id = b.id AND e.note ILIKE 'Booking cancelled%' ORDER BY e.created_at DESC LIMIT 1) AS reason
        FROM bookings b JOIN units u ON u.id = b.unit_id JOIN guests g ON g.id = b.guest_id
-       LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
-       LEFT JOIN guests pg ON pg.id = rg.primary_guest_id
        LEFT JOIN agents ag ON ag.id = b.agent_id
       WHERE b.property_id = $1 AND b.reservation_group_id = $2 AND b.status IN ('cancelled', 'no_show')
-        AND COALESCE(ag.agent_type, '') <> 'ota'
-        AND EXISTS (SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.status = 'received' AND p.amount > 0)
       ORDER BY u.name`, [propertyId, groupId]);
-  const items = [];
-  for (const b of rows) { const it = await itemOf(b); if (it) items.push({ ...it, agent_name: b.agent_name || null }); }
-  return { held: round2(items.reduce((s, i) => s + i.available, 0)), items };
+  const out = [];
+  for (const b of rows) {
+    const { rows: [m] } = await db.query(
+      `SELECT COALESCE(SUM(amount), 0)::float AS received,
+              COALESCE(SUM(-amount) FILTER (WHERE type = 'refund'), 0)::float AS refunded
+         FROM payments WHERE booking_id = $1 AND status = 'received'`, [b.id]);
+    const fee = round2((await computeProforma(b.id, propertyId))?.total || 0);
+    const ota = b.agent_type === 'ota';
+    const held = ota ? 0 : Math.max(0, round2(m.received - fee));
+    out.push({
+      booking_id: b.id, room: b.room, guest: b.guest, status: b.status, check_in: b.check_in, check_out: b.check_out,
+      booked_price: round2(b.booked_price), cancelled_on: b.cancelled_on, reason: b.reason || null,
+      refunded: round2(m.refunded), fee, held: held >= 1 ? held : 0, agent_name: b.agent_name || null,
+    });
+  }
+  return { rooms: out, held: round2(out.reduce((s, r) => s + r.held, 0)) };
+}
+
+// Money still held on the cancelled rooms of a group (the group page's Paid line).
+async function heldForGroup(propertyId, groupId) {
+  const r = await cancelledRoomsOfGroup(propertyId, groupId);
+  return { held: r.held, items: r.rooms.filter(x => x.held > 0).map(x => ({ room: x.room, agent_name: x.agent_name, available: x.held })) };
 }
 
 // The agent's stays that can take credit: not cancelled / no-show, still owing something.
@@ -220,4 +238,4 @@ async function useCredit(propertyId, userId, { fromBookingId, toBookingId, amoun
   }
 }
 
-module.exports = { creditFor, summary, targetsFor, useCredit, heldForGroup };
+module.exports = { creditFor, summary, targetsFor, useCredit, heldForGroup, cancelledRoomsOfGroup };

@@ -15,7 +15,7 @@ Booking → ⋮ → **Cancel Booking**, with the reason (for example "cancel by 
 - **Receivables → the agent's page:** a **Credit held** card at the top — each cancelled room, who it was for, when it was cancelled, how and when it was paid, and the amount.
 - **The group page** (when a group room was cancelled) and **any other booking of the same agent** show the same card.
 
-> On the group page, **Paid** includes the money received on the cancelled room, with a line saying how much of it is held. **Total** and **Balance Due** stay for the rooms that remain. The group pro forma also prints a line, *Credit held for the agent (cancelled room …)*, so the agent can see where their payment went.
+> On the group page, **Paid** includes the money received on the cancelled room, with a line saying how much of it is held. **Total** and **Balance Due** stay for the rooms that remain. The group pro forma and the Master Folio also show a box **Cancelled rooms — not billed, not in the total**: each cancelled room with its dates, what it was booked for, when and why it was cancelled, and what happened to the money (held as credit, refunded, a fee kept). Under it, *Money received for the group* reconciles the agent's transfer: the rooms above + the credit held = the total they paid.
 
 ## 3. Use the credit on another stay
 

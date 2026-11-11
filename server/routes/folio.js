@@ -90,11 +90,15 @@ router.get('/group/:groupId', auth, async (req, res) => {
         group_total: est.group?.group_total ?? null, own_total: est.group?.own_total ?? null,
       };
     });
+    const cancelledInfo = bookingRows.some(b => ['cancelled', 'no_show'].includes(b.status))
+      ? await require('../services/agentCredit').cancelledRoomsOfGroup(req.propertyId, req.params.groupId) : { rooms: [], held: 0 };
     const eSum = key => round2(estRooms.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0));
     const roomsReceived = round2(estRooms.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + parseFloat(p.amount), 0), 0));
     const bill = await groupBilling.groupBill(req.params.groupId, req.propertyId);
     const estimate = {
       rooms: estRooms,
+      // cancelled / no-show rooms: not billed, kept apart from every total (migration-free; services/agentCredit.js)
+      cancelled_rooms: cancelledInfo.rooms, held_on_cancelled: bill ? 0 : cancelledInfo.held,
       subtotal: eSum('subtotal'), service_charge_amount: eSum('service_charge_amount'), tax_amount: eSum('tax_amount'),
       total: eSum('total'),
       // billed as a whole: the group's balance + each room's own balance
@@ -1562,20 +1566,51 @@ router.get('/group/:groupId/proforma', auth, async (req, res) => {
     }
     grandLine('Estimated Balance Due', settings?.prices_include_tax ? whole(grand.balance_due) : fmtIDR(grand.balance_due), { bold: true });
 
-    // Money already received for a room of this group that was then cancelled: not part of the total above,
-    // but the payer should see where it is (held for later use or to be given back).
-    const held = await require('../services/agentCredit').heldForGroup(req.propertyId, group.id);
-    if (held.held >= 1) {
-      const rooms = held.items.map(i => i.room).join(', ');
-      const who = held.items.find(i => i.agent_name)?.agent_name;
-      doc.moveDown(0.3);
-      doc.font('Helvetica-Bold').fontSize(10).fillColor('#047857')
-        .text(`${who ? `Credit held for ${who}` : 'Held on cancelled room'}${held.items.length ? ` (cancelled room ${rooms})` : ''}`, 50, doc.y, { width: 400, align: 'right' });
-      doc.text(fmtIDR(held.held), 460, doc.y - 12, { width: 90, align: 'right' });
-      doc.font('Helvetica').fontSize(8).fillColor('#777')
-        .text('Received for a room that was cancelled — kept for use on another stay or to be given back. Not part of the total above.', 50, doc.y + 2, { width: 500, align: 'right' });
-      doc.fillColor('#000');
-      doc.moveDown(0.8);
+    // Cancelled / no-show rooms: not billed and not in any total above, but the reader should see what
+    // happened to them and to the money paid for them, so the figures reconcile.
+    const cx = await require('../services/agentCredit').cancelledRoomsOfGroup(req.propertyId, group.id);
+    if (cx.rooms.length) {
+      const receivedLive = round2(folios.reduce((sm, f) => sm + (f.payments || []).filter(p => p.status === 'received').reduce((a, p) => a + (parseFloat(p.amount) || 0), 0), 0));
+      const need = 70 + cx.rooms.length * 34 + (cx.held >= 1 ? 80 : 0);
+      if (doc.y + need > doc.page.height - doc.page.margins.bottom) { doc.addPage(); doc.y = 50; }
+      doc.moveDown(1.2);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#000').text('CANCELLED ROOMS — not billed, not in the total', 50, doc.y);
+      doc.moveTo(50, doc.y + 2).lineTo(550, doc.y + 2).strokeColor('#999').lineWidth(0.5).stroke();
+      doc.moveDown(0.6);
+      const shortDay = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Makassar' }) : '';
+      const stayDay = (ymd, withYear) => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' }); };
+      for (const r of cx.rooms) {
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#444').text(
+          `${r.room}  ·  ${stayDay(r.check_in)} – ${stayDay(r.check_out, true)}  ·  booked ${fmtIDR(r.booked_price)}  ·  ${r.status === 'no_show' ? 'no-show' : 'cancelled'} ${shortDay(r.cancelled_on)}${r.reason ? ` (${r.reason})` : ''}`,
+          50, doc.y, { width: 500 });
+        const bits = [];
+        if (r.held > 0) bits.push(`${fmtIDR(r.held)} held as credit${r.agent_name ? ` for ${r.agent_name}` : ''}`);
+        if (r.refunded > 0) bits.push(`${fmtIDR(r.refunded)} refunded`);
+        if (r.fee > 0) bits.push(`cancellation fee ${fmtIDR(r.fee)} kept by the hotel`);
+        if (!bits.length) bits.push('no payment received');
+        doc.font('Helvetica').fontSize(9).fillColor('#047857').text(bits.join('  ·  '), 60, doc.y + 1, { width: 490 });
+        doc.fillColor('#000');
+        doc.moveDown(0.7);
+      }
+      if (cx.held >= 1) {
+        doc.moveDown(0.3);
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000').text('Money received for the group', 50, doc.y);
+        doc.moveDown(0.4);
+        const money2 = (label, value, bold) => {
+          const y0 = doc.y;
+          doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 11 : 10).fillColor('#000');
+          doc.text(label, 180, y0, { width: 270, align: 'right', lineBreak: false });
+          doc.text(value, 460, y0, { width: 90, align: 'right', lineBreak: false });
+          doc.y = y0 + (bold ? 18 : 15);
+        };
+        money2('Received for the rooms above', fmtIDR(receivedLive));
+        money2('Held as credit (cancelled rooms)', fmtIDR(cx.held));
+        money2('Total received for the group', fmtIDR(round2(receivedLive + cx.held)), true);
+        doc.font('Helvetica').fontSize(8).fillColor('#777')
+          .text('The credit is kept for use on another stay or to be given back. It is not part of the total above.', 50, doc.y - 2, { width: 500, align: 'right' });
+        doc.fillColor('#000');
+        doc.moveDown(0.8);
+      }
     }
 
     if (footer) { doc.moveDown(1.5); proformaFooter.draw(doc, footer); }
