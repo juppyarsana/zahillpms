@@ -36,3 +36,4 @@ On the card press **Refund**: amount (up to the credit), **how** the money is gi
 - No expiry: the credit stays until it is used or refunded.
 - A no-show / late-cancellation fee the hotel keeps is taken off the credit first.
 - A payment made for a sale, an activity or a voucher cannot be used as credit — it can only be refunded.
+- **OTAs (Agoda, Booking.com…) never have credit.** The OTA settles with its own guest, so money the hotel took on an OTA booking (for example a virtual card it charged) belongs to the guest: cancel the booking, then give it back with ⋮ → **Refund** on the booking.

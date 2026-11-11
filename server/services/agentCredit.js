@@ -55,8 +55,9 @@ const CANCELLED_SQL = `
 
 // The credit held for one agent.
 async function creditFor(propertyId, agentId) {
-  const { rows: [agent] } = await db.query('SELECT id, name FROM agents WHERE id = $1 AND property_id = $2', [agentId, propertyId]);
+  const { rows: [agent] } = await db.query('SELECT id, name, agent_type FROM agents WHERE id = $1 AND property_id = $2', [agentId, propertyId]);
   if (!agent) return null;
+  if (agent.agent_type === 'ota') return { agent_id: agent.id, agent_name: agent.name, total: 0, items: [] };
   const { rows } = await db.query(CANCELLED_SQL, [propertyId, agentId]);
   const items = [];
   for (const b of rows) { const it = await itemOf(b); if (it) items.push(it); }
@@ -66,7 +67,7 @@ async function creditFor(propertyId, agentId) {
 // Every agent with credit held (the agent list).
 async function summary(propertyId) {
   const { rows } = await db.query(
-    `SELECT DISTINCT b.agent_id FROM bookings b
+    `SELECT DISTINCT b.agent_id FROM bookings b JOIN agents ag ON ag.id = b.agent_id AND ag.agent_type <> 'ota'
       WHERE b.property_id = $1 AND b.agent_id IS NOT NULL AND b.status IN ('cancelled', 'no_show')
         AND EXISTS (SELECT 1 FROM payments p WHERE p.booking_id = b.id AND p.status = 'received' AND p.amount > 0)`, [propertyId]);
   const out = [];
@@ -117,6 +118,8 @@ async function useCredit(propertyId, userId, { fromBookingId, toBookingId, amoun
         WHERE b.id = ANY($1) AND b.property_id = $2 ORDER BY b.id FOR UPDATE OF b`, [ids, propertyId]);
     const from = locked.find(b => b.id === fromBookingId), to = locked.find(b => b.id === toBookingId);
     if (!from || !to) { await client.query('ROLLBACK'); return { status: 404, error: 'Booking not found' }; }
+    const { rows: [fa] } = await client.query('SELECT agent_type FROM agents WHERE id = $1', [from.agent_id]);
+    if (fa?.agent_type === 'ota') { await client.query('ROLLBACK'); return { status: 409, code: 'OTA', error: 'An OTA holds no credit — the money belongs to the guest: give it back with ⋮ → Refund on the booking' }; }
     if (!['cancelled', 'no_show'].includes(from.status) || !from.agent_id) {
       await client.query('ROLLBACK'); return { status: 409, error: 'That booking holds no agent credit' };
     }

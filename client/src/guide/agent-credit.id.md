@@ -36,3 +36,4 @@ Di kartu tekan **Refund**: jumlah (sampai batas kredit), **cara** uang dikembali
 - Tidak ada masa berlaku: kredit tetap ada sampai dipakai atau di-refund.
 - Biaya no-show / pembatalan terlambat yang diambil hotel dikurangkan dari kredit lebih dulu.
 - Pembayaran untuk penjualan, aktivitas, atau voucher tidak bisa dipakai sebagai kredit — hanya bisa di-refund.
+- **OTA (Agoda, Booking.com…) tidak pernah punya kredit.** OTA menyelesaikan urusan dengan tamunya sendiri, jadi uang yang diterima hotel untuk booking OTA (misalnya kartu virtual yang di-charge) adalah milik tamu: batalkan booking, lalu kembalikan dengan ⋮ → **Refund** di booking.

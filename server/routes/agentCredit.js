@@ -42,12 +42,15 @@ router.post('/use', async (req, res) => {
 });
 
 // POST /api/agent-credit/refund { booking_id, amount, method, refunded_at?, reference?, reason }
-// The existing refund, for a cancelled / no-show booking of an agent only.
+// The existing refund, for a cancelled / no-show booking of an agent only (not an OTA: the money is the guest's —
+// that is an ordinary Refund with the Corrections permission).
 router.post('/refund', async (req, res, next) => {
   try {
-    const { rows: [b] } = await db.query('SELECT status, agent_id FROM bookings WHERE id = $1 AND property_id = $2', [req.body.booking_id, req.propertyId]);
+    const { rows: [b] } = await db.query(
+      `SELECT b.status, b.agent_id, ag.agent_type FROM bookings b LEFT JOIN agents ag ON ag.id = b.agent_id
+        WHERE b.id = $1 AND b.property_id = $2`, [req.body.booking_id, req.propertyId]);
     if (!b) return res.status(404).json({ error: 'Booking not found' });
-    if (!b.agent_id || !['cancelled', 'no_show'].includes(b.status)) {
+    if (!b.agent_id || b.agent_type === 'ota' || !['cancelled', 'no_show'].includes(b.status)) {
       return res.status(409).json({ error: 'This is not an agent\'s cancelled booking — use ⋮ → Refund on the booking (Corrections permission)' });
     }
     return refundHandler(req, res, next);
