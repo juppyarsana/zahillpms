@@ -32,6 +32,7 @@ export const GROUPS = [
   { label: { id: 'Sales', en: 'Sales' }, chapters: [
     { id: 'ota-dashboard', icon: '📉', title: { id: 'OTA dashboard: tanggal sepi & harga', en: 'OTA dashboard: slow dates & prices' } },
     { id: 'event-invoice', icon: '🗓', title: { id: 'Satu invoice untuk kamar + meeting', en: 'One invoice for rooms + a meeting' } },
+    { id: 'vouchers', icon: '🎟', title: { id: 'Voucher menginap', en: 'Stay vouchers' } },
   ] },
   { label: { id: 'Operasional', en: 'Operations' }, chapters: [
     { id: 'housekeeping', icon: '🧹', title: { id: 'Housekeeping', en: 'Housekeeping' } },

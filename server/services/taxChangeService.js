@@ -28,7 +28,8 @@ const pct = n => `${parseFloat(n) || 0}%`;
 
 async function openBookings(client, propertyId, { lock = false } = {}) {
   const { rows } = await client.query(
-    `SELECT * FROM bookings WHERE property_id = $1 AND status = ANY($2)
+    `SELECT *, (SELECT NOT v.is_free FROM vouchers v WHERE v.id = bookings.voucher_id) AS voucher_paid
+     FROM bookings WHERE property_id = $1 AND status = ANY($2)
        AND COALESCE(folio_status, '') NOT IN ('invoiced', 'paid')
        AND bill_tax_rate IS NULL   -- a stamped bill keeps its own rates (081)
      ORDER BY check_in_date ${lock ? 'FOR UPDATE' : ''}`,
@@ -119,7 +120,7 @@ async function apply(propertyId, next, userId) {
       for (const b of await openBookings(client, propertyId, { lock: true })) {
         // Room + meals
         const room = parseFloat(b.room_revenue ?? 0), meal = parseFloat(b.fnb_revenue ?? 0);
-        if (room + meal > 0) {
+        if (room + meal > 0 && !b.voucher_paid) {   // a voucher stay carries no service charge or tax (migration 167)
           const target = computeFolioTotals(room + meal, oldRates.tax_rate, oldRates.service_charge_rate).total;
           const s = resplit(room, meal, k, target, newRates);
           const { rows: [after] } = await client.query(

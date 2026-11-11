@@ -14,7 +14,7 @@ const { AGENT_BILLABLE_LINE_SQL, AGENT_PREPAID_SQL, agentDue, billRates, round2 
 
 const TZ = `'Asia/Makassar'`;
 const LEDGER = 'Agent ledger';
-const WHAT = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund', group_refund: 'Group refund', event: 'Event payment', event_refund: 'Event refund' };
+const WHAT = { voucher: 'Voucher sale', voucher_refund: 'Voucher refund', deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras', group: 'Group payment', refund: 'Refund', group_refund: 'Group refund', event: 'Event payment', event_refund: 'Event refund' };
 
 async function load(propertyId, date, { userId = null } = {}) {
   const { rows } = await db.query(`
@@ -27,7 +27,19 @@ async function load(propertyId, date, { userId = null } = {}) {
       JOIN units u ON u.id = b.unit_id
       JOIN guests g ON g.id = b.guest_id
       WHERE b.property_id = $1 AND p.status = 'received'
+        AND p.method IS DISTINCT FROM 'voucher'   -- paying a stay with a voucher is not money (migration 167)
         AND (p.received_at AT TIME ZONE ${TZ})::date = $2::date
+      UNION ALL
+      -- Vouchers sold: the money comes in at the sale; one cancelled with a refund goes back out
+      SELECT v.payment_method, v.sold_total + v.fee_amount, v.reference, v.snapshot->>'name', 'voucher', v.received_at, v.sold_by,
+             NULL, 'V-' || lpad(v.voucher_no::text, 4, '0'), COALESCE(v.buyer_name, 'Buyer'), NULL
+      FROM vouchers v
+      WHERE v.property_id = $1 AND (v.received_at AT TIME ZONE ${TZ})::date = $2::date
+      UNION ALL
+      SELECT v.refund_method, -v.refunded_amount, v.reference, v.void_reason, 'voucher_refund', v.voided_at, v.voided_by,
+             NULL, 'V-' || lpad(v.voucher_no::text, 4, '0'), COALESCE(v.buyer_name, 'Buyer'), NULL
+      FROM vouchers v
+      WHERE v.property_id = $1 AND v.status = 'voided' AND v.refunded_amount > 0 AND (v.voided_at AT TIME ZONE ${TZ})::date = $2::date
       UNION ALL
       SELECT s.payment_method, s.total_amount + COALESCE(s.service_charge_amount, 0) + COALESCE(s.tax_amount, 0),
              NULL, COALESCE(s.description, (SELECT string_agg(COALESCE(si.description, pr.name), ', ')
@@ -173,6 +185,11 @@ async function load(propertyId, date, { userId = null } = {}) {
     byUser.set(k, u);
   }
 
+  // Stays paid with a voucher that day: for information, not money (the cash came when the voucher was sold).
+  const { rows: [redeemed] } = await db.query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(p.amount), 0) AS amount FROM payments p JOIN bookings b ON b.id = p.booking_id
+     WHERE b.property_id = $1 AND p.method = 'voucher' AND p.status = 'received' AND (p.received_at AT TIME ZONE ${TZ})::date = $2::date`, [propertyId, date]);
+
   const lines = userId ? all.filter(l => l.user_id === userId) : all;
   const groups = [];
   for (const l of lines) {
@@ -196,6 +213,7 @@ async function load(propertyId, date, { userId = null } = {}) {
     total: sum(lines),                          // grand total, agent ledger included
     money_total: sum(lines, l => !l.ledger),    // money actually received (= Daily Close "collected" for all users)
     ledger_total: sum(lines, l => l.ledger),
+    vouchers_redeemed: { count: redeemed.n, amount: round2(parseFloat(redeemed.amount)) },
     day_total: sum(all),
   };
 }

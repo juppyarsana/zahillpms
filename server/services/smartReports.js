@@ -210,9 +210,9 @@ const REPORTS = {
   },
   approve_complimentary: {
     type: 'alert',
-    label: 'Approve complimentary stays',
+    label: 'Approve complimentary stays & free vouchers',
     when: 'When front desk asks',
-    description: 'Front desk asks to make a stay free and this person gets a one-time approval code to pass on if they agree. Personal chats only — codes are never sent to a group.',
+    description: 'Front desk asks to make a stay free and this person gets a one-time approval code to pass on if they agree. Asks to give a free voucher come with Approve / Decline buttons. Personal chats only — codes are never sent to a group.',
     defaultRoles: ['owner', 'manager'],
     channels: ['telegram'],
     paid: false,

@@ -89,6 +89,12 @@ function snapPayable(computed, typed) {
 //     stay's price per night, or null = the same every night. Left out
 //     (undefined) = keep how the stay is shared between its nights now.
 async function applyBookingPrice(client, { propertyId, before, newTotal, userId, keepDiscount = false, receivedWasTypo, balanceNote = 'Price correction — additional amount due', split = null, nightShares }) {
+  // A booking paid with a voucher is priced by it (migration 167): Edit Price, a charge on
+  // Change Room, Amend Dates, complimentary, early departure and the rest all come through here.
+  const { rows: [vb] } = await client.query('SELECT voucher_id FROM bookings WHERE id = $1', [before.id]);
+  if (vb?.voucher_id) {
+    return { status: 409, error: { error: "A voucher booking is priced by its voucher — the price can't be changed here. Cancel the booking (the voucher goes back to active) and book again with the code.", code: 'VOUCHER_BOOKING' } };
+  }
   const reqBody = { received_was_typo: receivedWasTypo };
   const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId, before);
   let discountAmount = 0;

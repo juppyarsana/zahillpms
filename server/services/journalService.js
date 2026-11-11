@@ -58,14 +58,18 @@ const ENTRIES = [
   ['bill_paid', 'Payments to suppliers'],
   ['vendor_share', 'Vendor share of activities'],
   ['vendor_paid', 'Payments to vendors'],
+  ['voucher_sold', 'Vouchers sold'],
+  ['voucher_void', 'Vouchers cancelled'],
+  ['voucher_expired', 'Vouchers not used by their last day'],
   ['opening', 'Opening balances'],
   ['manual', 'Journal entries'],
   ['adjust', 'Corrections to closed days'],
 ];
 const ENTRY_LABEL = Object.fromEntries(ENTRIES);
 // Money received (the Daily Close's "collected"): the cash side of these entries.
-const MONEY_ENTRIES = ['receipts', 'direct', 'agent_paid'];
-const isMoney = p => MONEY_ENTRIES.includes(p.of_entry || p.entry) && p.key.startsWith('pay.');
+const MONEY_ENTRIES = ['receipts', 'direct', 'agent_paid', 'voucher_sold', 'voucher_void'];
+// Paying a stay with a voucher (key pay.voucher) settles the liability — it is not money; the cash came at the sale.
+const isMoney = p => MONEY_ENTRIES.includes(p.of_entry || p.entry) && p.key.startsWith('pay.') && p.key !== 'pay.voucher';
 const LOOKBACK_DAYS = 366;   // how far back closed days are checked for changes
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const MAX_DAYS = 92;
@@ -550,6 +554,42 @@ async function collectPosts(propertyId, from, to) {
     const memo = [p.supplier, p.reference].filter(Boolean).join(' · ');
     post(p.day, 'vendor_paid', 'vendor.owed', num(p.amount), ref, memo);
     post(p.day, 'vendor_paid', `pay.${p.method || 'other'}`, -num(p.amount), ref, memo);
+  }
+
+  // ── Vouchers (migration 167) ──
+  // Sold: money in, a liability — no revenue. Used on a stay: the 'Money received' path above
+  // with method voucher (pay.voucher → the same liability account). Cancelled: the liability
+  // goes, the refund goes out, the rest is kept as income. Not used by the last day: income.
+  {
+    const [{ rows: vSold }, { rows: vVoid }, { rows: vExp }] = await Promise.all([
+      db.query(`SELECT v.voucher_no, v.buyer_name, v.payment_method, v.liability_amount, v.fee_amount, v.sold_total, v.reference,
+                       ${ymd(dayOf('v.received_at'))} AS day
+                FROM vouchers v WHERE v.property_id = $3 AND ${dayOf('v.received_at')} BETWEEN $1::date AND $2::date`, P),
+      db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, v.refunded_amount, v.refund_method, v.void_reason,
+                       ${ymd(dayOf('v.voided_at'))} AS day
+                FROM vouchers v WHERE v.property_id = $3 AND v.status = 'voided' AND ${dayOf('v.voided_at')} BETWEEN $1::date AND $2::date`, P),
+      db.query(`SELECT v.voucher_no, v.buyer_name, v.liability_amount, ${ymd('v.expired_on')} AS day
+                FROM vouchers v WHERE v.property_id = $3 AND v.status = 'expired' AND v.expired_on BETWEEN $1::date AND $2::date`, P),
+    ]);
+    const vref = v => `V-${String(v.voucher_no).padStart(4, '0')} · ${v.buyer_name || ''}`.trim();
+    for (const v of vSold) {
+      const memo = ['Voucher sold', v.reference].filter(Boolean).join(' · ');
+      post(v.day, 'voucher_sold', `pay.${v.payment_method || 'other'}`, num(v.sold_total) + num(v.fee_amount), vref(v), memo);
+      post(v.day, 'voucher_sold', 'voucher.liability', -num(v.liability_amount), vref(v), memo);
+      post(v.day, 'voucher_sold', 'voucher.fee', -num(v.fee_amount), vref(v), memo);
+    }
+    for (const v of vVoid) {
+      const liab = num(v.liability_amount), refund = num(v.refunded_amount);
+      const memo = `Voucher cancelled${v.void_reason ? ` · ${v.void_reason}` : ''}`;
+      post(v.day, 'voucher_void', 'voucher.liability', liab, vref(v), memo);
+      if (refund > 0) post(v.day, 'voucher_void', `pay.${v.refund_method || 'other'}`, -refund, vref(v), memo);
+      if (refund < liab) post(v.day, 'voucher_void', 'voucher.breakage', -(liab - refund), vref(v), memo);
+      else if (refund > liab) post(v.day, 'voucher_void', 'voucher.fee', refund - liab, vref(v), memo);
+    }
+    for (const v of vExp) {
+      post(v.day, 'voucher_expired', 'voucher.liability', num(v.liability_amount), vref(v), 'Not used by its last day');
+      post(v.day, 'voucher_expired', 'voucher.breakage', -num(v.liability_amount), vref(v), 'Not used by its last day');
+    }
   }
 
   // ── The accountant's own entries (migration 111): stored, each line on its account ──

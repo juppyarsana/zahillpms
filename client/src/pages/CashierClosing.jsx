@@ -175,6 +175,13 @@ export default function CashierClosing({ embedded = false }) {
                       </td>
                     </tr>
                   )}
+                  {data.vouchers_redeemed?.count > 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-muted" style={{ ...TD, ...R, fontSize: 12, borderBottom: 'none', paddingTop: 0 }}>
+                        Stays paid with a voucher today: {data.vouchers_redeemed.count} · {idr(data.vouchers_redeemed.amount)} — not money (the cash was counted when the voucher was sold)
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

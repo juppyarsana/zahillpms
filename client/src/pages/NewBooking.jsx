@@ -368,7 +368,8 @@ export default function NewBooking() {
     setError('');
     if (mode === 'new' ? !newGuest.name.trim() : !form.guest_id) { setError('Select or create a guest'); return; }
     if (rooms.some(r => !r.unit_id)) { setError('Select a unit for every room'); return; }
-    if (rooms.some(r => !parseFloat(r.total_amount || 0))) { setError('Please enter the total amount for every room'); return; }
+    if (voucher.code.trim() && !isGroup && !voucherOn) { setError(vResult ? 'The voucher can\'t be used for this stay — see the voucher box' : 'Press Check on the voucher code first, or clear it'); return; }
+    if (!(voucherOn && !vFree) && rooms.some(r => !parseFloat(r.total_amount || 0))) { setError(vFree ? 'Enter the normal price of the stay — a free voucher records it as the value given away' : 'Please enter the total amount for every room'); return; }
     if (isGroup && rooms.some(r => r.own_dates && !roomNights(r))) { setError('A room with its own dates needs a check-out after its check-in'); return; }
     if (comp.on && !isGroup && !comp.reason.trim()) { setError('Give a reason for the complimentary stay'); return; }
     setReview(true);
@@ -413,6 +414,7 @@ export default function NewBooking() {
           discount_value: dValue,
           rate_plan_id: room.rate_plan_id || null,
           bed_preference: room.bed_preference || null,
+          ...(voucherOn ? { voucher_code: voucher.code, ...(vProblems.length ? { voucher_override_reason: voucher.override.trim() } : {}) } : {}),
         });
         await addExtras([{ booking_id: res.data.id, room }]);
         nav(`/reservations/${res.data.id}`, compOn ? { state: { complimentary: { scope: comp.scope, reason: comp.reason.trim() } } } : undefined);
@@ -464,6 +466,36 @@ export default function NewBooking() {
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
   function setRoom(i, k, v) { setRooms(rs => rs.map((r, idx) => idx === i ? { ...r, [k]: v } : r)); }
+
+  // A voucher (migration 167, single room): the code is checked for these dates, this room and
+  // these guests. Once it passes (or a manager overrides a soft rule with a reason) the stay is
+  // priced by the voucher — the server sets price, meal plan and payment; nothing is typed here.
+  const [voucher, setVoucher] = useState({ code: '', result: null, key: '', override: '', busy: false, error: '' });
+  const vKey = [form.check_in_date, form.check_out_date, rooms[0]?.unit_id, rooms[0]?.num_guests].join('|');
+  const vResult = !isGroup && voucher.result && voucher.key === vKey ? voucher.result : null;
+  const vProblems = vResult?.problems || [];
+  const vSoft = vProblems.length > 0 && vProblems.every(p => p.overridable);
+  const voucherOn = !isGroup && !!vResult?.found && (vProblems.length === 0 || (vSoft && vResult.can_override && voucher.override.trim().length > 0));
+  async function checkVoucher() {
+    if (!voucher.code.trim()) return;
+    setVoucher(v => ({ ...v, busy: true, error: '' }));
+    try {
+      const { data } = await api.get('/api/bookings/voucher-check', { params: {
+        code: voucher.code, check_in_date: form.check_in_date, check_out_date: form.check_out_date,
+        num_guests: rooms[0]?.num_guests || 1, unit_id: rooms[0]?.unit_id || undefined } });
+      setVoucher(v => ({ ...v, result: data, key: vKey, busy: false }));
+    } catch (e) {
+      setVoucher(v => ({ ...v, busy: false, error: e.response?.data?.error || 'Could not check the code' }));
+    }
+  }
+  // The voucher's price and meal plan show in the form (the server decides them anyway).
+  // A FREE voucher (migration 168) is booked at the normal price (below) and made complimentary.
+  const vFree = voucherOn && !!vResult?.voucher?.is_free;
+  const vCovers = vResult?.voucher?.covers_amount, vPlan = vResult?.voucher?.rate_plan_id;
+  useEffect(() => {
+    if (!voucherOn || isGroup) return;
+    setRooms(rs => rs.map((r, i) => i === 0 ? { ...r, ...(vFree ? {} : { total_amount: String(vCovers) }), rate_plan_id: vPlan || r.rate_plan_id } : r));
+  }, [voucherOn, vFree, vCovers, vPlan, isGroup]); // eslint-disable-line react-hooks/exhaustive-deps
   // A price per night: the room's total is the sum of its nights.
   const nightSum = (r, amounts) => roomDates(r).reduce((t, d) => t + (parseFloat(amounts[d]) || 0), 0);
   function setNightAmount(i, date, v) {
@@ -1057,6 +1089,46 @@ export default function NewBooking() {
 
         {!isGroup && (
           <div className="card mb-3">
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>🎟 Voucher</div>
+            <div className="flex gap-2" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <input className="form-input" style={{ maxWidth: 260, fontFamily: 'monospace', textTransform: 'uppercase' }} placeholder="Voucher code (optional)"
+                value={voucher.code} onChange={e => setVoucher(v => ({ ...v, code: e.target.value, result: null, override: '' }))}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); checkVoucher(); } }} />
+              <button type="button" className="btn btn-secondary btn-sm" disabled={voucher.busy || !voucher.code.trim() || !form.check_in_date || !form.check_out_date} onClick={checkVoucher}>
+                {voucher.busy ? 'Checking…' : 'Check'}
+              </button>
+              {voucher.code && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setVoucher({ code: '', result: null, key: '', override: '', busy: false, error: '' })}>Clear</button>}
+            </div>
+            {!form.check_in_date && <div className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>Choose the dates and the room first, then check the code.</div>}
+            {voucher.error && <div className="alert alert-danger" style={{ marginTop: 8 }}><div>{voucher.error}</div></div>}
+            {voucher.result && !vResult && <div className="alert alert-warning" style={{ marginTop: 8 }}><div>The dates, room or guests changed — press Check again.</div></div>}
+            {vResult && vResult.found && vProblems.length === 0 && (
+              <div className="alert alert-success" style={{ marginTop: 8 }}><div>
+                ✓ <b>{vResult.voucher.voucher_label}</b> — {vResult.voucher.name}: {vResult.voucher.nights} night{vResult.voucher.nights === 1 ? '' : 's'}, {vResult.voucher.room_type_name}{vResult.voucher.rate_plan_name ? `, ${vResult.voucher.rate_plan_name}` : ''}.
+                {vFree
+                  ? <> 🎁 <b>A FREE voucher</b> ({{ room: 'room only', room_meals: 'room + meals', all: 'everything incl. extras' }[vResult.voucher.free_scope]}). Enter the stay's <b>normal price</b> below (use the suggestion): the booking is made complimentary and that price is recorded as the value given away.</>
+                  : <> The voucher pays <b>Rp {Math.round(vResult.voucher.covers_amount).toLocaleString('id-ID')}</b> — nothing to collect for the stay. Price, meal plan and payment are set by the voucher.</>}
+              </div></div>
+            )}
+            {vResult && vProblems.length > 0 && (
+              <div className="alert alert-danger" style={{ marginTop: 8 }}>
+                <div>
+                  {vProblems.map((p, i) => <div key={i}>✕ {p.message}</div>)}
+                  {vSoft && vResult.can_override && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>You can let this through as a manager — say why (it is written to the voucher and the booking):</div>
+                      <input className="form-input" value={voucher.override} onChange={e => setVoucher(v => ({ ...v, override: e.target.value }))} placeholder="Reason for the exception" />
+                    </div>
+                  )}
+                  {vSoft && !vResult.can_override && <div style={{ marginTop: 6, fontSize: 12 }}>Only a manager (owner or Corrections permission) can make an exception to this rule.</div>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isGroup && !voucherOn && (
+          <div className="card mb-3">
             <label className="flex gap-2" style={{ alignItems: 'center', cursor: 'pointer', fontWeight: 600 }}>
               <input type="checkbox" checked={comp.on} onChange={e => setComp(c => ({ ...c, on: e.target.checked }))} />
               🎁 Complimentary stay (free)
@@ -1129,10 +1201,10 @@ export default function NewBooking() {
           {discountAmt > 0 && <div className="nb-line nb-muted"><span>Discount{form.discount_type === 'percentage' ? ` (${dValue}%)` : ''}</span><span>− {idr(discountAmt)}</span></div>}
           <div className="nb-hr" />
           <div className="nb-total"><span>Total</span><b>{idr(netAmt + extrasTotal)}</b></div>
-          <div className="nb-sub" style={{ marginLeft: 0 }}>Service &amp; tax included</div>
+          <div className="nb-sub" style={{ marginLeft: 0 }}>{vFree ? 'Normal price — recorded as the value given away' : voucherOn ? 'No service charge or tax — set by the voucher' : 'Service & tax included'}</div>
           <div className="nb-line" style={{ marginTop: 8 }}>
-            <span>{comp.on && !isGroup ? 'Complimentary' : `Deposit to collect${form.deposit_mode === 'pct' ? ` (${form.deposit_pct}%)` : ''}`}</span>
-            <b>{comp.on && !isGroup ? '—' : idr(depositAmt)}</b>
+            <span>{vFree ? `🎁 Free voucher ${vResult.voucher.voucher_label}` : voucherOn ? `🎟 Paid by voucher ${vResult.voucher.voucher_label}` : comp.on && !isGroup ? 'Complimentary' : `Deposit to collect${form.deposit_mode === 'pct' ? ` (${form.deposit_pct}%)` : ''}`}</span>
+            <b>{voucherOn ? (vFree ? 'complimentary' : 'nothing to collect') : comp.on && !isGroup ? '—' : idr(depositAmt)}</b>
           </div>
           {anyUnavailable ? (
             <div className="nb-check nb-bad">A room is not free for these dates — pick another room or other dates</div>
@@ -1160,7 +1232,7 @@ export default function NewBooking() {
             unit: units.find(u => u.id === r.unit_id),
             plan: ratePlans.find(p => p.id === r.rate_plan_id),
             total: parseFloat(r.total_amount) || 0,
-            warning: priceWarning(r.total_amount, normal, roomNights(r)),
+            warning: voucherOn && !vFree ? null : priceWarning(r.total_amount, normal, roomNights(r)),
           };
         });
         const warned = lines.filter(l => l.warning).length;

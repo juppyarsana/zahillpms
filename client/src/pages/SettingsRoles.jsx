@@ -28,6 +28,9 @@ export const MENU_DEFS = [
   { key: 'corrections',      label: 'Corrections (undo check-out / check-in, reinstate, edit after check-out, refund / undo / move a payment, void a sale)', group: 'Front Desk' },
   // Events: the meeting room's calendar, an event's bill, payments and meals.
   { key: 'events',           label: 'Events (meeting room)', group: 'Sales' },
+  // Vouchers: sell a voucher, look one up, print it. Voucher types are owner only;
+  // cancelling or extending one needs Corrections.
+  { key: 'vouchers',         label: 'Vouchers (sell, look up, print)', group: 'Sales' },
   // The Ask page: ask by voice or typing. It only answers from the pages this
   // role can already open (availability and rates need Reservations, occupancy needs Forecast).
   { key: 'assistant',        label: 'Ask (voice assistant)', group: 'Front Desk' },

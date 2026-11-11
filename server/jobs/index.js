@@ -202,6 +202,18 @@ function registerJobs() {
     }
   }, { timezone: 'Asia/Makassar' });
 
+  // Vouchers (migration 167) — 03:40 WITA: an active voucher past its last day becomes
+  // expired (breakage income, dated the day after its last valid day). A voucher on a booking
+  // never expires. Cheap and idempotent, so a missed night is caught up the next one.
+  cron.schedule('40 3 * * *', async () => {
+    try {
+      const n = await require('../services/voucherService').expireDue();
+      if (n) console.log(`[Jobs] Vouchers: ${n} expired`);
+    } catch (err) {
+      console.error('[Jobs] Voucher expiry failed:', err.message);
+    }
+  }, { timezone: 'Asia/Makassar' });
+
   // Forecast snapshot — 03:50 WITA, after the night audit (no-shows marked)
   // and the Daily Close: what is on the books for the next 120 nights, kept
   // for pickup (services/forecastSnapshot.js). One read + one insert per

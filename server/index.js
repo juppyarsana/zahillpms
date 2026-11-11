@@ -148,6 +148,7 @@ app.use('/api/profit', auth, moduleGuard('accounting'), require('./middleware/re
 app.use('/api/insight', auth, moduleGuard('reservations'), require('./middleware/requireOwnerOrMenu')('reports'), require('./routes/insightPages'));
 app.use('/api/room-tablets', auth, require('./middleware/requireOwnerOrMenu')('room_tablets'), require('./routes/roomTablets'));
 app.use('/api/events', auth, moduleGuard('events'), require('./middleware/requireOwnerOrMenu')('events'), require('./routes/events'));
+app.use('/api/vouchers', auth, moduleGuard('vouchers'), require('./middleware/requireOwnerOrMenu')('vouchers'), require('./routes/vouchers'));
 app.use('/api/assistant', auth, moduleGuard('assistant'), require('./middleware/requireOwnerOrMenu')('assistant'), require('./routes/assistant'));
 app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));

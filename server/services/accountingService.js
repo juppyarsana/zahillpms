@@ -48,6 +48,10 @@ const MAP_KEYS = [
   ['vendor.share', "Vendor's part of activities — taken off revenue", 'Tour & transport vendors', '430-31-098'],
   ['vendor.cost', "Vendor's part of activities — booked as a cost", 'Tour & transport vendors', '530-31-001'],
   ['vendor.owed', 'Owed to tour & transport vendors, not paid yet', 'Tour & transport vendors', '210-00-002'],
+  // Vouchers (migration 167): money held for a stay not used yet, income when one is never used, the fee charged on a sale
+  ['voucher.liability', 'Vouchers sold, stay not used yet (liability)', 'Vouchers', '250-00-005'],
+  ['voucher.breakage', 'Vouchers never used — income at expiry', 'Vouchers', '470-60-004'],
+  ['voucher.fee', 'Extra fee charged on a voucher sale (card / QRIS)', 'Vouchers', '470-60-001'],
   // one key per cost category, used by Expenses and Payables (costCategories.js)
   ...COST_CATEGORIES.map(([k, label, code]) => [`expense.${k}`, label, 'Expenses & supplier bills', code]),
 ];
@@ -73,6 +77,7 @@ function accountForMethod(id, label, accounts) {
   const bank = BANKS.find(b => s.includes(b));
   const named = (re) => bank && accounts.find(a => a.type === 'asset' && a.is_active && re.test(a.name) && a.name.toLowerCase().includes(bank));
   const byCode = code => accounts.find(a => a.code === code) || null;
+  if (id === 'voucher') return byCode('250-00-005');   // redeeming a voucher settles the liability, it is not money
   if (/vcc|virtual/.test(s)) return byCode('120-10-001');
   if (/ota/.test(s)) return byCode('120-00-004');
   if (/cash|tunai/.test(s)) return byCode('110-20-001');

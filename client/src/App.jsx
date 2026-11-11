@@ -19,6 +19,7 @@ import Reservations from './pages/Reservations';
 import NewBooking from './pages/NewBooking';
 import Ask from './pages/Ask';
 import Events from './pages/Events';
+import Vouchers from './pages/Vouchers';
 import EventDetail from './pages/EventDetail';
 import BookingDetail from './pages/BookingDetail';
 import GroupDetail from './pages/GroupDetail';
@@ -340,6 +341,7 @@ export default function App() {
                   <Route path="/reservations"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations /></RequireModule></RequireMenu>} />
                   <Route path="/availability"     element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><Reservations key="availability" initialView="availability" /></RequireModule></RequireMenu>} />
                   <Route path="/events"           element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><Events /></RequireModule></RequireMenu>} />
+                  <Route path="/vouchers"         element={<RequireMenu menuKey="vouchers"><RequireModule moduleName="vouchers"><Vouchers /></RequireModule></RequireMenu>} />
                   <Route path="/events/:id"       element={<RequireMenu menuKey="events"><RequireModule moduleName="events"><EventDetail /></RequireModule></RequireMenu>} />
                   <Route path="/ask"              element={<RequireMenu menuKey="assistant"><RequireModule moduleName="assistant"><Ask /></RequireModule></RequireMenu>} />
                   <Route path="/reservations/new"element={<RequireMenu menuKey="reservations"><RequireModule moduleName="reservations"><NewBooking /></RequireModule></RequireMenu>} />

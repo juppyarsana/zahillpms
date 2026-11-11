@@ -345,6 +345,7 @@ async function computeProforma(bookingId, propertyId) {
     `SELECT b.id, b.status, b.check_in_date, b.check_out_date, b.total_amount, b.discount_amount,
             b.room_revenue, b.fnb_revenue, b.rate_plan_id, b.complimentary_scope,
             b.bill_tax_rate, b.bill_service_charge_rate,
+            (SELECT NOT v.is_free FROM vouchers v WHERE v.id = b.voucher_id) AS voucher_paid,
             g.name as guest_name, u.name as unit_name,
             ${STAY_DETAILS_SQL},
             rp.name AS rate_plan_name, rp.includes_breakfast, rp.includes_lunch, rp.includes_dinner,
@@ -436,8 +437,10 @@ async function computeProforma(bookingId, propertyId) {
   for (let i = 0; i < nights.length; i++) {
     const roomAmt = roomAmounts[i];
     const mealAmt = nightlyAmount(booking.fnb_revenue, nights.length, i);
-    if (roomAmt > 0) projectedCharges.push({ type: 'room', description: `Room — ${nights[i]}`, quantity: 1, unit_price: roomAmt, amount: roomAmt, service_date: nights[i] });
-    if (mealAmt > 0) projectedCharges.push({ type: 'fnb', description: `Meal plan (${ratePlanCode}) — ${nights[i]}`, quantity: 1, unit_price: mealAmt, amount: mealAmt, service_date: nights[i] });
+    // a voucher stay carries no service charge or tax (migration 167)
+    const stayMode = booking.voucher_paid ? { tax_mode: 'none' } : {};
+    if (roomAmt > 0) projectedCharges.push({ type: 'room', description: `Room — ${nights[i]}`, quantity: 1, unit_price: roomAmt, amount: roomAmt, service_date: nights[i], ...stayMode });
+    if (mealAmt > 0) projectedCharges.push({ type: 'fnb', description: `Meal plan (${ratePlanCode}) — ${nights[i]}`, quantity: 1, unit_price: mealAmt, amount: mealAmt, service_date: nights[i], ...stayMode });
   }
   const activityCharges = unpaidActivities.map(a => ({
     type: 'activity', activity_booking_id: a.id, not_paid: true,

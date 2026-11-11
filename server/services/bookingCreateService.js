@@ -18,6 +18,8 @@ const agentBilling = require('./agentBillingService');
 const { occupiedUntilSql } = require('./occupancySql');
 const { otaCollects } = require('./otaCollect');
 const { recomputeBookingStatus } = require('./paymentStatusService');
+const voucherSvc = require('./voucherService');
+const complimentary = require('./complimentaryService');
 
 const BED_PREFS = ['double', 'twin', 'twin_or_double', 'other'];
 
@@ -36,7 +38,8 @@ async function saveChildren(client, bookingId, kids) {
 const fail = (status, error) => ({ status, error: typeof error === 'string' ? { error } : error });
 
 // One room. `input` = the POST /api/bookings body.
-async function createBooking(client, { propertyId, userId, input }) {
+// voucherAuth.canOverride: a manager (owner / corrections) may let a voucher's soft rules through with a reason.
+async function createBooking(client, { propertyId, userId, input, voucherAuth = {} }) {
   const { guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, special_requests, internal_notes, status, discount_type, discount_value, rate_plan_id, bed_preference, room_revenue } = input;
   if (!guest_id || !unit_id || !check_in_date || !check_out_date) {
     return fail(400, 'guest_id, unit_id, check_in_date, check_out_date required');
@@ -49,12 +52,13 @@ async function createBooking(client, { propertyId, userId, input }) {
     return fail(400, `bed_preference must be one of ${BED_PREFS.join(', ')}`);
   }
 
-  const { rows: unitRows } = await client.query('SELECT id, name FROM units WHERE id = $1 AND property_id = $2', [unit_id, propertyId]);
+  const { rows: unitRows } = await client.query('SELECT id, name, room_type_id FROM units WHERE id = $1 AND property_id = $2', [unit_id, propertyId]);
   if (!unitRows[0]) return fail(404, 'Unit not found');
   const { rows: guestRows } = await client.query('SELECT id, name FROM guests WHERE id = $1 AND property_id = $2', [guest_id, propertyId]);
   if (!guestRows[0]) return fail(404, 'Guest not found');
   const agentPick = await agentService.agentForBooking(client, propertyId, { agentId: input.agent_id, source: source || 'direct' });
   if (agentPick.error) return fail(404, agentPick.error);
+  if (input.voucher_code && agentPick.agentId) return fail(400, { error: "A booking paid with a voucher can't be billed to an agent", code: 'VOUCHER_NO_AGENT' });
 
   // Check availability
   const conflict = await client.query(`
@@ -67,14 +71,31 @@ async function createBooking(client, { propertyId, userId, input }) {
   `, [unit_id, check_in_date, check_out_date, propertyId]);
   if (conflict.rows.length > 0) return fail(409, 'Unit is not available for the selected dates');
 
+  // A voucher (migration 167): locked now so two bookings can't take one code, rules
+  // checked for these dates and this room. The stay is then priced from the voucher.
+  let voucher = null;
+  if (input.voucher_code) {
+    const locked = await voucherSvc.lockForBooking(client, propertyId, input.voucher_code,
+      { check_in_date, check_out_date, num_guests: num_guests || 1, room_type_id: unitRows[0].room_type_id },
+      { override: input.voucher_override_reason, canOverride: !!voucherAuth.canOverride });
+    if (locked.error) return fail(locked.status, { error: locked.error, code: locked.code, problems: locked.problems, rule: locked.rule, needs_manager: locked.needs_manager });
+    voucher = locked.voucher;
+  }
+  // A FREE voucher (migration 168) pays nothing: the stay is booked at its normal price (typed /
+  // suggested as for any booking) and made complimentary with the scope chosen when it was given.
+  const freeVoucher = !!voucher?.is_free;
+  if (freeVoucher && !(parseFloat(total_amount) > 0)) {
+    return fail(400, { error: 'Enter the normal price of the stay — a free voucher records it as the value given away', code: 'FREE_VOUCHER_NEEDS_PRICE' });
+  }
+
   // A price per night (migration 090): the total is then the nights' sum.
-  const nightPrices = nightRatesSvc.parseNightPrices(input.night_prices, stayNightList(check_in_date, check_out_date));
+  const nightPrices = nightRatesSvc.parseNightPrices(voucher ? undefined : input.night_prices, stayNightList(check_in_date, check_out_date));
   if (nightPrices?.error) return fail(400, nightPrices);
-  const total = nightPrices ? nightPrices.total : parseFloat(total_amount || 0);
+  const total = voucher && !freeVoucher ? parseFloat(voucher.covers_amount) : nightPrices ? nightPrices.total : parseFloat(total_amount || 0);
 
   // Compute discount
-  const dType  = discount_type || null;
-  const dValue = parseFloat(discount_value || 0);
+  const dType  = voucher ? null : discount_type || null;
+  const dValue = voucher ? 0 : parseFloat(discount_value || 0);
   let discountAmount = 0;
   if (dType === 'fixed')      discountAmount = Math.min(dValue, total);
   if (dType === 'percentage') discountAmount = Math.round(total * dValue / 100);
@@ -82,21 +103,28 @@ async function createBooking(client, { propertyId, userId, input }) {
   // Rate plan + room/F&B net split
   const nights = Math.max(1, Math.round((new Date(check_out_date) - new Date(check_in_date)) / 86400000));
   const guests = Math.max(1, parseInt(num_guests, 10) || 1);
-  const ratePlan = await ratePlanService.resolveForBooking(propertyId, rate_plan_id || null);
+  const ratePlan = await ratePlanService.resolveForBooking(propertyId, voucher ? (voucher.snapshot?.rate_plan_id || null) : (rate_plan_id || null));
   const { F, tax_rate, service_charge_rate, divisor } = await grossFactor(client, propertyId);
-  const { roomNet, mealNet } = splitRevenue({
+  let { roomNet, mealNet } = splitRevenue({
     grossNet: total - discountAmount, nights, ratePlan, numGuests: guests, F, divisor, clientRoomRevenue: room_revenue,
     tax_rate, service_charge_rate,
   });
   // Store total_amount consistently with the split (pre-discount gross rack);
   // the price typed when the split lands within a few cents of it.
-  const payable = room_revenue != null && room_revenue !== ''
+  // A voucher carries no service charge or tax: the stay is booked at what the voucher
+  // covers, split between room and meals (the meal part as for any booking, never more
+  // than the voucher), and its room / meal lines are posted tax_mode 'none'.
+  if (voucher && !freeVoucher) {
+    mealNet = Math.min(round2(parseFloat(voucher.covers_amount)), round2(ratePlanService.mealNetPerNight(ratePlan, guests, divisor) * nights));
+    roomNet = round2(parseFloat(voucher.covers_amount) - mealNet);
+  }
+  const payable = voucher && !freeVoucher ? round2(parseFloat(voucher.covers_amount)) : room_revenue != null && room_revenue !== ''
     ? computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total
     : snapPayable(computeFolioTotals(roomNet + mealNet, tax_rate, service_charge_rate).total, total - discountAmount);
   const storedTotal = round2(payable + discountAmount);
 
   const net = payable;
-  const depositAmount = deposit_amount !== undefined
+  const depositAmount = freeVoucher ? 0 : voucher ? net : deposit_amount !== undefined
     ? Math.min(parseFloat(deposit_amount), net)
     : Math.round(net * 0.5); // default deposit 50% (same as New Booking)
   const balanceAmount = round2(net - depositAmount);
@@ -104,7 +132,7 @@ async function createBooking(client, { propertyId, userId, input }) {
   const { rows } = await client.query(
     `INSERT INTO bookings (guest_id, unit_id, check_in_date, check_out_date, num_guests, source, total_amount, deposit_amount, discount_type, discount_value, discount_amount, special_requests, internal_notes, status, created_by, property_id, rate_plan_id, bed_preference, room_revenue, fnb_revenue, agent_id, commission_type, commission_value)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
-    [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, status || 'pending', userId, propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet,
+    [guest_id, unit_id, check_in_date, check_out_date, num_guests || 1, source || 'direct', storedTotal, depositAmount, dType, dValue, discountAmount, special_requests, internal_notes, voucher ? 'pending' : (status || 'pending'), userId, propertyId, ratePlan?.id || null, bed_preference || null, roomNet, mealNet,
      agentPick.agentId, agentPick.agentId ? commission.values.commission_type ?? null : null, agentPick.agentId ? commission.values.commission_value ?? null : null]
   );
   const booking = rows[0];
@@ -115,11 +143,30 @@ async function createBooking(client, { propertyId, userId, input }) {
       bookingId: booking.id, nights: stayNightList(check_in_date, check_out_date), shares: nightPrices.shares, roomNet, mealNet });
     if (saved.error) return fail(400, { error: 'A night is priced below its meals — raise that night or change the rate plan', code: saved.error });
   }
+  if (voucher && !freeVoucher) {
+    // what the voucher pays is one received payment (method 'voucher'); nothing is left to collect
+    const att = await voucherSvc.attachToBooking(client, voucher, booking, userId);
+    if (att.error) return fail(att.status || 409, { error: att.error, code: att.code });
+    const { rows: [fresh] } = await client.query('SELECT status, voucher_id FROM bookings WHERE id = $1', [booking.id]);
+    booking.status = fresh.status; booking.voucher_id = fresh.voucher_id;
+    return { booking, unit: unitRows[0], guest: guestRows[0] };
+  }
   if (depositAmount > 0) {
     await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'deposit', depositAmount]);
   }
   if (balanceAmount > 0) {
     await client.query('INSERT INTO payments (booking_id, type, amount) VALUES ($1,$2,$3)', [booking.id, 'balance', balanceAmount]);
+  }
+  if (freeVoucher) {
+    const label = `V-${String(voucher.voucher_no).padStart(4, '0')}`;
+    const comp = await complimentary.applyComp(client, {
+      propertyId, before: booking, scope: voucher.free_scope, userId,
+      reason: `Free voucher ${label}: ${voucher.free_reason}`, approvedByName: voucher.free_approved_by || null });
+    if (comp.error) return fail(comp.status || 409, { error: comp.error });
+    const att = await voucherSvc.attachToBooking(client, voucher, booking, userId);
+    if (att.error) return fail(att.status || 409, { error: att.error, code: att.code });
+    const { rows: [fresh] } = await client.query('SELECT * FROM bookings WHERE id = $1', [booking.id]);
+    return { booking: fresh, unit: unitRows[0], guest: guestRows[0] };
   }
   // An OTA booking the OTA pays starts confirmed (nothing to collect).
   booking.status = await confirmIfOtaPays(client, propertyId, booking);
@@ -147,6 +194,7 @@ async function createGroup(client, { propertyId, userId, input }) {
   } = input;
   const rooms = Array.isArray(input.rooms) ? input.rooms.map(r => ({ ...r })) : null;
 
+  if (input.voucher_code) return fail(400, { error: 'A voucher can be used on a single room booking for now', code: 'VOUCHER_SINGLE_ROOM' });
   if (!guest_id || !check_in_date || !check_out_date || !rooms || rooms.length < 2) {
     return fail(400, 'guest_id, check_in_date, check_out_date, and at least 2 rooms are required');
   }

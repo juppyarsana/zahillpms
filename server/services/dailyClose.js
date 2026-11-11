@@ -59,7 +59,18 @@ async function collected(propertyId, from, to = from) {
       SELECT p.method, p.amount
       FROM payments p JOIN bookings b ON b.id = p.booking_id
       WHERE b.property_id = $1 AND p.status = 'received'
+        AND p.method IS DISTINCT FROM 'voucher'   -- paying a stay with a voucher is not money: it came at the sale
         AND (p.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
+      UNION ALL
+      -- Vouchers sold (migration 167): the money comes in at the sale; a voucher cancelled with a refund goes back out
+      SELECT v.payment_method, v.sold_total + v.fee_amount
+      FROM vouchers v
+      WHERE v.property_id = $1 AND (v.received_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
+      UNION ALL
+      SELECT v.refund_method, -v.refunded_amount
+      FROM vouchers v
+      WHERE v.property_id = $1 AND v.status = 'voided' AND v.refunded_amount > 0
+        AND (v.voided_at AT TIME ZONE 'Asia/Makassar')::date BETWEEN $2::date AND $3::date
       UNION ALL
       SELECT s.payment_method, s.total_amount + COALESCE(s.service_charge_amount, 0) + COALESCE(s.tax_amount, 0)
       FROM sales s

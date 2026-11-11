@@ -297,6 +297,7 @@ async function runNightAudit(triggeredBy = 'auto', propertyId) {
   for (const ns of noShows) {
     try {
       await roomChargeService.voidAll(db, ns.id, null);
+      await require('../services/voucherService').onBookingStatus(db, ns.id, null);
       await db.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, NULL)',
         [ns.id, 'Marked no-show by the night audit (never checked in on the arrival day).']);
     } catch (e) {

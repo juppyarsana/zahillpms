@@ -112,6 +112,7 @@ router.put('/:id/undo-checkout', auth, canCorrect, correction(async (client, b, 
   await client.query(
     "DELETE FROM tasks WHERE booking_id = $1 AND property_id = $2 AND type = 'housekeeping' AND status = 'todo'", [b.id, propertyId]);
   await client.query('UPDATE checkin_records SET checkout_time = NULL, checkout_by = NULL WHERE booking_id = $1', [b.id]);
+  await require('../services/voucherService').onBookingStatus(client, b.id, userId);   // the voucher is on the booking again
   await require('./checkin').recalcGuestTier(client, b.guest_id, propertyId);
 
   const undone = [
@@ -147,6 +148,8 @@ router.put('/:id/undo-checkin', auth, canCorrect, correction(async (client, b, {
 // removed. A group's room goes back into the group (and its bill).
 router.put('/:id/reinstate', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId }) => {
   if (b.status !== 'cancelled') return { error: `Only a cancelled booking can be reinstated — this booking is ${b.status.replace('_', ' ')}` };
+  const releasedVoucher = await require('../services/voucherService').releasedVoucherOn(client, b.id);
+  if (releasedVoucher) return { error: `Voucher ${releasedVoucher} was released when this booking was cancelled (it may be used elsewhere now) — make a new booking with the voucher code instead`, code: 'VOUCHER_RELEASED' };
   const taken = await roomTakenBy(client, b, b.check_in_date, b.check_out_date);
   if (taken) {
     return { error: `Room ${b.unit_name} is now booked for ${taken} on these dates — it can't be reinstated in this room`, code: 'ROOM_TAKEN' };
@@ -284,6 +287,7 @@ router.get('/:id/leave-group/quote', auth, canCorrect, async (req, res) => {
 // removed and what was received on them becomes group payments (same amount,
 // method, date, person, reference). Extras the guest paid stay on the room.
 router.put('/:id/join-group', auth, canCorrect, correction(async (client, b, { reason, userId, propertyId, body }) => {
+  if (b.voucher_id) return { error: "A voucher booking can't be moved into a group", code: 'VOUCHER_BOOKING' };
   if (b.reservation_group_id) return { error: 'This booking is already in a group — take it out of that group first', code: 'ALREADY_IN_GROUP' };
   if (!MOVABLE.includes(b.status)) return { error: `A ${b.status.replace('_', ' ')} booking can't be moved into a group` };
   if (b.folio_status) return { error: 'This stay is on an agent\'s bill — it can\'t be moved into a group', code: 'ON_AGENT_INVOICE' };

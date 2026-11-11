@@ -56,6 +56,11 @@ async function tokensWithPendingLinks() {
      WHERE cr.status = 'pending' AND cr.expires_at > NOW()
      UNION
      SELECT DISTINCT ps.telegram_bot_token AS token
+     FROM voucher_free_requests vr
+     LEFT JOIN property_settings ps ON ps.property_id = vr.property_id
+     WHERE vr.status = 'pending' AND vr.expires_at > NOW()
+     UNION
+     SELECT DISTINCT ps.telegram_bot_token AS token
      FROM purchase_order_approval_messages m
      JOIN purchase_orders po ON po.id = m.purchase_order_id AND po.status = 'pending_approval'
      LEFT JOIN property_settings ps ON ps.property_id = m.property_id
@@ -108,6 +113,9 @@ async function processUpdate(botToken, u) {
     // Lazy: both services require this file (ensurePolling).
     if (String(u.callback_query.data || '').startsWith('po:')) {
       return require('./poApproval').handleButton(botToken, u.callback_query);
+    }
+    if (String(u.callback_query.data || '').startsWith('vfr:')) {
+      return require('./voucherFreeApproval').handleButton(botToken, u.callback_query);
     }
     return require('./complimentaryService').handleButton(botToken, u.callback_query);
   }

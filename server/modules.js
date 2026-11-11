@@ -51,6 +51,9 @@ module.exports = {
   // a date and time, with its own bill, payments and the meals the restaurant
   // prepares. Owner or the `events` permission.
   events:          { label: 'Events (meeting room)', routes: ['events'] },
+  // Default OFF — add-on (migration 167). Vouchers: a fixed stay sold at a set price, redeemed
+  // once at New Booking. Owner or the `vouchers` permission (templates owner only).
+  vouchers:        { label: 'Vouchers', routes: ['vouchers'] },
 };
 
 // Core routes — always on, no module guard:

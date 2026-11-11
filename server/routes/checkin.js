@@ -27,6 +27,7 @@ const { basisFrom, shown } = require('../services/priceBasis');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const { otaCollects } = require('../services/otaCollect');
+const voucherSvc = require('../services/voucherService');
 
 // Shared by the single-room route below and the group check-in route —
 // throws an Error with .code/.status set on a business-rule failure
@@ -438,6 +439,7 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
         await c.query('UPDATE bookings SET check_out_date = $1, discount_amount = $2, updated_at = NOW() WHERE id = $3',
           [newCo, newDiscount, b.id]);
         const { rows: [moved] } = await c.query('SELECT * FROM bookings WHERE id = $1', [b.id]);
+        if (moved.voucher_id) ed.charge = 'full';   // a voucher pays the whole stay: leaving early changes nothing
         let charged = oldNet;
         let credit = 0;
         if (ed.charge === 'full') {
@@ -568,6 +570,7 @@ router.put('/checkout/:bookingId/complete', auth, async (req, res) => {
        FROM property_settings ps
        WHERE b.id = $1 AND b.property_id = $2 AND ps.property_id = b.property_id`,
       [req.params.bookingId, req.propertyId]);
+    await voucherSvc.onBookingStatus(client, req.params.bookingId, req.user.id);   // the voucher is used
     // Vacate the room AND flag it dirty — front desk sees a "to clean" room
     // distinct from a ready one; housekeeping clears it from the room tablet.
     await client.query(

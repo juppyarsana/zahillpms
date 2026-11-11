@@ -130,6 +130,7 @@ const STANDARD_CHART = [
   ["470-60-001", "Miscellaneous Income", "revenue", "rev.misc", false],
   ["470-60-002", "Interest Income", "revenue", "rev.misc", false],
   ["470-60-003", "Guest Loss & Breakage Charges", "revenue", "rev.misc", false],
+  ["470-60-004", "Voucher Breakage Income", "revenue", "rev.misc", false],
   ["470-60-099", "Miscellaneous Discounts & Allowances", "revenue", "rev.misc", true],
   ["500-21-001", "Cost of Food", "expense", "dept.fnb", false],
   ["500-21-002", "Cost of Beverage", "expense", "dept.fnb", false],

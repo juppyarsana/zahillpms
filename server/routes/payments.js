@@ -317,6 +317,10 @@ router.post('/:id/undo', auth, canCorrect, async (req, res) => {
     await client.query('BEGIN');
     const p = await lockPayment(client, req.params.id, req.propertyId);
     if (!p) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
+    if (p.voucher_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This is the voucher paying the stay — cancel the booking to release the voucher instead.', code: 'VOUCHER_PAYMENT' });
+    }
     const out = await takeBack(client, p, { userId: req.user.id, reason });
     if (out.error) { await client.query('ROLLBACK'); return res.status(out.status).json({ error: out.error, code: out.code }); }
     await logEvent(client, p.booking_id, `${out.note}. Reason: ${reason}`, req.user.id);
@@ -343,6 +347,10 @@ router.put('/:id/correct', auth, canCorrect, async (req, res) => {
     await client.query('BEGIN');
     const p = await lockPayment(client, req.params.id, req.propertyId);
     if (!p) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
+    if (p.voucher_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This is the voucher paying the stay — cancel the booking to release the voucher instead.', code: 'VOUCHER_PAYMENT' });
+    }
     if (p.status !== 'received') { await client.query('ROLLBACK'); return res.status(409).json({ error: `Only a received payment can be corrected — this one is ${p.status}` }); }
     const changes = [];
     let method = p.method;
@@ -400,6 +408,10 @@ router.post('/:id/move', auth, canCorrect, async (req, res) => {
     await client.query('BEGIN');
     const p = await lockPayment(client, req.params.id, req.propertyId);
     if (!p) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Payment not found' }); }
+    if (p.voucher_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This is the voucher paying the stay — cancel the booking to release the voucher instead.', code: 'VOUCHER_PAYMENT' });
+    }
     if (p.booking_id === to) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The payment is already on that booking' }); }
     if (p.type === 'refund' || p.sale_id || p.activity_booking_id) {
       await client.query('ROLLBACK');

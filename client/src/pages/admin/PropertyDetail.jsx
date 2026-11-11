@@ -21,6 +21,7 @@ const MODULE_LABELS = {
   accounting:      'Accounting',
   assistant:       'Ask (voice assistant)',
   events:          'Events (meeting room)',
+  vouchers:        'Vouchers',
   channel_manager: 'Channel Manager',
   yield_management: 'Yield Management',
 };

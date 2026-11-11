@@ -1354,6 +1354,13 @@ export default function BookingDetail() {
               style={{ border: 'none', background: 'none', padding: 0, color: 'var(--green-dark)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Folio tab</button>
             {' '}for the whole stay.
           </div>
+          {booking.voucher_id && (
+            <div className="alert alert-info" style={{ fontSize: 13, marginBottom: 12 }}><div>
+              🎟 <b>Paid by voucher {booking.voucher_label}</b>{booking.voucher_name ? ` (${booking.voucher_name})` : ''} — the voucher pays the room and meal plan, so there is nothing to collect for the stay.
+              Extras the guest buys are paid as usual. To change the dates, room type or price, cancel this booking (the voucher goes back to active) and book again with the code.
+              {' '}<Link to="/guide/vouchers">📘 Guide</Link>
+            </div></div>
+          )}
           {/* Agent pays the hotel (city ledger): where its money is recorded. */}
           {booking.agent_name && CITY_LEDGER.includes(booking.agent_payment_status) && !['cancelled', 'no_show'].includes(booking.status)
             && (booking.folio_status || booking.agent_type !== 'ota') && (

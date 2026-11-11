@@ -52,6 +52,7 @@ export function buildNav({ user, can, hasModule, otaBadge = 0, otaSlow = 0 }) {
       can('ota_dashboard') && hasModule('channel_manager') && { to: '/ota-dashboard', icon: '📉', label: 'OTA dashboard', badge: otaSlow },
       can('pricing') && res && { to: '/pricing', icon: '💰', label: 'Pricing' },
       can('events') && hasModule('events') && { to: '/events', icon: '🗓', label: 'Events' },
+      can('vouchers') && hasModule('vouchers') && { to: '/vouchers', icon: '🎟', label: 'Vouchers' },
     ] },
     { id: 'operations', label: 'Operations', items: [
       can('operations') && hasModule('operations') && { to: '/housekeeping', icon: '🧹', label: 'Housekeeping' },

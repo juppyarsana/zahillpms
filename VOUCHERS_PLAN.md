@@ -1,5 +1,14 @@
 # Vouchers — plan (2026-11-11)
 
+> **Status 2026-11-11 (evening): Phase 1 is built and tested on the laptop, uncommitted when this was written** — migration 167, the Vouchers page, New Booking with a code, cancel / no-show / check-out hooks, the books (Daily Close, Cashier Closing, journal, ledger check), PDF, Guide chapter. Full write-up: `CLAUDE.md` → "Vouchers". 95 + 21 checks pass (see there). **Where the build differs from this plan:**
+> - **Outstanding = active vouchers only.** The plan said active + reserved, but a booked voucher's liability moves to Advance deposits / Guest ledger when the booking is made (the redemption payment debits `250-00-005`), so the account only holds the vouchers not booked yet. The report shows "booked" apart, and the check line compares the account with the active ones.
+> - **Also built in Phase 1** because they were cheap: void (with an optional refund), extend, and the nightly expiry job with its breakage entry. **Not built from Phase 2:** email / WhatsApp sending, the Telegram alerts, replacing a lost code, changing the recipient, an Excel export / Reports library entry, Amend Dates re-checking the rules (Amend Dates is **refused** on a voucher booking for now), the "tax at sale" and other tax options (the server accepts only none / none / at redemption).
+> - A voucher type **must have a meal plan** (the booking's meal part comes from it). An **expired** voucher can't be used, extended or overridden (its value was already taken as income); extend before it expires.
+> - The redemption payment is a `payments` row of type `deposit`, method `voucher`; cancelling the booking voids it and releases the voucher (a booking whose voucher was released can't be reinstated — book again with the code).
+> - A guest who leaves early keeps the voucher's whole price (no refund); same-type Change Room is allowed, any other re-pricing is refused (`VOUCHER_BOOKING`).
+> - **Free (complimentary) vouchers were added the same evening (migration 168)** — owner's answers: issued by staff with the complimentary permission, otherwise approved on Telegram; each voucher chooses what it covers; any type can be given free. See `CLAUDE.md` → "Vouchers" → *Free (complimentary) vouchers*.
+> - Still to ask the accountant before the first real sale: see "To confirm" below.
+
 Zahill sells a voucher for a fixed stay (for example 2 nights, Deluxe Pool View, with
 breakfast, for Rp X). The buyer gets a document with terms and conditions and uses it
 whenever they want, within the terms. Today FO makes the voucher by hand in a docx and

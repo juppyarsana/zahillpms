@@ -60,6 +60,10 @@ async function loadBooking(client, propertyId, bookingId, lock = false) {
      LEFT JOIN agents ag ON ag.id = b.agent_id
      LEFT JOIN reservation_groups rg ON rg.id = b.reservation_group_id
      WHERE b.id = $1 AND b.property_id = $2 ${lock ? 'FOR UPDATE OF b' : ''}`, [bookingId, propertyId]);
+  if (b) {
+    const { rows: [pv] } = await client.query('SELECT 1 FROM payments WHERE booking_id = $1 AND voucher_id IS NOT NULL LIMIT 1', [bookingId]);
+    b.had_voucher = !!pv;
+  }
   return b || null;
 }
 
@@ -114,6 +118,7 @@ function accountOf(b) {
 
 // Why a fee can't be posted on this booking (null = fine).
 function refusal(b) {
+  if (b.had_voucher) return 'This booking was paid with a voucher — no fee applies';
   if (b.complimentary_scope) return 'This stay is complimentary — there is nothing to charge';
   if (b.group_billing) return 'This room is on a group bill — put the fee on the group another way';
   return null;

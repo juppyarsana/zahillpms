@@ -15,6 +15,8 @@ const ratePlanService = require('../services/ratePlanService');
 const { grossFactor, splitRevenue, applyBookingPrice, snapPayable } = require('../services/bookingPriceService');
 const nightRatesSvc = require('../services/nightRates');
 const bookingCreate = require('../services/bookingCreateService');
+const voucherSvc = require('../services/voucherService');
+const canOverrideVoucher = req => req.user?.role === 'owner' || (Array.isArray(req.user?.allowed_menus) && req.user.allowed_menus.includes('corrections'));
 const { stayNights: stayNightList } = require('../services/folioService');
 const { nightlyRoomRates } = require('../services/pricingService');
 const { priceBasis } = require('../services/priceBasis');
@@ -1146,6 +1148,21 @@ router.put('/group/:groupId/undo-no-show', auth, async (req, res) => {
 // whose stay isn't over yet (due in yesterday or today, leaving today or
 // later): a guest arriving after midnight is checked in from here
 // (Check-in / out and Quick Check-in: "Arrived late").
+// GET /api/bookings/voucher-check?code=&check_in_date=&check_out_date=&num_guests=&unit_id=
+// New Booking's "Check" for a voucher code: the rules for these dates, nothing changed.
+// Any staff who can make a booking can check a code (they can redeem it).
+router.get('/voucher-check', auth, async (req, res) => {
+  try {
+    const out = await voucherSvc.check(req.propertyId, req.query.code, {
+      check_in_date: req.query.check_in_date, check_out_date: req.query.check_out_date,
+      num_guests: req.query.num_guests, unit_id: req.query.unit_id || null,
+    });
+    res.json({ ...out, can_override: canOverrideVoucher(req) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/late-no-shows', auth, async (req, res) => {
   try {
     const { rows } = await db.query(`
@@ -1379,6 +1396,9 @@ router.get('/:id', auth, async (req, res) => {
              (SELECT COALESCE(SUM(apa.amount), 0) FROM agent_payment_allocations apa
                WHERE apa.booking_id = b.id) AS agent_paid_amount,
              (SELECT name FROM users cu WHERE cu.id = b.complimentary_by) AS complimentary_by_name,
+             -- paid by a voucher (migration 167)
+             (SELECT 'V-' || lpad(vv.voucher_no::text, 4, '0') FROM vouchers vv WHERE vv.id = b.voucher_id) AS voucher_label,
+             (SELECT vv.snapshot->>'name' FROM vouchers vv WHERE vv.id = b.voucher_id) AS voucher_name,
              (SELECT name FROM users tu WHERE tu.id = b.to_check_done_by) AS to_check_done_by_name,
              EXISTS (SELECT 1 FROM complimentary_requests cr WHERE cr.booking_id = b.id
                        AND cr.status = 'pending' AND cr.expires_at > NOW()) AS complimentary_request_pending,
@@ -1460,7 +1480,7 @@ router.post('/', auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const made = await bookingCreate.createBooking(client, { propertyId: req.propertyId, userId: req.user.id, input: req.body });
+    const made = await bookingCreate.createBooking(client, { propertyId: req.propertyId, userId: req.user.id, input: req.body, voucherAuth: { canOverride: canOverrideVoucher(req) } });
     if (made.error) { await client.query('ROLLBACK'); return res.status(made.status).json(made.error); }
     await client.query('COMMIT');
     const { booking } = made;
@@ -1836,6 +1856,10 @@ router.put('/:id/dates', auth, async (req, res) => {
 
     const { rows: [booking] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!booking) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (booking.voucher_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: "The dates of a voucher booking can't be changed here — the voucher is for exactly these nights. Cancel the booking (the voucher goes back to active) and book again with the code.", code: 'VOUCHER_BOOKING' });
+    }
 
     // A group room can have its own dates (the group page's Amend Dates moves
     // every room together); the group's dates follow as the span of its rooms.
@@ -3079,6 +3103,15 @@ router.put('/:id/change-room', auth, async (req, res) => {
       return res.status(409).json({ error: `Cannot change room — booking is ${before.status.replace('_', ' ')}` });
     }
     if (before.unit_id === unit_id) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'The booking is already in this room' }); }
+    if (before.voucher_id) {
+      const { rows: [same] } = await client.query(
+        `SELECT (SELECT room_type_id FROM units WHERE id = $1 AND property_id = $3) = (SELECT room_type_id FROM units WHERE id = $2 AND property_id = $3) AS same`,
+        [unit_id, before.unit_id, req.propertyId]);
+      if (!same?.same || (req.body.from && String(req.body.from).slice(0, 10) !== String(before.check_in_date).slice(0, 10))) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'A voucher booking can only move to another room of the same room type, for the whole stay.', code: 'VOUCHER_BOOKING' });
+      }
+    }
 
     const from = req.body.from ? String(req.body.from).slice(0, 10) : null;
     if (from && from !== String(before.check_in_date).slice(0, 10)) {
@@ -3206,6 +3239,7 @@ router.put('/:id/no-show', auth, async (req, res) => {
     await roomCharge.voidAll(client, req.params.id, req.user.id);
     await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
       [req.params.id, 'Marked no-show.', req.user.id]);
+    await voucherSvc.onBookingStatus(client, req.params.id, req.user.id);   // used up, or back to active, by its type
     let posted = null;
     if (fee) posted = await noShowFee.postFee(client, req.propertyId, req.params.id, { ...fee, kind: 'no_show', userId: req.user.id });
     await client.query('COMMIT');
@@ -3279,9 +3313,14 @@ async function undoNoShowTx(client, bookingId, propertyId, userId, note) {
       };
     }
   }
+  const releasedVoucher = await voucherSvc.releasedVoucherOn(client, b.id);
+  if (releasedVoucher) {
+    return { error: `Voucher ${releasedVoucher} was released when this booking was marked no-show — make a new booking with the voucher code instead`, code: 'VOUCHER_RELEASED', http: 409 };
+  }
   await client.query("UPDATE bookings SET status = 'pending', updated_at = NOW() WHERE id = $1", [b.id]);
   await require('../services/noShowFeeService').voidLiveFees(client, b.id, userId, 'the no-show was undone');
   const status = await recomputeBookingStatus(client, b.id);
+  await voucherSvc.onBookingStatus(client, b.id, userId);   // a used-up voucher is on the booking again
   await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
     [b.id, `${note || 'No-show undone'} — status back to ${status.replace('_', ' ')}.`, userId]);
   return { status, unit_name: b.unit_name };
@@ -3363,6 +3402,13 @@ router.put('/:id', auth, async (req, res) => {
     await client.query('BEGIN');
     const { rows: [before] } = await client.query('SELECT * FROM bookings WHERE id = $1 AND property_id = $2', [req.params.id, req.propertyId]);
     if (!before) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Booking not found' }); }
+    if (before.voucher_id) {
+      const differs = (v, old) => v !== undefined && v !== null && v !== '' && String(v) !== String(old ?? '');
+      if (differs(num_guests, before.num_guests) || differs(rate_plan_id, before.rate_plan_id)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: "The guests and meal plan of a voucher booking are set by the voucher. Cancel the booking and book again with the code.", code: 'VOUCHER_BOOKING' });
+      }
+    }
     if (collectSent && (collectIn || null) !== (before.payment_collect || null) && before.folio_status) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This stay is already on an agent / OTA account — who pays the room cannot be changed now', code: 'COLLECT_LOCKED' });
@@ -3548,6 +3594,7 @@ router.delete('/:id', auth, async (req, res) => {
       const reason = String(req.body?.reason || '').trim();
       await client.query('INSERT INTO booking_events (booking_id, note, created_by) VALUES ($1, $2, $3)',
         [req.params.id, `Booking cancelled. Reason: ${reason}`.slice(0, 1000), req.user.id]);
+      await voucherSvc.onBookingStatus(client, req.params.id, req.user.id);   // a voucher goes back to active
       let posted = null;
       if (fee) posted = await noShowFee.postFee(client, req.propertyId, req.params.id, { ...fee, kind: 'cancellation', userId: req.user.id });
       await client.query('COMMIT');

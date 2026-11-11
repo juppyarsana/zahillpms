@@ -28,6 +28,11 @@ async function ratePlanCodeFor(client, ratePlanId) {
 // Post one night's room + fnb charge. Idempotent per (booking, type, date).
 async function postNight(client, { bookingId, serviceDate, roomNet, mealNet, ratePlanCode = 'RO', actorUserId = null }) {
   const result = { roomPosted: false, fnbPosted: false };
+  // A booking paid with a voucher carries no service charge or tax on its stay (migration 167).
+  // (a FREE voucher's stay is a complimentary stay: the normal rules apply to what is still paid)
+  const { rows: [vb] } = await client.query(
+    'SELECT v.id FROM bookings b JOIN vouchers v ON v.id = b.voucher_id AND NOT v.is_free WHERE b.id = $1', [bookingId]);
+  const taxMode = vb ? 'none' : 'added';
   const lines = [
     { type: 'room', amount: round2(roomNet), desc: `Room — ${serviceDate}` },
     { type: 'fnb', amount: round2(mealNet), desc: `Meal plan (${ratePlanCode}) — ${serviceDate}` },
@@ -42,9 +47,9 @@ async function postNight(client, { bookingId, serviceDate, roomNet, mealNet, rat
     if (existing.length) continue;
     try {
       await client.query(
-        `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, service_date)
-         VALUES ($1, $2, $3, 1, $4, $4, $5, $6)`,
-        [bookingId, line.type, line.desc, line.amount, actorUserId, serviceDate]
+        `INSERT INTO folio_charges (booking_id, type, description, quantity, unit_price, amount, posted_by, service_date, tax_mode)
+         VALUES ($1, $2, $3, 1, $4, $4, $5, $6, $7)`,
+        [bookingId, line.type, line.desc, line.amount, actorUserId, serviceDate, taxMode]
       );
       if (line.type === 'room') result.roomPosted = true; else result.fnbPosted = true;
     } catch (err) {
