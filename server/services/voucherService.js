@@ -279,7 +279,6 @@ async function chargeToRoom(client, propertyId, t, buyer, body, qty, userId) {
   if (!['pending', 'deposit_paid', 'confirmed', 'checked_in'].includes(b.status)) return fail(`Can't charge to room ${b.room} — the booking is ${String(b.status).replace('_', ' ')}`, 409, { code: 'BOOKING_CLOSED' });
   if (b.folio_status || (b.agent_id && b.agent_type !== 'ota' && String(b.payment_status || '').startsWith('city_ledger'))) return fail("This stay is billed to an agent — a voucher can't be added to the agent's bill. Take the payment now instead.", 409, { code: 'AGENT_BILLED' });
   if (b.complimentary_scope === 'all') return fail('This stay is complimentary for everything — a voucher charged to it would be free. Take the payment now instead.', 409, { code: 'COMPLIMENTARY' });
-  if (b.group_billing && b.billing_mode === 'everything') return fail("This room is on a group bill that covers everything — a voucher would go on the group's bill. Take the payment now instead.", 409, { code: 'GROUP_BILL' });
   const today = todayWITA();
   const a = { ...saleAmounts(t), fee: 0 };       // a card / QRIS fee is for money paid now, not a room charge
   const rows = [];

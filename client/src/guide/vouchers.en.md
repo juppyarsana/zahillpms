@@ -36,7 +36,8 @@ A voucher that was bought and paid for has a **🖨 Receipt** button (in the Sel
 - **Charge to a room (paid with the bill):** choose *Payment → Charge to a room*, then search the reservation (booked or in house). The vouchers are issued at once and **one line per voucher goes on the guest's folio**, with no service charge or tax. Nothing is received that day: the guest pays it with the rest of the bill (Record Payment, or at check-out), like any extra. In the books it is money the hotel owes (a liability), never revenue.
 - You can mix: for a guest who wants 8, sell 5 as *Paid now* and 3 as *Charge to a room*.
 - A voucher charged to a room is **cancelled on the Vouchers page** (owner or Corrections permission): its line comes off the bill. If the guest already paid the bill, give the money back with ⋮ → Refund on the reservation. The line can't be voided or moved from the Folio tab.
-- Not possible for a stay billed to an agent, a stay that is complimentary for everything, or a room on a group bill that covers everything. The window says so and you take the payment now instead.
+- A room that is part of a group works too: the voucher line is that room's own, even when the group pays everything else, so the guest pays it at check-out.
+- Not possible for a stay billed to an agent or a stay that is complimentary for everything. The window says so and you take the payment now instead.
 - A voucher charged to a room can be used before the guest has paid the bill, so check that the bill is paid before check-out.
 
 ## 3. Booking with a voucher code
