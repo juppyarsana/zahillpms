@@ -1,0 +1,335 @@
+# no|name|where (P = POS restaurant, H = PMS hotel stock)|unit in the app|code
+# P: D = drink, F = food, O = not food or drink (packaging / supplies)   H: G = guest supplies, S = supplies, U = utilities, M = maintenance
+# From "Daftar barang stok" (purchasing staff, checked 2026-11-11). Duplicates 165, 167, 206, 326 and 236 are merged into 49, 50, 54, 99 and 232.
+1|Small Bintang|P|pcs|D
+2|Bintang Crystal|P|pcs|D
+3|Large Bintang|P|pcs|D
+4|Small Bintang Lemon|P|pcs|D
+5|Coca Cola|P|pcs|D
+6|Diet Coke|P|pcs|D
+7|Soda Water|P|pcs|D
+8|Sprite|P|pcs|D
+9|Tonic Water|P|pcs|D
+10|Cleo Galon|P|pcs|D
+11|Cleo Kaca Botol|P|pcs|D
+12|Aqua Tanggung 600ml|P|pcs|D
+13|Aqua Mini 330ml|P|pcs|D
+14|Aqua Besar 1.5lt|P|pcs|D
+15|Aqua Galon|P|pcs|D
+16|Squeeze Cranberry|P|l|D
+17|Sirup Marjan Leci|P|l|D
+18|Jungle Juice Lemon|P|l|D
+19|Marjan Grenadine|P|l|D
+20|ABC Sirup|P|l|D
+21|Lychee Can|P|pcs|D
+22|Fres Premhoreca Vanilla|P|pcs|D
+23|Fres Premhoreca Hazelnut|P|pcs|D
+24|Fres Premhoreca Caramel|P|pcs|D
+25|Ice Cube|P|pcs|D
+26|Strawberry Frozen|P|kg|D
+27|Matcha Powder|P|kg|D
+28|Blanco Rum Wine|P|l|D
+29|Blue Curacao Wine|P|l|D
+30|Coffee Liquer Wine|P|l|D
+31|Lychee Liquer Wine|P|l|D
+32|Melon Liquer Wine|P|l|D
+33|Triplesec Wine|P|l|D
+34|Vodka Wine|P|l|D
+35|Vibe Dry Gin Wine|P|l|D
+36|Aga Red Wine|P|l|D
+37|Aga White Wine|P|l|D
+38|White Jepun Wine|P|l|D
+39|Arak Bali|P|l|D
+40|Sweet Alexandria Wine|P|l|D
+41|Sweet Syrah Wine|P|l|D
+42|Cabernet Sauvignon Wine|P|l|D
+43|Chardonnay Wine|P|l|D
+44|Peach Liquer Wine|P|l|D
+45|Tunjung Sparkling|P|l|D
+46|Reserve Shiraz|P|l|D
+47|Jeruk Peras|P|kg|D
+48|Jeruk Local|P|kg|D
+49|Lime|P|kg|D
+50|Mangga|P|kg|D
+51|Lemon|P|kg|D
+52|Cherry Tangkai|P|pcs|D
+53|Bunga Telang|P|g|D
+54|Daun Mint|P|kg|D
+55|Jahe|P|kg|D
+56|UHT Greenfield|P|l|D
+57|Fresh Milk Diamond|P|l|D
+58|Yogurt Plain|P|l|D
+59|Diamond Ice Cream Vanila|P|ml|F
+60|Diamond Ice Cream Chocolate|P|ml|F
+61|Diamond Ice Cream Strawberry|P|ml|F
+62|Brown Sugar Sachet|H|pcs|G
+63|Garam Dolpin|P|kg|F
+64|White Sugar Sachet|H|pcs|G
+65|Creamer 50 Pcs|H|pcs|G
+66|Madu Blossom 840g|P|pcs|F
+67|Permen|H|pcs|G
+68|Cocoa Powder|P|kg|D
+69|Gula Pasir|P|kg|F
+70|Kopi Beans|P|kg|D
+71|Tea Sariwangi|P|pcs|O
+72|Kopi Bola Dunia|P|kg|D
+73|Omura Blend Taro|P|kg|D
+74|Omura Blend Greentea|P|kg|D
+75|Meses (Seres)|P|kg|F
+76|Plastik Sampah Besar 90 Cm X 100 Cm|H|pcs|S
+77|Ekonomi Sabun Cuci Piring|H|l|S
+78|Spon Cuci|H|pcs|S
+79|Sapu|H|pcs|S
+80|Serok|H|pcs|S
+81|Tissue Cocktail|P|pcs|O
+82|Straw Kertas (Putih)|P|pcs|O
+83|Pensil|P|pcs|O
+84|Paper Bag|P|pcs|O
+85|Cup Plastik 16Oz + Tutup|P|pcs|O
+86|Dinner Napkin|P|pcs|O
+87|Lilin Spiral Shintoeng|P|pcs|O
+88|Gelas Cup 120z|P|pcs|O
+89|Paper Cup 9oz putih|P|pcs|O
+90|Paper Cup 8oz warna|P|pcs|O
+91|Captain Order|P|pcs|O
+92|Note Pad|P|pcs|O
+93|Paper Roll|H|pcs|S
+94|Pulpen|P|pcs|O
+95|Kapur|P|pcs|O
+96|Tusuk Kue|P|pcs|O
+97|Tusuk Gigi|H|pcs|S
+98|Bunga Mitir|P|kg|O
+99|Baterai AA|H|pcs|S
+100|Styrofoam Lukisan|P|pcs|O
+101|Kuas|P|pcs|O
+102|Palet|P|pcs|O
+103|Cat 250ml|P|pcs|O
+104|Dupa 8 jam|P|pcs|O
+105|Nescafe Sachet|H|pcs|G
+106|Yellow Tea Lipton|H|pcs|G
+107|Taski R3|H|l|S
+108|Taski R9|H|l|S
+109|Stella Refil Metic|H|pcs|S
+110|Pad brushing|H|pcs|S
+111|Taski R6|H|l|S
+112|Stella Gantung|H|pcs|S
+113|Stella Diffuser|H|pcs|S
+114|Sapu Lidi|H|pcs|S
+115|Kain Mop|H|pcs|S
+116|Emerald|H|pcs|S
+117|Dental Kit|H|pcs|G
+118|Shower Cap|H|pcs|G
+119|Shower Gell|H|l|G
+120|Shampoo Apple|H|l|G
+121|Conditioner Apple|H|l|G
+122|Sanitary Bag Logo|H|pcs|G
+123|Slipper|H|pcs|G
+124|Bathroom Tissue|H|pcs|G
+125|Facial Tissue|H|pcs|G
+126|Hand Towel Multifold|H|pcs|G
+127|Water Tag|H|pcs|S
+128|Hand Glove|H|pcs|S
+129|Kembang Rampe|H|kg|S
+130|Double Tape|H|pcs|S
+131|Kanebo|H|pcs|S
+132|Dada Fillet|P|kg|F
+133|Paha Ayam Utuh|P|kg|F
+134|Chicken Ham|P|kg|F
+135|Telur Ayam|P|pcs|F
+136|Daging Sapi Cincang (Beef Minced)|P|kg|F
+137|Chicken Whole|P|kg|F
+138|Mahi-Mahi Fillet|P|kg|F
+139|Chicken Wings|P|kg|F
+140|Bebek Utuh|P|kg|F
+141|Beef Tenderloin (Lulur Luar Sapi)|P|kg|F
+142|Daging Ayam Cincang Chicken Minced|P|kg|F
+143|Chicken Sausage|P|kg|F
+144|Beef Sausage|P|kg|F
+145|Beef Lokal|P|kg|F
+146|Beef Ham|P|kg|F
+147|Sate Lilit|P|pcs|F
+148|Beef Sirloin Steak|P|kg|F
+149|Linguini Pasta|P|pcs|F
+150|Macaroni Pasta|P|pcs|F
+151|Anchovies|P|kg|F
+152|Tuna Fillet|P|kg|F
+153|Udang Size 30|P|kg|F
+154|Fish Squid Peeled (Import)|P|kg|F
+155|Salmon Steak|P|kg|F
+156|Udang Size 40|P|kg|F
+157|Mujair|P|kg|F
+158|Mix Fruit Dry|P|kg|F
+159|Melon|P|kg|F
+160|Pepaya|P|kg|F
+161|Semangka|P|kg|F
+162|Nanas|P|pcs|F
+163|Pisang Kepok|P|pcs|F
+164|Strawberry|P|kg|F
+166|Jeruk limo|P|kg|F
+168|Bawang Bombay|P|kg|F
+169|Bawang Merah|P|kg|F
+170|Bawang Putih|P|kg|F
+171|Cabe Merah Besar|P|kg|F
+172|Cabe Rawit Merah|P|kg|F
+173|Daun Jeruk|P|kg|F
+174|Daun Pisang|P|pcs|F
+175|Kacang Panjang|P|kg|F
+176|Kentang|P|kg|F
+177|Kol|P|kg|F
+178|Leek|P|kg|F
+179|Sayur Hijau|P|kg|F
+180|Sereh|P|kg|F
+181|Terong Ungu|P|kg|F
+182|Timun|P|kg|F
+183|Toge|P|kg|F
+184|Tomat|P|kg|F
+185|Tomat Cerry Merah|P|kg|F
+186|Wortel|P|kg|F
+187|Brokoli|P|kg|F
+188|Selada Hijau|P|kg|F
+189|Jagung|P|pcs|F
+190|Mix Lettuce|P|kg|F
+191|Baby Romaine|P|kg|F
+192|Buah Lemo|P|kg|F
+193|Button Mushroom|P|kg|F
+194|Pokcoy|P|kg|F
+195|Bunga Kol|P|kg|F
+196|Kacang Merah|P|kg|F
+197|Cabe Ijo Kecil|P|kg|F
+198|Melinjo|P|kg|F
+199|Kangkung|P|pcs|F
+200|Lobak|P|kg|F
+201|Tempe|P|pcs|F
+202|Kacang Tanah|P|kg|F
+203|Romaine Lettuce|P|kg|F
+204|Kacang Banten|P|pcs|F
+205|Daun Basil|P|kg|F
+207|Ketumbar|P|kg|F
+208|Kunyit|P|kg|F
+209|Merica Hitam|P|kg|F
+210|Parsley|P|kg|F
+211|Seledri|P|kg|F
+212|Kencur|P|kg|F
+213|Isen|P|kg|F
+214|Kemiri|P|kg|F
+215|Rosemary Dry|P|pcs|F
+216|Oregano Dry|P|pcs|F
+217|Wewangenan|P|pcs|F
+218|Thyme dri 27 gr|P|pcs|F
+219|Green Olive|P|pcs|F
+220|Chilli Flake|P|pcs|F
+221|Black Paper|P|kg|F
+222|Garlic Powder 80gr|P|pcs|F
+223|Collins Dip Glaze Taro|P|kg|F
+224|La Fonte Spaghetti No 11x1kg/Crt|P|pcs|F
+225|Mie Telur|P|pcs|F
+226|Mie Bihun|P|pcs|F
+227|Fettuccini|P|pcs|F
+228|Indomie Kari Ayam|P|pcs|F
+229|Penne Pasta|P|pcs|F
+230|Mie Sedap|P|pcs|F
+231|Bread Crumb|P|kg|F
+232|French Fries Golden Farm Cringkle|P|kg|F
+233|Parmesan Cheese|P|kg|F
+234|Cheese Mozarella Arla|P|kg|F
+235|Olive Oil|P|ml|F
+237|Black Olive|P|pcs|F
+238|Cooking Cream|P|kg|F
+239|Begga Keju Slice|P|g|F
+240|Butter Portion|P|pcs|F
+241|Pelangi Cuspy Custard Powder|P|kg|F
+242|Roti Putih|P|pcs|F
+243|Roti Coklat|P|pcs|F
+244|French Bread|P|pcs|F
+245|Burger Bun 60 gr|P|pcs|F
+246|Pizza Dough 25 cm|P|pcs|F
+247|Baquette Bread|P|pcs|F
+248|Blue Band|P|kg|F
+249|Sour Bread|P|pcs|F
+250|Pengembang Roti|P|kg|F
+251|Jam Strawberry Portion 10gr|P|pcs|F
+252|Croissant/Danish Sheet Special 30x40cm|P|pcs|F
+253|Collata Glaze Dark|P|pcs|F
+254|Collata Glaze Strawberry|P|pcs|F
+255|Beras|P|kg|F
+256|Raisin|P|kg|F
+257|Spring Roll / Kulit Lumpia (Pack)|P|pcs|F
+258|Terasi|P|pcs|F
+259|Santan Kara Kecil|P|pcs|F
+260|Cococrunch|P|pcs|F
+261|Kerupuk Udang|P|kg|F
+262|Bawang Goreng|P|kg|F
+263|Minyak Goreng 18 Ltr|P|l|F
+264|Mayonnaise|P|kg|F
+265|Bumbu Kacang|P|pcs|F
+266|Knor Ayam|P|kg|F
+267|Pewarna Makanan|P|pcs|F
+268|Bumbu Soto|P|pcs|F
+269|Knor Demi Glace|P|kg|F
+270|Corn Flake|P|kg|F
+271|Beras Merah|P|kg|F
+272|Almond Slice|P|kg|F
+273|Ajinomoto|P|g|F
+274|Kaldu Jamur|P|g|F
+275|Pumpkin Seed|P|kg|F
+276|Walnut|P|kg|F
+277|Bumbu Sate|P|pcs|F
+278|Chili Sauce|P|kg|F
+279|Salad Oil|P|pcs|F
+280|Tomato Ketchup|P|kg|F
+281|Cuka|P|pcs|F
+282|Kecap Asin|P|pcs|F
+283|Kecap Manis Abc 6 Kg|P|kg|F
+284|Oyster Panda Lkk 2.2 Kg|P|kg|F
+285|Kecap Ikan (Fish Chipi)|P|pcs|F
+286|Bumbu Rendang|P|pcs|F
+287|Minyak Wijen|P|pcs|F
+288|Raja Rasa|P|pcs|F
+289|Tomato Pronto|P|kg|F
+290|Sauce lombok|P|pcs|F
+291|Tahu|P|pcs|F
+292|Pondan Whip Cream Pouch|P|pcs|F
+293|Dark Chocolate|P|kg|F
+294|Lunak|P|pcs|F
+295|Gula Merah|P|kg|F
+296|Tepung Cakra Kembar|P|kg|F
+297|Flour :Tepung Maizena|P|kg|F
+298|Tepung Beras Rose Brand|P|kg|F
+299|Easy Pancake Mix|P|kg|F
+300|Baking Powder|P|kg|F
+301|Tepung Segitiga Biru|P|kg|F
+302|Gula Halus|P|kg|F
+303|Paprika Powder|P|pcs|F
+304|Onion Powder|P|pcs|F
+305|Tepung Lencana Merah|P|kg|F
+306|Gas Lpg 50kg|H|kg|U
+307|LPG 12 kg|H|kg|U
+308|Gas Portable|H|pcs|U
+309|Spritus|H|l|S
+310|Katik Sate|H|pcs|S
+311|Plastik Wrap|H|pcs|S
+312|Hand Glove Hitam|H|pcs|S
+313|Plastik 1 Kg|H|pcs|S
+314|Serabut Kawat|H|pcs|S
+315|Aluminium Foil 45cmX75cm|H|pcs|S
+316|Kapas|H|pcs|S
+317|Plastik Segitiga|H|pcs|S
+318|Tusuk Sate|H|pcs|S
+319|Caramel Syrup|P|ml|D
+320|Lakban|H|pcs|S
+321|Isi Kater|H|pcs|S
+322|Lampu 5 watt|H|pcs|M
+323|Lampu 19 watt|H|pcs|M
+324|Lampu Filament 2 Watt|H|pcs|M
+325|Cat Vinilex 300|H|kg|M
+327|Baterai AAA|H|pcs|M
+328|Kayu Bakar|H|pcs|S
+329|Makanan Ikan|H|kg|S
+330|Lem G|H|pcs|M
+331|Chlorine Powder|H|kg|M
+332|Soda Ash|H|kg|M
+333|Terusi|H|kg|M
+334|Waterbase Fogging|H|l|M
+335|Insektisida|H|l|M
+336|Filtrex|H|l|M
+337|Test Kit Pool|H|pcs|M
