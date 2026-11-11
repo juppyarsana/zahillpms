@@ -113,7 +113,7 @@ export default function Stock() {
           {t.key === 'transfers' && openTransfers > 0 && <span className="tab-count">{openTransfers}</span>}</button>)}
       </div>
       {showStores && (
-        <div className="seg" style={{ margin: '12px 0 0', flexWrap: 'wrap' }}>
+        <div className="seg" style={{ margin: '12px 0 14px', flexWrap: 'wrap' }}>
           <button type="button" className={!storeId ? 'active' : ''} onClick={() => setStore('')}>All stores</button>
           {pmsStores(stores).map(s => <button key={s.id} type="button" className={storeId === s.id ? 'active' : ''} onClick={() => setStore(s.id)}>{s.name}</button>)}
         </div>
