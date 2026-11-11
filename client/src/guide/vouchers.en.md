@@ -26,6 +26,10 @@ Changing a voucher type **doesn't change vouchers already sold** — their rules
 
 The money shows in that day's **Cashier Closing** (under the method chosen) and in the Daily Close.
 
+## Receipt
+
+A voucher that was bought and paid for has a **🖨 Receipt** button (in the Sell window after the sale, and in the voucher window). Vouchers bought together share **one receipt** that lists each of them; a cancelled one is left off. It confirms payment only. A free voucher has no receipt, and one charged to a room is on the guest's invoice.
+
 ## Several vouchers, or charged to a room
 
 - **How many:** in the Sell window, *How many* makes up to 20 vouchers of the same type at once, each with its own code and PDF.

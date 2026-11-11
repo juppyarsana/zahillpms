@@ -253,9 +253,11 @@ async function sell(propertyId, body, userId) {
     if (!YMD.test(receivedOn) || receivedOn > today) return fail('The day it was paid can\'t be in the future');
     const a = saleAmounts(t);
     const rows = [];
+    const purchaseId = crypto.randomUUID();       // vouchers sold together share one receipt (migration 170)
     for (let i = 0; i < qty; i++) {
       const row = await insertVoucher(client, propertyId, t, { buyer, amounts: a, paymentMethod: pm.id, receivedOn, reference: body.reference, userId });
       if (!row) return fail('Could not make a code — try again', 500);
+      await client.query('UPDATE vouchers SET purchase_id = $2 WHERE id = $1', [row.id, purchaseId]);
       await logEvent(client, row.id, 'sold', `Sold ${rp(a.price)} (${t.name}) paid by ${pm.id}${a.fee ? `, plus ${t.fee_label || 'fee'} ${rp(a.fee)}` : ''}`, userId);
       rows.push(row);
     }
@@ -351,7 +353,7 @@ async function sellFree(propertyId, body, user) {
 // ── Reading ──
 
 const LIST_SQL = `
-  SELECT v.*, t.name AS template_name,
+  SELECT v.*, t.name AS template_name, t.fee_label,
          COALESCE(v.snapshot->>'name', t.name) AS name, v.snapshot->>'room_type_name' AS room_type_name,
          pm.label AS payment_label,
          cu.name AS charged_room, cg.name AS charged_guest,

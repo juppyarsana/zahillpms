@@ -26,6 +26,10 @@ Perubahan jenis voucher **tidak mengubah voucher yang sudah terjual** — aturan
 
 Uang yang diterima muncul di **Cashier Closing** hari itu (metode sesuai yang dipilih) dan di Daily Close.
 
+## Kwitansi
+
+Voucher yang dibeli dan dibayar punya tombol **🖨 Receipt** (di jendela Sell setelah penjualan, dan di jendela voucher). Voucher yang dibeli bersamaan memakai **satu kwitansi** yang mencantumkan semuanya; yang dibatalkan tidak ikut. Kwitansi hanya bukti pembayaran. Voucher gratis tidak punya kwitansi, dan voucher yang ditagihkan ke kamar ada di invoice tamu.
+
 ## Beberapa voucher sekaligus, atau ditagihkan ke kamar
 
 - **Jumlah:** di jendela Sell, *How many* membuat sampai 20 voucher sejenis sekaligus, masing-masing dengan kode dan PDF sendiri.

@@ -270,6 +270,7 @@ function SellModal({ onClose, onSold }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => onSold(done.id)}>Done</button>
+          {!free && !done.charged_to && !done.approved_by && <button className="btn btn-secondary" title="One receipt for the whole purchase" onClick={() => openPdf(`/api/vouchers/${done.id}/receipt`, `receipt-${done.voucher_no}.pdf`).catch(e => setError(errText(e)))}>🖨 Receipt</button>}
           {!(done.vouchers?.length > 1) && <button className="btn btn-primary" onClick={() => openPdf(`/api/vouchers/${done.id}/pdf`, `voucher-${done.voucher_no}.pdf`).catch(e => setError(errText(e)))}>⬇ Voucher PDF</button>}
         </div>
       </div></div>
@@ -439,6 +440,7 @@ function VoucherModal({ id, canException, onClose, onChanged }) {
       <div className="modal-footer" style={{ flexWrap: 'wrap' }}>
         {canException && v.status === 'active' && <button className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => { setRefund(''); setRefundMethod(methods[0]?.id || ''); setAction('void'); }}>Cancel voucher…</button>}
         {canException && ['active', 'reserved'].includes(v.status) && <button className="btn btn-secondary" onClick={() => { setExtendTo(''); setAction('extend'); }}>Extend…</button>}
+        {v.status !== 'voided' && !v.is_free && !v.charged_room && <button className="btn btn-secondary" title={v.purchase_id ? 'One receipt for every voucher bought together' : ''} onClick={() => openPdf(`/api/vouchers/${v.id}/receipt`, `receipt-${v.voucher_label}.pdf`).catch(e => setError(errText(e)))}>🖨 Receipt</button>}
         {v.status !== 'voided' && <button className="btn btn-primary" onClick={() => openPdf(`/api/vouchers/${v.id}/pdf`, `voucher-${v.voucher_label}.pdf`).catch(e => setError(errText(e)))}>⬇ PDF</button>}
       </div>
       {action === 'void' && (

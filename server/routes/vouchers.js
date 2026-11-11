@@ -13,6 +13,7 @@ const requireRole = require('../middleware/role');
 const svc = require('../services/voucherService');
 const freeApproval = require('../services/voucherFreeApproval');
 const { renderVoucherPdf } = require('../services/voucherPdf');
+const { renderVoucherReceipt } = require('../services/voucherReceiptPdf');
 
 const wrap = fn => (req, res) => Promise.resolve(fn(req, res)).catch(err => { if (!res.headersSent) res.status(500).json({ error: err.message }); });
 const send = (res, r, ok = 200) => (r && r.error ? res.status(r.status || 400).json({ error: r.error, code: r.code }) : res.status(ok).json(r));
@@ -57,6 +58,23 @@ router.get('/:id/pdf', wrap(async (req, res) => {
   const { rows: [property] } = await db.query(
     `SELECT property_name, property_address, property_phone, property_email, logo_url, app_color FROM property_settings WHERE property_id = $1`, [req.propertyId]);
   await renderVoucherPdf(res, { property: property || {}, voucher: v, filename: `voucher-${v.voucher_label}.pdf` });
+}));
+
+// The receipt of a voucher bought and paid for: one for the whole purchase when it was sold together
+// with others (migration 170), else for this voucher alone. Not for a free voucher or one charged to a room.
+router.get('/:id/receipt', wrap(async (req, res) => {
+  const v = await svc.detail(req.propertyId, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Voucher not found' });
+  if (v.is_free) return res.status(400).json({ error: 'A free voucher has no receipt — no money was taken.' });
+  if (v.charged_booking_id) return res.status(400).json({ error: "This voucher was charged to a room — it is on the guest's invoice, not a separate receipt." });
+  const { rows } = v.purchase_id
+    ? await db.query(`${svc.LIST_SQL} WHERE v.property_id = $1 AND v.purchase_id = $2 AND v.status <> 'voided' AND v.payment_method IS NOT NULL ORDER BY v.voucher_no`, [req.propertyId, v.purchase_id])
+    : await db.query(`${svc.LIST_SQL} WHERE v.property_id = $1 AND v.id = $2 AND v.status <> 'voided'`, [req.propertyId, v.id]);
+  if (!rows.length) return res.status(409).json({ error: 'This voucher was cancelled — it has no receipt.' });
+  const { rows: [property] } = await db.query(
+    `SELECT property_name, property_address, property_phone, property_email, logo_url FROM property_settings WHERE property_id = $1`, [req.propertyId]);
+  const vouchers = rows.map(svc.shape);
+  renderVoucherReceipt(res, { property: property || {}, vouchers, filename: `receipt-${vouchers[0].voucher_label}.pdf` });
 }));
 
 router.post('/:id/void', exceptionOnly, wrap(async (req, res) => send(res, await svc.voidVoucher(req.propertyId, req.params.id, req.body || {}, req.user.id))));
