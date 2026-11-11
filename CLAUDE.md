@@ -1288,6 +1288,19 @@ Every TV's address and state, the to-do list and the Google TV setup steps: `tv-
 
 **Still open after these steps:** drop the temporary `birdnest_old` database and `~/birdnest-old.dump` on the server (`sudo -u postgres dropdb birdnest_old`); Birdnest's 3 OTA payments never marked received in the old app (Joddy Febiantara Hatta 2× Rp 278.000 Agoda, Dwi Putra Nugraha Rp 361.250 Booking.com); 5 no-shows / cancellations with money received (refund or keep); the possible double jeep sale; Traveloka 302889 still to be made non-refundable in its extranet. The old app on `103.247.10.184` is no longer used for bookings.
 
+### ▶ Handoff 2026-11-11 (laptop → home PC): purchasing + stock reset, NOT applied yet
+
+Purchasing staff cleaned up the item list (Google Sheet "Daftar barang stok", 337 rows). Plan: wipe the VHP-imported stock and the test purchasing data, load the new list. Both scripts are written, pushed (PMS `main` 0ef91d2, POS `pms-integration` b1fa45b) and dry-run on the real servers; **`--apply` has not been run on either** (the hotel is using both apps). Dry-run results: PMS removes 30 purchase requests, 13 POs, 4 kitchen handovers, 4 opnames, 132 stock items (41 movements), voids 5 PO-linked bills (Rp 551.000) and the Rp 725.000 beef expense (owner: test data), adds 69 hotel items; POS removes 214 items, 6 batches, 4 Incoming deliveries, 3 kitchen use sheets, 1 opname, adds 263 items (no recipes or add-ons depend on stock).
+
+**To finish tonight, in this order, in one sitting:**
+1. Backups: PMS `cd /var/www/zahill && bash deploy.sh --backup-only`; POS `scripts/backup.sh` (dev server 103.247.8.115, `/var/www/pos-test`).
+2. POS: `cd /var/www/pos-test && git pull && node scripts/reset-stock.js --apply`
+3. PMS: `cd /var/www/zahill && git pull && cd server && node maintenance/resetStockAndPurchasing.js --property zahill --apply`
+4. Check both Stock pages; do a stock opname in each for opening quantities (costs come from the first purchases). Tell purchasing and the chef to hold buying/using until the count.
+5. Afterwards: tell Claude the result so it can check with the read-only tunnels (PMS localhost:15432 `zahill_pms`, POS localhost:15433 `pos_test`, login `claude_ro`), then log it here and in memory.
+
+Decisions made: each item goes to ONE place per the sheet's "Masuk ke" column; duplicates merged (Lime, Mangga, Daun Mint, Baterai AA, French fries Cringkle); eggs counted per egg ("Telur Ayam"); POS counts kg as g and l as ml; POS items with a cost category but no food/drink type are packaging with kind "other" (incl. Tusuk Kue, which the sheet marks food: owner may change). The Rp 1.000.000 bill ref 5216 (no PO) stays. Files: `server/maintenance/resetStockAndPurchasing.js` + `stockResetList.txt`; POS `scripts/reset-stock.js` + `stockResetList.txt`.
+
 ## Session log — 2026-11-11 (vouchers, laptop)
 
 > What was built and changed in this session. `main` = `dev` = 915516c. **Deployed to production by the owner** (they ran the scripts below on the server). Details of each feature are in "Vouchers" in the Frontend section.
