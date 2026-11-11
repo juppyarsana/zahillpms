@@ -6,6 +6,7 @@ import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { propertyToday } from '../lib/propertyTime';
 import AgentFormModal from '../components/AgentFormModal';
+import { AgentCreditCard } from '../components/AgentCredit';
 import ReasonModal from '../components/ReasonModal';
 import { AGENT_TYPE_LABEL, PAYMENT_MODE_SHORT, PAYMENT_MODE_LABEL, HAS_COMMISSION, CITY_LEDGER, commissionText } from '../lib/agents';
 
@@ -290,6 +291,8 @@ function AgentDetail({ agentId }) {
       </div>
 
       <AgentBookings bookings={bookings} agent={agent} owedIds={new Set(open_items.map(i => i.booking_id))} />
+
+      <AgentCreditCard agentId={agentId} onChanged={load} />
 
       <Section title={`Open Items (${open_items.length})`}>
         {open_items.length === 0 ? <Empty>Nothing outstanding.</Empty> : (

@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import GroupAmendDatesModal from '../components/GroupAmendDatesModal';
 import GroupPriceModal from '../components/GroupPriceModal';
 import MasterFolio from '../components/MasterFolio';
+import { AgentCreditCard } from '../components/AgentCredit';
 import GroupBillingCard, { GroupPaymentModal } from '../components/GroupBillingCard';
 import LinkedEventsPay, { useEventsDue, eventsTotal, eventsBad, eventsPayload } from '../components/LinkedEventsPay';
 
@@ -775,11 +776,21 @@ export default function GroupDetail() {
                 </div>
               </div>
             )}
-            {rollup.paid_on_cancelled > 0 && (
-              <div className="alert alert-error" style={{ fontSize: 12, marginTop: 8 }}>
-                {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
-              </div>
-            )}
+            {rollup.paid_on_cancelled > 0 && (() => {
+              const agentId = (bookings || []).find(b => b.agent_id)?.agent_id;
+              return agentId ? (
+                <div style={{ marginTop: 8 }}>
+                  <div className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
+                    {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room. It isn't counted above — it is held as credit for the agent:
+                  </div>
+                  <AgentCreditCard agentId={agentId} compact onChanged={load} />
+                </div>
+              ) : (
+                <div className="alert alert-error" style={{ fontSize: 12, marginTop: 8 }}>
+                  {fmtIDR(rollup.paid_on_cancelled)} was already received on a cancelled room and isn't counted above — refund it or record it on another room by hand.
+                </div>
+              );
+            })()}
             {(pendingLines().length > 0 || payableExtras().length > 0) && (
               <div className="flex gap-2" style={{ marginTop: 12, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary" onClick={openGroupPayment}>💳 Record Group Payment</button>

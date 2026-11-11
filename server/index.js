@@ -153,6 +153,7 @@ app.use('/api/assistant', auth, moduleGuard('assistant'), require('./middleware/
 app.use('/api/folio', auth, moduleGuard('financial'), require('./routes/folio'));
 app.use('/api/agents', auth, moduleGuard('financial'), require('./routes/agents'));
 app.use('/api/agent-directory', auth, moduleGuard('reservations'), require('./routes/agentDirectory'));
+app.use('/api/agent-credit', auth, moduleGuard('reservations'), require('./routes/agentCredit'));   // credit held for an agent's cancelled rooms
 app.use('/api/tasks', auth, moduleGuard('operations'), require('./routes/tasks'));
 app.use('/api/housekeeping', auth, moduleGuard('operations'), require('./routes/housekeeping'));
 app.use('/api/products', auth, moduleGuard('sales'), require('./routes/products'));

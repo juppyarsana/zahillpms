@@ -224,7 +224,7 @@ router.get('/refundable', auth, async (req, res) => {
 // POST /api/payments/refund { booking_id, amount, method, refunded_at?, reference?, refund_of?, reason }
 // Money given back to the guest: a received 'refund' row of −amount on the
 // day it was given back. Never more than the booking's credit.
-router.post('/refund', auth, canCorrect, async (req, res) => {
+const refundHandler = async (req, res) => {
   const reason = reasonOf(req);
   const amount = round2(parseFloat(req.body.amount));
   const { booking_id, method } = req.body;
@@ -268,7 +268,8 @@ router.post('/refund', auth, canCorrect, async (req, res) => {
   } finally {
     client.release();
   }
-});
+};
+router.post('/refund', auth, canCorrect, refundHandler);
 
 // Takes a received payment back, inside the caller's transaction.
 //   room deposit / balance → pending again (still owed), status recomputed
@@ -472,4 +473,5 @@ router.post('/:id/move', auth, canCorrect, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.refundHandler = refundHandler;   // routes/agentCredit.js (refund of an agent's credit, front desk)
 

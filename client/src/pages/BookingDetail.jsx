@@ -9,6 +9,7 @@ import { useCall } from '../context/CallContext';
 import ActionMenu from '../components/ActionMenu';
 import ReasonModal from '../components/ReasonModal';
 import { PaymentFixMenu, RefundModal } from '../components/PaymentCorrections';
+import { AgentCreditCard } from '../components/AgentCredit';
 import { JoinGroupModal, LeaveGroupModal } from '../components/GroupMove';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
@@ -1344,6 +1345,13 @@ export default function BookingDetail() {
           </div>
         )}
 
+        {booking.agent_id && !booking.group_billed && (
+          <div className="mt-3">
+            <AgentCreditCard agentId={booking.agent_id} compact onChanged={() => { load(); loadFolio(); }}
+              target={['cancelled', 'no_show'].includes(booking.status) ? undefined : { booking_id: booking.id, room: booking.unit_name, guest: booking.guest_name, owed: Math.max(0, parseFloat(estimate?.balance_due) || 0) }} />
+          </div>
+        )}
+
         {!booking.group_billed && <div className="card mt-3" id="payment-tracking" style={{ scrollMarginTop: 16 }}>
           <div className="card-title" style={{ marginBottom: 4 }}>Room Payment</div>
           {/* Room price only — extras / restaurant / activities are on the Folio tab. */}
@@ -1976,7 +1984,7 @@ export default function BookingDetail() {
                   <div>
                     The room becomes free for other guests.
                     {received > 0
-                      ? <> <b>{fmtIDR(received)} has been received</b> on this booking — it stays recorded; give it back afterwards with ⋮ → Refund (all of it, or less a cancellation fee).</>
+                      ? <> <b>{fmtIDR(received)} has been received</b> on this booking — it stays recorded. {booking.agent_id ? <>It becomes <b>credit held for {booking.agent_name}</b> (see their account in Receivables, or on any of their stays): use it on another stay or give it back.</> : <>Give it back afterwards with ⋮ → Refund (all of it, or less a cancellation fee).</>}</>
                       : <> No payment has been received on it.</>}
                     {booking.reservation_group_id && <> This only cancels this room, not the rest of its group.</>}
                   </div>

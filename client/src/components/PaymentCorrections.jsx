@@ -13,7 +13,7 @@ const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const today = () => new Date().toLocaleDateString('en-CA');
 const KIND = { deposit: 'Room deposit', balance: 'Room balance', incidental: 'Extras payment', refund: 'Refund' };
 
-function Reason({ value, onChange }) {
+export function Reason({ value, onChange }) {
   return (
     <div className="form-group">
       <label className="form-label">Reason (goes into Edit History)</label>
@@ -22,7 +22,7 @@ function Reason({ value, onChange }) {
   );
 }
 
-function Shell({ title, onClose, error, children, footer }) {
+export function Shell({ title, onClose, error, children, footer }) {
   return (
     <div className="modal-backdrop">
       <div className="modal">
@@ -40,7 +40,7 @@ function Shell({ title, onClose, error, children, footer }) {
   );
 }
 
-function MethodSelect({ value, onChange }) {
+export function MethodSelect({ value, onChange }) {
   const { paymentMethods = [] } = useSettings();
   return (
     <select className="form-select" value={value || ''} onChange={e => onChange(e.target.value)}>
