@@ -212,7 +212,6 @@ const TRANSFERRED_FROM_SQL = `(SELECT 'room ' || tu.name || ' · ' || tg.name FR
 // payment is the room's). The rest is the room's own bill.
 function toGroup(c, billingMode) {
   if (c.paid_at_desk) return false;
-  if (c.type === 'voucher') return false;     // vouchers a guest buys (migration 169) are the room's own, even on a group paying everything
   if (c.type === 'room' || c.type === 'fnb') return true;
   return billingMode === 'everything';
 }
