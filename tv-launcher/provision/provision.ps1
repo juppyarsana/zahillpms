@@ -124,6 +124,7 @@ function Provision-One([string]$Ip, [string]$RoomId) {
         $pkgs = Read-List $List
         $installed = (Run $serial @('shell', 'pm list packages')) -split "`r?`n" | ForEach-Object { $_ -replace '^package:', '' }
         $already = (Run $serial @('shell', 'pm list packages -d')) -split "`r?`n" | ForEach-Object { $_ -replace '^package:', '' }
+        $skippedWizard = $false
         foreach ($p in $pkgs) {
             if ($installed -notcontains $p) { Write-Host "  - $p (not on this TV)"; continue }
             if ($already -contains $p) { Write-Host "  - $p (already disabled)"; continue }
@@ -131,8 +132,13 @@ function Provision-One([string]$Ip, [string]$RoomId) {
                 $owners = Run $serial @('shell', "dumpsys wifi | grep -o 'cname=[^ ]*' | sort -u")
                 if (-not $owners -or $owners -match 'setupwraith') {
                     Write-Warning "Skipping ${p}: it owns the saved Wi-Fi network (or that could not be checked); disabling it would delete the network. Forget and re-join the Wi-Fi in Settings, then run again."
+                    $skippedWizard = $true
                     continue
                 }
+            }
+            # Google TV home off while the setup wizard is still on = its recovery screen loops (801, 305, 306).
+            if ($p -eq 'com.google.android.apps.tv.launcherx' -and $skippedWizard) {
+                throw "Left the Google TV home on because the setup wizard is still on. On the TV: Settings > Network & Internet > the Wi-Fi > Forget, join it again, then run the setup again."
             }
             $r = Run $serial @('shell', "pm disable-user --user 0 $p")
             if ($r -match 'disabled') { [void]$disabledByUs.Add($p); Save-State; Write-Host "  x $p" }
@@ -148,7 +154,7 @@ function Provision-One([string]$Ip, [string]$RoomId) {
     Run $serial @('shell', 'input keyevent KEYCODE_HOME') | Out-Null
     Start-Sleep -Seconds 4
     # Android 11 calls it mResumedActivity, Android 14 topResumedActivity.
-    $top = Run $serial @('shell', "dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity'")
+    $top = Run $serial @('shell', "dumpsys activity activities 2>/dev/null | grep -m1 -E 'mResumedActivity|topResumedActivity'")
     if ($top -notmatch [regex]::Escape("$Pkg/")) { throw "Home did not open Zahill TV: $top" }
     Save-State
     Write-Host "Room ${RoomId}: done. Zahill TV is Home, the screensaver is set, the TV is named '$name'." -ForegroundColor Green

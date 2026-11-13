@@ -1358,6 +1358,17 @@ Decisions made: each item goes to ONE place per the sheet's "Masuk ke" column; d
 
 **Still open:** look at Neil Price on production; the opening stock opnames in the PMS and POS (and tell purchasing and the chef they may buy and use again); the client's answers to `CANCEL_MONEY_PLAN.md` (then build the cancel-window choice and guest credit); Imigrasi: void the "Refund by Cash" sale and confirm how the refund was paid; a held-money list for the owner (not built); the Putu Widya Snicaya / Gede test no-shows were not cleaned (left by the November rule).
 
+## Investigation 2026-11-13 — Imigrasi refund makes Cashier Closing negative (read-only, nothing changed)
+
+> Checked on production through the read-only tunnel (`claude_ro`, forward to `localhost:5432`, not 127.0.0.1) and the app's own `cashierClosing.load()`. No data or code changed.
+
+- **The refund:** one `group_payments` row `2b3effcd-2d67-4e2c-8fc7-786c17fdd6a2`, group `fa866f6b-2cd9-4886-9ae7-485e3a7bcecd` (Imigrasi, rooms 203–208, 10–11 Nov, billed as a whole, mode everything). −275.000, method `cash`, received + recorded **12 Nov 00:18 WITA by Juppy**, ref "ny cash", notes "Refund: kelebihan transfer", live, no `refund_of`. No `payments` refund row.
+- **Money in:** four group payments, all **bank transfer**, dated 9 Nov, entered by Srinadi 11 Nov 19:18–19:22: 2.720.000 + 10.000.000 + 9.375.000 + 680.000 = 22.775.000 against a bill of 22.500.000, so the 275.000 was overpaid by transfer on 9 Nov. After the refund: received 22.500.000, balance 0 (correct). Room 208's voided "1× Refund by Cash" line was posted **11 Nov 19:31**, so the cash most likely went back then.
+- **Closing 12 Nov:** money_total **15.688.000** (fine). By method: BCA 1.561.750, Bank Transfer 14.250.000, **Cash −123.750** (refund −275.000 + Tutik's room 109 extras +151.250). By user: Tutik 15.963.000, **Juppy −275.000**. No accounting day closed (`gl_closed_days` empty).
+- **Cause:** (b) + (c): the refund is dated the day the correction was typed (12 Nov, after midnight, under the owner's login), not the day / person who paid the cash (likely 11 Nov, front desk). Not (a) if the cash really went back in cash.
+- **The Refund window (`GroupRefundModal` in `GroupBillingCard.jsx`) has no date field** — it always records "now" under the logged-in user, so a refund can't be moved to a past day from the screens.
+- **Options:** (1) leave it (group, day total and books are correct) and note on the 12 Nov closing that −275.000 cash = Imigrasi refund paid 11 Nov; (2) add a date field to the Refund window, then Void the refund ("wrong day") and re-record it as the front desk user who paid it, dated 11 Nov, Cash, ref "ny cash"; (3) if it went back by transfer: Void ("wrong method") and re-record with Bank Transfer. **Waiting on:** front desk to confirm how and when the 275.000 went back. Also still open from 11–12 Nov: void the "Refund by Cash" sale in Sales → History.
+
 ## Open Decisions (not yet final — context for whoever picks this up next)
 
 - ~~**Product name:** currently "Zahill PMS" / "ZHP PMS" are placeholders. Shortlisted a real brand name: **Nestly** is the front-runner...~~ **Decided (2026-08-14): the product name is HALF.** See the domain/tenancy note under "What this is" above for the working domain (`half.kdai.cloud`) and architecture. Actual rename across code/docs/infra is still pending — see that note for what's not done yet.

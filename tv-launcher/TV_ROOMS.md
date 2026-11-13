@@ -117,6 +117,7 @@ Then remove any Google account, open Music to look for a YouTube login, and rest
   "Item not found". Don't install it.
 - **Mi TV Sticks and the AQUOS-TVX21B** need `-AnyModel -List debloat-mistick.txt` / `debloat-tvx21b.txt` (setup wizard + launcher only). The app's minimum is Android 9 since 0.2.5, for the sticks.
 - **TVX22A with the setup wizard left on loops:** with the launcher off, its recovery screen restarts forever (801, as on 305 and 306). `provision.ps1` skips the wizard when it owns ANY saved network, even one not in use. Fix: `pm enable` the launcher, compare `cmd wifi status` with the owners in `dumpsys wifi`; if the wizard doesn't own the network in use, `pm disable-user` it, check Wi-Fi stays up, then run the script again.
+- **Xiaomi Google TV (model starts with MiTV, Room 101, 192.168.20.29, 2026-11-13):** the Setup app picks the Mi Stick list, which had only the old launcher, so Google TV stayed Home. `debloat-mistick.txt` now also lists `launcherx`. 101 works, but its setup wizard is still on (it owns a saved Wi-Fi): restart once and check Home is still Zahill TV; if the wizard loops, `pm enable` launcherx.
 - **Storage:** the Google setup can add apps (WeTV, iQIYI, Disney+, etc.). 705 ran out of space and needed
   WeTV and HBO Max removed before an update would install.
 - **Updating a TV on its screensaver** can bring the app behind it to the front. Press Home afterwards.

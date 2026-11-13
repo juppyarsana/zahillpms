@@ -5,3 +5,6 @@
 com.google.android.tungsten.setupwraith
 # Stock launcher: its Home has priority 2, so it beats Zahill TV even as the HOME role holder.
 com.google.android.tvlauncher
+# Google TV home: Xiaomi TVs (model also starts with MiTV) run Google TV instead (Room 101, 2026-11-13).
+# The stick doesn't have it, so the script skips the line there.
+com.google.android.apps.tv.launcherx
