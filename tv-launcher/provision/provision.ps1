@@ -9,7 +9,8 @@
 #   3. writes Room ID / token / TV URL into the app, sets it as the screensaver
 #   4. names the TV "Room 101" - the name guests see when they cast from their phone
 #   5. disables the packages in the debloat list (never core Android; never the setup wizard
-#      while it owns the saved Wi-Fi), remembering which ones it changed
+#      while it owns the saved Wi-Fi - on a TV reached over LAN the saved Wi-Fi is forgotten first),
+#      remembering which ones it changed
 #   6. makes Zahill TV the Home screen, removes the old com.zahill.tvscreensaver, presses Home
 # Undo: .\restore.ps1 -Tv <ip>   (uses the state file written to provision\state\<ip>.json)
 param(
@@ -129,7 +130,28 @@ function Provision-One([string]$Ip, [string]$RoomId) {
             if ($installed -notcontains $p) { Write-Host "  - $p (not on this TV)"; continue }
             if ($already -contains $p) { Write-Host "  - $p (already disabled)"; continue }
             if ($p -eq $Setupwraith) {
-                $owners = Run $serial @('shell', "dumpsys wifi | grep -o 'cname=[^ ]*' | sort -u")
+                # On a LAN TV the saved Wi-Fi is only what the first setup left behind (owned by the wizard, room 102).
+                # Forget it, so the wizard can go without deleting a network the TV uses.
+                $tvIp = $serial -replace ':\d+$', ''
+                $lanIf = Run $serial @('shell', "ip -4 -o addr show 2>/dev/null | grep 'inet $tvIp/'")
+                $nets = Run $serial @('shell', 'cmd wifi list-networks 2>/dev/null')
+                if ($lanIf -match '^\d+:\s*eth' -and $nets -match 'No networks|Network Id') {
+                    foreach ($line in ($nets -split "`r?`n")) {
+                        if ($line -match '^\s*(\d+)\s+(.+?)\s{2,}') {
+                            $f = Run $serial @('shell', "cmd wifi forget-network $($Matches[1])")
+                            Write-Host "  TV is on LAN: forgot saved Wi-Fi '$($Matches[2].Trim())' ($f)"
+                        }
+                    }
+                    $nets = Run $serial @('shell', 'cmd wifi list-networks 2>/dev/null')
+                    if ($nets -notmatch 'No networks') {
+                        Write-Warning "Skipping ${p}: saved Wi-Fi is still there after forgetting it: $nets"
+                        $skippedWizard = $true
+                        continue
+                    }
+                    $owners = 'none'
+                } else {
+                    $owners = Run $serial @('shell', "dumpsys wifi | grep -o 'cname=[^ ]*' | sort -u")
+                }
                 if (-not $owners -or $owners -match 'setupwraith') {
                     Write-Warning "Skipping ${p}: it owns the saved Wi-Fi network (or that could not be checked); disabling it would delete the network. Forget and re-join the Wi-Fi in Settings, then run again."
                     $skippedWizard = $true
