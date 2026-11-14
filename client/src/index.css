@@ -1015,6 +1015,9 @@ tr:hover td { background: #FAFAF8; }
 .ota-popup-more a, .ota-popup-more .btn-link { background: var(--surface, #fff); border: 1px solid var(--border, #E5E7EB); border-radius: 999px; padding: 4px 10px; cursor: pointer; color: inherit; text-decoration: none; font-size: 13px; }
 @keyframes ota-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (max-width: 767px) { .ota-popup { top: 8px; bottom: auto; right: 8px; left: 8px; width: auto; max-width: none; flex-direction: column; } }
+/* Room check pop-up (components/RoomCheckInbox.jsx): top right, so it never sits on the OTA pop-up (bottom left); on a phone above the bottom bar. */
+.rc-popup { top: 20px; bottom: auto; left: auto; right: 20px; flex-direction: column; }
+@media (max-width: 767px) { .rc-popup { top: auto; bottom: 76px; left: 8px; right: 8px; flex-direction: column-reverse; } }
 
 .sidebar-settings .sidebar-link { margin-bottom: 0; }
 

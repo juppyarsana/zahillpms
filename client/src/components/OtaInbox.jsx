@@ -14,7 +14,7 @@ const Ctx = createContext({ enabled: false, unseen: [], open: 0, badge: 0 });
 export const useOtaInbox = () => useContext(Ctx);
 
 // A short two-note chime (Web Audio, nothing to download).
-function chime() {
+export function chime() {
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
     [[880, 0], [1320, 0.16]].forEach(([f, at]) => {

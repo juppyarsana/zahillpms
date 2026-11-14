@@ -74,6 +74,15 @@ async function listForBooking(propertyId, bookingId) {
   return rows.map(shape);
 }
 
+// Answers from housekeeping that front desk has not charged or set aside yet
+// (the pop-up on every page and Today → Needs you now). Last 3 days only.
+async function listWaiting(propertyId) {
+  const { rows } = await db.query(
+    `${SELECT} WHERE rc.property_id = $1 AND rc.status = 'submitted' AND rc.submitted_at > NOW() - INTERVAL '3 days'
+      ORDER BY rc.submitted_at`, [propertyId]);
+  return rows.map(shape);
+}
+
 // The check front desk is waiting for in a room (asked, not answered yet).
 async function openRequestForUnit(propertyId, unitId, pg = db) {
   const { rows: [r] } = await pg.query(
@@ -237,4 +246,4 @@ async function pinFor(propertyId) {
   return r?.housekeeping_pin || null;
 }
 
-module.exports = { CheckError, minibarItems, stayForUnit, listForBooking, openRequestForUnit, request, submit, charge, dismiss, byToken, pinFor, getOne };
+module.exports = { CheckError, minibarItems, stayForUnit, listForBooking, listWaiting, openRequestForUnit, request, submit, charge, dismiss, byToken, pinFor, getOne };

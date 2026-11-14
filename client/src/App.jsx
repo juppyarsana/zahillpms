@@ -76,6 +76,7 @@ import SettingsHub from './pages/SettingsHub';
 import { buildNav } from './lib/navItems';
 import SettingsShell from './components/SettingsShell';
 import { OtaInboxProvider, OtaPopup, useOtaInbox } from './components/OtaInbox';
+import { RoomCheckInboxProvider, RoomCheckPopup } from './components/RoomCheckInbox';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminProperties from './pages/admin/Properties';
 import AdminPropertyDetail from './pages/admin/PropertyDetail';
@@ -218,6 +219,7 @@ function Layout({ children }) {
   return (
     <AskProvider>
      <OtaInboxProvider>
+     <RoomCheckInboxProvider>
       <div className="app-shell">
         <Sidebar />
         <div className="app-main">
@@ -233,7 +235,9 @@ function Layout({ children }) {
         <AskFab />
         <CallRoomFab />
         <OtaPopup />
+        <RoomCheckPopup />
       </div>
+     </RoomCheckInboxProvider>
      </OtaInboxProvider>
     </AskProvider>
   );

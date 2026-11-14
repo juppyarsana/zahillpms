@@ -8,6 +8,7 @@
 //   Checkout is never blocked — a check that isn't back yet is only a warning.
 import { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
+import { useRoomChecksWaiting } from './RoomCheckInbox';
 
 const fmtIDR = n => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
 const fmtTime = t => (t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
@@ -46,6 +47,7 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
   const [error, setError] = useState('');
   const [qty, setQty] = useState({});   // front desk's corrected quantities, by product
   const [told, setTold] = useState(null);   // { n, at } — how many Telegram chats the last request reached
+  const inbox = useRoomChecksWaiting();   // the pop-up on every page + Today's line
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +58,10 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
 
   useEffect(() => { load(); }, [load]);
   const open = (checks || []).find(c => c.status === 'requested' || c.status === 'submitted');
+  // FO is looking at the answer here: no pop-up for it on this computer.
+  useEffect(() => {
+    if (open?.status === 'submitted') inbox.markSeen?.([open.id]);
+  }, [open?.id, open?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   // While something is open, look again every few seconds: the answer comes
   // from another device.
   useEffect(() => {
@@ -66,7 +72,7 @@ export default function RoomCheckPanel({ bookingId, lang = 'en', card = false, o
 
   async function run(fn) {
     setBusy(true); setError('');
-    try { await fn(); await load(); }
+    try { await fn(); await load(); inbox.refresh?.(); }
     catch (err) { setError(err.response?.data?.error || 'Something went wrong'); }
     finally { setBusy(false); }
   }

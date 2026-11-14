@@ -10,6 +10,7 @@ import UnitStatusBoard, { cleanAskedText } from '../components/UnitStatusBoard';
 import { useCheckInOut } from '../components/CheckInOutWindows';
 import LateArrivals from '../components/LateArrivals';
 import { useOtaToday } from '../components/OtaInbox';
+import { useRoomChecksWaiting, roomCheckSummary, roomCheckPath } from '../components/RoomCheckInbox';
 import { useCall } from '../context/CallContext';
 import { NoteReminders } from '../components/StaffNotes';
 import RegistrationCardModal from '../components/RegistrationCardModal';
@@ -225,6 +226,7 @@ export default function Today() {
   // Stays already over that never checked in, and today's OTA news — one line each in Needs you now.
   const neverArrived = summary?.today?.never_arrived || [];
   const ota = useOtaToday();
+  const { waiting: roomChecks } = useRoomChecksWaiting();   // housekeeping's answers not charged yet
   // Rooms that called the front desk and nobody answered (migration 161).
   const call = useCall();
   const missedOpen = hasModule('calling') ? (call?.missed?.calls || []).filter(c => !c.handled) : [];
@@ -400,7 +402,7 @@ export default function Today() {
 
       {/* ── Needs you now — what used to be the Dashboard's banners (never-arrived
            bookings are already flagged by TodaySection) ── */}
-      {isToday && (missedOpen.length > 0 || overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0 || neverArrived.length > 0 || otaActive) && (
+      {isToday && (roomChecks.length > 0 || missedOpen.length > 0 || overdue.length > 0 || cleanAsked.length > 0 || notReady.length > 0 || neverArrived.length > 0 || otaActive) && (
         <div className="card today-needs">
           <div className="card-title">Needs you now</div>
           {missedOpen.map(c => {
@@ -416,6 +418,13 @@ export default function Today() {
             );
           })}
           {callErr && <div className="alert alert-error" style={{ margin: '6px 0' }}><div>{callErr}</div></div>}
+          {roomChecks.map(r => (
+            <div key={`rc${r.id}`} className="today-need warn">
+              <span className="today-need-tag">Room check</span>
+              <span className="today-need-text">Room <b>{r.room}</b>{r.guest_name ? <> · {r.guest_name}</> : null} — housekeeping sent the room check: {roomCheckSummary(r)}. Add it to the bill (or set it aside) on the reservation.</span>
+              {roomCheckPath(r) && <Link to={roomCheckPath(r)} className="btn btn-sm btn-primary">Open</Link>}
+            </div>
+          ))}
           {overdue.map(o => (
             <div key={`o${o.id}`} className="today-need danger">
               <span className="today-need-tag">Overdue</span>

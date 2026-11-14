@@ -35,6 +35,14 @@ router.put('/settings', requireRole('owner'), async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// GET /api/room-checks/waiting — housekeeping's answers not charged / set aside
+// yet, oldest first (the pop-up on every page + Today → Needs you now).
+router.get('/waiting', async (req, res) => {
+  try {
+    res.json(await roomCheck.listWaiting(req.propertyId));
+  } catch (err) { fail(res, err); }
+});
+
 // GET /api/room-checks?booking_id= — a booking's checks, newest first.
 router.get('/', async (req, res) => {
   if (!req.query.booking_id) return res.status(400).json({ error: 'booking_id required' });

@@ -390,6 +390,13 @@ export default function BookingDetail() {
     requestAnimationFrame(() => document.getElementById('payment-tracking')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [booking?.id, location.hash]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Opened from the room check pop-up / Today: jump to the room check card.
+  useEffect(() => {
+    if (!booking || location.hash !== '#room-check') return;
+    setTab('details');
+    setTimeout(() => document.getElementById('room-check')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+  }, [booking?.id, location.hash]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadFolio() {
     setFolioLoading(true);
     try {
@@ -1504,7 +1511,7 @@ export default function BookingDetail() {
 
         {/* Minibar: ask housekeeping, see their answer, add it to the bill (migration 091) */}
         {hasModule('sales') && ['checked_in', 'checked_out'].includes(booking.status) && (
-          <RoomCheckPanel card bookingId={booking.id} onCharged={() => { load(); if (folio) loadFolio(); }} />
+          <div id="room-check"><RoomCheckPanel card bookingId={booking.id} onCharged={() => { load(); if (folio) loadFolio(); }} /></div>
         )}
         </div>
         <div className="detail-col">

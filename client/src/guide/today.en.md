@@ -5,9 +5,11 @@
 ## What's on it
 
 - **The day's figures** — arriving, staying over, departing, tonight's rooms, reservations made today, and tomorrow in one line.
-- **Needs you now** — guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), rooms still to clean with a guest arriving today, stays already over that never checked in (**See the list** to mark no-show or cancel) and, when something came in, today's OTA bookings (**Open** for the OTA bookings tab).
+- **Needs you now** — room checks housekeeping sent from the tablet or the phone link and nobody added to the bill yet (**Open** goes to the reservation's room check card; the line stays until you press **Add to bill**, **Don't charge** or **OK**), guests past check-out still checked in, rooms where a clean was asked for (**Mark clean**), rooms still to clean with a guest arriving today, stays already over that never checked in (**See the list** to mark no-show or cancel) and, when something came in, today's OTA bookings (**Open** for the OTA bookings tab).
 - **Live unit status** — every room in colour by room type. Tap a room for its window (guest, balance, check in / out, payment, Mark clean, Call room).
 - **Arrivals · In house · Departures · Kitchen · Balance due** — the guests of the day, and who still owes money (Balance due: front desk with Check-in / out only).
+
+> When housekeeping sends a room check, a pop-up also appears at the top right of every page (at the bottom on a phone) with a short chime: the room, the guest and what was taken. **Open** goes to the reservation, **OK** hides it on this computer only — the Today line stays until the check is charged or set aside.
 
 ## Checking in and out
 
